@@ -12,14 +12,59 @@ _COLOR_PATTERN = re.compile(
 _TEXTURE_PATTERN = re.compile(r'diffuse\s*:.*?texture_2d\("([^"]+)"', re.DOTALL)
 
 
-def apply_koostruct_material_fallbacks(stage) -> dict:
+def _scene_prims(stage, root_path):
+    from pxr import Usd
+
+    if root_path is None:
+        return stage.Traverse()
+    root = stage.GetPrimAtPath(root_path)
+    if not root.IsValid():
+        raise ValueError(f'Scene root not found: {root_path}')
+    return Usd.PrimRange(root)
+
+
+def apply_simple_scene_material(stage, root_path) -> dict:
+    """Replace only the referenced scene's materials in the runtime layer.
+
+    This removes texture appearance; use for geometry tests, not visual-model
+    quality evaluation. Robot, sensors, physics and semantic labels are kept.
+    """
+    from pxr import Gf, Sdf, UsdGeom, UsdShade
+
+    material_path = Sdf.Path(root_path).AppendChild('NavigationSimpleMaterial')
+    materials = [
+        prim for prim in _scene_prims(stage, root_path)
+        if prim.IsA(UsdShade.Material) and prim.GetPath() != material_path
+    ]
+    # Disable original shader networks as well as their bindings so Hydra does
+    # not discover and compile their MDL/texture assets on the first update.
+    for prim in materials:
+        prim.SetActive(False)
+    material = UsdShade.Material.Define(stage, material_path)
+    shader = UsdShade.Shader.Define(stage, material.GetPath().AppendChild('Shader'))
+    shader.CreateIdAttr('UsdPreviewSurface')
+    shader.CreateInput('diffuseColor', Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(0.5))
+    shader.CreateInput('roughness', Sdf.ValueTypeNames.Float).Set(0.7)
+    shader.CreateOutput('surface', Sdf.ValueTypeNames.Token)
+    material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), 'surface')
+    geometries = 0
+    for prim in _scene_prims(stage, root_path):
+        if prim.IsA(UsdGeom.Gprim):
+            binding = UsdShade.MaterialBindingAPI.Apply(prim)
+            binding.UnbindAllBindings()
+            binding.Bind(material, bindingStrength=UsdShade.Tokens.strongerThanDescendants)
+            geometries += 1
+    return {'disabled_materials': len(materials), 'geometries': geometries}
+
+
+def apply_koostruct_material_fallbacks(stage, root_path=None) -> dict:
     from pxr import Gf, Sdf, UsdShade
 
     replaced = 0
     textured = 0
     colored = 0
     missing_sources = 0
-    for prim in stage.Traverse():
+    for prim in _scene_prims(stage, root_path):
         source_attribute = prim.GetAttribute('info:mdl:sourceAsset')
         if not source_attribute:
             continue

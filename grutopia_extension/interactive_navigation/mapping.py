@@ -26,6 +26,7 @@ class MappingConfig:
     robot_radius: float = 0.18
     obstacle_inflation_radius: Optional[float] = None
     static_obstacle_inflation_radius: Optional[float] = None
+    object_position_window: int = 0
     occupied_threshold: float = 0.55
     free_update: float = 0.30
     occupied_update: float = 0.85
@@ -261,9 +262,6 @@ class OccupancyGridMap:
             return
         finite = np.isfinite(points).all(axis=1)
         points = points[finite]
-        if len(points) > self.config.max_lidar_rays:
-            indices = np.linspace(0, len(points) - 1, self.config.max_lidar_rays, dtype=int)
-            points = points[indices]
         if len(points) == 0:
             return
 
@@ -283,11 +281,15 @@ class OccupancyGridMap:
             & (points[:, 2] <= max_height)
             & (distances < max_range * 0.99)
         )
+        # Budget virtual azimuth rays, not raw 3D returns. Subsampling before
+        # finding the nearest hit can discard a chair leg while retaining a
+        # farther wall return, incorrectly clearing the intervening space.
+        scan_bins = min(self.config.lidar_scan_bins, self.config.max_lidar_rays)
         bins = (
             (np.arctan2(deltas[:, 1], deltas[:, 0]) + np.pi)
             / (2.0 * np.pi)
-            * self.config.lidar_scan_bins
-        ).astype(int) % self.config.lidar_scan_bins
+            * scan_bins
+        ).astype(int) % scan_bins
 
         # Nearest in-band return per direction becomes the obstacle endpoint
         # and bounds free clearing; the farthest overall return drives a
@@ -301,7 +303,8 @@ class OccupancyGridMap:
             if valid[index] and int(bins[index]) not in farthest_seen:
                 farthest_seen[int(bins[index])] = int(index)
 
-        updated = False
+        frame_free = set()
+        frame_occupied = set()
         for bin_index, seen_index in farthest_seen.items():
             obstacle_index = nearest_obstacle.get(bin_index)
             endpoint = points[obstacle_index if obstacle_index is not None else seen_index]
@@ -312,17 +315,24 @@ class OccupancyGridMap:
             if not ray:
                 continue
             obstacle_hit = obstacle_index is not None
-            free_cells = ray[:-1] if obstacle_hit else ray
-            for cell in free_cells:
-                self._add(cell, -self.config.free_update)
-                updated = True
+            frame_free.update(ray[:-1] if obstacle_hit else ray)
             if obstacle_hit:
-                self._add(ray[-1], self.config.occupied_update)
-                updated = True
+                frame_occupied.add(ray[-1])
 
-        self.mark_free(origin_array[:2], radius=max(0.20, self.config.robot_radius))
-        if updated:
+        # Rays in one frame are correlated observations, not independent
+        # evidence. Count each cell once; an endpoint hit takes precedence
+        # over other rays crossing the same discretized cell.
+        for cell in frame_free - frame_occupied:
+            self._add(cell, -self.config.free_update)
+        for cell in frame_occupied:
+            self._add(cell, self.config.occupied_update)
+
+        # The sensor origin is not the base/footprint center. The runtime
+        # clears the actual robot footprint separately; clearing a robot-size
+        # disk here would erase nearby furniture in front of an offset lidar.
+        if frame_free or frame_occupied:
             self.revision += 1
+
 
     def prune_isolated_occupancy(self):
         """Reset isolated, unconfirmed occupied cells back to unknown.
@@ -545,6 +555,14 @@ class SceneGraphMap:
                     label_counts[observed] = label_counts.get(observed, 0) + 1
                 position_sum = self._object_position_sums[node.node_id] + np.asarray(detection.position)
                 position = tuple(float(value) for value in position_sum / count)
+                if self.config.object_position_window > 0:
+                    weight = min(count, self.config.object_position_window)
+                    position = tuple(
+                        float(value)
+                        for value in (
+                            np.asarray(node.position) + (np.asarray(detection.position) - node.position) / weight
+                        )
+                    )
                 color = detection.color if detection.color is not None else node.color
                 confidence = (
                     node.confidence * node.observations + float(detection.confidence)
@@ -695,8 +713,9 @@ class AStarMapPlanner:
         (1, 1, sqrt(2.0)),
     )
 
-    def __init__(self, occupancy: OccupancyGridMap):
+    def __init__(self, occupancy: OccupancyGridMap, observed_only: bool = False):
         self.occupancy = occupancy
+        self.observed_only = observed_only
 
     def plan(self, start: Vector3, goal: Vector3) -> Tuple[Vector3, ...]:
         start_cell = self.occupancy.world_to_cell(start[:2])
@@ -704,8 +723,24 @@ class AStarMapPlanner:
         if start_cell is None or goal_cell is None:
             raise PlanningError('start or goal is outside map bounds')
         blocked = self.occupancy.inflated_mask()
+        if self.observed_only:
+            blocked = blocked | ~self.occupancy.observed
+            if blocked[start_cell]:
+                raise PlanningError('start is not observed traversable space')
+            if blocked[goal_cell]:
+                raise PlanningError('goal is not observed traversable space')
         start_cell = self._nearest_open(start_cell, blocked)
         goal_cell = self._nearest_open(goal_cell, blocked)
+
+        clearance_cost = None
+        if self.observed_only:
+            from scipy.ndimage import distance_transform_edt
+
+            clearance = distance_transform_edt(~blocked) * self.occupancy.config.grid_resolution
+            # Prefer room/doorway centers instead of skimming the boundary
+            # of the inflated mask. Inflation is the hard limit; this soft
+            # cost reserves additional space for locomotion tracking error.
+            clearance_cost = 1.0 + 0.5 / np.maximum(clearance, self.occupancy.config.grid_resolution)
 
         frontier = [(0.0, start_cell)]
         cost_so_far = {start_cell: 0.0}
@@ -718,7 +753,16 @@ class AStarMapPlanner:
                 neighbor = (current[0] + row_offset, current[1] + col_offset)
                 if not self.occupancy.in_bounds(neighbor) or blocked[neighbor]:
                     continue
+                if (
+                    self.observed_only
+                    and row_offset
+                    and col_offset
+                    and (blocked[current[0] + row_offset, current[1]] or blocked[current[0], current[1] + col_offset])
+                ):
+                    continue
                 observed_cost = 1.0 if self.occupancy.observed[neighbor] else self.occupancy.config.unknown_cost
+                if clearance_cost is not None:
+                    observed_cost = float(clearance_cost[neighbor])
                 new_cost = cost_so_far[current] + move_cost * observed_cost
                 if new_cost >= cost_so_far.get(neighbor, float('inf')):
                     continue
@@ -746,6 +790,7 @@ class AStarMapPlanner:
             waypoints[-1] = tuple(float(value) for value in goal)
         return tuple(waypoints)
 
+
     def _nearest_open(self, cell: GridCell, blocked: np.ndarray) -> GridCell:
         if not blocked[cell]:
             return cell
@@ -763,6 +808,11 @@ class AStarMapPlanner:
     def _simplify(self, cells: List[GridCell], blocked: np.ndarray) -> List[GridCell]:
         if len(cells) <= 2:
             return cells
+        if self.observed_only:
+            # Keep route corners; continuous lookahead is validated at execution.
+            return [cells[0]] + [cells[i] for i in range(1, len(cells) - 1)
+                if (cells[i][0] - cells[i - 1][0], cells[i][1] - cells[i - 1][1])
+                != (cells[i + 1][0] - cells[i][0], cells[i + 1][1] - cells[i][1])] + [cells[-1]]
         simplified = [cells[0]]
         index = 0
         while index < len(cells) - 1:
@@ -774,6 +824,19 @@ class AStarMapPlanner:
             simplified.append(cells[next_index])
             index = next_index
         return simplified
+
+    @staticmethod
+    def segment_clear(start: GridCell, end: GridCell, blocked: np.ndarray) -> bool:
+        """Check the whole segment, including cells adjacent to diagonal steps."""
+        cells = _bresenham(start, end)
+        if any(not (0 <= r < blocked.shape[0] and 0 <= c < blocked.shape[1])
+               or blocked[r, c] for r, c in cells):
+            return False
+        for left, right in zip(cells, cells[1:]):
+            if left[0] != right[0] and left[1] != right[1]:
+                if blocked[left[0], right[1]] or blocked[right[0], left[1]]:
+                    return False
+        return True
 
 
 class FusedMap:

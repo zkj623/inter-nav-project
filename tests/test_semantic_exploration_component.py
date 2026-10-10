@@ -96,14 +96,14 @@ class SemanticExplorationComponentTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             SemanticExplorationConfig(target_query='refrigerator', semantic_detection_mode='radar')
 
-    def test_empty_map_rate_limits_frontier_reselection(self):
+    def test_empty_map_waits_for_fresh_initial_scan(self):
         component = _component('refrigerator', frontier_selection_interval=160)
         observation = {'position': (1.0, 1.5, 0.4), 'orientation': (1.0, 0.0, 0.0, 0.0), 'sensors': {}}
 
         for step in range(20):
             component.update(step, observation)
 
-        self.assertEqual(len(component.decision_history), 1)
+        self.assertEqual(len(component.decision_history), 0)
         self.assertIsNone(component.current_goal)
 
     def test_unknown_target_selects_reachable_frontier(self):
@@ -112,11 +112,15 @@ class SemanticExplorationComponentTest(unittest.TestCase):
         observation = {'position': (1.0, 1.5, 0.4), 'orientation': (1.0, 0.0, 0.0, 0.0), 'sensors': {}}
 
         component.update(0, observation)
+        self.assertIsNone(component.current_goal)
+        observation['sensors']['lidar'] = {'horizontal_fov': 360, 'rotation_frequency': 0}
+        component.mapping.map.lidar_frames += 8
+        component.update(1, observation)
 
         self.assertIsNone(component.target_node)
         self.assertIsNotNone(component.current_frontier_id)
         self.assertIsNotNone(component.current_goal)
-        self.assertIn(component.state, ('explore_geometric', 'explore_semantic'))
+        self.assertEqual(component.state, 'explore_navigate')
 
     def test_persistent_semantic_target_switches_to_target_navigation(self):
         component = _component()

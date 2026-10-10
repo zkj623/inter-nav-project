@@ -202,6 +202,9 @@ class Go2Robot(BaseRobot):
             joint_indices=joint_indices,
         )
         self.isaac_robot.configure_locomotion()
+        control = getattr(self, '_go2_locomotion_control', None)
+        if control is not None:
+            control.reset()
 
     def get_rigid_bodies(self):
         return self._rigid_bodies

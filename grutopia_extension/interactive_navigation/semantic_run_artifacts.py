@@ -48,7 +48,9 @@ class SemanticRunArtifacts:
         'step', 'x_m', 'y_m', 'z_m', 'yaw_rad', 'state', 'goal_kind', 'goal_x_m', 'goal_y_m',
         'goal_distance_m', 'target_node_id', 'target_confirmed',
         'target_label_support', 'target_total_support', 'target_repeated_label_support',
-        'target_cue_id',
+        'target_cue_id', 'base_tilt_deg', 'simulation_time', 'policy_inferences',
+        'command_vx', 'command_vy', 'command_wz',
+        'body_vx', 'body_vy', 'body_wz',
     )
 
     def __init__(self, record_dir: str, run, profile):
@@ -91,6 +93,7 @@ class SemanticRunArtifacts:
         self._previous_confirmed = False
         self._previous_goal = None
         self._cue_event_count = 0
+        self._exploration_event_count = 0
         self._plan_count = 0
         self._planning_failures = 0
         self._voronoi_fallbacks = 0
@@ -123,7 +126,19 @@ class SemanticRunArtifacts:
         cue = getattr(component, 'target_cue', None)
         goal = component.current_goal
         matching, total, repeated = (0, 0, 0) if node is None else component._node_label_evidence(node)
+        control = observation.get('controllers', {}).get('move_by_speed', {})
+        tilt = None
+        if orientation is not None and len(orientation) == 4:
+            norm = sum(float(value) ** 2 for value in orientation)
+            if norm > 0:
+                tilt = math.degrees(math.acos(max(-1., min(1., 1 - 2 * (x*x + y*y) / norm))))
         return {
+            'base_tilt_deg': tilt,
+            'simulation_time': control.get('simulation_time'),
+            'policy_inferences': control.get('policy_inferences'),
+            'command': control.get('command', (None, None, None)),
+            'body_velocity': control.get('body_lin_vel', (None, None, None)),
+            'body_angular_velocity': control.get('body_ang_vel', (None, None, None)),
             'position': position,
             'yaw': yaw,
             'node_id': None if node is None else node.node_id,
@@ -147,6 +162,11 @@ class SemanticRunArtifacts:
                 key: value for key, value in transition.items() if key not in ('step', 'event')
             })
         self._cue_event_count = len(cue_history)
+        history = getattr(component, 'frontier_history', ())
+        for event in history[self._exploration_event_count:]:
+            self._emit(step, 'frontier_execution', exploration_event=event)
+        self._exploration_event_count = len(history)
+
         node = state['node_id']
         target_fields = {
             'node_id': node,
@@ -219,6 +239,15 @@ class SemanticRunArtifacts:
             'target_total_support': state['total'],
             'target_repeated_label_support': state['repeated'],
             'target_cue_id': state['cue_id'],
+            'base_tilt_deg': state['base_tilt_deg'],
+            'simulation_time': state['simulation_time'],
+            'policy_inferences': state['policy_inferences'],
+            'command_vx': state['command'][0],
+            'command_vy': state['command'][1],
+            'command_wz': state['command'][2],
+            'body_vx': state['body_velocity'][0],
+            'body_vy': state['body_velocity'][1],
+            'body_wz': state['body_angular_velocity'][2],
         })
         self._trace_file.flush()
         self._last_trace_step = step

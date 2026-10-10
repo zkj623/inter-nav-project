@@ -106,6 +106,9 @@ class MapNavigationRuntime:
         semantic_voronoi_config=None,
         topology_update_interval: int = 40,
         prefer_voronoi_paths: bool = False,
+        safe_path_tracking: bool = False,
+        observed_only: bool = False,
+        buffer_recovery_timeout: int = 600,
     ):
         if lidar_interval <= 0 or rgb_interval <= 0:
             raise ValueError('sensor update intervals must be positive')
@@ -115,7 +118,23 @@ class MapNavigationRuntime:
             raise ValueError('topology_update_interval must be positive')
         if open_vocabulary_failure_limit <= 0:
             raise ValueError('open_vocabulary_failure_limit must be positive')
+        if buffer_recovery_timeout <= 0:
+            raise ValueError('buffer_recovery_timeout must be positive')
+        safe_path_tracking = safe_path_tracking or observed_only
+        self.observed_only = safe_path_tracking
+        self.safe_path_tracking = safe_path_tracking
+        self.buffer_recovery_timeout = buffer_recovery_timeout
+        self.buffer_recovery_active = False
+        self.buffer_recovery_failed = False
+        self._buffer_started = None
+        self._buffer_exit = None
+        self.buffer_history = []
+        self.tracking_chord_fallbacks = 0
+        self.tracking_segment_stops = 0
         self.map = FusedMap(mapping_config)
+        if safe_path_tracking:
+            from .mapping import AStarMapPlanner
+            self.map.planner = AStarMapPlanner(self.map.occupancy, observed_only=True)
         self.lidar_interval = lidar_interval
         self.rgb_interval = rgb_interval
         self.use_planner = use_planner
@@ -162,6 +181,7 @@ class MapNavigationRuntime:
         self.voronoi_planner = None
         self.voronoi_plan_count = 0
         self.voronoi_plan_fallbacks = 0
+        self._last_plan_used_voronoi = False
         if use_semantic_voronoi:
             from grutopia_extension.interactive_navigation.semantic_voronoi import (
                 SemanticVoronoiGraph,
@@ -182,8 +202,10 @@ class MapNavigationRuntime:
                 self.voronoi_planner = VoronoiPathPlanner(
                     self.semantic_voronoi,
                     waypoint_spacing=0.30,
+                    observed_only=safe_path_tracking,
                 )
         self._last_lidar_physics_step = -1
+        self.lidar_self_hits_removed = 0
         self._planned_state: Optional[InteractionState] = None
         self._planned_path = None
         self._planned_goal = None
@@ -256,6 +278,7 @@ class MapNavigationRuntime:
             physics_step = int(lidar.get('physics_step', -1))
             points = _points(lidar.get('pointcloud'))
             if physics_step != self._last_lidar_physics_step and len(points) > 0:
+                self.lidar_self_hits_removed += int(lidar.get('self_hits_removed', 0))
                 origin = _vector3(lidar.get('position'))
                 self.map.update_lidar(
                     origin=origin,
@@ -294,15 +317,16 @@ class MapNavigationRuntime:
             position = np.asarray(position, dtype=np.float64)
             self._update_static_obstacle_violations(position)
             self.map.occupancy.mark_free(position[:2], self.map.config.robot_radius)
-            cell = self.map.occupancy.world_to_cell(position[:2])
+            navigation_grid = self.navigation_occupancy
+            cell = navigation_grid.world_to_cell(position[:2])
             if (
                 position[2] >= self.safe_base_height
                 and self.map.config.safe_recovery_y_limits[0]
                 <= position[1]
                 <= self.map.config.safe_recovery_y_limits[1]
                 and cell is not None
-                and self.map.occupancy.observed[cell]
-                and not self.map.occupancy.inflated_mask()[cell]
+                and navigation_grid.observed[cell]
+                and not navigation_grid.inflated_mask()[cell]
             ):
                 self._last_safe_position = tuple(float(value) for value in position[:3])
         if step % self.topology_update_interval == 0:
@@ -564,7 +588,9 @@ class MapNavigationRuntime:
             and self._last_plan_step is not None
             and step - self._last_plan_step >= self.replan_interval_steps
         ):
-            if self.replan_only_if_blocked and not self._remaining_path_blocked(start):
+            retry_voronoi = (self.voronoi_planner is not None and not self._last_plan_used_voronoi
+                             and self.navigation_occupancy is self.map.occupancy)
+            if self.replan_only_if_blocked and not retry_voronoi and not self._remaining_path_blocked(start):
                 self._last_plan_step = step
             else:
                 plan_reason = 'periodic_blocked' if self.replan_only_if_blocked else 'periodic'
@@ -592,7 +618,8 @@ class MapNavigationRuntime:
                 )
             try:
                 self._planned_path = self._plan_with_final_heading(decision.state, start, goal)
-            except PlanningError:
+            except PlanningError as error:
+                self.last_planning_error = str(error)
                 self.planning_failures += 1
                 return ControllerCommand('move_by_speed', (0.0, 0.0, 0.0)).as_action()
             self._planned_state = decision.state
@@ -613,6 +640,10 @@ class MapNavigationRuntime:
         while self._waypoint_index < len(self._planned_path) - 1:
             waypoint = np.asarray(self._planned_path[self._waypoint_index][:2], dtype=np.float64)
             if np.linalg.norm(waypoint - np.asarray(start[:2])) >= self.intermediate_waypoint_tolerance:
+                break
+            if self.safe_path_tracking and not self._tracking_segment_clear(
+                start[:2], self._planned_path[self._waypoint_index + 1][:2]
+            ):
                 break
             self._waypoint_index += 1
         action[command.name] = [self._planned_path[self._waypoint_index :]]
@@ -656,15 +687,17 @@ class MapNavigationRuntime:
         if not self._planned_path:
             self._last_path_blockage = {'reason': 'missing_path'}
             return True
-        blocked = self.map.occupancy.inflated_mask()
-        start_cell = self.map.occupancy.world_to_cell(start[:2])
+        blocked = self.navigation_occupancy.inflated_mask()
+        if self.observed_only:
+            blocked = blocked | ~self.navigation_occupancy.observed
+        start_cell = self.navigation_occupancy.world_to_cell(start[:2])
         start_blocked = start_cell is None or bool(blocked[start_cell])
         points = [np.asarray(start[:2], dtype=np.float64)]
         points.extend(
             np.asarray(point[:2], dtype=np.float64)
             for point in self._planned_path[self._waypoint_index :]
         )
-        spacing = self.map.config.grid_resolution * 0.5
+        spacing = self.navigation_occupancy.config.grid_resolution * 0.5
         remaining = self.replan_lookahead_distance
         checked_total = 0.0
         self._last_path_blockage = None
@@ -676,7 +709,7 @@ class MapNavigationRuntime:
             endpoint = left if distance == 0 else left + (right - left) * (checked_distance / distance)
             samples = max(1, int(np.ceil(checked_distance / spacing)))
             for ratio in np.linspace(0.0, 1.0, samples + 1)[1:]:
-                cell = self.map.occupancy.world_to_cell(left + (endpoint - left) * ratio)
+                cell = self.navigation_occupancy.world_to_cell(left + (endpoint - left) * ratio)
                 if cell is None or blocked[cell]:
                     self._last_path_blockage = {
                         'reason': 'outside_map' if cell is None else 'inflated_occupancy',
@@ -692,6 +725,16 @@ class MapNavigationRuntime:
                 if remaining <= 0:
                     return False
         return False
+
+    def invalidate_path(self):
+        """Release an execution goal when its owner completes or abandons it."""
+        self._planned_state = None
+        self._planned_path = None
+        self._planned_goal = None
+        self._waypoint_index = 0
+        self._progress_position = None
+        self._progress_step = None
+        self._last_plan_step = None
 
     def _record_replan(self, reason: str, step: Optional[int], start):
         previous_goal = self._planned_goal
@@ -736,6 +779,24 @@ class MapNavigationRuntime:
             target = np.asarray(self._planned_path[self._waypoint_index][:2], dtype=np.float64)
         else:
             target = self._lookahead_target(position)
+        if self.safe_path_tracking:
+            if not self._tracking_segment_clear(position, target):
+                # A safe polyline does not imply a safe lookahead chord.
+                target = np.asarray(self._planned_path[self._waypoint_index][:2], dtype=np.float64)
+                self.tracking_chord_fallbacks += 1
+                if not self._tracking_segment_clear(position, target):
+                    self.tracking_segment_stops += 1
+                    self._record_replan('tracking_segment_blocked', step, position)
+                    return {'move_by_speed': [0.0, 0.0, 0.0]}
+                if (
+                    not calibrated
+                    and np.linalg.norm(target - position) <= self.navigation_occupancy.config.grid_resolution * 0.5
+                ):
+                    # Within half a map cell, chasing this fallback point can
+                    # reverse yaw/strafe commands on tiny position changes.
+                    # Stop and replan without relaxing the forward-path check.
+                    self._record_replan('reached_tracking_waypoint', step, position)
+                    return {'move_by_speed': [0.0, 0.0, 0.0]}
         error_world = target - position
         distance = float(np.linalg.norm(error_world))
         if (
@@ -782,6 +843,20 @@ class MapNavigationRuntime:
         final_goal = np.asarray(self._planned_path[-1][:2], dtype=np.float64)
         final_distance = float(np.linalg.norm(final_goal - position))
         goal_factor = min(1.0, final_distance / self.final_goal_slow_radius)
+        if self.safe_path_tracking:
+            # The checked segment points toward the target, not along body X.
+            # Scale both body components together so lateral saturation cannot
+            # redirect translation into the inside of a corner while turning.
+            velocity = np.array([forward_error, lateral_error]) / max(distance, 1e-9)
+            speed = max_forward_speed * goal_factor
+            if velocity[0] < -1e-9:
+                speed = min(speed, min(max_forward_speed, 0.12) / abs(velocity[0]))
+            if abs(velocity[1]) > 1e-9:
+                speed = min(speed, max_lateral_speed / abs(velocity[1]))
+            return ControllerCommand(
+                'move_by_speed',
+                (float(speed * velocity[0]), float(speed * velocity[1]), rotation_speed),
+            ).as_action()
         forward_speed = float(max_forward_speed * heading_factor * goal_factor)
         lateral_speed = float(
             np.clip(1.2 * lateral_error, -max_lateral_speed, max_lateral_speed) * heading_factor
@@ -790,6 +865,69 @@ class MapNavigationRuntime:
             'move_by_speed',
             (forward_speed, lateral_speed, rotation_speed),
         ).as_action()
+
+    def _tracking_segment_clear(self, start, target):
+        occupancy = self.navigation_occupancy
+        left, right = occupancy.world_to_cell(start), occupancy.world_to_cell(target)
+        return (left is not None and right is not None and self.map.planner.segment_clear(
+            left, right, occupancy.inflated_mask() | ~occupancy.observed))
+
+    def update_buffer_recovery(self, step, observation):
+        """Temporarily leave a clearance buffer without relaxing normal routes."""
+        if not self.safe_path_tracking:
+            return False
+        from .exploration_frontiers import buffer_exit_goal
+
+        occupancy = self.navigation_occupancy
+        position = np.asarray(observation['position'][:2], dtype=float)
+        cell = occupancy.world_to_cell(position)
+        observed = cell is not None and occupancy.observed[cell]
+        in_buffer = observed and occupancy.inflated_mask()[cell]
+        if not in_buffer and not self.buffer_recovery_active:
+            return False
+        if not self.buffer_recovery_active:
+            self.buffer_recovery_active = True
+            self._buffer_started = step
+            self._buffer_exit = None
+            self.invalidate_path()
+            self.buffer_history.append({'step': step, 'event': 'buffer_exit_started', 'position': position.tolist()})
+        if step - self._buffer_started >= self.buffer_recovery_timeout:
+            if not self.buffer_recovery_failed:
+                self.buffer_history.append({'step': step, 'event': 'buffer_exit_timeout'})
+            self.buffer_recovery_failed = True
+            return True
+        if observed and not in_buffer and (
+            self._buffer_exit is None or np.linalg.norm(np.asarray(self._buffer_exit) - position)
+            <= max(0.05, occupancy.config.grid_resolution)
+        ):
+            self.buffer_history.append({'step': step, 'event': 'buffer_exit_completed', 'position': position.tolist()})
+            self.buffer_recovery_active = False
+            self._buffer_exit = None
+            self.invalidate_path()
+            return False
+        self._buffer_exit = buffer_exit_goal(occupancy, position, self._buffer_exit)
+        return True
+
+    def buffer_recovery_action(self, observation, max_forward_speed, max_lateral_speed):
+        from .exploration_frontiers import buffer_exit_goal
+
+        stop = {'move_by_speed': [0.0, 0.0, 0.0]}
+        if self.buffer_recovery_failed or observation['position'][2] < self.safe_base_height:
+            return stop
+        position = np.asarray(observation['position'][:2], dtype=float)
+        # Revalidate immediately before issuing each motion command.
+        target = buffer_exit_goal(self.navigation_occupancy, position, self._buffer_exit)
+        if target is None:
+            return stop
+        self._buffer_exit = target
+        delta = np.asarray(target) - position
+        world = delta * min(1.0, 0.15 / max(np.linalg.norm(delta), 1e-9))
+        yaw = _yaw(observation['orientation'])
+        c, s = np.cos(yaw), np.sin(yaw)
+        body = np.array([c * world[0] + s * world[1], -s * world[0] + c * world[1]])
+        scale = min(1.0, max_forward_speed / max(abs(body[0]), 1e-9),
+                    max_lateral_speed / max(abs(body[1]), 1e-9))
+        return {'move_by_speed': [float(body[0] * scale), float(body[1] * scale), 0.0]}
 
     def _lookahead_target(self, position: np.ndarray) -> np.ndarray:
         """Carrot point a fixed arc length ahead on the remaining planned path.
@@ -866,6 +1004,8 @@ class MapNavigationRuntime:
         """
 
         goal = _vector3(goal)
+        if self.update_buffer_recovery(step if step is not None else 0, robot_observation):
+            return self.buffer_recovery_action(robot_observation, max_forward_speed, max_lateral_speed)
         decision = StateMachineDecision(
             state=InteractionState.NAVIGATE_TO_GOAL,
             command=ControllerCommand('move_along_path', ((goal,),)),
@@ -966,7 +1106,13 @@ class MapNavigationRuntime:
         path.extend(final_leg)
         return self._densify_waypoints(path, max_spacing=0.45)
 
+    @property
+    def navigation_occupancy(self):
+        return self.map.occupancy
+
+
     def _map_plan(self, start, goal):
+        self._last_plan_used_voronoi = False
         if self.voronoi_planner is not None:
             try:
                 path = self.voronoi_planner.plan(start, goal)
@@ -974,13 +1120,10 @@ class MapNavigationRuntime:
                 self.voronoi_plan_fallbacks += 1
             else:
                 self.voronoi_plan_count += 1
+                self._last_plan_used_voronoi = True
                 self.map.plan_count += 1
                 return path
-        return self.map.plan(
-            start,
-            goal,
-            reinforce_semantics=self.use_semantic_occupancy,
-        )
+        return self.map.plan(start, goal, reinforce_semantics=self.use_semantic_occupancy)
 
     @staticmethod
     def _densify_waypoints(path, max_spacing: float):
@@ -1032,6 +1175,11 @@ class MapNavigationRuntime:
         stats.update(
             {
                 'planning_failures': self.planning_failures,
+                'tracking_chord_fallbacks': self.tracking_chord_fallbacks,
+                'tracking_segment_stops': self.tracking_segment_stops,
+                'buffer_recovery_active': self.buffer_recovery_active,
+                'buffer_recovery_failed': self.buffer_recovery_failed,
+                'buffer_recovery_history': list(self.buffer_history),
                 'replans': self.replan_count,
                 'replan_reasons': dict(sorted(self.replan_reasons.items())),
                 'last_replan': self.last_replan,
@@ -1074,6 +1222,7 @@ class MapNavigationRuntime:
                 'open_vocabulary_last_detection_step': self.open_vocabulary_last_detection_step,
                 'open_vocabulary_last_success_step': self.open_vocabulary_last_success_step,
                 'voronoi_plans': self.voronoi_plan_count,
+                'lidar_self_hits_removed': self.lidar_self_hits_removed,
                 'voronoi_plan_fallbacks': self.voronoi_plan_fallbacks,
             }
         )
@@ -1294,7 +1443,7 @@ def _points(value) -> np.ndarray:
 
 
 def _vector3(value):
-    array = np.asarray(value, dtype=np.float32).reshape(-1)
+    array = np.asarray(value, dtype=np.float64).reshape(-1)
     if len(array) < 3:
         raise ValueError('expected a three-dimensional vector')
     return tuple(float(component) for component in array[:3])
