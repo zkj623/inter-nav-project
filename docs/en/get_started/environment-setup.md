@@ -142,7 +142,7 @@ path below yourself.
 Expected layout:
 
 ```text
-grutopia/assets/scenes/GRScenes-100/home_scenes/scenes/MV7J6NIKTKJZ2AABAAAAADA8_usd/start_result_navigation_preview.usda
+grutopia/assets/scenes/GRScenes-100/home_scenes/scenes/MV7J6NIKTKJZ2AABAAAAADA8_usd/start_result_navigation.usd
 grutopia/assets/benchmark/meta/MV7J6NIKTKJZ2AABAAAAADA8_usd/object_dict.json
 grutopia/assets/robots/go2/isaaclab_go2.usd
 grutopia/assets/robots/go2/policy/move_by_speed/rough_model_7850.pt

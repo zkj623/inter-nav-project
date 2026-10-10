@@ -6,13 +6,14 @@ from omni.isaac.core.utils.types import ArticulationAction
 
 from grutopia.core.robot.controller import BaseController
 from grutopia.core.robot.robot import BaseRobot
+from grutopia.core.util import log
 from grutopia_extension.configs.controllers import Go2MoveBySpeedControllerCfg
 from grutopia_extension.controllers.isaac_go2_ctrl import Go2RSLControl
 
 
 @BaseController.register('Go2MoveBySpeedController')
 class Go2MoveBySpeedController(BaseController):
-    """InternUtopia wrapper around the isaac-go2-ros2 RSL control loop."""
+    """Velocity-command entry point for the robot's shared locomotion loop."""
 
     def __init__(
         self,
@@ -21,12 +22,27 @@ class Go2MoveBySpeedController(BaseController):
         scene: Scene,
     ) -> None:
         super().__init__(config=config, robot=robot, scene=scene)
-        self._control = Go2RSLControl(
-            config.policy_weights_path,
-            self.robot.isaac_robot,
-            config.joint_names,
-            ground_height=getattr(config, 'ground_height', 0.0),
-        )
+        # Direct-speed and path controllers operate the same physical robot.
+        # Share the low-level history, previous action and inference clock.
+        contract = (config.policy_weights_path, tuple(config.joint_names), config.ground_height)
+        existing = getattr(robot, '_go2_locomotion_control', None)
+        if existing is None:
+            robot._go2_locomotion_control = Go2RSLControl(
+                config.policy_weights_path,
+                self.robot.isaac_robot,
+                config.joint_names,
+                ground_height=config.ground_height,
+            )
+            robot._go2_locomotion_contract = contract
+            control = robot._go2_locomotion_control
+            log.info(
+                f'Go2 loco: backend=rsl, '
+                f'weights={config.policy_weights_path}, obs={control.observation_dim}, '
+                'frequency=50Hz'
+            )
+        elif robot._go2_locomotion_contract != contract:
+            raise ValueError('Go2 controllers on one robot must use the same locomotion configuration')
+        self._control = robot._go2_locomotion_control
         self.joint_subset = self._control.joint_subset
 
     def forward(
