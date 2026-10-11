@@ -516,7 +516,10 @@ class AdaptiveExplorationPlanner:
             candidate.score = candidate.geometric_score
             if model_scores is not None:
                 candidate.score += self.config.semantic_weight * candidate.semantic_score
-        candidates.sort(key=lambda item: (-item.score, item.path_distance, item.frontier_id))
+        candidates.sort(key=lambda item: (
+            item.failure_count if item.metadata.get('reachable_boundary') else 0,
+            -item.score, item.path_distance, item.frontier_id,
+        ))
         if not candidates:
             decision = ExplorationDecision(
                 mode=self.mode,
@@ -592,7 +595,8 @@ class AdaptiveExplorationPlanner:
     def _candidate(self, item, index, robot, snapshot, occupancy, target_direction):
         frontier_id = _frontier_id(item, index)
         position = _position(item)
-        path_distance = self._path_distance(robot, position, occupancy)
+        distance = _value(item, 'path_distance', None)
+        path_distance = self._path_distance(robot, position, occupancy) if distance is None else float(distance)
         information_gain = self._information_gain(position, occupancy, item)
         clearance = self._clearance(position, occupancy, item)
         degree, extensibility = self._topology(position, item, snapshot)
@@ -611,7 +615,11 @@ class AdaptiveExplorationPlanner:
             - self.config.failure_penalty * failures
             - self.config.dead_end_penalty * float(dead_end)
         )
+        reachable_boundary = bool(_value(item, 'reachable_boundary', False))
+        if reachable_boundary:
+            score = float(_value(item, 'geometric_score', information_gain / (1.0 + path_distance)))
         candidate = FrontierCandidate(
+            metadata={'reachable_boundary': reachable_boundary},
             frontier_id=frontier_id,
             position=position,
             path_distance=path_distance,

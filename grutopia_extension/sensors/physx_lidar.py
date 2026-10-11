@@ -4,10 +4,12 @@ from typing import Dict
 
 import numpy as np
 from omni.isaac.sensor import RotatingLidarPhysX
+from omni.isaac.range_sensor import _range_sensor
 
 from grutopia.core.robot.robot import BaseRobot, Scene
 from grutopia.core.robot.sensor import BaseSensor
 from grutopia_extension.configs.sensors import PhysXLidarCfg
+from grutopia_extension.sensors.lidar_returns import exclude_robot_returns
 
 
 @BaseSensor.register('PhysXLidar')
@@ -34,6 +36,10 @@ class PhysXLidar(BaseSensor):
             )
         )
         self._lidar.add_point_cloud_data_to_frame()
+        # Remove only our own links, not nearby furniture or walls.
+        self._lidar.enable_semantics()
+        self._interface = _range_sensor.acquire_lidar_sensor_interface()
+        self._robot_path = robot.config.prim_path
 
     def post_reset(self):
         if self._lidar is not None:
@@ -45,6 +51,11 @@ class PhysXLidar(BaseSensor):
         frame = self._lidar.get_current_frame()
         local_points = frame.get('point_cloud')
         local_points = _points_array(local_points)
+        self_hits = 0
+        if len(local_points):
+            local_points, self_hits = exclude_robot_returns(
+                local_points, self._interface.get_prim_data(self._lidar.prim_path), self._robot_path
+            )
         position, orientation = self._lidar.get_world_pose()
         world_points = _transform_points(local_points, position, orientation)
         return {
@@ -56,6 +67,9 @@ class PhysXLidar(BaseSensor):
             'time': float(frame.get('time', 0.0)),
             'min_range': float(self.config.valid_range[0]),
             'max_range': float(self.config.valid_range[1]),
+            'horizontal_fov': float(self.config.fov[0]),
+            'rotation_frequency': float(self.config.rotation_frequency),
+            'self_hits_removed': self_hits,
         }
 
     def cleanup(self):

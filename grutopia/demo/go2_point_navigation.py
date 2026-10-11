@@ -25,6 +25,7 @@ def parse_args():
     parser.add_argument('--goal', type=float, nargs=3, default=(3.0, 0.0, 0.40))
     parser.add_argument('--environment-length', type=float, default=16.0)
     parser.add_argument('--environment-width', type=float, default=10.0)
+    parser.add_argument('--voronoi-paths', action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument('--gpu', type=int, default=0)
     parser.add_argument('--max-steps', type=int, default=6000)
     parser.add_argument('--success-distance', type=float, default=0.70)
@@ -134,6 +135,7 @@ def main():
         profile,
         Go2NavigationRunConfig(
             gpu=args.gpu,
+            prefer_voronoi_paths=args.voronoi_paths,
             headless=args.headless,
             max_steps=args.max_steps,
             mapping_warmup_steps=args.mapping_warmup_steps,

@@ -42,6 +42,8 @@ GRSCENE_FLOOR_TOP = 0.15
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--portable-root', help='private Kit data/cache/log root')
+    parser.add_argument('--material-mode', choices=('original', 'preview', 'simple'), default=None)
     parser.add_argument('--target', default='refrigerator')
     parser.add_argument(
         '--scene',
@@ -228,6 +230,7 @@ def main():
             qwen_python=args.qwen_python,
             rendering_interval=args.rendering_interval,
             use_fabric=args.use_fabric,
+            material_mode=args.material_mode,
             verify_voronoi_incremental=args.verify_voronoi_incremental,
         ),
         objects=objects,

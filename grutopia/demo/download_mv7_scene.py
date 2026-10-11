@@ -22,7 +22,7 @@ def parse_args():
 
 
 def _looks_complete(scene_dir: Path, meta_dir: Path) -> bool:
-    return (scene_dir / 'start_result_navigation_preview.usda').is_file() and (
+    return (scene_dir / 'start_result_navigation.usd').is_file() and (
         meta_dir / 'object_dict.json'
     ).is_file()
 
@@ -40,7 +40,7 @@ def _promote_extracted_scene(root: Path, destination: Path):
     if destination.exists():
         return
     for candidate in root.rglob(SCENE_ID):
-        if candidate.is_dir() and (candidate / 'start_result_navigation_preview.usda').is_file():
+        if candidate.is_dir() and (candidate / 'start_result_navigation.usd').is_file():
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copytree(candidate, destination)
             print(f'copied scene to {destination}', flush=True)

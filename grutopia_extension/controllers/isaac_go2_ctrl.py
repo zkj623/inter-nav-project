@@ -43,6 +43,7 @@ from grutopia_extension.controllers.go2_policy import (
     rotate_vector_inverse_wxyz,
     yaw_from_wxyz,
 )
+from grutopia_extension.configs.robots.go2 import GO2_JOINT_NAMES
 from grutopia_extension.robots.go2_asset import GO2_DEFAULT_JOINT_POSITIONS
 
 # Isaac Lab trained Go2 at 50 Hz with dt=0.005. Their play cfg uses 40 Hz.
@@ -87,7 +88,7 @@ def base_vel_cmd(env_index: int = 0) -> np.ndarray:
 
 
 class Go2RSLControl:
-    """Isaac-go2-ros2 RSL control loop for one InternUtopia Go2."""
+    """Shared locomotion control loop for one InternUtopia Go2."""
 
     def __init__(
         self,
@@ -98,12 +99,14 @@ class Go2RSLControl:
     ) -> None:
         init_base_vel_cmd(1)
         self.ground_height = float(ground_height)
+        joint_names = list(joint_names)
         self.policy = load_go2_actor(policy_weights_path)
+        self.policy_command = np.zeros(3, dtype=np.float32)
         self.observation_dim = int(self.policy[0].in_features)
-        self.joint_subset = ArticulationSubset(articulation, list(joint_names))
+        self.joint_subset = ArticulationSubset(articulation, joint_names)
         self.articulation = articulation
         self.default_joint_positions = np.asarray(
-            GO2_DEFAULT_JOINT_POSITIONS,
+            [GO2_DEFAULT_JOINT_POSITIONS[GO2_JOINT_NAMES.index(name)] for name in joint_names],
             dtype=np.float32,
         )
         self.last_action = np.zeros(12, dtype=np.float32)
@@ -116,6 +119,22 @@ class Go2RSLControl:
         self._prev_position = None
         self._prev_orientation = None
         self._last_inference_time = None
+        self.policy_inferences = 0
+
+    def reset(self):
+        """Discard policy and timing state when the physical robot resets."""
+        self.policy_command.fill(0)
+        self.last_action.fill(0)
+        self.applied_joint_positions = self.default_joint_positions.copy()
+        self.apply_times_left = 0
+        self._prev_position = None
+        self._prev_orientation = None
+        self._last_inference_time = None
+        self.policy_inferences = 0
+        self.body_lin_vel.fill(0)
+        self.body_ang_vel.fill(0)
+        self.yaw = 0.0
+        set_base_vel_cmd((0., 0., 0.))
 
     def set_command(
         self,
@@ -123,16 +142,17 @@ class Go2RSLControl:
         lateral_speed: float,
         rotation_speed: float,
     ) -> np.ndarray:
-        return set_base_vel_cmd(
-            (forward_speed, lateral_speed, rotation_speed)
-        ).numpy()
+        command = np.asarray((forward_speed, lateral_speed, rotation_speed))
+        if not np.isfinite(command).all():
+            raise ValueError('Go2 velocity command must be finite')
+        return set_base_vel_cmd(command).numpy()
 
     def step(self) -> ArticulationAction:
         if self._should_infer():
             self._infer_policy()
         # Position targets against the implicit PhysX drive: the drive
         # recomputes PD torque at every physics substep while the target is
-        # held, exactly like Isaac Lab actuators during decimation.
+        # held, including physics steps advanced during rendering.
         return ArticulationAction(
             joint_positions=self.applied_joint_positions.copy(),
             joint_indices=self.joint_subset.joint_indices,
@@ -156,6 +176,8 @@ class Go2RSLControl:
             self.apply_times_left = POLICY_DECIMATION - 1
             return True
         period = POLICY_DECIMATION * 0.005
+        if self._last_inference_time is not None and now < self._last_inference_time:
+            self.reset()
         if self._last_inference_time is None or now - self._last_inference_time >= period - 1e-6:
             self._last_inference_time = now
             return True
@@ -174,10 +196,15 @@ class Go2RSLControl:
 
     def get_obs(self) -> dict:
         return {
+            'simulation_time': self._simulation_time(),
+            'last_inference_time': self._last_inference_time,
+            'policy_inferences': self.policy_inferences,
             'command': base_vel_cmd(),
+            'policy_command': self.policy_command.copy(),
             'policy_action': self.last_action.copy(),
             'policy_name': self.policy_name,
             'observation_dim': self.observation_dim,
+            'policy_backend': 'rsl',
             'body_lin_vel': self.body_lin_vel.copy(),
             'body_ang_vel': self.body_ang_vel.copy(),
             'yaw': self.yaw,
@@ -235,8 +262,10 @@ class Go2RSLControl:
         )
 
     def _infer_policy(self) -> None:
+        self.policy_inferences += 1
         position, linear_body, angular_body, gravity_body = self._root_state()
         command = base_vel_cmd()
+        self.policy_command = command.copy()
         observation = build_go2_observation(
             linear_body,
             angular_body,
@@ -252,10 +281,9 @@ class Go2RSLControl:
         )
         with torch.inference_mode():
             action = self.policy(torch.from_numpy(observation).unsqueeze(0))[0].numpy()
-        if not np.all(np.isfinite(action)):
-            raise RuntimeError('Go2 locomotion policy produced non-finite actions')
+        if action.shape != (12,) or not np.isfinite(action).all():
+            raise RuntimeError('Go2 locomotion policy produced invalid actions')
         self.last_action = action.astype(np.float32, copy=True)
         self.applied_joint_positions = (
             self.default_joint_positions + DEFAULT_ACTION_SCALE * self.last_action
         )
-

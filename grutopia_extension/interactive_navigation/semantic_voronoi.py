@@ -18,10 +18,10 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 import numpy as np
 
 from grutopia_extension.interactive_navigation.mapping import (
+    AStarMapPlanner,
     OccupancyGridMap,
     PlanningError,
     SceneGraphNode,
-    _bresenham,
 )
 
 GridCell = Tuple[int, int]
@@ -1077,17 +1077,21 @@ class VoronoiPathPlanner:
         graph: SemanticVoronoiGraph,
         attach_radius: float = 6.0,
         waypoint_spacing: float = 0.30,
+        observed_only: bool = False,
     ):
         if attach_radius <= 0 or waypoint_spacing <= 0:
             raise ValueError('attach_radius and waypoint_spacing must be positive')
         self.graph = graph
         self.attach_radius = float(attach_radius)
         self.waypoint_spacing = float(waypoint_spacing)
+        self.observed_only = observed_only
 
     def plan(self, start: Sequence[float], goal: Sequence[float]) -> Tuple[Tuple[float, float, float], ...]:
         occupancy = self.graph.occupancy
         snapshot = self.graph.cached_snapshot()
         blocked = occupancy.inflated_mask()
+        if self.observed_only:
+            blocked = blocked | ~occupancy.observed
         # The cached topology can lag behind the occupancy layer, so drop
         # skeleton cells that have become unsafe in the meantime.
         skeleton = {cell for cell in snapshot.skeleton_cells if not blocked[cell]}
@@ -1097,11 +1101,13 @@ class VoronoiPathPlanner:
         goal_cell = occupancy.world_to_cell(goal[:2])
         if start_cell is None or goal_cell is None:
             raise PlanningError('start or goal is outside map bounds')
+        if self.observed_only and (blocked[start_cell] or blocked[goal_cell]):
+            raise PlanningError('start or goal is not observed traversable space')
         resolution = float(occupancy.config.grid_resolution)
         attach_limit = max(1, int(ceil(self.attach_radius / resolution)))
         start_attach = self._attach_path(start_cell, skeleton, blocked, occupancy, attach_limit)
         goal_attach = self._attach_path(goal_cell, skeleton, blocked, occupancy, attach_limit)
-        spine = self._skeleton_path(start_attach[-1], goal_attach[-1], skeleton)
+        spine = self._skeleton_path(start_attach[-1], goal_attach[-1], skeleton, blocked)
         detach = list(reversed(goal_attach))[1:]
         cells = start_attach[:-1] + spine + detach
         cells = self._sample_along_path(cells, blocked, resolution)
@@ -1114,6 +1120,13 @@ class VoronoiPathPlanner:
             waypoints.append(goal_point)
         else:
             waypoints[-1] = goal_point
+        if self.observed_only:
+            # Check exported chords, including the exact goal, using the
+            # same unknown-space and diagonal-corner rules as grid A*.
+            checker = AStarMapPlanner(occupancy, observed_only=True)
+            route = [start_cell] + [occupancy.world_to_cell(point[:2]) for point in waypoints]
+            if any(not checker.segment_clear(a, b, blocked) for a, b in zip(route, route[1:])):
+                raise PlanningError('voronoi route crosses an unsafe corner')
         return tuple(waypoints)
 
     def _attach_path(
@@ -1134,6 +1147,10 @@ class VoronoiPathPlanner:
             for row_offset, col_offset, _cost in self._NEIGHBORS:
                 neighbor = (current[0] + row_offset, current[1] + col_offset)
                 if neighbor in parents or not occupancy.in_bounds(neighbor) or blocked[neighbor]:
+                    continue
+                if row_offset and col_offset and (
+                    blocked[current[0], neighbor[1]] or blocked[neighbor[0], current[1]]
+                ):
                     continue
                 if max(abs(neighbor[0] - cell[0]), abs(neighbor[1] - cell[1])) > max_radius_cells:
                     continue
@@ -1167,6 +1184,7 @@ class VoronoiPathPlanner:
         start: GridCell,
         goal: GridCell,
         skeleton: Set[GridCell],
+        blocked: np.ndarray,
     ) -> List[GridCell]:
         if start == goal:
             return [start]
@@ -1184,6 +1202,10 @@ class VoronoiPathPlanner:
             for row_offset, col_offset, move_cost in self._NEIGHBORS:
                 neighbor = (current[0] + row_offset, current[1] + col_offset)
                 if neighbor not in skeleton:
+                    continue
+                if row_offset and col_offset and (
+                    blocked[current[0], neighbor[1]] or blocked[neighbor[0], current[1]]
+                ):
                     continue
                 new_cost = cost_so_far[current] + move_cost
                 if new_cost >= cost_so_far.get(neighbor, float('inf')):
@@ -1213,6 +1235,7 @@ class VoronoiPathPlanner:
             return cells
         spacing = max(resolution, self.waypoint_spacing)
         sampled = [cells[0]]
+        checker = AStarMapPlanner(self.graph.occupancy, observed_only=True)
         index = 0
         while index < len(cells) - 1:
             next_index = index
@@ -1222,9 +1245,7 @@ class VoronoiPathPlanner:
                 next_index += 1
             # Guard the short chord against the inflated mask; adjacent path
             # cells are always safe, so the fallback terminates.
-            while next_index > index + 1 and any(
-                blocked[cell] for cell in _bresenham(cells[index], cells[next_index])
-            ):
+            while next_index > index + 1 and not checker.segment_clear(cells[index], cells[next_index], blocked):
                 next_index -= 1
             sampled.append(cells[next_index])
             index = next_index

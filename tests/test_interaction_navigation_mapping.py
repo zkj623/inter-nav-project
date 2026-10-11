@@ -26,6 +26,67 @@ from grutopia_extension.interactive_navigation.state_machine import (
 
 
 class InteractionNavigationMappingTest(unittest.TestCase):
+    def test_ray_budget_preserves_nearest_thin_obstacle_before_flattening(self):
+        config = MappingConfig(
+            x_limits=(0.0, 8.0), y_limits=(-2.0, 2.0),
+            grid_resolution=0.1, robot_radius=0.1, max_lidar_rays=2,
+        )
+        # An input-point sampler retaining only first/last returns misses the
+        # leg. Reversing the frame must not change the resulting occupancy.
+        frame = np.array([[6.5, 0.0, 0.5], [2.5, 0.0, 0.5], [6.5, 0.0, 0.0]])
+        maps = []
+        for points in (frame, frame[::-1]):
+            occupancy = OccupancyGridMap(config)
+            occupancy.update_lidar((0.5, 0.0, 0.5), points, max_range=8.0)
+            self.assertTrue(occupancy.occupied_mask()[occupancy.world_to_cell((2.5, 0.0))])
+            self.assertFalse(occupancy.observed[occupancy.world_to_cell((4.5, 0.0))])
+            maps.append(occupancy.log_odds)
+        np.testing.assert_array_equal(*maps)
+
+
+    def test_offset_lidar_does_not_clear_a_robot_footprint_around_sensor(self):
+        occupancy = OccupancyGridMap(MappingConfig(
+            x_limits=(0.0, 3.0), y_limits=(-1.0, 1.0), robot_radius=0.3,
+        ))
+        # Sensor is 24 cm ahead of the base. A measured obstacle 26 cm ahead
+        # of the sensor is outside the base footprint and must remain blocked.
+        occupancy.update_lidar((0.75, 0.0, 0.5), np.array([[1.01, 0.0, 0.5]]), max_range=8.0)
+        occupancy.mark_free((0.51, 0.0), radius=0.3)
+        self.assertTrue(occupancy.occupied_mask()[occupancy.world_to_cell((1.01, 0.0))])
+
+
+    def test_same_frame_hit_wins_over_crossing_free_ray(self):
+        config = MappingConfig(x_limits=(0, 6), y_limits=(-3, 3), sticky_free_scale=0.25)
+        points = np.array([[0.35, 0.04, 0.5], [5, 0.1, 0]])
+        for frame in (points, points[::-1]):
+            occupancy = OccupancyGridMap(config)
+            occupancy.update_lidar((0.05, 0.05, 0.5), frame, max_range=8)
+            cell = occupancy.world_to_cell((0.35, 0.04))
+            self.assertAlmostEqual(occupancy.log_odds[cell], config.occupied_update, places=5)
+
+
+    def test_lidar_frame_density_does_not_override_history(self):
+        config = MappingConfig(x_limits=(0, 6), y_limits=(-3, 3), sticky_free_scale=0.25)
+        origin = (0.05, 0.05, 0.5)
+        angles = np.linspace(-0.16, 0.16, 80)
+        for radius, height, initial, expected in [(5, 0, 4, 3.925), (0.3, 0.5, -4, -3.15)]:
+            with self.subTest(height=height):
+                occupancy = OccupancyGridMap(config)
+                cell = occupancy.world_to_cell((0.35, 0.05))
+                occupancy.log_odds[cell] = initial
+                occupancy.observed[cell] = True
+                points = np.column_stack((
+                    origin[0] + radius * np.cos(angles),
+                    origin[1] + radius * np.sin(angles), np.full(len(angles), height),
+                ))
+                occupancy.update_lidar(origin, points, max_range=8)
+                self.assertAlmostEqual(occupancy.log_odds[cell], expected, places=5)
+                # New independent frames can still correct historical evidence.
+                for _ in range(60):
+                    occupancy.update_lidar(origin, points, max_range=8)
+                self.assertEqual(bool(occupancy.occupied_mask()[cell]), height > 0)
+
+
     def test_same_frame_semantic_sources_are_deduplicated(self):
         detections = _deduplicate_semantic_detections(
             (

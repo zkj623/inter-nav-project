@@ -63,6 +63,7 @@ class Go2NavigationRunConfig:
     video_fps: float = 12.0
     map_output: str = ''
     goal_index: int = 0
+    prefer_voronoi_paths: bool = True
     policy_path: str = DEFAULT_GO2_POLICY_PATH
     robot_usd_path: str = DEFAULT_GO2_USD_PATH
     generate_fallback_asset: bool = True
@@ -74,8 +75,11 @@ class Go2NavigationRunConfig:
     rendering_interval: int = 4
     # Keep physics state in Fabric instead of writing USD back every step.
     use_fabric: bool = False
+    material_mode: str | None = None
 
     def __post_init__(self):
+        if self.material_mode not in (None, 'original', 'preview', 'simple'):
+            raise ValueError('material_mode must be original, preview, or simple')
         if self.gpu < 0:
             raise ValueError('gpu cannot be negative')
         if self.max_steps <= 0 or self.mapping_warmup_steps < 0:
@@ -123,9 +127,12 @@ class Go2SemanticExplorationRunConfig:
     qwen_python: str = os.environ.get('QWEN3_PYTHON', 'python'),
     rendering_interval: int = 4
     use_fabric: bool = False
+    material_mode: str | None = None
     verify_voronoi_incremental: bool = False
 
     def __post_init__(self):
+        if self.material_mode not in (None, 'original', 'preview', 'simple'):
+            raise ValueError('material_mode must be original, preview, or simple')
         if not self.target_query.strip():
             raise ValueError('target_query cannot be empty')
         if self.semantic_classifier not in ('qwen-vl', 'clip'):
@@ -182,6 +189,13 @@ def build_go2_navigation_config(
             use_fabric=run.use_fabric,
         ),
         task_config=SingleInferenceTaskCfg(
+            task_settings={
+                'navigation_scene': {
+                    'material_mode': run.material_mode or (
+                        'preview' if profile.apply_koostruct_material_fallbacks else 'original'
+                    ),
+                },
+            } if profile.scene_asset_path else None,
             episodes=[
                 SingleInferenceEpisodeCfg(
                     scene_asset_path=profile.scene_asset_path,
@@ -219,25 +233,6 @@ def run_go2_point_navigation(
         import_extensions(('controllers', 'objects', 'robots', 'sensors', 'tasks'))
         env = Env(runtime)
         robot_observation, _ = env.reset()
-        if profile.apply_koostruct_material_fallbacks:
-            from omni.isaac.core.utils.stage import get_current_stage
-
-            from grutopia_extension.interactive_navigation.material_fallback import (
-                apply_koostruct_material_fallbacks,
-            )
-
-            print(
-                json.dumps(
-                    {
-                        'event': 'material_fallback',
-                        **apply_koostruct_material_fallbacks(
-                            get_current_stage()
-                        ),
-                    }
-                ),
-                flush=True,
-            )
-
         from omni.isaac.core.utils.prims import get_prim_at_path
         from omni.isaac.core.utils.semantics import add_update_semantics
 
@@ -250,6 +245,7 @@ def run_go2_point_navigation(
         component = PointNavigationComponent(
             PointNavigationConfig(
                 goal=profile.goals[run.goal_index],
+                prefer_voronoi_paths=run.prefer_voronoi_paths,
                 mapping=profile.mapping,
                 max_steps=run.max_steps,
                 success_distance=profile.success_distance,
@@ -477,6 +473,7 @@ def run_go2_semantic_exploration(
                     ground_height=run.ground_height,
                     rendering_interval=run.rendering_interval,
                     use_fabric=run.use_fabric,
+                    material_mode=run.material_mode,
                 ),
                 objects=objects,
             ),
@@ -488,22 +485,6 @@ def run_go2_semantic_exploration(
         import_extensions(('controllers', 'objects', 'robots', 'sensors', 'tasks'))
         env = Env(runtime)
         robot_observation, _ = env.reset()
-        if profile.apply_koostruct_material_fallbacks:
-            from omni.isaac.core.utils.stage import get_current_stage
-
-            from grutopia_extension.interactive_navigation.material_fallback import (
-                apply_koostruct_material_fallbacks,
-            )
-
-            print(
-                json.dumps(
-                    {
-                        'event': 'material_fallback',
-                        **apply_koostruct_material_fallbacks(get_current_stage()),
-                    }
-                ),
-                flush=True,
-            )
         active_task = next(iter(env.runner.current_tasks.values()))
         active_robot = next(iter(active_task.robots.values()))
         _label_go2_and_household_semantics(profile, active_robot.config.prim_path)
@@ -629,6 +610,11 @@ def run_go2_semantic_exploration(
             }
         for step in range(run.max_steps):
             last_step = step
+            if run.record_dir and (Path(run.record_dir) / 'STOP').exists():
+                stop_reason = 'stop_requested'
+                result_code = 130
+                print(json.dumps({'event': 'stop_requested', 'step': step}), flush=True)
+                break
             t0 = time.perf_counter() if timing is not None else 0.0
             sensor_rig.update(
                 step,
@@ -1089,6 +1075,7 @@ def _apply_high_friction_material(prim_path: str) -> None:
     from omni.isaac.core.materials import PhysicsMaterial
     from omni.isaac.core.prims import GeometryPrim
     from omni.isaac.core.utils.prims import is_prim_path_valid
+    from pxr import PhysxSchema
 
     if not is_prim_path_valid(prim_path):
         return
@@ -1098,4 +1085,15 @@ def _apply_high_friction_material(prim_path: str) -> None:
         dynamic_friction=1.0,
         restitution=0.0,
     )
-    GeometryPrim(prim_path=prim_path).apply_physics_material(material)
+    floor = GeometryPrim(prim_path=prim_path)
+    floor.apply_physics_material(material)
+    # FixedCuboid defaults to 1.0/0.8 m torsional patches. Those are much
+    # larger than Go2's feet and resist yaw even with correct joint control.
+    # Keep ordinary contact friction without that artificial torsional patch.
+    collision = PhysxSchema.PhysxCollisionAPI.Apply(floor.prim)
+    collision.CreateTorsionalPatchRadiusAttr(0.0)
+    collision.CreateMinTorsionalPatchRadiusAttr(0.0)
+    print(json.dumps({'event': 'go2_floor_contact', 'prim_path': prim_path,
+                      'static_friction': 1.0, 'dynamic_friction': 1.0,
+                      'torsional_patch_radius': collision.GetTorsionalPatchRadiusAttr().Get(),
+                      'min_torsional_patch_radius': collision.GetMinTorsionalPatchRadiusAttr().Get()}), flush=True)

@@ -37,6 +37,7 @@ class PointNavigationConfig:
     rgb_clears_free_space: bool = False
     replan_only_if_blocked: bool = True
     replan_lookahead_distance: float = 2.0
+    prefer_voronoi_paths: bool = False
     use_planner: bool = True
     velocity_control: bool = False
     max_forward_speed: float = 0.75
@@ -100,6 +101,9 @@ class PointNavigationComponent:
             lidar_interval=config.lidar_interval,
             rgb_interval=config.rgb_interval,
             use_planner=config.use_planner,
+            use_semantic_voronoi=config.prefer_voronoi_paths,
+            prefer_voronoi_paths=config.prefer_voronoi_paths,
+            safe_path_tracking=config.prefer_voronoi_paths,
             use_scene_graph=config.use_scene_graph,
             safe_base_height=config.safe_base_height,
             replan_interval_steps=config.replan_interval_steps,
@@ -158,11 +162,14 @@ class PointNavigationComponent:
         distance = float(np.linalg.norm(np.asarray(position[:2]) - np.asarray(self.goal[:2])))
         status = PointNavigationStatus.RUNNING
         failure_reason = None
-        if distance <= self.config.success_distance:
+        if distance <= self.config.success_distance and not self.mapping.buffer_recovery_active:
             status = PointNavigationStatus.SUCCEEDED
         elif position[2] < self.config.fall_height:
             status = PointNavigationStatus.FAILED
             failure_reason = 'robot_fell'
+        elif self.mapping.buffer_recovery_failed:
+            status = PointNavigationStatus.FAILED
+            failure_reason = 'buffer_exit_timeout'
         elif step + 1 >= self.config.max_steps:
             status = PointNavigationStatus.FAILED
             failure_reason = 'global_step_limit'
