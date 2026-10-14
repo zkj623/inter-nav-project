@@ -30,6 +30,7 @@ def _component(target='carry object', frontier_selection_interval=1, perception=
     return SemanticExplorationComponent(
         SemanticExplorationConfig(
             target_query=target,
+            require_visual_scan=False,
             mapping=MappingConfig(
                 x_limits=(0.0, 5.0),
                 y_limits=(0.0, 4.0),
@@ -407,7 +408,7 @@ class SemanticExplorationComponentTest(unittest.TestCase):
         observation = {'position': (1.0, 1.5, 0.4), 'orientation': (1.0, 0.0, 0.0, 0.0), 'sensors': {}}
         component.update(0, observation)
         progress = component.progress_event(0, observation)
-        self.assertLessEqual(len(progress), 7)
+        self.assertLessEqual(len(progress), 8)
         self.assertNotIn('statistics', progress)
         self.assertGreater(progress['goal_distance_m'], component.config.target_distance)
 

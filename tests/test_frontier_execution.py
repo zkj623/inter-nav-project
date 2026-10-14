@@ -20,7 +20,7 @@ from grutopia_extension.interactive_navigation.mapping import SemanticDetection
 
 def component():
     result = SemanticExplorationComponent(SemanticExplorationConfig(
-        target_query='fire hydrant', semantic_detection_mode='isaac',
+        target_query='fire hydrant', semantic_detection_mode='isaac', require_visual_scan=False,
         mapping=MappingConfig(x_limits=(0., 5.), y_limits=(0., 4.), grid_resolution=.1,
                               robot_radius=.1, safe_recovery_y_limits=(.1, 3.9)),
         voronoi=SemanticVoronoiConfig(spur_length=0), frontier_selection_interval=10,
@@ -265,3 +265,184 @@ def test_blocked_physical_start_stops_and_reports_timeout():
     result = c.evaluate(5, observation())
     assert result.terminal and not result.success
     assert result.failure_reason == 'buffer_exit_timeout'
+
+
+def visual_scan_component():
+    from dataclasses import replace
+    c = component()
+    c.config = replace(c.config, require_visual_scan=True)
+    c.current_goal = c.current_frontier_id = None
+    c._begin_frontier_scan()
+    c.mapping.map.lidar_frames += 8
+    return c
+
+
+def camera_observation(yaw, frame):
+    obs = observation()
+    obs['sensors']['lidar'] = dict(horizontal_fov=360, rotation_frequency=0)
+    obs['sensors']['camera'] = dict(
+        orientation=(np.cos(yaw/2), 0., 0., np.sin(yaw/2)),
+        horizontal_fov_degrees=96., rendering_frame=frame,
+    )
+    return obs
+
+
+def test_geometric_refresh_does_not_require_a_camera_panorama():
+    c = visual_scan_component()
+    with patch.object(c.mapping, 'update'):
+        c.update(2, camera_observation(0., 1))
+    assert c._frontier_phase == 'select'
+    assert c.visual_memory.frames == 0
+
+
+def test_camera_memory_only_accepts_processed_distinct_frames_while_navigating():
+    from dataclasses import replace
+    c = component()
+    c.config = replace(c.config, require_visual_scan=True)
+    obs = camera_observation(0., 1)
+    obs['sensors']['camera'].update(position=(1., 1.5, .7), pointcloud=np.array([[2., 1.5, .7]]))
+    with patch.object(c.mapping, 'update'):
+        c.update(2, obs)
+        assert c.visual_memory.frames == 0
+        c.mapping.map.rgb_frames += 1
+        c.update(3, obs)
+        assert c.visual_memory.frames == 1
+        c.mapping.map.rgb_frames += 1
+        c.update(4, obs)
+        assert c.visual_memory.frames == 1
+        assert c._frontier_phase == 'navigate'
+
+
+def test_scan_and_recovery_reuse_surface_memory():
+    c = visual_scan_component()
+    c.visual_memory.seen[10, 10] = 7
+    c._fail_frontier('start_in_clearance_buffer', preserve_camera=True)
+    c._begin_frontier_scan()
+    assert c.visual_memory.seen[10, 10] == 7
+
+
+def test_failed_route_refreshes_geometry_without_repeating_panorama():
+    c = visual_scan_component()
+    c._frontier_phase = 'navigate'
+    c._fail_frontier('path_unreachable')
+    assert not c._scan_visual_required
+    obs = camera_observation(0., 1)
+    with patch.object(c.mapping, 'update'):
+        c.mapping.map.lidar_frames += 8
+        c.update(20, obs)
+    assert c._frontier_phase != 'scan'
+    c._begin_frontier_scan()  # arrival at a new observation point
+    assert c._scan_visual_required
+
+
+def test_recovery_completed_in_action_still_resumes_frontier_updates():
+    c = component()
+    c.current_goal = c.current_frontier_id = None
+    c._frontier_phase = 'clear_start'
+    c._scan_visual_required = False
+    c.mapping.buffer_recovery_active = False
+    with patch.object(c.mapping, 'update'), patch.object(c.mapping, 'update_buffer_recovery', return_value=False):
+        c.update(20, observation())
+    assert c._frontier_phase == 'scan'
+    assert c.frontier_history[-1]['kind'] == 'start_cleared'
+    assert not c._scan_visual_required
+
+
+def test_route_observation_keeps_goal_and_excludes_scan_from_motion_timeout():
+    from dataclasses import replace
+    from grutopia_extension.interactive_navigation.visual_observation import LookDirection
+    c = component()
+    c.config = replace(c.config, require_visual_scan=True, visual_scan_spacing=.5,
+                       frontier_progress_timeout=3, visual_observation_budget=50)
+    goal = c.current_goal
+    c._last_visual_scan_position = (0., 0., .5)
+    with patch.object(c.mapping, 'update'), patch.object(c.visual_memory, 'best_direction', return_value=LookDirection(.7, .5)):
+        c.update(20, observation())
+        assert c._frontier_phase == 'scan' and c.current_goal == goal
+        assert c.action(20, observation())['move_by_speed'] == [0., 0., .5]
+        c.mapping.map.lidar_frames += 8
+        c.update(70, observation())
+    assert c._frontier_phase == 'navigate' and c.current_goal == goal
+    assert not c.planner.failure_counts
+    assert c._frontier_progress_step == c._frontier_steps
+    assert any(e.get('reason') == 'budget' for e in c.frontier_history)
+
+
+def test_distance_without_visual_gain_does_not_interrupt_navigation():
+    from dataclasses import replace
+    c = component()
+    c.config = replace(c.config, require_visual_scan=True)
+    c._last_visual_scan_position = (0., 0., .5)
+    with patch.object(c.mapping, 'update'), patch.object(c.visual_memory, 'best_direction', return_value=None):
+        c.update(20, observation(1.2))
+    assert c._frontier_phase == 'navigate'
+
+
+def test_frontier_arrival_just_after_a_look_does_not_repeat_it():
+    from dataclasses import replace
+    c = component()
+    c.config = replace(c.config, require_visual_scan=True)
+    goal, key = c.current_goal, c.current_frontier_id
+    c._last_visual_scan_position = (goal[0] - .35, goal[1], .5)
+    obs = observation(*goal[:2])
+    obs['sensors']['lidar'] = dict(horizontal_fov=360, rotation_frequency=0)
+    with patch.object(c.mapping, 'update'), patch.object(c.visual_memory, 'best_direction') as choose:
+        c.update(2, obs)
+        c.mapping.map.lidar_frames += 8
+        c.update(3, obs)
+        choose.assert_not_called()
+    assert c._frontier_phase == 'select'
+    assert c.current_goal is None and c.planner.visit_counts[key] == 1
+
+
+def test_look_completion_needs_two_fresh_camera_frames_not_body_yaw():
+    from grutopia_extension.interactive_navigation.visual_observation import LookDirection
+    c = visual_scan_component()
+    c._scan_look = LookDirection(.5, .5)
+    obs = camera_observation(.5, 1)
+    obs['sensors']['camera'].update(position=(1., 1.5, .7), pointcloud=np.array([[2., 2., .7]]))
+    with patch.object(c.mapping, 'update'):
+        c.mapping.map.rgb_frames += 1
+        c.update(2, obs)
+        assert c._frontier_phase == 'scan'
+        c.mapping.map.rgb_frames += 1
+        c.update(3, obs)
+        assert c._frontier_phase == 'scan'  # same rendered image
+        obs['sensors']['camera']['rendering_frame'] = 2
+        c.mapping.map.rgb_frames += 1
+        c.update(4, obs)
+    assert c._frontier_phase == 'select'
+    assert any(e.get('reason') == 'observed' for e in c.frontier_history)
+
+
+def test_arrival_lidar_refresh_finishes_braking_on_checked_route():
+    c = component()
+    c.mapping.voronoi_planner = None
+    c.current_goal = (2., 1.5, .5)
+    obs = observation(1.75, 1.5)
+    c.update(2, obs)
+    assert c.current_goal is None and c._pending_visit is not None
+    c._full_scan_lidar = True
+    first = c.action(2, obs)['move_by_speed']
+    assert first[0] > 0 and abs(first[1]) < 1e-9
+    nearer = c.action(3, observation(1.85, 1.5))['move_by_speed']
+    assert 0 < nearer[0] < first[0]
+    assert c._frontier_phase == 'scan' and c.current_goal is None
+    # The refresh must retain the same collision-checked tracking contract.
+    with patch.object(c.mapping, '_tracking_segment_clear', return_value=False):
+        assert c.action(4, observation(1.85, 1.5))['move_by_speed'] == [0., 0., 0.]
+
+
+def test_visual_look_and_partial_lidar_scan_still_stop_translation():
+    from grutopia_extension.interactive_navigation.visual_observation import LookDirection
+
+    for full_lidar, look in [(False, None), (True, LookDirection(.7, .5))]:
+        c = component()
+        c.current_goal = (2., 1.5, .5)
+        obs = observation(1.75, 1.5)
+        c.update(2, obs)
+        c._full_scan_lidar = full_lidar
+        c._scan_look = look
+        command = c.action(2, obs)['move_by_speed']
+        assert command[:2] == [0., 0.]
+        assert command[2] != 0

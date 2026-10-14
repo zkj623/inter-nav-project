@@ -67,7 +67,7 @@ def build_run_summary(
     goal = None if goal is None else [float(value) for value in goal]
     node = None if component is None else component.target_node
     confirmed = False if component is None else component.target_confirmed
-    threshold = None if component is None else float(component.config.target_distance)
+    threshold = None if component is None else float(component.config.target_approach_tolerance)
     target_distance = (
         None if position is None or node is None
         else math.dist(position[:2], node.position[:2])

@@ -57,6 +57,7 @@ class NavigationSensorRig:
         # and the reported camera transform then describe the same rendered pose.
         if force_capture or self._cached_data is None or step % self.rgb_interval == 0:
             self._cached_data = self.camera.get_data()
+            self._cached_data['capture_step'] = step
             if self._cached_data.get('depth') is not None:
                 self.frames += 1
         robot_observation.setdefault('sensors', {})['camera'] = self._cached_data

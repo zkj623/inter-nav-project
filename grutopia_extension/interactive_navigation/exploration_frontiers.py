@@ -133,6 +133,29 @@ def frontier_goals(occupancy, snapshot, position, excluded, redundancy_radius=1.
     return sorted(goals, key=lambda item: (-item.score, item.distance, item.key))
 
 
+def target_approach_goal(occupancy, target, position, distances, max_distance, excluded=()):
+    """Choose a nearby goal in the robot's observed, collision-free component.
+
+    Target geometry is not a navigable endpoint. Search around it rather than
+    snapping one radial offset to the closest free (possibly isolated) cell.
+    """
+    standoff = max(0.3, occupancy.config.robot_radius + 0.20)
+    outer = max(standoff, max_distance)
+    target = np.asarray(target[:2], dtype=float)
+    candidates = []
+    for cell, path_distance in distances.items():
+        if cell in excluded:
+            continue
+        xy = np.asarray(occupancy.cell_to_world(cell))
+        separation = float(np.linalg.norm(xy - target))
+        if standoff <= separation <= outer:
+            cost = path_distance + 2.0 * abs(separation - standoff)
+            candidates.append((cost, cell, xy))
+    if not candidates:
+        return None
+    _, _, xy = min(candidates, key=lambda item: (item[0], item[1]))
+    return (float(xy[0]), float(xy[1]), float(position[2]))
+
 
 def buffer_exit_goal(occupancy, position, preferred=None):
     """Leave a planning buffer without dropping below the starting clearance.

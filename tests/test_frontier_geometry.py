@@ -12,7 +12,7 @@ from grutopia_extension.interactive_navigation.semantic_exploration_component im
 
 def component():
     return SemanticExplorationComponent(SemanticExplorationConfig(
-        target_query='fire hydrant', semantic_detection_mode='isaac', enable_target_cues=False,
+        target_query='fire hydrant', semantic_detection_mode='isaac', require_visual_scan=False, enable_target_cues=False,
         mapping=MappingConfig(x_limits=(0, 6), y_limits=(0, 5), grid_resolution=.1,
                               robot_radius=.1, obstacle_inflation_radius=.1),
         frontier_selection_interval=1, topology_update_interval=1))
@@ -200,3 +200,90 @@ def test_buffer_exit_never_uses_unknown_space_or_decreases_clearance():
         assert clearance[cell] >= clearance[start_cell]
     occ.observed[:, 4:] = False
     assert buffer_exit_goal(occ, start, preferred=goal) is None
+
+
+def target_component():
+    from dataclasses import replace
+    from grutopia_extension.interactive_navigation.mapping import SemanticDetection
+    c = SemanticExplorationComponent(replace(component().config, target_distance=1.1))
+    c.mapping.map.occupancy.observed[:] = True
+    c.mapping.map.scene_graph.update_detections([
+        SemanticDetection('fire hydrant', (3., 2., .5), step=i) for i in range(8)
+    ])
+    return c
+
+
+def test_target_approach_avoids_isolated_free_island():
+    c = target_component()
+    occ = c.mapping.map.occupancy
+    occ.observed[:] = False
+    occ.observed[:, :22] = True
+    occ.observed[15:25, 25:35] = True
+    obs = observation(1., 2.)
+    c.update(0, obs)
+    assert c.target_confirmed
+    assert c.current_goal[0] < 2.2
+    AStarMapPlanner(occ, observed_only=True).plan(obs['position'], c.current_goal)
+
+
+def test_target_goal_reselected_when_inflated_and_then_kept_stable():
+    c = target_component()
+    obs = observation(1., 2.)
+    c.update(0, obs)
+    old = c.current_goal
+    occ = c.mapping.map.occupancy
+    occ.static_occupied[occ.world_to_cell(old[:2])] = True
+    c.update(1, obs)
+    assert c.current_goal is not None and c.current_goal != old
+    AStarMapPlanner(occ, observed_only=True).plan(obs['position'], c.current_goal)
+    goal = c.current_goal
+    c.update(2, observation(1.1, 2.))
+    assert c.current_goal == goal
+
+
+def test_free_target_goal_reselected_after_route_is_disconnected():
+    c = target_component()
+    obs = observation(1., 2.)
+    c.update(0, obs)
+    old = c.current_goal
+    occ = c.mapping.map.occupancy
+    occ.observed[:, 22:25] = False
+    assert occ.observed[occ.world_to_cell(old[:2])]
+    c.update(1, obs)
+    assert c.current_goal != old and c.current_goal[0] < 2.2
+
+
+def test_target_planning_failure_reselects_without_discarding_target():
+    c = target_component()
+    obs = observation(1., 2.)
+    c.update(0, obs)
+    old, node = c.current_goal, c.target_node.node_id
+    def fail(*args, **kwargs):
+        c.mapping.planning_failures += 1
+        return {'move_by_speed': [0., 0., 0.]}
+    with patch.object(c.mapping, 'point_navigation_action', side_effect=fail):
+        c.action(0, obs)
+    assert c.current_goal is None
+    c.update(1, obs)
+    assert c.current_goal is not None and c.current_goal != old
+    assert c.target_node.node_id == node and c.target_confirmed
+
+
+def test_unreachable_target_has_no_fabricated_goal_or_false_arrival():
+    c = target_component()
+    c.mapping.map.occupancy.observed[:, 15:] = False
+    obs = observation(1., 2.)
+    c.update(0, obs)
+    assert c.target_confirmed and c.current_goal is None
+    assert c.action(0, obs) == c.warmup_action()
+    assert not c.evaluate(0, obs).success
+
+
+def test_target_arrival_requires_reaching_new_approach_point():
+    c = target_component()
+    obs = observation(1., 2.)
+    c.update(0, obs)
+    gx, gy, _ = c.current_goal
+    assert not c.evaluate(1, observation(gx-.6, gy)).success
+    result = c.evaluate(2, observation(gx-.2, gy))
+    assert result.success and result.arrival_threshold == .3

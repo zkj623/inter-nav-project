@@ -80,6 +80,7 @@ class FollowingRobotCamera:
         self._smoothed_position = None
         self._smoothed_yaw = None
         self.enable_depth = bool(enable_depth)
+        self.horizontal_fov_degrees = float(horizontal_fov_degrees)
         self.camera = Camera(
             prim_path=prim_path,
             resolution=resolution,
@@ -137,6 +138,8 @@ class FollowingRobotCamera:
         position, orientation = self.camera.get_world_pose(camera_axes='world')
         data = {
             'rgba': self.camera.get_rgba(),
+            'rendering_frame': frame.get('rendering_frame'),
+            'horizontal_fov_degrees': self.horizontal_fov_degrees,
             'bounding_box_2d_tight': frame.get('bounding_box_2d_tight'),
             'position': np.asarray(position, dtype=np.float32),
             'orientation': np.asarray(orientation, dtype=np.float32),

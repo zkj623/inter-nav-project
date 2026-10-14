@@ -17,7 +17,10 @@ from grutopia_extension.interactive_navigation.semantic_voronoi import SemanticV
 from grutopia_extension.interactive_navigation.semantic_exploration import (
     AdaptiveExplorationPlanner, ExplorationConfig, ExplorationDecision,
 )
-from grutopia_extension.interactive_navigation.exploration_frontiers import frontier_goals, local_unknown
+from grutopia_extension.interactive_navigation.visual_observation import VisualObservationMemory, angle_error
+from grutopia_extension.interactive_navigation.exploration_frontiers import (
+    frontier_goals, local_unknown, reachable_distances, target_approach_goal,
+)
 
 
 class SemanticExplorationStatus(str, Enum):
@@ -33,7 +36,9 @@ class SemanticExplorationConfig:
     exploration: ExplorationConfig = field(default_factory=ExplorationConfig)
     voronoi: SemanticVoronoiConfig = field(default_factory=SemanticVoronoiConfig)
     max_steps: int = 12_000
+    # Object standoff search radius and endpoint arrival tolerance are distinct.
     target_distance: float = 0.70
+    target_approach_tolerance: float = 0.30
     frontier_reached_distance: float = 0.30
     fall_height: float = 0.12
     safe_base_height: float = 0.22
@@ -54,6 +59,9 @@ class SemanticExplorationConfig:
     frontier_progress_timeout: int = 600
     frontier_goal_timeout: int = 4000
     frontier_scan_timeout: int = 2400
+    require_visual_scan: bool = True
+    visual_scan_spacing: float = 1.0
+    visual_observation_budget: int = 480
     frontier_progress_distance: float = 0.15
     max_forward_speed: float = 0.80
     max_lateral_speed: float = 0.20
@@ -82,6 +90,7 @@ class SemanticExplorationConfig:
             'frontier_progress_timeout',
             'frontier_goal_timeout',
             'frontier_scan_timeout',
+            'visual_observation_budget',
             'target_cue_stale_steps',
             'target_cue_navigation_steps',
             'target_cue_observe_steps',
@@ -89,7 +98,10 @@ class SemanticExplorationConfig:
         ):
             if getattr(self, name) <= 0:
                 raise ValueError(f'{name} must be positive')
-        for name in ('target_distance', 'frontier_reached_distance', 'safe_base_height', 'frontier_progress_distance'):
+        for name in (
+            'target_distance', 'target_approach_tolerance', 'frontier_reached_distance',
+            'safe_base_height', 'frontier_progress_distance', 'visual_scan_spacing',
+        ):
             if getattr(self, name) <= 0:
                 raise ValueError(f'{name} must be positive')
         if not 0.0 < self.target_confirmation_min_label_fraction <= 1.0:
@@ -176,6 +188,7 @@ class SemanticExplorationComponent:
         self.last_decision: Optional[ExplorationDecision] = None
         self._last_selection_step = -config.frontier_selection_interval
         self._frontier_phase = 'scan'
+        self._scan_visual_required = True
         self._frontier_failure = None
         self._frontier_paused = False
         self._frontier_steps = 0
@@ -185,6 +198,14 @@ class SemanticExplorationComponent:
         self._scan_started = 0
         self._scan_frames = self.mapping.map.lidar_frames
         self._full_scan_lidar = False
+        self.visual_memory = VisualObservationMemory(self.mapping.map.occupancy)
+        self._visual_rgb_frames = self.mapping.map.rgb_frames
+        self._new_visual_frame = False
+        self._scan_look = None
+        self._look_started = 0
+        self._look_aligned_frames = 0
+        self._last_visual_scan_position = None
+        self._visual_check_step = -config.topology_update_interval
         self._observed_frontiers = {}
         self._pending_visit = None
         self._minimum_base_up = 1.0
@@ -193,6 +214,9 @@ class SemanticExplorationComponent:
         self.current_frontier_id: Optional[str] = None
         self.target_node: Optional[SceneGraphNode] = None
         self.target_navigation_position: Optional[Tuple[float, float, float]] = None
+        self._approach_target_id = None
+        self._approach_failed_cells = set()
+        self._approach_check_step = -config.topology_update_interval
         self.decision_history = []
         self._target_embedding = None
         self._target_embedding_attempted = False
@@ -264,8 +288,15 @@ class SemanticExplorationComponent:
 
     def update(self, step: int, robot_observation: dict):
         self.mapping.update(step, robot_observation)
+        self._new_visual_frame = False
+        if self.config.require_visual_scan and self.mapping.map.rgb_frames != self._visual_rgb_frames:
+            self._visual_rgb_frames = self.mapping.map.rgb_frames
+            self._new_visual_frame = self.visual_memory.observe(
+                robot_observation.get('sensors', {}).get('camera', {}))
         position = _position(robot_observation)
         self._trajectory.append(position)
+        if self._last_visual_scan_position is None:
+            self._last_visual_scan_position = position
         delta = 1 if self._last_update_step is None else step - self._last_update_step
         if delta <= 0:
             raise ValueError('update steps must increase strictly')
@@ -320,7 +351,7 @@ class SemanticExplorationComponent:
             and self.target_node is not None
             and not self.target_confirmed
             and self.target_navigation_position is not None
-            and _distance_xy(position, self.target_navigation_position) <= self.config.target_distance
+            and _distance_xy(position, self.target_navigation_position) <= self.config.target_approach_tolerance
         ):
             # An embedding match is a place to investigate, not proof that
             # the named object was found. Continue exploring after reaching it.
@@ -332,11 +363,7 @@ class SemanticExplorationComponent:
         if self.target_node is not None:
             if self.target_cue is not None:
                 self._finish_target_cue(step, 'semantic_target_selected', cooldown=False)
-            if self.target_navigation_position is None:
-                self.target_navigation_position = self._target_approach_position(
-                    self.target_node,
-                    position,
-                )
+            self._refresh_target_approach(step, position)
             self._pause_frontier()
             self.current_goal = self.target_navigation_position
             self.current_frontier_id = None
@@ -372,21 +399,44 @@ class SemanticExplorationComponent:
             self.mapping.invalidate_path()
             self._frontier_event('paused')
 
-    def _begin_frontier_scan(self):
+    def _begin_frontier_scan(self, visual=True):
+        self._scan_visual_required = visual
         self._frontier_phase = 'scan'
         self._scan_angle = 0.0
         self._scan_started = self._frontier_steps
         self._scan_frames = self.mapping.map.lidar_frames
+        # Surface evidence survives navigation, arrivals and short recoveries.
+        # A fresh geometric refresh may offer one useful look, never a panorama.
+        self._scan_look = None
+        self._look_aligned_frames = 0
         self.mapping.invalidate_path()
 
-    def _fail_frontier(self, reason):
+    def _start_visual_look(self, position):
+        if (not self.config.require_visual_scan
+                or _distance_xy(position, self._last_visual_scan_position) < self.config.visual_scan_spacing):
+            return False
+        look = self.visual_memory.best_direction(position)
+        if look is None:
+            return False
+        self._scan_look = look
+        self._look_started = self._frontier_steps
+        self._look_aligned_frames = 0
+        self._last_visual_scan_position = position
+        self._frontier_event('visual_observation_started', yaw=look.yaw, gain=look.gain,
+                             position=list(position))
+        return True
+
+    def _fail_frontier(self, reason, preserve_camera=False):
         if self.current_frontier_id is not None:
             key = self.current_frontier_id
             self.planner.record_failure(key)
             self._frontier_event('execution_failed', goal=key, reason=reason,
                                  attempts=self.planner.failure_counts[key])
         self.current_goal = self.current_frontier_id = self._pending_visit = None
-        self._begin_frontier_scan()
+        # Route failure needs fresh geometry and another goal, not another
+        # panorama. Buffer recovery may retry a useful local observation.
+        visual = preserve_camera and self._frontier_phase == 'scan' and self._scan_visual_required
+        self._begin_frontier_scan(visual=visual)
 
     def _finish_frontier(self, reason):
         self._frontier_failure = reason
@@ -401,16 +451,27 @@ class SemanticExplorationComponent:
         recovering = self.mapping.buffer_recovery_active
         if self.mapping.update_buffer_recovery(step, observation):
             if not recovering:
-                self._fail_frontier('start_in_clearance_buffer')
+                self._fail_frontier('start_in_clearance_buffer', preserve_camera=True)
                 self._frontier_event('blocked_start', position=list(position))
             self._frontier_phase = 'clear_start'
             if self.mapping.buffer_recovery_failed:
                 self._finish_frontier('blocked_start_timeout')
             return
-        if recovering:
+        # action() can finish recovery between two update() calls.
+        if recovering or self._frontier_phase == 'clear_start':
             self._frontier_event('start_cleared', position=list(position))
-            self._begin_frontier_scan()
+            self._begin_frontier_scan(visual=self._scan_visual_required)
             return
+        if (self.config.require_visual_scan and self._frontier_phase == 'navigate'
+                and self.current_goal is not None
+                and self._frontier_steps - self._visual_check_step >= self.config.topology_update_interval):
+            self._visual_check_step = self._frontier_steps
+            # Distance only throttles evaluation; real unseen, visible surfaces
+            # must justify the stop. Continuous camera frames already count.
+            if self._start_visual_look(position):
+                look = self._scan_look
+                self._begin_frontier_scan()
+                self._scan_look = look
         if self._frontier_phase == 'scan':
             self._scan_angle += turn
             if self._frontier_steps - self._scan_started > self.config.frontier_scan_timeout:
@@ -418,21 +479,50 @@ class SemanticExplorationComponent:
                 return
             fresh_frames = self.mapping.map.lidar_frames - self._scan_frames
             complete = (self._full_scan_lidar and fresh_frames >= 8) or (
-                self._scan_angle >= 2 * np.pi - 0.15 and fresh_frames > 0
-            )
+                self._scan_angle >= 2 * np.pi - 0.15 and fresh_frames > 0)
+            if self._scan_look is None and complete and self._scan_visual_required:
+                self._scan_visual_required = False
+                self._start_visual_look(position)
+            if self._scan_look is not None:
+                aligned = (self.visual_memory.camera_yaw is not None
+                           and abs(angle_error(self._scan_look.yaw, self.visual_memory.camera_yaw)) < .20)
+                if self._new_visual_frame:
+                    self._look_aligned_frames = self._look_aligned_frames + 1 if aligned else 0
+                budget = self._frontier_steps - self._look_started >= self.config.visual_observation_budget
+                complete = fresh_frames >= 8 and (self._look_aligned_frames >= 2 or budget)
+                if complete:
+                    self._frontier_event('visual_observation_finished',
+                                         reason='budget' if budget else 'observed',
+                                         duration=self._frontier_steps - self._look_started)
+                    self._last_visual_scan_position = position
+                    self._scan_look = None
             if not complete:
                 return
             occupancy = self.mapping.map.occupancy
             observed = int(occupancy.observed.sum())
             if self._initial_observed_cells is None:
                 self._initial_observed_cells = observed
-            self._frontier_event('scan_completed', angle=self._scan_angle, observed_cells=observed)
+            self._frontier_event('scan_completed', angle=self._scan_angle, observed_cells=observed,
+                                 visual_surface_cells=int(np.count_nonzero(self.visual_memory.seen)))
+            # A useful look may finish at the frontier itself.
+            if (self.current_goal is not None
+                    and _distance_xy(position, self.current_goal) <= self.config.frontier_reached_distance):
+                self._frontier_event('goal_reached', goal=list(self.current_goal))
+                self._pending_visit = (self.current_frontier_id, self.current_goal[:2])
+                self.current_goal = self.current_frontier_id = None
             if self._pending_visit is not None:
                 key, xy = self._pending_visit
                 self.planner.record_arrival(key)
                 self._observed_frontiers[key] = (xy, local_unknown(occupancy, xy))
                 self._pending_visit = None
-            self._frontier_phase = 'select'
+            if self.current_goal is not None:
+                # Observation is intentional standing, not failed navigation.
+                self._frontier_goal_step += self._frontier_steps - self._scan_started
+                self._frontier_progress_step = self._frontier_steps
+                self._frontier_progress_position = position
+                self._frontier_phase = 'navigate'
+            else:
+                self._frontier_phase = 'select'
         if self.current_goal is not None:
             if _distance_xy(position, self.current_goal) <= self.config.frontier_reached_distance:
                 self._frontier_event('goal_reached', goal=list(self.current_goal))
@@ -512,9 +602,24 @@ class SemanticExplorationComponent:
             yaw = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
             error = (np.arctan2(delta[1], delta[0]) - yaw + np.pi) % (2 * np.pi) - np.pi
             return {'move_by_speed': [0.0, 0.0, float(np.clip(error, -0.35, 0.35))]}
+        if exploring and self._frontier_phase == 'scan':
+            if (self._full_scan_lidar and self._scan_look is None
+                    and self._pending_visit is not None):
+                # A 360-degree LiDAR refresh does not require standing still.
+                # Finish braking toward the reached frontier on a checked
+                # route instead of abruptly zeroing a still-moving robot.
+                goal = (*self._pending_visit[1], float(robot_observation['position'][2]))
+                return self.mapping.point_navigation_action(
+                    goal, robot_observation, step=step, velocity_control=True,
+                    max_forward_speed=self.config.max_forward_speed,
+                    max_lateral_speed=self.config.max_lateral_speed,
+                )
+            yaw_speed = 0.0 if self._full_scan_lidar else 0.6
+            if self._scan_look is not None:
+                error = angle_error(self._scan_look.yaw, self._last_yaw)
+                yaw_speed = float(np.clip(1.5 * error, -.5, .5)) if abs(error) > .10 else 0.0
+            return {'move_by_speed': [0.0, 0.0, yaw_speed]}
         if self.current_goal is None:
-            if exploring and self._frontier_phase == 'scan':
-                return {'move_by_speed': [0.0, 0.0, 0.0 if self._full_scan_lidar else 0.6]}
             return self.warmup_action()
         # Velocity control with a sliding lookahead target: the discrete
         # move_along_path controller re-targets every dense skeleton waypoint
@@ -530,8 +635,15 @@ class SemanticExplorationComponent:
             max_lateral_speed=self.config.max_lateral_speed,
         )
 
-        if exploring and self.mapping.planning_failures > failures:
-            self._fail_frontier('path_unreachable')
+        if self.mapping.planning_failures > failures:
+            if exploring:
+                self._fail_frontier('path_unreachable')
+            elif self.target_node is not None:
+                cell = self.mapping.map.occupancy.world_to_cell(self.current_goal[:2])
+                self._approach_failed_cells.add(cell)
+                self.target_navigation_position = self.current_goal = None
+                self._approach_check_step = -self.config.topology_update_interval
+                self.mapping.invalidate_path()
             self._sync_runtime_state()
             return self.warmup_action()
         return action
@@ -553,7 +665,7 @@ class SemanticExplorationComponent:
             and self.target_node is not None
             and self.target_confirmed
             and goal_distance is not None
-            and goal_distance <= self.config.target_distance
+            and goal_distance <= self.config.target_approach_tolerance
         ):
             status = SemanticExplorationStatus.SUCCEEDED
         elif (self.target_node is None and self.target_cue is None
@@ -577,7 +689,7 @@ class SemanticExplorationComponent:
             statistics=self.statistics() if terminal else {},
             approach_goal=approach_goal,
             goal_distance=goal_distance,
-            arrival_threshold=self.config.target_distance,
+            arrival_threshold=self.config.target_approach_tolerance,
         )
 
     def progress_event(self, step: int, robot_observation: dict) -> dict:
@@ -588,6 +700,7 @@ class SemanticExplorationComponent:
             'step': step,
             'state': self.state,
             'position': [round(value, 2) for value in position],
+            'visual_surface_cells': int(np.count_nonzero(self.visual_memory.seen)),
             'target_found': self.target_node is not None,
             'target_confirmed': self.target_confirmed,
             'goal_distance_m': None if goal_distance is None else round(goal_distance, 2),
@@ -625,6 +738,8 @@ class SemanticExplorationComponent:
                 'frontier_failures': dict(self.planner.failure_counts),
                 'frontier_blacklist': sorted(self.planner.blacklist),
                 'trajectory_points': len(self._trajectory),
+                'visual_observation': {'frames': self.visual_memory.frames,
+                                       'surface_cells': int(np.count_nonzero(self.visual_memory.seen))},
                 'frontier_execution': {
                     'phase': self._frontier_phase, 'failure_reason': self._frontier_failure,
                     'active_steps': self._frontier_steps, 'minimum_base_up': self._minimum_base_up,
@@ -736,8 +851,30 @@ class SemanticExplorationComponent:
             self._target_embedding = None
         return self._target_embedding
 
-    def _target_approach_position(self, node: SceneGraphNode, robot_position):
-        return self._approach_position(node.position, robot_position)
+    def _refresh_target_approach(self, step, position):
+        occupancy = self.mapping.map.occupancy
+        goal = self.target_navigation_position
+        changed_target = self._approach_target_id != self.target_node.node_id
+        if changed_target:
+            self._approach_target_id = self.target_node.node_id
+            self._approach_failed_cells.clear()
+        cell = None if goal is None else occupancy.world_to_cell(goal[:2])
+        blocked = cell is not None and (not occupancy.observed[cell] or occupancy.inflated_mask()[cell])
+        if (not changed_target and not blocked
+                and step - self._approach_check_step < self.config.topology_update_interval):
+            return
+        self._approach_check_step = step
+        distances = reachable_distances(occupancy, position)
+        # Keep a valid endpoint stable as the robot moves. Recheck connectivity
+        # and target drift, not just whether the goal cell itself is free.
+        if (not changed_target and cell in distances and cell not in self._approach_failed_cells
+                and _distance_xy(goal, self.target_node.position) <= self.config.target_distance):
+            return
+        self.target_navigation_position = target_approach_goal(
+            occupancy, self.target_node.position, position, distances,
+            self.config.target_distance, self._approach_failed_cells,
+        )
+        self.mapping.invalidate_path()
 
     def _approach_position(self, target_position, robot_position):
         target = np.asarray(target_position[:2], dtype=np.float64)
