@@ -179,6 +179,53 @@ class InteractionNavigationMappingTest(unittest.TestCase):
         self.assertFalse(occupancy.occupied_mask()[floor_endpoint])
         self.assertTrue(occupancy.observed[free_cell])
 
+    def test_out_of_range_return_does_not_clear_space(self):
+        config = MappingConfig(
+            x_limits=(0.0, 7.0), y_limits=(-1.0, 1.0),
+            grid_resolution=0.1,
+        )
+        origin = (0.5, 0.0, 0.6)
+        out_of_range = OccupancyGridMap(config)
+        out_of_range.update_lidar(
+            origin, np.array([[5.7, 0.0, 0.8]]), max_range=5.0,
+        )
+        self.assertFalse(out_of_range.observed[out_of_range.world_to_cell((3.0, 0.0))])
+
+        in_range = OccupancyGridMap(config)
+        in_range.update_lidar(
+            origin, np.array([[5.25, 0.0, 0.8]]), max_range=5.0,
+        )
+        self.assertTrue(in_range.observed[in_range.world_to_cell((3.0, 0.0))])
+        self.assertTrue(in_range.occupied_mask()[in_range.world_to_cell((5.25, 0.0))])
+
+    def test_out_of_height_return_does_not_clear_2d_space(self):
+        config = MappingConfig(
+            x_limits=(0.0, 6.0), y_limits=(-1.0, 1.0),
+            grid_resolution=0.1, obstacle_height=(0.2, 0.8),
+            allow_lidar_free_only_rays=False,
+        )
+        occupancy = OccupancyGridMap(config)
+        occupancy.update_lidar(
+            (0.5, 0.0, 0.6), np.array([[4.0, 0.0, 1.4]]),
+            max_range=5.0,
+        )
+        self.assertFalse(occupancy.observed[occupancy.world_to_cell((2.0, 0.0))])
+
+    def test_free_space_requires_observation_at_both_heights(self):
+        config = MappingConfig(
+            x_limits=(0.0, 6.0), y_limits=(-1.0, 1.0),
+            grid_resolution=0.1, obstacle_height=(0.2, 0.8),
+            allow_lidar_free_only_rays=False, lidar_free_height_layers=2,
+        )
+        occupancy = OccupancyGridMap(config)
+        origin = (0.5, 0.0, 0.6)
+        cell = occupancy.world_to_cell((3.0, 0.0))
+        occupancy.update_lidar(origin, np.array([[4.0, 0.0, 0.75]]), max_range=5.0)
+        self.assertFalse(occupancy.observed[cell])
+        occupancy.update_lidar(origin, np.array([[4.0, 0.0, 0.25]]), max_range=5.0)
+        self.assertTrue(occupancy.observed[cell])
+        self.assertFalse(occupancy.occupied_mask()[cell])
+
     def test_flattened_scan_blocks_free_space_behind_nearer_obstacle(self):
         """A tabletop return in the same direction as a far wall must clamp
         the free-space ray, leaving the space behind the table unknown."""

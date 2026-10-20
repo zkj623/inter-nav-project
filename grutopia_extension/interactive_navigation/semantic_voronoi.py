@@ -232,7 +232,8 @@ class SemanticVoronoiGraph:
 
         inflated = np.asarray(self.occupancy.inflated_mask(), dtype=bool)
         observed = np.asarray(self.occupancy.observed, dtype=bool).copy()
-        traversable = observed & ~inflated
+        occupied = np.asarray(self.occupancy.occupied_mask(), dtype=bool)
+        traversable = observed & ~inflated & ~occupied
         resolution = float(self.occupancy.config.grid_resolution)
 
         traversable_unchanged = (
@@ -788,8 +789,19 @@ class SemanticVoronoiGraph:
         result = []
         for group in sorted(groups, key=min):
             cells = tuple(sorted(group))
-            world = np.asarray([self.occupancy.cell_to_world(cell) for cell in cells])
-            centroid = tuple(float(value) for value in world.mean(axis=0))
+            # The arithmetic centroid can land in a wall or obstacle when a
+            # frontier wraps around it. Use the frontier cell nearest its
+            # centroid as the representative so the marker stays on valid
+            # traversable space.
+            center = np.asarray(cells, dtype=np.float64).mean(axis=0)
+            representative = min(
+                cells,
+                key=lambda cell: (
+                    (cell[0] - center[0]) ** 2 + (cell[1] - center[1]) ** 2,
+                    cell,
+                ),
+            )
+            centroid = self.occupancy.cell_to_world(representative)
             labels = [component_labels[cell] for cell in cells if component_labels[cell] >= 0]
             reachable_nodes = []
             if labels:

@@ -123,7 +123,7 @@ def test_actual_reachable_cells_and_stable_spatial_keys():
     c = component()
     occupancy = c.mapping.map.occupancy
     cells = ((8, 8), (8, 9), (31, 8), (38, 38))
-    snapshot = SimpleNamespace(frontiers=[SimpleNamespace(frontier_id='old', cells=cells)])
+    snapshot = SimpleNamespace(frontiers=[SimpleNamespace(frontier_id='old', region_id='unsegmented', cells=cells)])
     first = frontier_goals(occupancy, snapshot, (1., 1.5), set())
     snapshot.frontiers[0].frontier_id = 'new'
     second = frontier_goals(occupancy, snapshot, (1., 1.5), set())
@@ -245,7 +245,8 @@ def test_buffer_exit_resumes_scan_and_never_counts_as_arrival():
         assert c.planner.failure_counts[key] == 1
         assert c.action(2, obs)['move_by_speed'][0] > 0
         exit_xy = c.mapping._buffer_exit
-        c.update(3, observation(exit_xy[0], exit_xy[1] + .06))
+        for step in range(3, 6):
+            c.update(step, observation(exit_xy[0], exit_xy[1] + .06))
     assert c._frontier_phase == 'scan'
     assert key not in c.planner.visit_counts
     assert c.frontier_history[-1]['kind'] == 'start_cleared'

@@ -38,6 +38,8 @@ class MappingConfig:
     sticky_free_scale: float = 0.0
     unknown_cost: float = 1.75
     max_lidar_rays: int = 900
+    allow_lidar_free_only_rays: bool = True
+    lidar_free_height_layers: int = 1
     # Azimuth resolution of the flattened top-down lidar scan (0.5 degrees).
     lidar_scan_bins: int = 720
     max_voxel_points_per_update: int = 5000
@@ -66,6 +68,10 @@ class MappingConfig:
             raise ValueError('mapping sample limits and graph_stride must be positive')
         if self.lidar_scan_bins <= 0:
             raise ValueError('lidar_scan_bins must be positive')
+        if self.lidar_free_height_layers <= 0:
+            raise ValueError('lidar_free_height_layers must be positive')
+        if self.obstacle_height[0] >= self.obstacle_height[1]:
+            raise ValueError('obstacle_height must be increasing')
         if self.obstacle_inflation_radius is not None and self.obstacle_inflation_radius <= 0:
             raise ValueError('obstacle_inflation_radius must be positive when provided')
         if self.static_obstacle_inflation_radius is not None and self.static_obstacle_inflation_radius <= 0:
@@ -245,16 +251,20 @@ class OccupancyGridMap:
         self.log_odds = np.zeros((height, width), dtype=np.float32)
         self.observed = np.zeros((height, width), dtype=bool)
         self.static_occupied = np.zeros((height, width), dtype=bool)
+        self._lidar_free_height_seen = (
+            np.zeros((config.lidar_free_height_layers, height, width), dtype=bool)
+            if config.lidar_free_height_layers > 1 else None
+        )
         self.revision = 0
 
     def update_lidar(self, origin: Vector3, points: np.ndarray, max_range: float):
         """Update occupancy from a lidar frame via a top-down virtual scan.
 
-        The 3D frame is flattened per azimuth bin: the nearest return inside
-        the obstacle height band becomes that direction's obstacle endpoint,
-        and free space is only cleared up to it. Rays that pass under or over
-        an obstacle (e.g. below a tabletop towards a far wall) can therefore
-        no longer erase occupancy evidence behind a nearer obstruction.
+        The 3D frame is projected into a 2D scan per azimuth bin: the nearest
+        return inside the obstacle height band becomes that direction's
+        obstacle endpoint, cells before it become free, and cells behind it
+        stay unknown. Optional multi-height mode keeps vertical channels
+        separate and requires free evidence from every configured layer.
         """
 
         points = _points_array(points)
@@ -274,39 +284,78 @@ class OccupancyGridMap:
         deltas = points - origin_array
         horizontal = np.hypot(deltas[:, 0], deltas[:, 1])
         distances = np.linalg.norm(deltas, axis=1)
-        valid = (distances >= 0.25) & (distances <= max_range * 1.05) & (horizontal > 1e-6)
+        # Returns near or beyond the sensor limit cannot become obstacles or
+        # provide reliable free-space evidence.
+        valid = (distances >= 0.25) & (distances < max_range * 0.99) & (horizontal > 1e-6)
         in_band = (
             valid
             & (points[:, 2] >= min_height)
             & (points[:, 2] <= max_height)
-            & (distances < max_range * 0.99)
         )
-        # Budget virtual azimuth rays, not raw 3D returns. Subsampling before
-        # finding the nearest hit can discard a chair leg while retaining a
-        # farther wall return, incorrectly clearing the intervening space.
+        # A single free-height layer selects the simpler projected-2D-scan
+        # behavior: one nearest in-band return per azimuth. With multiple
+        # layers, keep vertical LiDAR channels separate so each layer has its
+        # own visibility evidence. The Go2 LiDAR uses 5 degree vertical
+        # sampling, so quantize measured elevation to retain those channels.
         scan_bins = min(self.config.lidar_scan_bins, self.config.max_lidar_rays)
         bins = (
             (np.arctan2(deltas[:, 1], deltas[:, 0]) + np.pi)
             / (2.0 * np.pi)
             * scan_bins
         ).astype(int) % scan_bins
+        if self.config.lidar_free_height_layers > 1:
+            elevations = np.rad2deg(np.arctan2(deltas[:, 2], horizontal))
+            elevation_bins = np.rint(elevations / 5.0).astype(int)
+        else:
+            elevation_bins = np.zeros(len(points), dtype=int)
+        ray_groups: Dict[Tuple[int, int], List[int]] = {}
+        for index in np.flatnonzero(valid):
+            ray_groups.setdefault(
+                (int(bins[index]), int(elevation_bins[index])), []
+            ).append(int(index))
 
-        # Nearest in-band return per direction becomes the obstacle endpoint
-        # and bounds free clearing; the farthest overall return drives a
-        # free-only ray when the whole direction is clear of the band.
-        nearest_obstacle: Dict[int, int] = {}
-        for index in np.argsort(horizontal, kind='stable'):
-            if in_band[index] and int(bins[index]) not in nearest_obstacle:
-                nearest_obstacle[int(bins[index])] = int(index)
-        farthest_seen: Dict[int, int] = {}
-        for index in np.argsort(horizontal, kind='stable')[::-1]:
-            if valid[index] and int(bins[index]) not in farthest_seen:
-                farthest_seen[int(bins[index])] = int(index)
+        # Bound work while preserving samples from every vertical channel.
+        # The previous budget applied to azimuth alone and silently discarded
+        # all but one elevation at each angle.
+        if len(ray_groups) > self.config.max_lidar_rays:
+            by_elevation: Dict[int, List[Tuple[int, int]]] = {}
+            for key in sorted(ray_groups):
+                by_elevation.setdefault(key[1], []).append(key)
+            per_channel = max(1, self.config.max_lidar_rays // len(by_elevation))
+            retained = []
+            for keys in by_elevation.values():
+                if len(keys) <= per_channel:
+                    retained.extend(keys)
+                else:
+                    indices = np.linspace(0, len(keys) - 1, per_channel, dtype=int)
+                    retained.extend(keys[i] for i in indices)
+            ray_groups = {key: ray_groups[key] for key in retained[:self.config.max_lidar_rays]}
+
+        # Each vertical channel has its own nearest obstacle. A return in one
+        # channel must not hide valid free-space rays in another channel.
+        nearest_obstacle: Dict[Tuple[int, int], int] = {}
+        farthest_seen: Dict[Tuple[int, int], int] = {}
+        for key, indices in ray_groups.items():
+            nearest = [index for index in indices if in_band[index]]
+            if nearest:
+                nearest_obstacle[key] = min(nearest, key=lambda index: horizontal[index])
+            farthest_seen[key] = max(indices, key=lambda index: horizontal[index])
 
         frame_free = set()
         frame_occupied = set()
-        for bin_index, seen_index in farthest_seen.items():
-            obstacle_index = nearest_obstacle.get(bin_index)
+        frame_free_layers = (
+            [set() for _ in range(self.config.lidar_free_height_layers)]
+            if self._lidar_free_height_seen is not None else None
+        )
+        if self.config.allow_lidar_free_only_rays:
+            selected = (
+                (nearest_obstacle.get(key), seen_index)
+                for key, seen_index in farthest_seen.items()
+            )
+        else:
+            selected = ((index, index) for index in nearest_obstacle.values())
+
+        for obstacle_index, seen_index in selected:
             endpoint = points[obstacle_index if obstacle_index is not None else seen_index]
             endpoint_cell = self.world_to_cell(endpoint[:2])
             if endpoint_cell is None:
@@ -314,10 +363,37 @@ class OccupancyGridMap:
             ray = _bresenham(origin_cell, endpoint_cell)
             if not ray:
                 continue
-            obstacle_hit = obstacle_index is not None
-            frame_free.update(ray[:-1] if obstacle_hit else ray)
-            if obstacle_hit:
+            if obstacle_index is None:
+                free_cells = ray
+            else:
+                free_cells = ray[:-1]
                 frame_occupied.add(ray[-1])
+            if frame_free_layers is None:
+                frame_free.update(free_cells)
+            else:
+                for ray_index, cell in enumerate(free_cells):
+                    fraction = ray_index / max(1, len(ray) - 1)
+                    ray_height = origin_array[2] + fraction * (endpoint[2] - origin_array[2])
+                    if ray_height < min_height or ray_height > max_height:
+                        continue
+                    layer = min(
+                        int((ray_height - min_height) / (max_height - min_height)
+                            * self.config.lidar_free_height_layers),
+                        self.config.lidar_free_height_layers - 1,
+                    )
+                    frame_free_layers[layer].add(cell)
+
+        if frame_free_layers is not None:
+            for layer, cells in enumerate(frame_free_layers):
+                for cell in cells:
+                    if self.in_bounds(cell):
+                        self._lidar_free_height_seen[layer, cell[0], cell[1]] = True
+            candidates = set().union(*frame_free_layers)
+            frame_free = {
+                cell for cell in candidates
+                if self.in_bounds(cell)
+                and self._lidar_free_height_seen[:, cell[0], cell[1]].all()
+            }
 
         # Rays in one frame are correlated observations, not independent
         # evidence. Count each cell once; an endpoint hit takes precedence
@@ -388,6 +464,7 @@ class OccupancyGridMap:
         if center is None:
             return
         cells = int(np.ceil(radius / self.config.grid_resolution))
+        changed = False
         for row_offset in range(-cells, cells + 1):
             for col_offset in range(-cells, cells + 1):
                 if hypot(row_offset, col_offset) > cells:
@@ -396,8 +473,13 @@ class OccupancyGridMap:
                 if self.in_bounds(cell):
                     if self.static_occupied[cell]:
                         continue
-                    self.log_odds[cell] = min(self.log_odds[cell], -self.config.free_update)
-                    self.observed[cell] = True
+                    free_log_odds = min(self.log_odds[cell], -self.config.free_update)
+                    if free_log_odds != self.log_odds[cell] or not self.observed[cell]:
+                        changed = True
+                        self.log_odds[cell] = free_log_odds
+                        self.observed[cell] = True
+        if changed:
+            self.revision += 1
 
     def mark_occupied(self, xy: Iterable[float], radius: float, evidence: float = 0.85):
         center = self.world_to_cell(tuple(xy))
