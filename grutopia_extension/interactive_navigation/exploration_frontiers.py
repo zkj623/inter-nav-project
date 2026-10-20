@@ -55,29 +55,78 @@ def local_unknown(occupancy, position, radius=0.8):
     return int((~patch).sum())
 
 
-def frontier_goals(occupancy, snapshot, position, excluded, spacing=0.6):
-    """Split long boundaries spatially and choose a reachable *boundary cell*.
+def frontier_goals(occupancy, snapshot, position, excluded, redundancy_radius=1.0):
+    """Create one reachable goal per connected or nearby frontier cluster.
 
-    A group's arithmetic centroid can lie inside a wall or far from its
-    boundary. Candidate endpoints are actual observed cells instead. Spatial
-    keys keep feedback meaningful when topology IDs change as the map grows.
+    Frontier cells are first filtered by map reachability. Nearby fragments
+    from the same region are then merged using an RRT-style redundancy radius.
+    The target is an actual boundary cell near the cluster center, never the
+    arithmetic centroid inside a wall.
     """
     distances = reachable_distances(occupancy, position)
-    buckets = {}
+    components = []
     for frontier in snapshot.frontiers:
-        for cell in frontier.cells:
-            xy = occupancy.cell_to_world(cell)
-            if cell not in distances:
-                continue
-            key = f'{int(np.floor(xy[0] / spacing))}:{int(np.floor(xy[1] / spacing))}'
-            if key in excluded:
-                continue
-            buckets.setdefault(key, []).append(cell)
+        cells = tuple(sorted({cell for cell in frontier.cells if cell in distances}))
+        if not cells:
+            continue
+        points = np.asarray([occupancy.cell_to_world(cell) for cell in cells], dtype=np.float64)
+        components.append({
+            'region': frontier.region_id or 'unsegmented',
+            'cells': cells,
+            'center': points.mean(axis=0),
+        })
+    if not components:
+        return []
+
+    parents = list(range(len(components)))
+
+    def find(index):
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    def union(left, right):
+        left_root, right_root = find(left), find(right)
+        if left_root != right_root:
+            parents[max(left_root, right_root)] = min(left_root, right_root)
+
+    radius = max(float(redundancy_radius), occupancy.config.grid_resolution)
+    buckets = {}
+    for index, component in enumerate(components):
+        center = component['center']
+        bx, by = int(np.floor(center[0] / radius)), int(np.floor(center[1] / radius))
+        region = component['region']
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for other in buckets.get((region, bx + dx, by + dy), ()):
+                    if np.linalg.norm(center - components[other]['center']) <= radius:
+                        union(index, other)
+        buckets.setdefault((region, bx, by), []).append(index)
+
+    clusters = {}
+    for index, component in enumerate(components):
+        root = find(index)
+        cluster = clusters.setdefault(root, {'region': component['region'], 'cells': set()})
+        cluster['cells'].update(component['cells'])
+
     goals = []
-    for key, cells in buckets.items():
-        center = np.mean(cells, axis=0)
-        cell = min(cells, key=lambda item: (hypot(item[0] - center[0], item[1] - center[1]), distances[item]))
+    for cluster in clusters.values():
+        cells = tuple(sorted(cluster['cells']))
+        points = np.asarray([occupancy.cell_to_world(cell) for cell in cells], dtype=np.float64)
+        center = points.mean(axis=0)
+        cell = min(
+            cells,
+            key=lambda item: (
+                float(np.sum((np.asarray(occupancy.cell_to_world(item)) - center) ** 2)),
+                distances[item],
+                item,
+            ),
+        )
         xy = occupancy.cell_to_world(cell)
+        key = f'{cluster["region"]}:{cell[0]}:{cell[1]}'
+        if key in excluded:
+            continue
         gain = local_unknown(occupancy, xy) * occupancy.config.grid_resolution**2
         distance = distances[cell]
         goals.append(ObservationGoal(key, tuple(xy), distance, gain, gain / (1.0 + distance)))

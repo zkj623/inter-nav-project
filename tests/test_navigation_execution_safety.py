@@ -43,11 +43,28 @@ def test_recovery_is_low_speed_revalidates_and_completes():
     action = rt.buffer_recovery_action(observation(), .5, .1)['move_by_speed']
     assert 0 < action[0] <= .15 and abs(action[1]) <= .1 and action[2] == 0
     goal = rt._buffer_exit
-    assert not rt.update_buffer_recovery(1, observation(*goal))
+    assert rt.update_buffer_recovery(1, observation(*goal))
+    assert rt.update_buffer_recovery(2, observation(*goal))
+    assert not rt.update_buffer_recovery(3, observation(*goal))
     assert [event['event'] for event in rt.buffer_history] == ['buffer_exit_started','buffer_exit_completed']
-    rt.update_buffer_recovery(2, observation())
+    rt.update_buffer_recovery(4, observation())
     occ.observed[:,4:] = False
     assert rt.buffer_recovery_action(observation(), .5, .1)['move_by_speed'] == [0.,0.,0.]
+
+
+def test_recovery_completes_outside_buffer_before_reaching_exit_goal():
+    occ = occupancy()
+    rt = MapNavigationRuntime(mapping_config=occ.config, safe_path_tracking=True)
+    rt.map.occupancy = occ
+    assert rt.update_buffer_recovery(0, observation())
+    goal = rt._buffer_exit
+    outside = observation(x=.7, y=1.75)
+    assert not occ.inflated_mask()[occ.world_to_cell(outside['position'][:2])]
+    assert np.linalg.norm(np.asarray(goal) - outside['position'][:2]) > .05
+    assert rt.update_buffer_recovery(1, outside)
+    assert rt.update_buffer_recovery(2, outside)
+    assert not rt.update_buffer_recovery(3, outside)
+    assert rt.buffer_history[-1]['event'] == 'buffer_exit_completed'
 
 
 def test_physical_obstacle_cannot_be_relaxed_and_recovery_times_out():

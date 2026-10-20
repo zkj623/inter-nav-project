@@ -128,6 +128,7 @@ class MapNavigationRuntime:
         self.buffer_recovery_failed = False
         self._buffer_started = None
         self._buffer_exit = None
+        self._buffer_clear_steps = 0
         self.buffer_history = []
         self.tracking_chord_fallbacks = 0
         self.tracking_segment_stops = 0
@@ -889,6 +890,7 @@ class MapNavigationRuntime:
             self.buffer_recovery_active = True
             self._buffer_started = step
             self._buffer_exit = None
+            self._buffer_clear_steps = 0
             self.invalidate_path()
             self.buffer_history.append({'step': step, 'event': 'buffer_exit_started', 'position': position.tolist()})
         if step - self._buffer_started >= self.buffer_recovery_timeout:
@@ -896,13 +898,14 @@ class MapNavigationRuntime:
                 self.buffer_history.append({'step': step, 'event': 'buffer_exit_timeout'})
             self.buffer_recovery_failed = True
             return True
-        if observed and not in_buffer and (
-            self._buffer_exit is None or np.linalg.norm(np.asarray(self._buffer_exit) - position)
-            <= max(0.05, occupancy.config.grid_resolution)
-        ):
+        # The exit goal is only a motion target. Once the robot stays in observed,
+        # uninflated space, the recovery has succeeded even if the goal is farther away.
+        self._buffer_clear_steps = self._buffer_clear_steps + 1 if observed and not in_buffer else 0
+        if self._buffer_clear_steps >= 3:
             self.buffer_history.append({'step': step, 'event': 'buffer_exit_completed', 'position': position.tolist()})
             self.buffer_recovery_active = False
             self._buffer_exit = None
+            self._buffer_clear_steps = 0
             self.invalidate_path()
             return False
         self._buffer_exit = buffer_exit_goal(occupancy, position, self._buffer_exit)
