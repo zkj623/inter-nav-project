@@ -8,6 +8,24 @@ Voronoi exploration.
 The default demo places Go2 in a GRScenes home. It explores until it matches
 a text target such as `refrigerator` and walks up to the scanned object.
 
+## R1 Lite policy–skill iteration research
+
+The experimental RSI module is separate from the default navigation demos:
+
+- `grutopia_extension/interaction_clearance/` and `manipulation/`: contact-only
+  box-clearance tasks, composable physical policies, skill execution, and safety checks.
+- `research/rsi/`: skill candidate evolution, frozen multi-layout evaluation,
+  clearance benchmark configurations, data export, and success/failure video tools.
+- The existing navigation demos and their default task behavior are unchanged.
+
+The current expert-initialized version passes 12/12 original configurations and
+30/30 development states, but only 56/60 independent validation states. Automatic
+bimanual policy learning and the complete two-way policy–skill learning loop are
+not implemented; this is not a claim of stable success across all scenes.
+
+See [the RSI research README](research/rsi/README.md) for the architecture,
+commands, dataset boundaries, verified results, and remaining work.
+
 ## Environment setup
 
 On this lab server, `embodied` members should clone the repo and use the
