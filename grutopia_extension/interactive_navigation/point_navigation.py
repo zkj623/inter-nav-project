@@ -42,8 +42,14 @@ class PointNavigationConfig:
     velocity_control: bool = False
     max_forward_speed: float = 0.75
     max_lateral_speed: float = 0.35
+    # When preferring Voronoi, first allow a fully observed, wide-enough direct route.
+    direct_path_tracking_margin: Optional[float] = 0.10
 
     def __post_init__(self):
+        if self.direct_path_tracking_margin is not None and (
+            not np.isfinite(self.direct_path_tracking_margin) or self.direct_path_tracking_margin <= 0
+        ):
+            raise ValueError('direct_path_tracking_margin must be finite and positive, or None')
         if len(self.goal) != 3:
             raise ValueError('goal must contain three coordinates')
         if self.max_steps <= 0:
@@ -104,6 +110,7 @@ class PointNavigationComponent:
             use_semantic_voronoi=config.prefer_voronoi_paths,
             prefer_voronoi_paths=config.prefer_voronoi_paths,
             safe_path_tracking=config.prefer_voronoi_paths,
+            direct_path_tracking_margin=config.direct_path_tracking_margin,
             use_scene_graph=config.use_scene_graph,
             safe_base_height=config.safe_base_height,
             replan_interval_steps=config.replan_interval_steps,

@@ -1,0 +1,31 @@
+# Initial release: level indoor floor, fixed explicitly bounded map.
+mapping:
+  x_limits: [-10.0, 10.0]
+  y_limits: [-10.0, 10.0]
+  grid_resolution: 0.1
+  voxel_size: 0.1
+  robot_radius: 0.30
+  obstacle_inflation_radius: 0.40
+  obstacle_height: [0.15, 1.6]
+  point_height: [-0.1, 2.0]
+  safe_recovery_y_limits: [-9.5, 9.5]
+  sticky_free_scale: 0.25
+  object_position_window: 4
+# Point navigation: extra margin outside obstacle inflation; null keeps Voronoi-first behavior.
+# Body radius + this margin must also remain inside observed free space.
+direct_path_tracking_margin: 0.10
+max_forward_speed: 0.15
+max_lateral_speed: 0.08
+success_distance: 0.30
+safe_base_height: 0.22
+fall_height: 0.16
+task_timeout_s: 300.0
+# Explicit scheduler tick, not Isaac physics steps. Slow work skips ticks.
+tick_hz: 10.0
+topology_interval_s: 1.0
+frontier_selection_s: 2.0
+frontier_progress_timeout_s: 20.0
+frontier_goal_timeout_s: 90.0
+frontier_scan_timeout_s: 30.0
+visual_observation_budget_s: 8.0
+fresh_target_observations: 2

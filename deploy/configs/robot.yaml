@@ -1,0 +1,31 @@
+# Go2 EDU / Orin NX: topics confirmed received during the user hardware audit.
+# map_frame names the planning frame; odom is LOCAL odometry, not global localization.
+network_interface: eth0
+map_frame: odom
+base_frame: base_link
+odom_topic: /utlidar/robot_odom
+lidar_topic: /utlidar/cloud_deskewed
+# No standard RGB-D source was found. Custom compressed video is not depth.
+camera_mode: unavailable  # unavailable | rgbd
+front_video_topic: /frontvideostream
+rgb_topic: ""
+depth_topic: ""
+camera_info_topic: ""
+# Measure these before building a navigation map. Never assume odom Z=ground height.
+ground_z: null
+lidar_origin_offset_base_m: null  # measured [x, y, z] optical/range origin in base_link
+lidar_max_range: 8.0
+pose_cloud_tolerance_s: 0.05
+image_sync_tolerance_s: 0.04
+max_data_age_s: 0.4
+max_position_jump_m: 0.5
+max_orientation_jump_rad: 0.7
+# Receipt alone does not establish calibration, filtering, DDS or motion readiness.
+calibration_verified: false
+deskew_and_self_filter_verified: false
+communication_verified: false
+remote_arbitration_verified: false
+# Button bit mask in wireless_remote bytes 2:4; choose after inspecting remote.
+takeover_button_mask: 0
+sport_state_topic: rt/sportmodestate
+low_state_topic: rt/lowstate

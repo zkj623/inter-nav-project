@@ -109,6 +109,7 @@ class MapNavigationRuntime:
         safe_path_tracking: bool = False,
         observed_only: bool = False,
         buffer_recovery_timeout: int = 600,
+        direct_path_tracking_margin: Optional[float] = None,
     ):
         if lidar_interval <= 0 or rgb_interval <= 0:
             raise ValueError('sensor update intervals must be positive')
@@ -120,6 +121,13 @@ class MapNavigationRuntime:
             raise ValueError('open_vocabulary_failure_limit must be positive')
         if buffer_recovery_timeout <= 0:
             raise ValueError('buffer_recovery_timeout must be positive')
+        if direct_path_tracking_margin is not None and (
+            not np.isfinite(direct_path_tracking_margin) or direct_path_tracking_margin <= 0
+        ):
+            raise ValueError('direct_path_tracking_margin must be finite and positive, or None')
+        self.direct_path_tracking_margin = direct_path_tracking_margin
+        self.direct_plan_count = 0
+        self._last_plan_used_direct = False
         safe_path_tracking = safe_path_tracking or observed_only
         self.observed_only = safe_path_tracking
         self.safe_path_tracking = safe_path_tracking
@@ -590,6 +598,7 @@ class MapNavigationRuntime:
             and step - self._last_plan_step >= self.replan_interval_steps
         ):
             retry_voronoi = (self.voronoi_planner is not None and not self._last_plan_used_voronoi
+                             and not self._last_plan_used_direct
                              and self.navigation_occupancy is self.map.occupancy)
             if self.replan_only_if_blocked and not retry_voronoi and not self._remaining_path_blocked(start):
                 self._last_plan_step = step
@@ -633,6 +642,7 @@ class MapNavigationRuntime:
                     'step': step,
                     'state': decision.state.value,
                     'reason': plan_reason or 'initial',
+                    'planner': self._plan_source(),
                     'goal': list(goal),
                     'path': [list(point) for point in self._planned_path],
                 }
@@ -688,6 +698,10 @@ class MapNavigationRuntime:
         if not self._planned_path:
             self._last_path_blockage = {'reason': 'missing_path'}
             return True
+        if self._last_plan_used_direct:
+            clear = self._direct_segment_clear(start[:2], self._planned_path[-1][:2])
+            self._last_path_blockage = None if clear else {'reason': 'direct_clearance_lost'}
+            return not clear
         blocked = self.navigation_occupancy.inflated_mask()
         if self.observed_only:
             blocked = blocked | ~self.navigation_occupancy.observed
@@ -729,6 +743,7 @@ class MapNavigationRuntime:
 
     def invalidate_path(self):
         """Release an execution goal when its owner completes or abandons it."""
+        self._last_plan_used_direct = False
         self._planned_state = None
         self._planned_path = None
         self._planned_goal = None
@@ -868,6 +883,8 @@ class MapNavigationRuntime:
         ).as_action()
 
     def _tracking_segment_clear(self, start, target):
+        if self._last_plan_used_direct:
+            return self._direct_segment_clear(start, target)
         occupancy = self.navigation_occupancy
         left, right = occupancy.world_to_cell(start), occupancy.world_to_cell(target)
         return (left is not None and right is not None and self.map.planner.segment_clear(
@@ -1114,9 +1131,33 @@ class MapNavigationRuntime:
         return self.map.occupancy
 
 
+    def _plan_source(self):
+        return ('direct' if self._last_plan_used_direct else
+                'voronoi' if self._last_plan_used_voronoi else 'grid_astar')
+
+    def _direct_segment_clear(self, start, goal):
+        if self.direct_path_tracking_margin is None:
+            return False
+        from .mapping import AStarMapPlanner
+        occupancy = self.navigation_occupancy
+        checker = AStarMapPlanner(occupancy, observed_only=True)
+        margin = self.direct_path_tracking_margin
+        # Respect even a larger static-obstacle inflation, then additionally
+        # keep the whole body plus tracking margin inside observed free space.
+        return (checker.segment_clear_with_margin(start, goal, occupancy.inflated_mask(), margin)
+                and checker.segment_clear_with_margin(
+                    start, goal, occupancy.occupied_mask() | ~occupancy.observed,
+                    occupancy.config.robot_radius + margin))
+
     def _map_plan(self, start, goal):
         self._last_plan_used_voronoi = False
+        self._last_plan_used_direct = False
         if self.voronoi_planner is not None:
+            if self._direct_segment_clear(start[:2], goal[:2]):
+                self.direct_plan_count += 1
+                self._last_plan_used_direct = True
+                self.map.plan_count += 1
+                return (tuple(float(value) for value in goal),)
             try:
                 path = self.voronoi_planner.plan(start, goal)
             except PlanningError:
@@ -1224,6 +1265,8 @@ class MapNavigationRuntime:
                 'open_vocabulary_last_labels': self.open_vocabulary_last_labels,
                 'open_vocabulary_last_detection_step': self.open_vocabulary_last_detection_step,
                 'open_vocabulary_last_success_step': self.open_vocabulary_last_success_step,
+                'direct_plans': self.direct_plan_count,
+                'direct_path_tracking_margin': self.direct_path_tracking_margin,
                 'voronoi_plans': self.voronoi_plan_count,
                 'lidar_self_hits_removed': self.lidar_self_hits_removed,
                 'voronoi_plan_fallbacks': self.voronoi_plan_fallbacks,

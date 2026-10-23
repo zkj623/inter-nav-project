@@ -1,0 +1,30 @@
+control:
+  command_ttl_s: 0.35
+  poll_hz: 50.0
+  max_vx: 0.15
+  max_vy: 0.08
+  max_wz: 0.35
+  acceleration: 0.25
+  angular_acceleration: 0.5
+  max_tilt_degrees: 20.0
+  stop_speed: 0.03
+  stop_yaw_speed: 0.05
+  stop_timeout_s: 3.0
+  stop_settle_s: 0.3
+perception:
+  grounding_dino_url: http://127.0.0.1:12181/gdino
+  mobile_sam_url: http://127.0.0.1:12183/mobile_sam
+  qwen_vl_url: http://127.0.0.1:12185/classify
+  request_timeout: 2.0
+  qwen_vl_timeout: 5.0
+  semantic_classifier: qwen-vl
+  result_max_age_s: 8.0
+  failure_timeout_s: 15.0
+recording:
+  root: results/deploy
+  observations: true
+topology_scorer:
+  enabled: false
+  url: http://127.0.0.1:12187/generate
+  timeout_s: 5.0
+  max_age_s: 8.0

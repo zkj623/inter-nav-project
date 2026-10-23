@@ -907,6 +907,41 @@ class AStarMapPlanner:
             index = next_index
         return simplified
 
+    def segment_clear_with_margin(self, start, end, blocked: np.ndarray, radius: float) -> bool:
+        """Conservative continuous-world capsule check, including both endpoints.
+
+        Blocked cells are squares, not point obstacles. Their circumscribed
+        circles add half a cell diagonal, so sub-cell endpoints and diagonal
+        grazing cannot slip through a centre-line rasterization. Unknown space
+        outside the finite map is also forbidden. Only the capsule's bounding
+        window is inspected; no clearance cache can outlive a map update.
+        """
+        start, end = np.asarray(start, dtype=float), np.asarray(end, dtype=float)
+        if (start.shape != (2,) or end.shape != (2,) or not np.isfinite(start).all()
+                or not np.isfinite(end).all() or not np.isfinite(radius) or radius < 0):
+            return False
+        config = self.occupancy.config
+        lower = np.minimum(start, end) - radius
+        upper = np.maximum(start, end) + radius
+        origin = np.array([config.x_limits[0], config.y_limits[0]])
+        limit = np.array([config.x_limits[1], config.y_limits[1]])
+        if np.any(lower <= origin) or np.any(upper >= limit):
+            return False
+        resolution = config.grid_resolution
+        col0, row0 = np.maximum(0, np.floor((lower-origin)/resolution).astype(int))
+        col1, row1 = np.floor((upper-origin)/resolution).astype(int) + 1
+        rows, cols = np.nonzero(blocked[row0:row1, col0:col1])
+        if not len(rows):
+            return True
+        centers = np.column_stack((cols+col0+.5, rows+row0+.5))*resolution + origin
+        delta = end-start
+        length_squared = float(np.dot(delta, delta))
+        ratios = (np.clip((centers-start) @ delta / length_squared, 0., 1.)
+                  if length_squared > 0 else np.zeros(len(centers)))
+        closest = start + ratios[:, None]*delta
+        required = radius + resolution*np.sqrt(2.)*.5
+        return bool(np.all(np.sum((centers-closest)**2, axis=1) > required**2))
+
     @staticmethod
     def segment_clear(start: GridCell, end: GridCell, blocked: np.ndarray) -> bool:
         """Check the whole segment, including cells adjacent to diagonal steps."""
