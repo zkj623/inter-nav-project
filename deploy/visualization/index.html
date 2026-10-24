@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Go2 · 实时观测</title>
+<style>
+:root{color-scheme:dark;font:14px/1.6 system-ui,sans-serif;background:#0d141b;color:#e6edf3}
+*{box-sizing:border-box}body{margin:0;padding:26px 32px}header{display:flex;justify-content:space-between;gap:20px;align-items:center;margin-bottom:24px}
+h1{font-size:25px;margin:0;letter-spacing:.04em}p{margin:4px 0;color:#91a4b5}.eyebrow{color:#56d6b2;font-size:11px;letter-spacing:.18em}
+.badge{border:1px solid #34514c;background:#142b28;color:#74e5c5;border-radius:20px;padding:6px 14px;font-size:12px;white-space:nowrap}
+.grid{display:grid;grid-template-columns:1.4fr 1fr;gap:18px}.panel{border:1px solid #2a3743;border-radius:12px;overflow:hidden;background:#141e28}
+.panelhead{padding:16px 20px;display:flex;align-items:center;justify-content:space-between;gap:10px}h2{font-size:16px;margin:0}.tag{color:#91a4b5;font-size:12px}
+.viewport{height:460px;position:relative;background:#101923;overflow:hidden}.viewport canvas{width:100%;height:100%;touch-action:none;cursor:grab}.viewport img{width:100%;height:100%;object-fit:contain;display:none}
+.hint{position:absolute;left:16px;bottom:12px;font-size:12px;color:#91a4b5;pointer-events:none}.empty{position:absolute;inset:0;display:grid;place-content:center;text-align:center;color:#91a4b5;pointer-events:none;padding:20px}
+.stale{position:absolute;top:12px;left:12px;color:#ffcf87;background:#352819;padding:5px 10px;border-radius:5px;font-size:12px;display:none}.tools{display:flex;gap:8px;padding:12px 16px;flex-wrap:wrap;align-items:center}
+button{border:1px solid #3b4a58;background:#202f3c;color:#dce7f0;border-radius:6px;padding:5px 11px;cursor:pointer}button:hover{border-color:#56d6b2}label{font-size:12px;color:#b6c6d4;display:flex;align-items:center;gap:5px}
+.meta{padding:12px 18px;border-top:1px solid #2a3743;font-family:ui-monospace,monospace;font-size:12px;color:#9eb0bf;min-height:62px;overflow-wrap:anywhere}
+.status{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:18px}.stat{padding:14px 18px;background:#141e28;border:1px solid #2a3743;border-radius:9px}.stat small{color:#91a4b5;display:block;margin-bottom:5px}.stat strong{font-size:16px;font-weight:500}
+#errors{color:#ffbf85;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:12px}footer{font-size:12px;color:#7f94a6;margin-top:20px}#demo{color:#ffcf87;font-size:12px;margin-top:4px}
+@media(max-width:950px){body{padding:18px}.grid{grid-template-columns:1fr}.viewport{height:370px}.status{grid-template-columns:1fr}header{align-items:flex-start}}
+</style>
+<header><div><div class="eyebrow">INTER NAV / LIVE OBSERVATION</div><h1>Go2 实时观测</h1><p>实时点云与前置 RGB · 独立于导航控制</p><div id="demo"></div></div><span class="badge">只读模式 · 不发送运动指令</span></header>
+<main class="grid">
+ <section class="panel"><div class="panelhead"><h2>三维点云</h2><span class="tag">按高度着色 · 最新一帧</span></div>
+ <div class="viewport"><canvas id="cloud"></canvas><div id="cloudEmpty" class="empty">等待点云数据…</div><div id="cloudStale" class="stale">点云已过期 · 保留最后一帧</div><div class="hint">拖动旋转 · 滚轮缩放 · Shift + 拖动平移</div></div>
+ <div class="tools"><button id="reset">复位视角</button><button id="top">俯视</button><label><input id="follow" type="checkbox" checked>跟随机器人位置</label><span class="tag">XYZ / 米</span></div>
+ <div id="cloudMeta" class="meta">尚未收到点云。显示不需要导航标定，但不代表导航已就绪。</div></section>
+ <section class="panel"><div class="panelhead"><h2>前置 RGB</h2><span class="tag">彩色图像 · 不含深度</span></div>
+ <div class="viewport"><img id="rgb" alt="Go2 前置 RGB 实时画面"><div id="rgbEmpty" class="empty">等待前置图像…</div><div id="rgbStale" class="stale">图像已过期 · 保留最后一帧</div></div>
+ <div class="tools"><span class="tag">RGB 与点云独立刷新，本界面不进行图像与点云融合。</span></div>
+ <div id="rgbMeta" class="meta">等待相机连接；相机不可用时，点云仍可显示。</div></section>
+</main>
+<section class="status"><div class="stat"><small>可视化服务</small><strong id="connection">正在连接…</strong></div><div class="stat"><small>机器人位置 / 点云坐标系一致时显示标记</small><strong id="pose">等待里程计</strong></div><div class="stat"><small>显示刷新上限 / 不是运动控制频率</small><strong id="rate">—</strong></div></section>
+<div id="errors" role="status"></div>
+<footer>默认点云坐标系为 odom，属于局部里程计坐标，不代表全局定位。关闭此界面不会停止导航，请在 run.py 控制台操作。</footer>
+<script>
+'use strict';
+const $=id=>document.getElementById(id), canvas=$('cloud'), ctx=canvas.getContext('2d');
+let data=null, yaw=-.75, pitch=.7, scale=42, center=[0,0,0], pan=[0,0], drag=null, centered=false, offline=true;
+const colors=Array.from({length:128},(_,i)=>`hsl(${205-i*1.35} 68% ${47+i*.12}%)`);
+function project(p,w,h){const x=p[0]-center[0],y=p[1]-center[1],z=p[2]-center[2];
+ const u=Math.cos(yaw)*x-Math.sin(yaw)*y,v=Math.sin(yaw)*x+Math.cos(yaw)*y;
+ return [w/2+pan[0]+u*scale,h/2+pan[1]-(v*Math.sin(pitch)+z*Math.cos(pitch))*scale,v*Math.cos(pitch)-z*Math.sin(pitch)];}
+function draw(){const box=canvas.getBoundingClientRect(),w=box.width,h=box.height,dpr=Math.min(devicePixelRatio||1,2);
+ if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);}
+ ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
+ const line=(a,b,c)=>{a=project(a,w,h);b=project(b,w,h);ctx.strokeStyle=c;ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();};
+ const cx=Math.round(center[0]),cy=Math.round(center[1]),cz=center[2];
+ for(let n=-8;n<=8;n++){line([cx+n,cy-8,cz],[cx+n,cy+8,cz],'#20303d');line([cx-8,cy+n,cz],[cx+8,cy+n,cz],'#20303d');}
+ if(data?.cloud){ctx.globalAlpha=(offline||data.cloud.stale)? .32:1;
+  const pts=data.cloud.points.map(p=>{let s=project(p,w,h);s.push(p[2]);return s;}).filter(p=>p[0]>=0&&p[0]<w&&p[1]>=0&&p[1]<h).sort((a,b)=>b[2]-a[2]);
+  for(const p of pts){const t=Math.max(0,Math.min(127,Math.round((p[3]-center[2]+.4)/2.8*127)));ctx.fillStyle=colors[t];ctx.fillRect(p[0],p[1],2,2);}ctx.globalAlpha=1;
+ }
+ if(!offline&&data?.pose_overlay){const p=data.pose.position,q=data.pose.yaw,a=project(p,w,h),b=project([p[0]+.65*Math.cos(q),p[1]+.65*Math.sin(q),p[2]],w,h);
+  ctx.fillStyle='#ffb76b';ctx.beginPath();ctx.arc(a[0],a[1],6,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#ffb76b';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();ctx.lineWidth=1;}
+ const axes=[[[1,0,0],'#f18d82','X'],[[0,1,0],'#70dbac','Y'],[[0,0,1],'#82b8f1','Z']];
+ for(const [v,c,label] of axes){const end=center.map((x,i)=>x+v[i]);line(center,end,c);const p=project(end,w,h);ctx.fillStyle=c;ctx.fillText(label,p[0]+5,p[1]-5);}
+}
+function recenter(){if(data?.pose_overlay)center=[...data.pose.position];else if(data?.cloud?.points.length){const pts=data.cloud.points;center=[0,1,2].map(i=>pts.reduce((a,p)=>a+p[i],0)/pts.length);}pan=[0,0];}
+$('reset').onclick=()=>{yaw=-.75;pitch=.7;scale=42;recenter();draw();};$('top').onclick=()=>{pitch=Math.PI/2;yaw=0;draw();};$('follow').onchange=()=>{if($('follow').checked)recenter();draw();};
+canvas.onpointerdown=e=>{drag=[e.clientX,e.clientY];canvas.setPointerCapture(e.pointerId);};
+canvas.onpointermove=e=>{if(!drag)return;const dx=e.clientX-drag[0],dy=e.clientY-drag[1];drag=[e.clientX,e.clientY];if(e.shiftKey){pan[0]+=dx;pan[1]+=dy;}else{yaw+=dx*.008;pitch=Math.max(.05,Math.min(Math.PI/2,pitch+dy*.008));}draw();};
+canvas.onpointerup=canvas.onpointercancel=()=>drag=null;
+canvas.addEventListener('wheel',e=>{e.preventDefault();scale=Math.max(8,Math.min(260,scale*Math.exp(-e.deltaY*.001)));draw();},{passive:false});
+new ResizeObserver(draw).observe(canvas);
+function markStale(name,stale){$(name+'Stale').style.display=stale?'block':'none';if(name==='rgb')$('rgb').style.opacity=stale?'.35':'1';}
+async function poll(){const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),2500);let delay=200;
+ try{const response=await fetch('/api/frame',{signal:abort.signal,cache:'no-store'});if(!response.ok)throw Error('HTTP '+response.status);data=await response.json();offline=false;
+  delay=1000/data.fps;$('connection').textContent='已连接 · 只读';$('rate').textContent=data.fps+' Hz';
+  $('demo').textContent=data.demo?'演示模式：合成数据，未连接机器人':'';
+  if(data.cloud){$('cloudEmpty').style.display='none';$('cloudMeta').textContent=`${data.cloud_topic}  |  ${data.cloud.frame}\n${data.cloud.count.toLocaleString()} 点 → 显示 ${data.cloud.points.length.toLocaleString()} 点 · 接收距今 ${data.cloud.age.toFixed(2)} s`;
+   if(!centered){recenter();centered=true;}if($('follow').checked&&data.pose_overlay)center=[...data.pose.position];}
+  markStale('cloud',!!data.cloud?.stale);
+  if(data.rgb){$('rgbEmpty').style.display='none';$('rgb').style.display='block';const url='data:image/jpeg;base64,'+data.rgb.jpeg;if($('rgb').getAttribute('src')!==url)$('rgb').src=url;
+   $('rgbMeta').textContent=`${data.rgb.source} · 接收距今 ${data.rgb.age.toFixed(2)} s`+(data.rgb.stamp===null?' · SDK 未提供采集时间戳':'');}
+  markStale('rgb',!!data.rgb?.stale);
+  $('pose').textContent=data.pose?data.pose.position.map(x=>x.toFixed(2)).join(', ')+` m (${data.pose.frame})`+(data.pose.stale?' · 已过期':data.pose_overlay?'':' · 未叠加'):'等待里程计';
+  $('errors').textContent=Object.entries(data.errors).map(([k,v])=>k+': '+v).join('\n');draw();
+ }catch(error){offline=true;$('connection').textContent='连接中断 · 保留最后画面';markStale('cloud',true);markStale('rgb',true);$('pose').textContent='服务断开 · 位姿不可用';$('errors').textContent=String(error);draw();delay=1000;}
+ finally{clearTimeout(timer);setTimeout(poll,delay);}}
+poll();
+</script>
+</html>

@@ -29,7 +29,7 @@
 | 局部位姿 | `/utlidar/robot_odom` 实际收到，`odom → base_link`；不是全局定位 |
 | 默认点云 | `/utlidar/cloud_deskewed` 实际收到，点已在 `odom` 中，不再重复施加机身位姿 |
 | 其他输入 | `/utlidar/cloud`、`cloud_base`、`imu`、`robot_pose` 实际收到；默认导航不重复融合这些输入 |
-| 视频 | `/frontvideostream` 的 `unitree_go/msg/Go2FrontVideoData` 实际收到；不是 RGB-D，本程序暂不解码视频 |
+| 视频 | `/frontvideostream` 的 `unitree_go/msg/Go2FrontVideoData` 实际收到；不是 RGB-D；导航不解码该自定义话题，独立可视化通过 SDK 获取 RGB |
 | 全局定位 | `/uslam/frontend/odom`、`/uslam/localization/odom`、`/lio_sam_ros2/mapping/odometry` 检查时均无发布者 |
 | 未确定 | 本体固件、雷达 L1/L2 型号、相机型号、雷达外参、地面高度、自回波过滤和遥控仲裁 |
 | DDS | 检查时出现 `invalid data size`，尚未证明消息定义/中间件兼容，运动验收标记保持 false |
@@ -45,6 +45,8 @@
 ## 目录与调用关系
 
 ```text
+view.py → visualization/server.py → 浏览器点云 / RGB 界面
+             └─ visualization/sources.py → ROS 只读订阅 + 独立 SDK 取图进程
 run.py --diagnose → robot/diagnostics.py（只读订阅）
 run.py → app/runtime.py
            ├─ app/keyboard.py → app/tasks.py
@@ -265,3 +267,70 @@ run_summary.json           # 任务结果、结束原因、停止反馈
 记录的速度请求不是电机执行确认；停稳反馈也不等于长期无漂移。机身实测速度、低速跟踪、
 混合转弯、停止距离、脚部稳定性、窄门通过、断网/接管与模型超时都需要实机分级验收。
 先做只读对齐，再验证停止与接管，再做空旷点导航，最后做绕障和语义探索。
+
+
+## 实时点云与 RGB 可视化
+
+另开一个 SSH 终端运行 `python view.py`，与 `python run.py` 独立运行。
+界面借鉴 zkj 版本的点云视角和 RGB 分屏；原版渲染器依赖仿真对象并用于录像，
+这里改成直接读取真机传感器的浏览器界面。没有 Isaac、Qt、Open3D、Node 或外部 CDN 依赖。
+
+**笔记本终端：** 将 `<用户>`、`<Go2地址>` 和下面的项目路径替换为实际值。
+
+```bash
+ssh -L 8080:127.0.0.1:8080 <用户>@<Go2地址>
+```
+
+**进入 Go2 的 SSH 终端后：**
+
+```bash
+source ~/unitree_ros2/setup.sh
+cd ~/inter-nav-project
+source .venv-deploy/bin/activate
+cd deploy
+python view.py
+```
+
+然后在**笔记本浏览器**打开 `http://127.0.0.1:8080`。如果导航已经在另一个
+SSH 终端运行，保持它运行即可。此处无需 `--allow-motion`，不修改标定验收开关。
+服务只监听 Go2 的回环地址，通过 SSH 转发访问；不需要 SSH 图形转发或在 Orin 上接显示器。
+端口占用时，用 `--port 8081`，SSH 的两处端口及浏览器地址也一起改成 8081。
+
+界面功能：
+
+- 最新一帧三维点云，按高度着色；拖动旋转、滚轮缩放、Shift + 拖动平移，支持俯视与复位。
+- 点云保留消息本身坐标系，不重复叠加里程计。不做历史点云累积，不把它当作导航占据地图。
+- 位姿与点云坐标系相同、时间差不超过 0.1 秒且均未过期时，才叠加机器人位置/朝向。
+- RGB 和点云独立刷新；不要求 RGB-D、地面标定或导航运行，不把图像与点云强行融合。
+- 显示接收时间、点数和错误。数据过期会变暗并提示，服务断开也不会把最后画面当作实时数据。
+- 断流阈值为 `max(max_data_age_s, 2/fps)`（默认 0.4 秒），与运动安全阈值独立。
+- 默认上限 5 Hz、12000 点、RGB 最大 960×540；单帧缓存，不积压历史。可用
+  `--fps 2 --max-points 6000` 降低 CPU / 带宽占用。这不是运动控制频率。
+
+默认 RGB 使用宇树官方
+[VideoClient.GetImageSample](https://github.com/unitreerobotics/unitree_sdk2_python/blob/master/unitree_sdk2py/go2/video/video_client.py)，
+需要安装 `unitree_sdk2py` 且视频服务可用。它运行在独立进程，避免与 Foxy 的 DDS 库混用；
+仅请求图像，不初始化 SportClient，也不发布运动命令。
+**此前实机只确认 `/frontvideostream` 收到消息，SDK 取图还未实机验收。**
+本实现不猜测 `Go2FrontVideoData` 的编码；取图失败会显示 SDK 返回错误，点云继续显示。
+SDK 图像没有采集时间戳，界面只能报告接收距今时间，不能证明相机端没有重复旧帧。
+
+其他输入选项：
+
+```bash
+# 仅显示点云，排查相机问题时使用
+python view.py --camera none
+
+# 已有标准彩色 sensor_msgs/Image 话题时，不需要深度或相机内参
+python view.py --camera ros --rgb-topic /camera/color/image_raw
+
+# 本地预览界面：合成点云与 RGB，完全不连接机器人
+python view.py --demo
+```
+
+关闭浏览器或对 `view.py` 按 Ctrl+C，只关闭可视化；**不会停止另一个终端的导航**。
+它不显示任务状态、规划路径或模型识别结果，也没有运动按钮。原 `run.py` 的键盘操作保持不变。
+
+真机验收顺序：先运行只读界面确认点云、坐标系与 RGB；临时停止输入或断开 SSH，
+确认界面能提示断流；最后与已验收的导航同时运行，检查 Orin 负载与导航频率。
+只读可视化通过，不等于 DDS 通信、导航标定和运动接管已经验收。
