@@ -19,8 +19,19 @@ def main():
     parser.add_argument('--replay', type=Path, help='recorded run directory; hardware is never initialized')
     parser.add_argument('--task', choices=('observe', 'navigate'), default='observe', help='replay task only')
     parser.add_argument('--goal', nargs=2, type=float, metavar=('X', 'Y'))
-    parser.add_argument('--output', type=Path)
+    parser.add_argument('--output', type=Path, help='diagnostic/replay output only; live recording uses record.py')
+    parser.add_argument('--session-port', type=int, default=8765, help='read-only data feed for view.py and record.py')
+    parser.add_argument('--camera', choices=('sdk', 'ros', 'none'), default='sdk', help='preview RGB source; never substitutes for RGB-D')
+    parser.add_argument('--rgb-topic', help='sensor_msgs/Image topic for --camera ros')
+    parser.add_argument('--demo', action='store_true', help='synthetic inputs through the real mapper; no robot connection')
+    parser.add_argument('--demo-seconds', type=float, default=0., help='optional demo time limit; 0 runs until Ctrl+C')
     args = parser.parse_args()
+    if not 1 <= args.session_port <= 65535 or not 0 <= args.demo_seconds <= 86400:
+        parser.error('invalid session port or demo duration')
+    if args.demo and (args.allow_motion or args.diagnose or args.check or args.replay):
+        parser.error('--demo cannot be combined with motion, diagnostics, check or replay')
+    if args.output and not (args.diagnose or args.replay):
+        parser.error('live output is managed by python record.py --output PATH')
     if args.diagnose and (args.allow_motion or args.replay or args.check):
         parser.error('--diagnose cannot be combined with motion, replay or offline check')
     if args.diagnose and not 1 <= args.duration <= 60:
@@ -31,6 +42,9 @@ def main():
         parser.error('--task navigate requires --replay and --goal X Y')
     try:
         config = load(args.config_dir)
+        if args.camera == 'ros' and not args.demo and not (args.check or args.diagnose or args.replay):
+            if not (args.rgb_topic or config['robot']['rgb_topic']):
+                parser.error('--camera ros requires --rgb-topic or robot.yaml rgb_topic')
         if args.diagnose:
             from deploy.robot.diagnostics import run
             return run(config, args.duration, args.output or Path('ros_diagnostic.json'))

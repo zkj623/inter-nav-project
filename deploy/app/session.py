@@ -1,0 +1,229 @@
+"""run.py owns one bounded, read-only experiment feed; view/record are clients."""
+from collections import deque
+from dataclasses import asdict
+from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import base64
+import io
+import json
+import queue
+import threading
+import time
+from urllib.parse import urlsplit, parse_qs
+from uuid import uuid4
+
+import numpy as np
+import requests
+
+from deploy.recording.recorder import pack, unpack, json_value, provenance
+from deploy.robot.observation import Snapshot
+from deploy.visualization.scene import SceneCapture, map_payload
+from deploy.visualization.sources import LatestFrames, jpeg_from_bgr
+
+
+def encode_packet(snapshot, scene):
+    arrays = {}
+    metadata = pack({'snapshot': asdict(snapshot), 'scene': scene}, arrays)
+    output = io.BytesIO()
+    np.savez_compressed(output, **arrays)
+    return {'metadata': metadata, 'npz': base64.b64encode(output.getvalue()).decode()}
+
+
+def decode_packet(packet):
+    with np.load(io.BytesIO(base64.b64decode(packet['npz'], validate=True)), allow_pickle=False) as arrays:
+        data = unpack(packet['metadata'], arrays)
+    return Snapshot(**data['snapshot']), data['scene']
+
+
+class Session:
+    def __init__(self, config, repo, port=8765, demo=False, mode='live_observe_only', frame_limit=4, event_limit=4096):
+        self.info = {'session_id': uuid4().hex, 'started_at': datetime.now(timezone.utc).isoformat(),
+                     'config': config, 'provenance': provenance(repo), 'mode': mode, 'demo': demo}
+        self.lock = threading.Lock()
+        self.frames = LatestFrames(stale_after=1., demo=demo)
+        self.capture = SceneCapture()
+        self.pending = queue.Queue(maxsize=1)
+        self.frames_ring, self.events_ring = deque(maxlen=frame_limit), deque(maxlen=event_limit)
+        self.frame_id = self.event_id = self.dropped = 0
+        self.last_publish = float('-inf')
+        self.map = {'ready': False, 'reason': '等待 run.py 的有效观测和标定'}
+        self.map_at = None
+        self.status = {'state': 'starting', 'motion': 'disabled', 'mode': 'observe'}
+        self.heartbeat = time.monotonic()
+        self.summary = None
+        self.worker_stop = threading.Event()
+        self.server = self._server(port)  # Bind BEFORE ROS/SDK/motion startup.
+        self.worker = threading.Thread(target=self._encode_loop, daemon=True)
+        self.http = threading.Thread(target=self.server.serve_forever, kwargs={'poll_interval': .1}, daemon=True)
+        self.worker.start()
+        self.http.start()
+        self.event('session_started', session_id=self.info['session_id'])
+
+    @property
+    def url(self):
+        return f'http://127.0.0.1:{self.server.server_port}'
+
+    def event(self, kind, **details):
+        # Events contain only small metadata, never point/image arrays.
+        item = json.loads(json.dumps({'event': kind, 'at': time.monotonic(), **details}, default=json_value, allow_nan=False))
+        with self.lock:
+            self.event_id += 1
+            self.events_ring.append(dict(item, event_id=self.event_id))
+
+    def update(self, snapshot, tasks, motion, error=None):
+        now = time.monotonic()
+        with self.lock:
+            self.heartbeat = now
+            self.status = {'state': tasks.state, 'mode': tasks.mode, 'motion': motion, 'error': error,
+                           'map_ready': tasks.map_ready, 'result': tasks.result}
+        if snapshot is None or now-self.last_publish < .5:
+            return
+        self.last_publish = now
+        if self.pending.full():
+            self.dropped += 1
+            return
+        try:
+            # Mutable planner arrays are copied only on their owning thread.
+            self.pending.put_nowait((snapshot, self.capture.capture(snapshot, tasks)))
+        except Exception as exc:
+            self.frames.error('session', exc)
+            self.dropped += 1
+
+    def rgb(self, rgba, captured_at=None, source='ROS RGB'):
+        self.frames.put('rgb', {'jpeg': jpeg_from_bgr(rgba[..., :3][..., ::-1]),
+                                'source': source, 'stamp': captured_at, 'source_age': None,
+                                'timestamp_basis': 'monotonic_capture_estimate'}, captured_at)
+
+    def _encode_loop(self):
+        while not self.worker_stop.is_set() or not self.pending.empty():
+            try:
+                snapshot, scene = self.pending.get(timeout=.1)
+            except queue.Empty:
+                continue
+            try:
+                packet = encode_packet(snapshot, scene)
+                map_image = map_payload(scene)
+                lidar = snapshot.observation['sensors']['lidar']
+                points = scene['points'] if scene['ready'] else lidar['pointcloud']
+                if len(points) > 12000:
+                    points = points[np.linspace(0, len(points)-1, 12000, dtype=int)]
+                display_count = scene['voxel_count'] if scene['ready'] else len(lidar['pointcloud'])
+                cloud_payload = {'points': np.round(np.asarray(points, dtype=float), 3).tolist(),
+                                         'count': display_count, 'frame': snapshot.planning_frame,
+                                         'stamp': snapshot.lidar_at, 'source_age': None,
+                                         'ground_relative_z': snapshot.geometry_calibrated,
+                                         'kind': '累计建图点云' if scene['ready'] else '当前原始点云（未建图）'}
+                w, x, y, z = snapshot.observation['orientation']
+                pose_payload = {'position': snapshot.observation['position'].tolist(),
+                                        'yaw': float(np.arctan2(2*(w*z+x*y), 1-2*(y*y+z*z))),
+                                        'frame': snapshot.planning_frame, 'stamp': snapshot.pose_at,
+                                        'source_age': None}
+                camera = snapshot.observation['sensors'].get('camera')
+                if camera is not None:
+                    self.rgb(camera['rgba'], snapshot.camera_at, 'ROS RGB-D colour')
+                with self.lock:
+                    self.frames.put('cloud', cloud_payload, snapshot.lidar_at)
+                    self.frames.put('pose', pose_payload, snapshot.pose_at)
+                    self.map, self.map_at = map_image, snapshot.lidar_at
+                    self.frame_id += 1
+                    self.frames_ring.append({'frame_id': self.frame_id, 'packet': packet,
+                                             'visual': self.frames.snapshot(), 'map': map_image})
+                with self.frames.lock:
+                    self.frames.errors.pop('session', None)
+            except Exception as error:
+                self.frames.error('session', error)
+                self.dropped += 1
+
+    def display(self):
+        now = time.monotonic()
+        with self.lock:
+            mapping = dict(self.map, stale=self.map_at is None or now-self.map_at > 1.)
+            state = dict(self.status)
+            age = now-self.heartbeat
+            finished = self.summary is not None
+            sequence = self.frame_id
+            frames = self.frames.snapshot()
+        return dict(frames, session_id=self.info['session_id'], sequence=sequence,
+                    map=mapping, status=state, session_age=age, finished=finished, fps=2.,
+                    cloud_topic=self.info['config']['robot']['lidar_topic'])
+
+    def batch(self, after_frame, after_event):
+        with self.lock:
+            oldest_frame = self.frames_ring[0]['frame_id'] if self.frames_ring else self.frame_id+1
+            oldest_event = self.events_ring[0]['event_id'] if self.events_ring else self.event_id+1
+            return {'info': self.info, 'frames': [p for p in self.frames_ring if p['frame_id'] > after_frame],
+                    'events': [p for p in self.events_ring if p['event_id'] > after_event],
+                    'frame_gap': max(0, oldest_frame-after_frame-1),
+                    'event_gap': max(0, oldest_event-after_event-1),
+                    'producer_dropped': self.dropped, 'summary': self.summary}
+
+    def _server(self, port):
+        session = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                parsed = urlsplit(self.path)
+                try:
+                    if parsed.path == '/api/frame':
+                        payload = session.display()
+                    elif parsed.path == '/api/record':
+                        params = parse_qs(parsed.query)
+                        frame, event = int(params.get('frame', ['0'])[0]), int(params.get('event', ['0'])[0])
+                        if min(frame, event) < 0:
+                            raise ValueError('negative cursor')
+                        payload = session.batch(frame, event)
+                    else:
+                        self.send_error(404)
+                        return
+                    body = json.dumps(payload, default=json_value, allow_nan=False).encode()
+                except (ValueError, TypeError):
+                    self.send_error(400)
+                    return
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(body)))
+                self.send_header('Cache-Control', 'no-store')
+                self.end_headers()
+                try:
+                    self.wfile.write(body)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(('127.0.0.1', port), Handler)
+        server.daemon_threads = True
+        return server
+
+    def close(self, summary, grace=2.):
+        # Called only AFTER motor shutdown. Let record drain the final state.
+        self.worker_stop.set()
+        self.worker.join(timeout=3)
+        if self.worker.is_alive():
+            summary = dict(summary, completed=False, telemetry_error='encoder did not finish')
+        self.event('session_finished', summary=summary)
+        with self.lock:
+            self.summary = summary
+        time.sleep(grace)
+        self.server.shutdown()
+        self.http.join(timeout=1)
+        self.server.server_close()
+
+
+class SessionClient:
+    def __init__(self, url='http://127.0.0.1:8765'):
+        self.url = url.rstrip('/')
+        self.http = requests.Session()
+        self.http.trust_env = False
+
+    def get(self, path):
+        response = self.http.get(self.url+path, timeout=2.)
+        response.raise_for_status()
+        return response.json()
+
+    def snapshot(self):
+        return self.get('/api/frame')
+
+    def close(self):
+        self.http.close()

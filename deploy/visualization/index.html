@@ -2,83 +2,140 @@
 <html lang="zh-CN">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Go2 · 实时观测</title>
+<title>Go2</title>
 <style>
-:root{color-scheme:dark;font:14px/1.6 system-ui,sans-serif;background:#0d141b;color:#e6edf3}
-*{box-sizing:border-box}body{margin:0;padding:26px 32px}header{display:flex;justify-content:space-between;gap:20px;align-items:center;margin-bottom:24px}
-h1{font-size:25px;margin:0;letter-spacing:.04em}p{margin:4px 0;color:#91a4b5}.eyebrow{color:#56d6b2;font-size:11px;letter-spacing:.18em}
-.badge{border:1px solid #34514c;background:#142b28;color:#74e5c5;border-radius:20px;padding:6px 14px;font-size:12px;white-space:nowrap}
-.grid{display:grid;grid-template-columns:1.4fr 1fr;gap:18px}.panel{border:1px solid #2a3743;border-radius:12px;overflow:hidden;background:#141e28}
-.panelhead{padding:16px 20px;display:flex;align-items:center;justify-content:space-between;gap:10px}h2{font-size:16px;margin:0}.tag{color:#91a4b5;font-size:12px}
-.viewport{height:460px;position:relative;background:#101923;overflow:hidden}.viewport canvas{width:100%;height:100%;touch-action:none;cursor:grab}.viewport img{width:100%;height:100%;object-fit:contain;display:none}
-.hint{position:absolute;left:16px;bottom:12px;font-size:12px;color:#91a4b5;pointer-events:none}.empty{position:absolute;inset:0;display:grid;place-content:center;text-align:center;color:#91a4b5;pointer-events:none;padding:20px}
-.stale{position:absolute;top:12px;left:12px;color:#ffcf87;background:#352819;padding:5px 10px;border-radius:5px;font-size:12px;display:none}.tools{display:flex;gap:8px;padding:12px 16px;flex-wrap:wrap;align-items:center}
-button{border:1px solid #3b4a58;background:#202f3c;color:#dce7f0;border-radius:6px;padding:5px 11px;cursor:pointer}button:hover{border-color:#56d6b2}label{font-size:12px;color:#b6c6d4;display:flex;align-items:center;gap:5px}
-.meta{padding:12px 18px;border-top:1px solid #2a3743;font-family:ui-monospace,monospace;font-size:12px;color:#9eb0bf;min-height:62px;overflow-wrap:anywhere}
-.status{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:18px}.stat{padding:14px 18px;background:#141e28;border:1px solid #2a3743;border-radius:9px}.stat small{color:#91a4b5;display:block;margin-bottom:5px}.stat strong{font-size:16px;font-weight:500}
-#errors{color:#ffbf85;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:12px}footer{font-size:12px;color:#7f94a6;margin-top:20px}#demo{color:#ffcf87;font-size:12px;margin-top:4px}
-@media(max-width:950px){body{padding:18px}.grid{grid-template-columns:1fr}.viewport{height:370px}.status{grid-template-columns:1fr}header{align-items:flex-start}}
+:root{color-scheme:dark;font:13px/1.5 system-ui,sans-serif;background:#10161c;color:#d8e0e7}
+*{box-sizing:border-box}html{width:100%;height:100%}body{margin:0;padding:10px;width:100%;height:100vh;height:100dvh;display:flex;flex-direction:column}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;flex:1;min-height:360px}
+.panel{min-width:0;min-height:0;display:flex;flex-direction:column;border:1px solid #2a343e;background:#141c24}
+.panelhead{padding:10px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px}h2{font-size:14px;font-weight:500;margin:0}
+.viewport{flex:1;min-height:0;position:relative;background:#101923;overflow:hidden}
+.viewport canvas,.viewport img{position:absolute;inset:0;width:100%;height:100%;display:block}.viewport canvas{touch-action:none;cursor:grab}.viewport img{object-fit:contain;display:none}
+.empty{position:absolute;inset:0;display:grid;place-content:center;text-align:center;color:#91a4b5;pointer-events:none;padding:16px}
+.stale{position:absolute;top:10px;left:10px;color:#ffcf87;background:#352819;padding:4px 8px;display:none}
+.tools{display:flex;gap:6px;padding:10px 12px;flex-wrap:wrap;align-items:center}
+button{border:1px solid #3b4a58;background:transparent;color:#bdcbd7;padding:4px 10px;border-radius:3px;cursor:pointer}button:hover,button[aria-pressed="true"]{background:#2a3947;color:#fff}
+.legend{padding:8px 12px;color:#91a4b5;font-size:12px}.legend span{white-space:nowrap;margin-right:10px}
+.dot{display:inline-block;width:7px;height:7px;margin-right:4px;background:var(--color)}
+.status{flex-shrink:0;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-top:8px;color:#91a4b5;font-size:12px}
+#demo,#viewMode,#errors{color:#ffcf87}#viewMode:empty,#errors:empty{display:none}#viewMode{font-size:12px;padding:0 12px 8px}
+#errors{white-space:pre-wrap;overflow-wrap:anywhere;margin-top:8px;font-size:12px}
+@media(max-width:900px){body{height:auto;min-height:100vh;min-height:100dvh}.grid{grid-template-columns:1fr;flex:none;min-height:0}.panel{height:clamp(340px,65vh,720px);height:clamp(340px,65dvh,720px)}}
 </style>
-<header><div><div class="eyebrow">INTER NAV / LIVE OBSERVATION</div><h1>Go2 实时观测</h1><p>实时点云与前置 RGB · 独立于导航控制</p><div id="demo"></div></div><span class="badge">只读模式 · 不发送运动指令</span></header>
 <main class="grid">
- <section class="panel"><div class="panelhead"><h2>三维点云</h2><span class="tag">按高度着色 · 最新一帧</span></div>
- <div class="viewport"><canvas id="cloud"></canvas><div id="cloudEmpty" class="empty">等待点云数据…</div><div id="cloudStale" class="stale">点云已过期 · 保留最后一帧</div><div class="hint">拖动旋转 · 滚轮缩放 · Shift + 拖动平移</div></div>
- <div class="tools"><button id="reset">复位视角</button><button id="top">俯视</button><label><input id="follow" type="checkbox" checked>跟随机器人位置</label><span class="tag">XYZ / 米</span></div>
- <div id="cloudMeta" class="meta">尚未收到点云。显示不需要导航标定，但不代表导航已就绪。</div></section>
- <section class="panel"><div class="panelhead"><h2>前置 RGB</h2><span class="tag">彩色图像 · 不含深度</span></div>
- <div class="viewport"><img id="rgb" alt="Go2 前置 RGB 实时画面"><div id="rgbEmpty" class="empty">等待前置图像…</div><div id="rgbStale" class="stale">图像已过期 · 保留最后一帧</div></div>
- <div class="tools"><span class="tag">RGB 与点云独立刷新，本界面不进行图像与点云融合。</span></div>
- <div id="rgbMeta" class="meta">等待相机连接；相机不可用时，点云仍可显示。</div></section>
+ <section class="panel"><div class="panelhead"><h2>前置 RGB</h2></div>
+ <div class="viewport"><img id="rgb" alt="前置 RGB"><div id="rgbEmpty" class="empty">等待图像</div><div id="rgbStale" class="stale">图像已过期</div></div></section>
+ <section class="panel"><div class="panelhead"><h2>地图</h2></div>
+ <div class="viewport"><img id="mapImage" alt="导航地图"><div id="mapEmpty" class="empty">等待建图</div><div id="mapStale" class="stale">地图已过期</div></div>
+ <div class="legend"><span><i class="dot" style="--color:#dcd9d2"></i>自由</span><span><i class="dot" style="--color:#d74b4b"></i>障碍</span><span><i class="dot" style="--color:#e4b973"></i>膨胀</span><span><i class="dot" style="--color:#37a046"></i>轨迹</span><span><i class="dot" style="--color:#1e82f5"></i>路径</span><span><i class="dot" style="--color:#3287d2"></i>Voronoi</span></div></section>
+ <section class="panel"><div class="panelhead"><h2>累计点云图</h2></div>
+ <div class="viewport"><canvas id="cloud" aria-label="累计点云"></canvas><div id="cloudEmpty" class="empty">等待点云</div><div id="cloudStale" class="stale">点云已过期</div></div>
+ <div class="tools"><button id="reset" aria-pressed="true">背后跟随</button><button id="fit" aria-pressed="false">全图</button><button id="top">俯视</button></div>
+ <div id="viewMode"></div><div class="legend" id="cloudMeta">浅灰：地面 · 彩色：其他高度</div></section>
 </main>
-<section class="status"><div class="stat"><small>可视化服务</small><strong id="connection">正在连接…</strong> <button id="reconnect" hidden>重新连接</button></div><div class="stat"><small>机器人位置 / 点云坐标系一致时显示标记</small><strong id="pose">等待里程计</strong></div><div class="stat"><small>显示刷新上限 / 不是运动控制频率</small><strong id="rate">—</strong></div></section>
+<div class="status"><span id="connection">连接中</span><button id="reconnect" hidden>重新连接</button><span id="demo"></span><span id="task"></span></div>
 <div id="errors" role="status"></div>
-<footer>默认点云坐标系为 odom，属于局部里程计坐标，不代表全局定位。关闭此界面不会停止导航，请在 run.py 控制台操作。</footer>
 <script>
 'use strict';
 const $=id=>document.getElementById(id), canvas=$('cloud'), ctx=canvas.getContext('2d');
-let data=null, yaw=-.75, pitch=.7, scale=42, center=[0,0,0], pan=[0,0], drag=null, centered=false, offline=true;
-let pollTimer=null, polling=false;
+let data=null, yaw=-.75, pitch=.7, scale=42, center=[0,0,0], pan=[0,0], drag=null, autoFit=false, offline=true;
+let follow=true;
+let pollTimer=null, polling=false, cameraPose=null, cameraZoom=1;
 const colors=Array.from({length:128},(_,i)=>`hsl(${205-i*1.35} 68% ${47+i*.12}%)`);
-function project(p,w,h){const x=p[0]-center[0],y=p[1]-center[1],z=p[2]-center[2];
+// Camera in robot coordinates: 3.2 m behind, 2.7 m above the base;
+// look toward 1.2 m ahead / 0.45 m above the base, with a 72 degree vertical FOV.
+function rearProject(p,pose,w,h,zoom=1){
+ const dx=p[0]-pose.position[0],dy=p[1]-pose.position[1],dz=p[2]-pose.position[2];
+ const c=Math.cos(pose.yaw),s=Math.sin(pose.yaw);
+ const x=dx*c+dy*s+3.2,y=-dx*s+dy*c,z=dz-2.7;
+ const length=Math.hypot(4.4,2.25),fx=4.4/length,fz=-2.25/length;
+ const depth=x*fx+z*fz;
+ if(depth<=.15)return [NaN,NaN,depth];
+ const focal=h*.5/Math.tan(Math.PI/5)*zoom;
+ return [w/2-y*focal/depth,h/2-(-fz*x+fx*z)*focal/depth,depth];
+}
+function project(p,w,h){
+ if(follow&&cameraPose)return rearProject(p,cameraPose,w,h,cameraZoom);
+ const x=p[0]-center[0],y=p[1]-center[1],z=p[2]-center[2];
  const u=Math.cos(yaw)*x-Math.sin(yaw)*y,v=Math.sin(yaw)*x+Math.cos(yaw)*y;
  return [w/2+pan[0]+u*scale,h/2+pan[1]-(v*Math.sin(pitch)+z*Math.cos(pitch))*scale,v*Math.cos(pitch)-z*Math.sin(pitch)];}
+function fitMap(w,h){
+ const points=data?.cloud?.points||[], bounds=points.filter(p=>p.every(Number.isFinite));
+ if(data?.pose_overlay)bounds.push(data.pose.position);
+ if(!bounds.length)return;
+ const lo=[Infinity,Infinity,Infinity],hi=[-Infinity,-Infinity,-Infinity];
+ for(const p of bounds)for(let i=0;i<3;i++){lo[i]=Math.min(lo[i],p[i]);hi[i]=Math.max(hi[i],p[i]);}
+ center=lo.map((v,i)=>(v+hi[i])/2);pan=[0,0];
+ let maxU=1,maxV=1;
+ for(const p of bounds){const x=p[0]-center[0],y=p[1]-center[1],z=p[2]-center[2];
+  maxU=Math.max(maxU,Math.abs(Math.cos(yaw)*x-Math.sin(yaw)*y));
+  maxV=Math.max(maxV,Math.abs((Math.sin(yaw)*x+Math.cos(yaw)*y)*Math.sin(pitch)+z*Math.cos(pitch)));}
+ scale=Math.max(.001,Math.min(w*.42/maxU,h*.42/maxV));
+}
 function draw(){const box=canvas.getBoundingClientRect(),w=box.width,h=box.height,dpr=Math.min(devicePixelRatio||1,2);
  if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);}
+ if(autoFit||(follow&&!cameraPose))fitMap(w,h);
+ if(follow&&cameraPose)center=[...cameraPose.position];
+ $('viewMode').textContent=follow?(cameraPose?(offline||!data?.pose_overlay?'位姿不可用，视角已冻结':''):'等待位姿，暂示全图'):'';
+ canvas.title=follow?'滚轮缩放':'拖动旋转 · 滚轮缩放 · Shift + 拖动平移';
+ $('reset').setAttribute('aria-pressed',String(follow));$('fit').setAttribute('aria-pressed',String(autoFit));
  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
- const line=(a,b,c)=>{a=project(a,w,h);b=project(b,w,h);ctx.strokeStyle=c;ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();};
- const cx=Math.round(center[0]),cy=Math.round(center[1]),cz=center[2];
- for(let n=-8;n<=8;n++){line([cx+n,cy-8,cz],[cx+n,cy+8,cz],'#20303d');line([cx-8,cy+n,cz],[cx+8,cy+n,cz],'#20303d');}
+ const line=(a,b,c)=>{a=project(a,w,h);b=project(b,w,h);if(!Number.isFinite(a[0])||!Number.isFinite(b[0]))return;ctx.strokeStyle=c;ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();};
+ const spacing=Math.max(1,Math.pow(10,Math.floor(Math.log10(Math.max(w,h)/Math.max(scale,.001)/16))));
+ const cx=Math.round(center[0]/spacing)*spacing,cy=Math.round(center[1]/spacing)*spacing,cz=0;
+ for(let n=-10;n<=10;n++){line([cx+n*spacing,cy-10*spacing,cz],[cx+n*spacing,cy+10*spacing,cz],'#20303d');line([cx-10*spacing,cy+n*spacing,cz],[cx+10*spacing,cy+n*spacing,cz],'#20303d');}
  if(data?.cloud){ctx.globalAlpha=(offline||data.cloud.stale)? .32:1;
   const pts=data.cloud.points.map(p=>{let s=project(p,w,h);s.push(p[2]);return s;}).filter(p=>p[0]>=0&&p[0]<w&&p[1]>=0&&p[1]<h).sort((a,b)=>b[2]-a[2]);
-  for(const p of pts){const t=Math.max(0,Math.min(127,Math.round((p[3]-center[2]+.4)/2.8*127)));ctx.fillStyle=colors[t];ctx.fillRect(p[0],p[1],2,2);}ctx.globalAlpha=1;
+  for(const p of pts){const t=Math.max(0,Math.min(127,Math.round((p[3]+.4)/2.8*127)));ctx.fillStyle=data.cloud.ground_relative_z&&Math.abs(p[3])<=.08?'#b8c4cf':colors[t];ctx.fillRect(p[0],p[1],2,2);}ctx.globalAlpha=1;
  }
- if(!offline&&data?.pose_overlay){const p=data.pose.position,q=data.pose.yaw,a=project(p,w,h),b=project([p[0]+.65*Math.cos(q),p[1]+.65*Math.sin(q),p[2]],w,h);
-  ctx.fillStyle='#ffb76b';ctx.beginPath();ctx.arc(a[0],a[1],6,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#ffb76b';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();ctx.lineWidth=1;}
+ if(!offline&&data?.pose_overlay){
+  const p=data.pose.position,q=data.pose.yaw,c=Math.cos(q),s=Math.sin(q);
+  const world=([x,y,z])=>[p[0]+x*c-y*s,p[1]+x*s+y*c,p[2]+z];
+  // Schematic body/legs indicate heading, not measured joint geometry.
+  const corners=[[-.3,-.15,0],[.3,-.15,0],[.3,.15,0],[-.3,.15,0]];
+  ctx.lineWidth=2;
+  for(let i=0;i<4;i++){
+   line(world(corners[i]),world(corners[(i+1)%4]),'#ffb76b');
+   const [x,y]=corners[i];line(world([x,y,0]),world([x,y,-.25]),'#ffb76b');
+  }
+  line(world([0,0,0]),world([.65,0,0]),'#ffdb92');ctx.lineWidth=1;
+ }
  const axes=[[[1,0,0],'#f18d82','X'],[[0,1,0],'#70dbac','Y'],[[0,0,1],'#82b8f1','Z']];
- for(const [v,c,label] of axes){const end=center.map((x,i)=>x+v[i]);line(center,end,c);const p=project(end,w,h);ctx.fillStyle=c;ctx.fillText(label,p[0]+5,p[1]-5);}
+ for(const [v,c,label] of axes){const end=center.map((x,i)=>x+v[i]);line(center,end,c);const p=project(end,w,h);if(Number.isFinite(p[0])){ctx.fillStyle=c;ctx.fillText(label,p[0]+5,p[1]-5);}}
 }
-function recenter(){if(data?.pose_overlay)center=[...data.pose.position];else if(data?.cloud?.points.length){const pts=data.cloud.points;center=[0,1,2].map(i=>pts.reduce((a,p)=>a+p[i],0)/pts.length);}pan=[0,0];}
-$('reset').onclick=()=>{yaw=-.75;pitch=.7;scale=42;recenter();draw();};$('top').onclick=()=>{pitch=Math.PI/2;yaw=0;draw();};$('follow').onchange=()=>{if($('follow').checked)recenter();draw();};
+$('fit').onclick=()=>{autoFit=true;follow=false;draw();};
+$('reset').onclick=()=>{autoFit=false;cameraZoom=1;follow=true;draw();};
+$('top').onclick=()=>{pitch=Math.PI/2;yaw=0;$('fit').click();};
 canvas.onpointerdown=e=>{drag=[e.clientX,e.clientY];canvas.setPointerCapture(e.pointerId);};
-canvas.onpointermove=e=>{if(!drag)return;const dx=e.clientX-drag[0],dy=e.clientY-drag[1];drag=[e.clientX,e.clientY];if(e.shiftKey){pan[0]+=dx;pan[1]+=dy;}else{yaw+=dx*.008;pitch=Math.max(.05,Math.min(Math.PI/2,pitch+dy*.008));}draw();};
+canvas.onpointermove=e=>{if(!drag||follow)return;const dx=e.clientX-drag[0],dy=e.clientY-drag[1];drag=[e.clientX,e.clientY];autoFit=false;if(e.shiftKey){follow=false;pan[0]+=dx;pan[1]+=dy;}else{yaw+=dx*.008;pitch=Math.max(.05,Math.min(Math.PI/2,pitch+dy*.008));}draw();};
 canvas.onpointerup=canvas.onpointercancel=()=>drag=null;
-canvas.addEventListener('wheel',e=>{e.preventDefault();scale=Math.max(8,Math.min(260,scale*Math.exp(-e.deltaY*.001)));draw();},{passive:false});
+canvas.addEventListener('wheel',e=>{e.preventDefault();if(follow){cameraZoom=Math.max(.5,Math.min(2,cameraZoom*Math.exp(-e.deltaY*.001)));draw();return;}autoFit=false;scale=Math.max(.001,Math.min(260,scale*Math.exp(-e.deltaY*.001)));draw();},{passive:false});
 new ResizeObserver(draw).observe(canvas);
-function markStale(name,stale){$(name+'Stale').style.display=stale?'block':'none';if(name==='rgb')$('rgb').style.opacity=stale?'.35':'1';}
+function markStale(name,stale){$(name+'Stale').style.display=stale?'block':'none';if(name==='rgb')$('rgb').style.opacity=stale?'.35':'1';if(name==='map')$('mapImage').style.opacity=stale?'.35':'1';}
 async function poll(){if(polling)return;polling=true;clearTimeout(pollTimer);$('reconnect').disabled=true;
  const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),2500);let delay=null;
- try{const response=await fetch('/api/frame',{signal:abort.signal,cache:'no-store'});if(!response.ok)throw Error('HTTP '+response.status);data=await response.json();offline=false;
-  delay=1000/data.fps;$('connection').textContent='已连接 · 只读';$('rate').textContent=data.fps+' Hz';$('reconnect').hidden=true;
-  $('demo').textContent=data.demo?'演示模式：合成数据，未连接机器人':'';
-  if(data.cloud){$('cloudEmpty').style.display='none';$('cloudMeta').textContent=`${data.cloud_topic}  |  ${data.cloud.frame}\n${data.cloud.count.toLocaleString()} 点 → 显示 ${data.cloud.points.length.toLocaleString()} 点 · 接收距今 ${data.cloud.age.toFixed(2)} s`;
-   if(!centered){recenter();centered=true;}if($('follow').checked&&data.pose_overlay)center=[...data.pose.position];}
-  markStale('cloud',!!data.cloud?.stale);
+ try{const response=await fetch('/api/frame',{signal:abort.signal,cache:'no-store'});if(!response.ok)throw Error('HTTP '+response.status);const incoming=await response.json();
+  if(data?.session_id!==incoming.session_id){autoFit=false;follow=true;cameraPose=null;cameraZoom=1;pan=[0,0];}
+  data=incoming;offline=!!data.finished||data.session_age>2;
+  if(!offline&&data.pose_overlay)cameraPose={position:[...data.pose.position],yaw:data.pose.yaw};
+  delay=data.finished?null:1000/data.fps;$('connection').textContent=data.finished?'本轮运行已结束':offline?'主程序心跳已过期':'已连接';$('reconnect').hidden=!data.finished;
+  $('demo').textContent=data.demo?'演示数据':'';
+  if(data.cloud){$('cloudEmpty').style.display='none';$('cloudMeta').textContent=data.cloud.ground_relative_z?'浅灰：地面 · 彩色：其他高度':'未标定 · 当前帧点云';
+   if(follow&&data.pose_overlay)center=[...data.pose.position];}
+  if(!data.cloud){$('cloudEmpty').style.display='grid';}
+  markStale('cloud',offline||!!data.cloud?.stale);
+  $('task').textContent=data.status?.state==='observe'?'':`${data.status?.mode||''} · ${data.status?.state||''}`;
+  if(data.map?.ready){$('mapEmpty').style.display='none';$('mapImage').style.display='block';
+   const url='data:image/png;base64,'+data.map.png;if($('mapImage').getAttribute('src')!==url)$('mapImage').src=url;
+
+  }else{$('mapImage').style.display='none';$('mapEmpty').style.display='grid';$('mapEmpty').textContent=data.map?.reason||'等待建图';}
+  markStale('map',offline||!!data.map?.stale);
   if(data.rgb){$('rgbEmpty').style.display='none';$('rgb').style.display='block';const url='data:image/jpeg;base64,'+data.rgb.jpeg;if($('rgb').getAttribute('src')!==url)$('rgb').src=url;
-   $('rgbMeta').textContent=`${data.rgb.source} · 接收距今 ${data.rgb.age.toFixed(2)} s`+(data.rgb.stamp===null?' · SDK 未提供采集时间戳':'');}
-  markStale('rgb',!!data.rgb?.stale);
-  $('pose').textContent=data.pose?data.pose.position.map(x=>x.toFixed(2)).join(', ')+` m (${data.pose.frame})`+(data.pose.stale?' · 已过期':data.pose_overlay?'':' · 未叠加'):'等待里程计';
-  $('errors').textContent=Object.entries(data.errors).map(([k,v])=>k+': '+v).join('\n');draw();
- }catch(error){offline=true;delay=null;$('connection').textContent='连接中断 · 已停止刷新';$('reconnect').hidden=false;markStale('cloud',true);markStale('rgb',true);$('pose').textContent='服务断开 · 位姿不可用';$('errors').textContent='请在可视化服务恢复后点击“重新连接”。\n'+String(error);draw();}
+}
+  if(!data.rgb){$('rgb').style.display='none';$('rgbEmpty').style.display='grid';}
+  markStale('rgb',offline||!!data.rgb?.stale);
+  $('errors').textContent=Object.entries({...data.errors,...(data.status?.error?{run:data.status.error}:{})}).map(([k,v])=>k+': '+v).join('\n');draw();
+ }catch(error){offline=true;delay=null;$('connection').textContent='连接中断 · 已停止刷新';$('reconnect').hidden=false;markStale('cloud',true);markStale('rgb',true);markStale('map',true);$('errors').textContent='数据源不可用，请恢复连接后重试。';draw();}
  finally{clearTimeout(timer);polling=false;$('reconnect').disabled=false;if(delay!==null)pollTimer=setTimeout(poll,delay);}}
 $('reconnect').onclick=()=>{$('connection').textContent='正在重新连接…';poll();};
 poll();

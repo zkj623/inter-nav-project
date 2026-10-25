@@ -84,7 +84,10 @@ def run_replay(args, config):
 
 
 def run_live(args, config):
+    import sys
     from .keyboard import Keyboard
+    from .session import Session
+    from deploy.visualization.sources import SdkVideo
     from deploy.robot.sensors import RosSensors
     from deploy.robot.motion import MotionProcess
     from deploy.perception.client import AsyncPerception, AsyncScorer
@@ -92,8 +95,13 @@ def run_live(args, config):
         check_motion_configuration(config)
     robot, nav, runtime = config['robot'], config['navigation'], config['runtime']
     control = runtime['control']
-    recorder = _recorder(args, config, 'live_motion_enabled' if args.allow_motion else 'live_observe_only')
-    sensors = motion = keyboard = perception = scorer = tasks = None
+    session = Session(config, REPO, port=args.session_port, demo=args.demo,
+                      mode='synthetic_demo' if args.demo else ('live_motion_enabled' if args.allow_motion else 'live_observe_only'))
+    print(f'本轮会话：{session.info["session_id"]}；数据服务：{session.url}', flush=True)
+    print('另开终端运行 python view.py 查看三幅图；python record.py 保存实验。', flush=True)
+    sensors = motion = keyboard = perception = scorer = tasks = video = None
+    snapshot = None
+    started_at = time.monotonic()
     quitting = False
     reason, error = 'operator_exit', None
     stop_confirmed = None
@@ -105,28 +113,44 @@ def run_live(args, config):
     for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         handlers[signum] = signal.signal(signum, on_signal)
     try:
-        sensors = RosSensors(robot)
-        if robot['camera_mode'] == 'rgbd':
+        if args.demo:
+            from .demo import DemoSensors
+            sensors = DemoSensors(session)
+        else:
+            topic = args.rgb_topic or robot['rgb_topic']
+            sensors = RosSensors(robot, session.rgb if args.camera == 'ros' else None,
+                                 topic if args.camera == 'ros' else None)
+            if args.camera == 'sdk' and robot['camera_mode'] != 'rgbd':
+                video = SdkVideo(session.frames, robot['network_interface'], 2.)
+            elif args.camera == 'none':
+                session.frames.error('rgb', 'RGB preview disabled (--camera none)')
+        # rclpy.init can replace SIGINT; restore coordinated shutdown after init.
+        for signum in handlers:
+            signal.signal(signum, on_signal)
+        if not args.demo and robot['camera_mode'] == 'rgbd':
             perception = AsyncPerception(runtime['perception'])
         if perception and runtime['topology_scorer']['enabled']:
             scorer = AsyncScorer(runtime['topology_scorer'])
         tasks = Tasks(nav, perception, scorer)
         if args.allow_motion:
             motion = MotionProcess(robot, control)
-        keyboard = Keyboard()
-        last_record = last_status = 0.
+        keyboard = Keyboard() if not args.demo or sys.stdin.isatty() else None
+        last_status = 0.
         perception_started = None
         last_perception_delivery = None
-        print('MCF 保持运行。默认观察；' + ('运动需按任务键启动。' if motion else '本次会话禁止运动。'), flush=True)
-        print(f"规划坐标系={robot['map_frame']}（不代表全局定位）；相机={robot['camera_mode']}", flush=True)
-        if robot['ground_z'] is None or robot['lidar_origin_offset_base_m'] is None:
+        print(('合成演示：未连接机器人。' if args.demo else 'MCF 保持运行。默认观察；') + ('运动需按任务键启动。' if motion else '本次会话禁止运动。'), flush=True)
+        print(f"规划坐标系={'demo_odom' if args.demo else robot['map_frame']}（不代表全局定位）；相机={robot['camera_mode']}", flush=True)
+        if not args.demo and (robot['ground_z'] is None or robot['lidar_origin_offset_base_m'] is None):
             print('地面/雷达原点未标定：本次可记录观测，导航地图暂不生成。', flush=True)
         while not quitting:
             now = time.monotonic()
-            operation = keyboard.poll()
+            if args.demo and args.demo_seconds and now-started_at >= args.demo_seconds:
+                reason = 'demo_finished'
+                break
+            operation = keyboard.poll() if keyboard else None
             if motion:
                 for event in motion.events():
-                    recorder.event('motion_state', **event)
+                    session.event('motion_state', **event)
                     if event['state'] == 'stopped':
                         stop_confirmed = True
                     if event['state'] in ('stopping', 'fault', 'stop_error') and tasks.state == 'active':
@@ -136,7 +160,7 @@ def run_live(args, config):
             snapshot = sensors.latest()
             if operation:
                 key, value = operation
-                recorder.event('operator', key=key, value=value)
+                session.event('operator', key=key, value=value)
                 if key == 'q':
                     quitting = True
                     continue
@@ -174,10 +198,10 @@ def run_live(args, config):
                             tasks.pause()
                             raise ValueError(f'运动未启用：{motion.state}；检查机器人状态和遥控接管键')
                         stop_confirmed = False
-                        recorder.event('motion_state', state='active', detail='explicit operator arm')
+                        session.event('motion_state', state='active', detail='explicit operator arm')
                     except (ValueError, RuntimeError) as exc:
                         print(str(exc), flush=True)
-                        recorder.event('task_rejected', reason=str(exc))
+                        session.event('task_rejected', reason=str(exc))
             if snapshot is not None:
                 try:
                     if snapshot.geometry_calibrated:
@@ -193,7 +217,7 @@ def run_live(args, config):
                             raise ValueError(f'Perception unavailable: {perception.last_error}')
                     velocity = tasks.update(snapshot, now)
                     if perception and perception.last_delivery is not None and perception.last_delivery is not last_perception_delivery:
-                        recorder.event('perception_result', **perception.last_delivery)
+                        session.event('perception_result', **perception.last_delivery)
                         last_perception_delivery = perception.last_delivery
                     if velocity is not None and motion and tasks.state == 'active':
                         expires = min(now+control['command_ttl_s'],
@@ -202,26 +226,24 @@ def run_live(args, config):
                         if tasks.mode == 'explore':
                             expires = min(expires, snapshot.camera_at+robot['max_data_age_s'])
                         motion.submit(velocity, now, expires)
-                        recorder.event('command_requested', generated_at=now, expires_at=expires,
+                        session.event('command_requested', generated_at=now, expires_at=expires,
                                        velocity=velocity, delivery='queued_not_execution_ack')
                     elif tasks.state == 'completed' and motion and motion.state == 'active':
                         motion.stop('task_completed')
-                        recorder.event('task_result', result=tasks.result)
-                    if runtime['recording']['observations'] and now-last_record >= .5:
-                        recorder.observation(snapshot)
-                        last_record = now
+                        session.event('task_result', result=tasks.result)
                 except (ValueError, RuntimeError) as exc:
                     if tasks.state == 'active':
                         tasks.pause()
                         if motion:
                             motion.stop(str(exc))
-                        recorder.event('task_paused', reason=str(exc))
+                        session.event('task_paused', reason=str(exc))
                     sensors.last_error = str(exc)
             elif tasks.state == 'active':
                 tasks.pause()
                 if motion:
                     motion.stop('missing_sensor_data')
-            if now-last_status >= 2 and keyboard.editing is None:
+            session.update(snapshot, tasks, motion.state if motion else 'disabled', sensors.last_error)
+            if now-last_status >= 2 and (keyboard is None or keyboard.editing is None):
                 print(f'状态={tasks.state} 任务={tasks.mode} 运动={motion.state if motion else "disabled"}'
                       f' 观测={"ready" if snapshot else "waiting"} 建图={tasks.map_ready} 最近错误={sensors.last_error}', flush=True)
                 last_status = now
@@ -233,27 +255,22 @@ def run_live(args, config):
         # Stop/close the writer BEFORE expensive disk operations.
         if motion:
             for event in motion.close():
-                recorder.event('motion_state', **event)
+                session.event('motion_state', **event)
                 if event['state'] == 'stopped':
                     stop_confirmed = True
                 if event['state'] == 'fault':
                     error = event['detail']
-        for name, resource in (('keyboard', keyboard), ('perception', perception), ('scorer', scorer), ('sensors', sensors)):
+        for name, resource in (('keyboard', keyboard), ('perception', perception), ('scorer', scorer), ('video', video), ('sensors', sensors)):
             if resource is not None:
                 try:
                     resource.close()
                 except Exception as exc:
                     error = f'{name} cleanup: {exc}'
-                    recorder.event('cleanup_error', reason=error)
-        try:
-            if tasks and tasks.map_ready:
-                tasks.component.mapping.save(str(recorder.directory / 'final_map'))
-        except Exception as exc:
-            error = f'Map save failed: {exc}'
-        recorder.close({'reason': reason, 'error': error, 'task_result': tasks.result if tasks else None,
+                    session.event('cleanup_error', reason=error)
+        session.close({'reason': reason, 'error': error, 'task_result': tasks.result if tasks else None,
                         'completed': error is None, 'hardware_validated': False,
-                        'planning_frame': robot['map_frame'], 'global_localization_verified': False,
-                        'map_created': bool(tasks and tasks.map_ready),
+                        'planning_frame': snapshot.planning_frame if snapshot else robot['map_frame'], 'global_localization_verified': False,
+                        'map_created': bool(tasks and tasks.map_ready), 'demo': args.demo,
                         'last_autonomous_stop_confirmed': stop_confirmed})
         for signum, handler in handlers.items():
             signal.signal(signum, handler)

@@ -1,6 +1,17 @@
 # Go2 真机部署
 
-入口是 `python run.py`，默认只观察。复用仓库里的导航算法，不提取 core、不复制算法。
+四个入口分工明确：
+
+| 入口 | 职责 | 常用位置 |
+|---|---|---|
+| `python run.py` | 唯一的数据采集、建图与导航主程序，默认只观察 | Go2 随身计算机 |
+| `python view.py` | 从 run 读取 RGB、真实俯视地图、累计点云，提供三图界面 | Go2；笔记本浏览器访问 |
+| `python serve_models.py …` | DINO / SAM / Qwen 等远端推理服务 | GPU 计算机 |
+| `python record.py` | 从 run 记录这一轮观测、三幅图、地图、事件与结果 | Go2，或经转发连接的笔记本 |
+
+复用仓库里的导航算法，不提取 core、不复制算法。**只有 run 采集和建图；view、record 均为只读客户端。**
+主程序不再自动把实机实验写盘，需要单独运行 record。离线 `run.py --replay` 仍会保存回放报告。
+`sync_time.py` 是独立维护工具，保留原有校时流程，不是实验运行入口。
 
 **当前后端是宇树 SportClient 高层速度控制。保留 MCF/主运控服务运行。**
 不调用 `ReleaseMode()`、不切换主运控、不发布关节 `LowCmd`，也不自动修改遥控响应。
@@ -45,18 +56,18 @@
 ## 目录与调用关系
 
 ```text
-view.py → visualization/server.py → 浏览器点云 / RGB 界面
-             └─ visualization/sources.py → ROS 只读订阅 + 独立 SDK 取图进程
-run.py --diagnose → robot/diagnostics.py（只读订阅）
 run.py → app/runtime.py
-           ├─ app/keyboard.py → app/tasks.py
            ├─ robot/sensors.py → localization.py → observation.py
-           ├─ 原有 grutopia_extension/interactive_navigation 算法
-           ├─ perception/client.py → 远端模型服务
+           ├─ app/keyboard.py → app/tasks.py → 原有导航算法 / 唯一地图
+           ├─ perception/client.py → GPU 上的 serve_models.py
            ├─ robot/motion.py（独立进程）→ safety.py → SportClient
-           └─ recording/recorder.py
+           ├─ visualization/sources.py → 独立 SDK 取图进程（仅预览 RGB）
+           └─ app/session.py（有界内存数据服务，127.0.0.1:8765）
+                   ├─ view.py → visualization/server.py → 浏览器三图界面
+                   └─ record.py → recording/capture.py → 本轮实验目录
 
-serve_models.py → perception/server.py → 原有 serve_semantic_perception.py
+run.py --diagnose → robot/diagnostics.py（只读订阅）
+serve_models.py → perception/server.py → 原有模型实现
 ```
 
 观测采用米、秒、弧度；机器人四元数为 **wxyz**，速度为机身前/左/上轴对应的 `[vx, vy, wz]`。
@@ -227,8 +238,22 @@ Go2 启动并能正常遥控后，保留 MCF 运行。在 SSH 终端加载 `sour
 python run.py
 ```
 
-默认只观察，**不创建 SDK 运动进程**。未填几何标定时只录制数据；填写并核对地面/雷达原点后才持续更新地图。记录保存到仓库 `results/deploy/`。
-当前是终端状态界面，没有实时图像窗口；通过录制的 NPZ、地图和已有工具检查观测对齐。
+默认只观察，**不创建 SDK 运动进程**；默认另起 SDK 取图进程，失败不会开启运动。
+填写并核对地面/雷达原点后才持续更新导航地图；未标定时，view 显示原始点云并提示地图未就绪。
+终端负责键盘操作，另开终端分别运行 `python view.py` 和 `python record.py`。
+view 和 record 使用 run 发布的同一个会话编号、配置和数据，不启动第二套 ROS 订阅或导航算法。
+若使用独立标定配置，只需给 run 传 `--config-dir`，view 和 record 自动沿用该会话实际数据。
+
+主程序的 RGB 选项：
+
+```bash
+python run.py --camera none                      # 不启动预览取图，只看几何
+python run.py --camera ros --rgb-topic /实际彩色图像话题
+```
+
+`--camera ros` 的预览只需要彩色 Image，不代表启用语义找物。导航 RGB-D 仍由 robot.yaml 单独配置。
+配置 RGB-D 后优先显示同一份导航相机观测，不再额外启动 SDK 相机。
+旧版 view 的 `--camera` / `--rgb-topic` 移到 run；不会再由可视化进程采集第二路数据。
 
 运动前必须实际完成：外参/坐标/时间核对，点云去畸变和自身回波核对，遥控与 SDK 指令仲裁核对。
 还须完成 DDS 消息兼容与接收稳定性排查。然后设置 `calibration_verified`、`deskew_and_self_filter_verified`、
@@ -250,7 +275,7 @@ python run.py --allow-motion
 | p / r | 暂停 / 明确恢复；暂停继续更新地图，不消耗任务时间 |
 | 空格 | 在菜单或输入目标时均停止并取消任务 |
 | o / m | 停止自主任务并停止持续自主指令；保持观测，不修改遥控器设置 |
-| q / Ctrl+C | 先关闭运动输出并尝试确认停稳，再保存地图退出 |
+| q / Ctrl+C | 先关闭运动输出并尝试确认停稳，再发布结束结果供 record 收尾 |
 
 Esc 取消目标输入。任务成功或耗尽后只结束任务，控制台仍在；停止请求不等于已停稳，
 以独立运动进程报告的 `stopped` 为反馈：它要求停止请求之后的新状态反馈，且速度连续满足静止阈值达到配置的停稳时长。`m` 没有虚构一个“宇树模式切换”：
@@ -283,38 +308,68 @@ python -m pip install pytest
 python -m pytest deploy/tests -q
 ```
 
-## 输出与验收边界
+## 7. 本轮实验记录
 
-每次创建新的 `results/deploy/时间戳/`：
+在已激活环境的另一个终端、`deploy/` 下运行：
 
-```text
-config.json                # 配置、Git commit、工作树是否有未提交改动
-events.jsonl               # 操作、规划速度请求、运动状态及错误
-observations.jsonl         # 观测索引和采集时间
-observations/*.npz         # 原始适配后的数值观测
-final_map.json/.npz        # 仅已完成几何标定并实际建图时生成
-run_summary.json           # 任务结果、结束原因、停止反馈
+```bash
+python record.py
 ```
 
-观测写盘使用有界后台队列；磁盘跟不上时丢弃观测并在报告中计数，不阻塞控制。
-记录的速度请求不是电机执行确认；停稳反馈也不等于长期无漂移。机身实测速度、低速跟踪、
-混合转弯、停止距离、脚部稳定性、窄门通过、断网/接管与模型超时都需要实机分级验收。
-先做只读对齐，再验证停止与接管，再做空旷点导航，最后做绕障和语义探索。
+可以先启动 record（默认等待 run 最多 30 秒），再启动 run，覆盖整个实验。
+若 run 已经开始，record 会读取仍在缓存中的数据；更早数据无法补回，报告会记录缺失数量。
+默认输出到**执行 record 的计算机**的仓库 `results/deploy/时间戳/`；指定其他目录：
 
+```bash
+python record.py --output /实际结果目录
+```
 
-## 实时点云与 RGB 可视化
+保存内容：
 
-另开一个 SSH 终端运行 `python view.py`，与 `python run.py` 独立运行。
-界面借鉴 zkj 版本的点云视角和 RGB 分屏；原版渲染器依赖仿真对象并用于录像，
-这里改成直接读取真机传感器的浏览器界面。没有 Isaac、Qt、Open3D、Node 或外部 CDN 依赖。
+```text
+config.json                # run 所用配置、run 所在机器的 Git / 依赖信息
+session.json               # 会话编号、开始时间、demo / 实机模式
+observations.jsonl         # 可供 run --replay 读取的观测索引
+observations/*.npz         # 未按显示点数降采样的适配后原始观测
+frames/0000001.jpg         # 该采样时刻可用的 RGB（缺失时不生成）
+frames/0000001.png         # 实际导航俯视图（未建图时不生成）
+frames/0000001.cloud.png   # 点云三维视图导出
+frames/0000001.npz         # 观测 + 地图 masks/log-odds + 轨迹 + 采样体素点云
+frames/0000001.json        # 上述数组索引、坐标、路径、RGB 数据年龄等元数据
+events.jsonl               # 操作、速度请求、运动反馈、错误与结束事件
+run_summary.json           # 记录结果、丢帧计数、是否收到 run 的最终结果
+```
 
-**笔记本终端：** 使用已配置的 `go2` SSH 别名；未配置时将它替换为 `unitree@192.168.123.18`。
+实机输出不再由 run 直接产生 `final_map.*`；每个 frames 包保存当时的真实地图状态。
+最后一包是**最后采样到的地图**，不伪称精确退出时刻的地图；退出时任务结果保存在 summary。
+离线回放仍可重新生成原有 `final_map.json/.npz`。几何标定不足时不能用原始观测直接做导航回放。
+三幅图以带元数据的逐帧图片保存，本版不额外编码 MP4。NPZ 禁用 pickle。
+
+默认发布/记录上限 2 Hz，与导航 10 Hz 和运动进程配置 50 Hz 独立。
+RGB 和点云来自各自采集时刻，记录接收年龄；不冒充严格同步 RGB-D。
+run 只保留有界内存缓存（4 包、4096 个事件），后台编码队列容量 1；客户端和慢磁盘不反压导航。
+编码队列满、迟加入或网络/写盘落后会产生缺失，分别在 `producer_dropped`、`missing_frames`、
+`missing_events` 中计数。它是实验采样记录，不是传感器原频率 rosbag。
+
+停止顺序：先在 run 按 q，使运动停止流程完成；run 发布结束结果并留 2 秒给 record 排空，
+record 收到同会话结束标记后自动退出。再关闭 view。
+单独对 record 按 Ctrl+C，只停止记录，run 继续；此时 `run_final_received=false`。
+断网、主程序异常消失或会话编号变化时记录会结束并说明原因，不混合两轮实验。
+若未收到最终结果，不能把该记录当作完整的正常结束。
+
+## 8. 三图可视化
+
+参考 zkj 仿真的占据图、轨迹/路径叠加与累计点云表现；不复制 Isaac 相机或第三人称画面。
+浏览器界面无需机器人桌面、Qt、Open3D、Node 或外部 CDN。
+
+在**笔记本**另开一个 SSH 终端；已有导航终端继续运行：
 
 ```bash
 ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -L 8080:127.0.0.1:8080 go2
 ```
 
-**进入 Go2 的 SSH 终端后：**
+未配置别名时将 `go2` 替换为实机 SSH 地址，例如此前使用的 `unitree@192.168.123.18`。
+**进入 Go2 后：**
 
 ```bash
 source ~/unitree_ros2/setup.sh
@@ -324,52 +379,59 @@ cd deploy
 python view.py
 ```
 
-然后在**笔记本浏览器**打开 `http://127.0.0.1:8080`。如果导航已经在另一个
-SSH 终端运行，保持它运行即可。此处无需 `--allow-motion`，不修改标定验收开关。
-服务只监听 Go2 的回环地址，通过 SSH 转发访问；不需要 SSH 图形转发或在 Orin 上接显示器。
-端口占用时，用 `--port 8081`，SSH 的两处端口及浏览器地址也一起改成 8081。
+笔记本浏览器打开 `http://127.0.0.1:8080`。另一个 Go2 终端中的 `python run.py` 必须已经运行。
+view 只监听回环地址，默认读取 `http://127.0.0.1:8765` 的 run 会话。
+端口占用时分别用 `run.py --session-port`、`view.py --source` / `--port`、`record.py --source` 指定。
+如果希望 view 和 record 都运行在笔记本：先 `ssh -N -L 8765:127.0.0.1:8765 go2`，
+再在笔记本的 CPU 依赖环境运行这两个入口；无需笔记本安装 ROS 或 Unitree SDK。
 
-退出时先关闭浏览器观测页，再在 Go2 终端按 Ctrl+C 结束 `view.py`，最后用 `exit` 退出 SSH。
-服务断开后，新版页面会停止轮询；服务恢复后点击“重新连接”，避免持续请求已关闭端口。
-旧页面可能仍反复触发 SSH 的 `channel ... Connection refused`，关闭该页面即可停止请求。
-上面的保活选项使断网后的 SSH 约 45 秒无响应时退出；若需要立即退出卡住的 SSH，
-按 Enter 后依次输入 `~.`。这是退出当前 SSH 连接，不是机器人停止指令。
+三幅图：
 
-界面功能：
+1. **RGB**：run 接收的前置画面；无深度时仍只是预览图。
+2. **俯视图**：run 实际占据栅格，保留未知区、自由区、障碍、膨胀区，叠加已有 Voronoi 骨架、
+   frontier、实际轨迹、当前规划路径、机器人与目标。没有对应算法结果时不虚构标记。
+3. **累计点云图**：同一导航体素地图的采样点，最多 12000 点，默认以透视镜头从 Go2 后上方看向前方，跟随机器人位置和朝向。
+   镜头在机器人后方 3.2 m、机身上方 2.7 m，朝向前方 1.2 m、机身上方 0.45 m；只跟随平面航向，不随机身俯仰/横滚晃动。
+   橙色机身和腿是位置/朝向示意，不是关节实测或 Go2 三维模型。
+   滚轮可缩放；点击“显示全图”切换到全图自动适配，此时支持旋转、平移、俯视；“回到背后”恢复固定跟随。
+   有效同坐标系位姿到来前暂示全图；位姿过期时冻结镜头并提示，不使用无效位姿驱动视角。
+   标定后距地面 ±8 cm 的点显示浅灰，其他点按高度渐变；未标定时不区分地面。此规则用于着色，不是地形分割，也不改变导航判障。
+   同一轮 run 中，离开视野的已观测点仍保留在体素地图里；关闭/重开 view 不会清除它。重启 run 会新建地图。
+   record 保存的点云 PNG 同样显示全图。点云按配置的高度范围过滤并体素融合，不是全部原始激光点；
+   当前依赖 odom 对齐，没有额外增加回环校正，里程计漂移仍可能导致重影。
+   未标定时降级为“当前原始点云”，明确提示没有建图。不是把逐帧点云当作累计地图。
+   显示采样放在 deploy 内，通过原有 `voxels.points()` 接口取点，不修改共享建图代码。
+   12000 点只限制显示和传输量；上游仍会提取全量体素中心，大地图时需实测这部分耗时。
 
-- 最新一帧三维点云，按高度着色；拖动旋转、滚轮缩放、Shift + 拖动平移，支持俯视与复位。
-- 点云保留消息本身坐标系，不重复叠加里程计。不做历史点云累积，不把它当作导航占据地图。
-- 位姿与点云坐标系相同、时间差不超过 0.1 秒且均未过期时，才叠加机器人位置/朝向。
-- RGB 和点云独立刷新；不要求 RGB-D、地面标定或导航运行，不把图像与点云强行融合。
-- 显示接收时间、点数和错误。数据过期会变暗并提示，服务断开也不会把最后画面当作实时数据。
-- 断流阈值为 `max(max_data_age_s, 2/fps)`（默认 0.4 秒），与运动安全阈值独立。
-- 默认上限 5 Hz、12000 点、RGB 最大 960×540；单帧缓存，不积压历史。可用
-  `--fps 2 --max-points 6000` 降低 CPU / 带宽占用。这不是运动控制频率。
+地图与点云的 XY 使用规划坐标系；已标定观测的 Z 已按 ground_z 归一到地面高度。
+界面保持等比例俯视投影，不把正方形栅格拉伸成矩形。机器人位姿只在同坐标系、时间近邻且新鲜时叠加。
+地图更新年龄与主程序心跳都会检查。界面断流后停止轮询，恢复后点击“重新连接”；run 重启后清除旧会话画面。
+原有 SSH 保活与主动重连行为保留，避免持续请求已关闭的转发端口。
 
-默认 RGB 使用宇树官方
-[VideoClient.GetImageSample](https://github.com/unitreerobotics/unitree_sdk2_python/blob/master/unitree_sdk2py/go2/video/video_client.py)，
-需要安装 `unitree_sdk2py` 且视频服务可用。它运行在独立进程，避免与 Foxy 的 DDS 库混用；
-仅请求图像，不初始化 SportClient，也不发布运动命令。
-**此前实机只确认 `/frontvideostream` 收到消息，SDK 取图还未实机验收。**
-本实现不猜测 `Go2FrontVideoData` 的编码；取图失败会显示 SDK 返回错误，点云继续显示。
-SDK 图像没有采集时间戳，界面只能报告接收距今时间，不能证明相机端没有重复旧帧。
+默认 RGB 仍使用独立进程的 Unitree `VideoClient.GetImageSample`。
+此前实机只确认自定义前置视频收到消息，SDK 取图仍需实机验收；未猜测 Annex B 的具体编解码格式。
+SDK 没有提供采集时间戳，界面与记录只能报告接收年龄，不能证明相机端没有重复旧帧。
 
-其他输入选项：
+关闭浏览器或 view，不停止导航；record 退出也不停止导航。所有运动操作仍在 run 控制台。
+
+## 9. 离线检查四入口协作
+
+不连接机器人，在安装了 deploy CPU 依赖的环境中分别打开三个终端，从 `deploy/` 运行：
 
 ```bash
-# 仅显示点云，排查相机问题时使用
-python view.py --camera none
+# 终端 1：先等待主程序，保存演示数据
+python record.py --output /tmp/go2-demo-records
 
-# 已有标准彩色 sensor_msgs/Image 话题时，不需要深度或相机内参
-python view.py --camera ros --rgb-topic /camera/color/image_raw
+# 终端 2：合成传感器输入，经过实际 Tasks / 建图算法
+python run.py --demo
 
-# 本地预览界面：合成点云与 RGB，完全不连接机器人
-python view.py --demo
+# 终端 3：与实机相同的三图界面
+python view.py
 ```
 
-关闭浏览器或对 `view.py` 按 Ctrl+C，只关闭可视化；**不会停止另一个终端的导航**。
-它不显示任务状态、规划路径或模型识别结果，也没有运动按钮。原 `run.py` 的键盘操作保持不变。
+浏览器打开 `http://127.0.0.1:8080`。页面始终标注合成演示；demo 不初始化 ROS、SDK 或运动。
+可给 run 加 `--demo-seconds 20` 自动结束。旧的 `view.py --demo` 改为由 run 统一供数。
+无需启动 serve_models；它只在远端模型联调时使用已有 GPU 环境启动，接口与命令保持原样。
 
-真机验收顺序：先运行只读界面确认点云、坐标系与 RGB；临时停止输入或断开 SSH，
-确认界面能提示断流；最后与已验收的导航同时运行，检查 Orin 负载与导航频率。
-只读可视化通过，不等于 DDS 通信、导航标定和运动接管已经验收。
+录制成功、单元测试和演示界面通过都不代表真机通过。仍需验证传感器/时钟、地图、
+SDK 取图、低速停稳、遥控接管，以及 run/view/record 并行时 Orin 的实际负载和控制频率。

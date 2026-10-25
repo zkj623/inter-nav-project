@@ -12,16 +12,15 @@ import numpy as np
 import pytest
 
 from deploy.visualization.server import make_server
-from deploy.visualization.sources import LatestFrames, RosViewer, jpeg_from_bgr
+from deploy.visualization.sources import LatestFrames, jpeg_from_bgr
 from deploy.tests.test_robot_inputs import cloud
+from deploy.robot.sensors import decode_cloud, decode_image
 
 
 def test_bounded_cloud_frame_and_no_double_pose_transform():
     frames = LatestFrames(max_points=2)
-    source = RosViewer.__new__(RosViewer)
-    source.frames = frames
-    source.timing = lambda _: (10., 0.)
-    source.cloud(cloud())
+    message = cloud()
+    frames.cloud(decode_cloud(message), message.header.frame_id, 10., 0.)
     result = frames.snapshot()['cloud']
     assert result['frame'] == 'odom'
     np.testing.assert_allclose(result['points'], [[2, .2, .7], [3, .2, .7]])
@@ -66,11 +65,9 @@ def test_pose_overlay_requires_matching_frame_and_time(frame, stamp, overlay):
 
 def test_rgb_ros_colour_order_and_no_depth_requirement():
     frames = LatestFrames()
-    source = RosViewer.__new__(RosViewer)
-    source.frames, source.timing = frames, lambda _: (1., 0.)
     msg = Message(width=16, height=16, step=48, encoding='rgb8', is_bigendian=False,
                   data=bytes([255, 0, 0]) * 256)
-    source.rgb(msg)
+    frames.put('rgb', {'jpeg': jpeg_from_bgr(decode_image(msg)[..., ::-1])})
     payload = frames.snapshot()['rgb']
     image = cv2.imdecode(np.frombuffer(base64.b64decode(payload['jpeg']), dtype=np.uint8), cv2.IMREAD_COLOR)
     assert image[0, 0, 2] > 240 and image[0, 0, 0] < 10
@@ -96,7 +93,7 @@ def test_actual_http_has_only_read_routes_and_explicit_demo():
     try:
         with urlopen(url + '/') as response:
             html = response.read().decode()
-            assert '三维点云' in html and '前置 RGB' in html
+            assert '累计点云图' in html and '前置 RGB' in html
         with urlopen(url + '/api/frame') as response:
             state = json.load(response)
             assert state['demo'] and state['rgb'] is None
@@ -148,32 +145,29 @@ def test_sdk_video_worker_decodes_image_or_reports_return_code(monkeypatch, code
         assert decoded[0, 0, 1] > 240
 
 
-def test_ros_signal_override_does_not_prevent_viewer_shutdown(monkeypatch):
+def test_view_exit_closes_client_without_stopping_run(monkeypatch):
     import signal
     import deploy.visualization.server as module
-    from deploy.app.config import load
     calls = []
     original = signal.getsignal(signal.SIGINT)
 
-    class FakeRos:
+    class FakeClient:
         def __init__(self, *args):
-            signal.signal(signal.SIGINT, lambda *_: calls.append('ros_only'))
+            pass
 
         def close(self):
-            calls.append('closed_ros')
+            calls.append('closed_client')
 
     class FakeServer:
         def handle_request(self):
             signal.getsignal(signal.SIGINT)(signal.SIGINT, None)
             calls.append('handled')
-            assert len(calls) < 3, 'SIGINT did not stop HTTP loop'
 
         def server_close(self):
             calls.append('closed_http')
 
-    monkeypatch.setattr(module, 'RosViewer', FakeRos)
+    monkeypatch.setattr(module, 'SessionClient', FakeClient)
     monkeypatch.setattr(module, 'make_server', lambda *args: FakeServer())
-    args = Message(max_points=100, fps=5, demo=False, camera='none', port=8080)
-    assert module.serve(load()['robot'], args, '') == 0
-    assert calls == ['handled', 'closed_http', 'closed_ros']
+    assert module.serve(Message(source='http://localhost:8765', port=8080)) == 0
+    assert calls == ['handled', 'closed_http', 'closed_client']
     assert signal.getsignal(signal.SIGINT) == original

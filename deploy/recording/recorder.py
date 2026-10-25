@@ -42,8 +42,25 @@ def unpack(value, arrays):
     return value
 
 
+def provenance(repo):
+    try:
+        commit = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
+        dirty = bool(subprocess.check_output(['git', '-C', str(repo), 'status', '--porcelain'], text=True).strip())
+    except (OSError, subprocess.CalledProcessError):
+        manifest = Path(repo) / '.deploy-source.json'
+        source = json.loads(manifest.read_text()) if manifest.is_file() else {}
+        commit, dirty = source.get('source_commit', 'unknown'), source.get('dirty_worktree')
+    versions = {}
+    for name in ('numpy', 'scipy', 'opencv-python-headless', 'PyYAML', 'requests', 'unitree-sdk2py'):
+        try:
+            versions[name] = version(name)
+        except PackageNotFoundError:
+            versions[name] = None
+    return {"source_commit": commit, "dirty_worktree": dirty, "dependencies": versions}
+
+
 class Recorder:
-    def __init__(self, root, config, mode, repo, asynchronous=False):
+    def __init__(self, root, config, mode, repo, asynchronous=False, source=None):
         self.directory = Path(root) / datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S_%fZ')
         self.directory.mkdir(parents=True, exist_ok=False)
         self.frames = self.directory / 'observations'
@@ -59,21 +76,9 @@ class Recorder:
         if asynchronous:
             self.writer = threading.Thread(target=self._write_loop, daemon=True)
             self.writer.start()
-        try:
-            commit = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
-            dirty = bool(subprocess.check_output(['git', '-C', str(repo), 'status', '--porcelain'], text=True).strip())
-        except (OSError, subprocess.CalledProcessError):
-            manifest = Path(repo) / '.deploy-source.json'
-            source = json.loads(manifest.read_text()) if manifest.is_file() else {}
-            commit, dirty = source.get('source_commit', 'unknown'), source.get('dirty_worktree')
-        versions = {}
-        for name in ('numpy', 'scipy', 'opencv-python-headless', 'PyYAML', 'requests', 'unitree-sdk2py'):
-            try:
-                versions[name] = version(name)
-            except PackageNotFoundError:
-                versions[name] = None
+        source = source or provenance(repo)
         (self.directory / 'config.json').write_text(json.dumps(
-            {'config': config, 'source_commit': commit, 'dirty_worktree': dirty, 'dependencies': versions, 'mode': mode}, indent=2))
+            {'config': config, **source, 'mode': mode}, indent=2))
 
     def event(self, kind, **details):
         self.events.write(json.dumps({'event': kind, **details}, default=json_value, allow_nan=False)+'\n')

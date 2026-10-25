@@ -145,20 +145,30 @@ def test_live_observe_without_rgbd_does_not_start_models_or_motion(monkeypatch, 
     source._lidar(cloud())
     source.close = lambda: None
     keys = deque([None, ('q', None)])
-    monkeypatch.setattr(sensors, 'RosSensors', lambda config: source)
+    monkeypatch.setattr(sensors, 'RosSensors', lambda *args: source)
     monkeypatch.setattr(keyboard, 'Keyboard', lambda: Message(
         editing=None, poll=lambda: keys.popleft(), close=lambda: None))
     def forbidden(*args, **kwargs):
         pytest.fail('Observe-only video-unavailable profile must not start models or SDK')
     monkeypatch.setattr(client, 'AsyncPerception', forbidden)
     monkeypatch.setattr(motion, 'MotionProcess', forbidden)
-    args = Message(allow_motion=False, output=tmp_path)
+    from deploy.app import session as session_module
+    original = session_module.Session
+    sessions = []
+    def make_session(*args, **kwargs):
+        obj = original(*args, **kwargs)
+        close = obj.close
+        obj.close = lambda summary: close(summary, grace=0)
+        sessions.append(obj)
+        return obj
+    monkeypatch.setattr(session_module, 'Session', make_session)
+    args = Message(allow_motion=False, demo=False, session_port=0, camera='none', rgb_topic=None)
     assert runtime.run_live(args, load()) == 0
-    summary = json.loads(next(tmp_path.glob('*/run_summary.json')).read_text())
+    summary = sessions[0].summary
     assert summary['map_created'] is False
     assert summary['last_autonomous_stop_confirmed'] is None
-    assert not list(tmp_path.glob('*/final_map*'))
-    assert list(tmp_path.glob('*/observations/*.npz'))
+    assert sessions[0].batch(0, 0)['frames']
+    assert not list(tmp_path.iterdir())  # run publishes; only record owns experiment files
 
 
 def test_receipt_does_not_bypass_communication_acceptance():

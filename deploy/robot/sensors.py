@@ -55,7 +55,7 @@ def decode_cloud(message):
 
 
 class RosSensors:
-    def __init__(self, config):
+    def __init__(self, config, preview_rgb=None, preview_topic=None):
         import rclpy
         from rclpy.qos import qos_profile_sensor_data
         from rclpy.time import Time
@@ -84,6 +84,19 @@ class RosSensors:
             if topic in ('rgb_topic', 'depth_topic', 'camera_info_topic') and config['camera_mode'] != 'rgbd':
                 continue
             self.node.create_subscription(cls, config[topic], self._guard(callback), qos_profile_sensor_data)
+        if preview_rgb is not None and preview_topic:
+            last_preview = [float('-inf')]
+            def preview(message):
+                now = time.monotonic()
+                if now-last_preview[0] < .5:
+                    return
+                last_preview[0] = now
+                _, captured_at = self._stamp(message)
+                rgb = decode_image(message)
+                if rgb.ndim != 3 or rgb.shape[2] not in (3, 4):
+                    raise ValueError('Preview requires a colour sensor_msgs/Image')
+                preview_rgb(rgb, captured_at)
+            self.node.create_subscription(Image, preview_topic, self._guard(preview), qos_profile_sensor_data)
         self.thread = threading.Thread(target=rclpy.spin, args=(self.node,), daemon=True)
         self.thread.start()
 

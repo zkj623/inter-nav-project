@@ -6,10 +6,11 @@ import signal
 import threading
 from urllib.parse import urlsplit
 
-from .sources import DemoSource, LatestFrames, RosViewer, SdkVideo
+from deploy.app.session import SessionClient
+import requests
 
 
-def make_server(frames, port, metadata):
+def make_server(frames, port, metadata=None):
     page = Path(__file__).with_name('index.html').read_bytes()
 
     class Handler(BaseHTTPRequestHandler):
@@ -18,7 +19,11 @@ def make_server(frames, port, metadata):
             if path == '/':
                 body, mime = page, 'text/html; charset=utf-8'
             elif path == '/api/frame':
-                body = json.dumps(dict(frames.snapshot(), **metadata), allow_nan=False).encode()
+                try:
+                    body = json.dumps(dict(frames.snapshot(), **(metadata or {})), allow_nan=False).encode()
+                except (requests.RequestException, ValueError):
+                    self.send_error(503, 'run.py unavailable; start run.py then reconnect')
+                    return
                 mime = 'application/json'
             else:
                 self.send_error(404)
@@ -42,44 +47,23 @@ def make_server(frames, port, metadata):
     return server
 
 
-def serve(config, args, rgb_topic):
-    frames = LatestFrames(args.max_points, max(config['max_data_age_s'], 2 / args.fps), args.demo)
-    metadata = {'fps': args.fps, 'cloud_topic': 'synthetic/demo_cloud' if args.demo else config['lidar_topic'],
-                'rgb_source': 'synthetic' if args.demo else (rgb_topic if args.camera == 'ros' else args.camera)}
-    server = make_server(frames, args.port, metadata)
-    resources, handlers = [], {}
+def serve(args):
+    client = SessionClient(args.source)
+    server = make_server(client, args.port)
+    handlers = {}
     stop = threading.Event()
     server.timeout = .2
     try:
         for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
             handlers[signum] = signal.signal(signum, lambda *_: stop.set())
-        if args.demo:
-            resources.append(DemoSource(frames, args.fps))
-        else:
-            resources.append(RosViewer(frames, config, args.fps, rgb_topic if args.camera == 'ros' else None))
-            if args.camera == 'sdk':
-                resources.append(SdkVideo(frames, config['network_interface'], args.fps))
-            elif args.camera == 'none':
-                frames.error('rgb', 'RGB disabled (--camera none)')
-        # rclpy.init may install its own SIGINT handler; keep viewer shutdown in charge.
-        for signum in handlers:
-            signal.signal(signum, lambda *_: stop.set())
-        print(f'可视化：http://127.0.0.1:{args.port}  [只读；Ctrl+C 关闭界面服务]', flush=True)
-        print(f'笔记本 SSH 转发：ssh -N -L {args.port}:127.0.0.1:{args.port} <用户>@<Go2地址>', flush=True)
-        print('本程序不控制运动，退出它不会停止另一个终端的 run.py。', flush=True)
-        if args.demo:
-            print('演示数据：未连接机器人。', flush=True)
+        print(f'三图界面：http://127.0.0.1:{args.port}；数据来自 {args.source}', flush=True)
+        print('请先启动 run.py；view.py 不采集、不建图、不控制运动。', flush=True)
+        print(f'笔记本 SSH 转发：ssh -L {args.port}:127.0.0.1:{args.port} go2', flush=True)
         while not stop.is_set():
             server.handle_request()
     finally:
         server.server_close()
-        try:
-            for resource in reversed(resources):
-                try:
-                    resource.close()
-                except Exception as error:
-                    print(f'可视化清理异常：{error}', flush=True)
-        finally:
-            for signum, handler in handlers.items():
-                signal.signal(signum, handler)
+        client.close()
+        for signum, handler in handlers.items():
+            signal.signal(signum, handler)
     return 0

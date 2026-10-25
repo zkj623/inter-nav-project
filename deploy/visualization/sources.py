@@ -1,4 +1,4 @@
-"""Bounded latest-frame inputs. No navigation, SportClient, or motor publishers."""
+"""Preview buffers and SDK camera worker, owned only by run.py."""
 import base64
 import multiprocessing as mp
 import queue
@@ -8,8 +8,6 @@ import time
 import cv2
 import numpy as np
 
-from deploy.robot.sensors import decode_cloud, decode_image
-from deploy.robot.localization import quaternion
 
 
 def jpeg_from_bgr(image):
@@ -79,85 +77,6 @@ class LatestFrames:
                                       and cloud.get('stamp') is not None and pose.get('stamp') is not None
                                       and abs(cloud['stamp'] - pose['stamp']) <= .1)
         return result
-
-
-class RosViewer:
-    """Independent subscriptions, so the viewer also works before calibration/run.py."""
-    def __init__(self, frames, config, fps, rgb_topic=None):
-        import rclpy
-        from rclpy.qos import qos_profile_sensor_data
-        from sensor_msgs.msg import PointCloud2, Image
-        from nav_msgs.msg import Odometry
-        self.rclpy, self.frames = rclpy, frames
-        self.interval, self.last = 1 / fps, {}
-        rclpy.init()
-        self.node = rclpy.create_node('inter_nav_viewer')
-        try:
-            self.node.create_subscription(PointCloud2, config['lidar_topic'], self.guard('cloud', self.cloud), qos_profile_sensor_data)
-            self.node.create_subscription(Odometry, config['odom_topic'], self.guard('pose', self.pose), qos_profile_sensor_data)
-            if rgb_topic:
-                self.node.create_subscription(Image, rgb_topic, self.guard('rgb', self.rgb), qos_profile_sensor_data)
-        except Exception:
-            self.node.destroy_node()
-            rclpy.shutdown()
-            raise
-        self.thread = threading.Thread(target=self.spin, daemon=True)
-        self.thread.start()
-
-    def spin(self):
-        try:
-            self.rclpy.spin(self.node)
-        except Exception as error:
-            if self.rclpy.ok():
-                for name in ('cloud', 'pose', 'rgb'):
-                    self.frames.error(name, f'ROS subscription stopped: {error}')
-
-    def guard(self, name, callback):
-        def receive(message):
-            now = time.monotonic()
-            if now - self.last.get(name, float('-inf')) < self.interval and name != 'pose':
-                return
-            self.last[name] = now
-            try:
-                callback(message)
-            except Exception as error:
-                self.frames.error(name, error)
-        return receive
-
-    def timing(self, message):
-        stamp = message.header.stamp.sec + message.header.stamp.nanosec * 1e-9
-        if stamp <= 0:
-            raise ValueError('Missing ROS acquisition timestamp')
-        return stamp, self.node.get_clock().now().nanoseconds * 1e-9 - stamp
-
-    def cloud(self, message):
-        stamp, age = self.timing(message)
-        # Points already have the advertised frame. Do not apply odometry twice.
-        self.frames.cloud(decode_cloud(message), message.header.frame_id, stamp, age)
-
-    def pose(self, message):
-        stamp, age = self.timing(message)
-        p, q = message.pose.pose.position, message.pose.pose.orientation
-        w, x, y, z = quaternion([q.w, q.x, q.y, q.z])
-        if not np.isfinite([p.x, p.y, p.z]).all() or not message.header.frame_id:
-            raise ValueError('Invalid odometry pose/frame')
-        self.frames.put('pose', {'position': [p.x, p.y, p.z],
-                                'yaw': float(np.arctan2(2*(w*z+x*y), 1-2*(y*y+z*z))),
-                                'frame': message.header.frame_id, 'stamp': stamp, 'source_age': age})
-
-    def rgb(self, message):
-        stamp, age = self.timing(message)
-        if message.encoding not in ('rgb8', 'rgba8', 'bgr8', 'bgra8'):
-            raise ValueError('Viewer RGB input must be a colour sensor_msgs/Image')
-        rgb = decode_image(message)[..., :3]
-        self.frames.put('rgb', {'jpeg': jpeg_from_bgr(rgb[..., ::-1]), 'stamp': stamp,
-                               'source_age': age, 'source': 'ROS Image'})
-
-    def close(self):
-        if self.rclpy.ok():
-            self.rclpy.shutdown()
-        self.thread.join(timeout=2)
-        self.node.destroy_node()
 
 
 def _offer_latest(output, item):
@@ -234,36 +153,3 @@ class SdkVideo:
             self.process.join(timeout=1)
         self.thread.join(timeout=1)
         self.output.close()
-
-
-class DemoSource:
-    """Deterministic synthetic input, always labelled in the UI."""
-    def __init__(self, frames, fps):
-        self.stop = threading.Event()
-        self.thread = threading.Thread(target=self.run, args=(frames, fps), daemon=True)
-        self.thread.start()
-
-    def run(self, frames, fps):
-        rng = np.random.default_rng(7)
-        floor = np.column_stack((rng.uniform(-5, 5, (6000, 2)), np.zeros(6000)))
-        wall = np.column_stack((np.full(3000, 4.), rng.uniform(-5, 5, 3000), rng.uniform(0, 2, 3000)))
-        box = np.column_stack((rng.uniform(.5, 1.5, 2000), rng.uniform(.5, 1.5, 2000), rng.uniform(0, 1, 2000)))
-        points = np.concatenate((floor, wall, box))
-        tick = 0
-        while not self.stop.is_set():
-            stamp = time.monotonic()
-            frames.cloud(points, 'demo_odom', stamp, 0.)
-            frames.put('pose', {'position': [0., 0., .3], 'yaw': .15*np.sin(tick/10),
-                                'frame': 'demo_odom', 'stamp': stamp, 'source_age': 0.})
-            image = np.full((540, 960, 3), (36, 28, 21), dtype=np.uint8)
-            cv2.rectangle(image, (80, 180), (880, 500), (66, 73, 80), -1)
-            cv2.rectangle(image, (520, 220), (690, 400), (96, 170, 220), -1)
-            cv2.putText(image, 'SYNTHETIC PREVIEW - NO ROBOT', (70, 85), cv2.FONT_HERSHEY_SIMPLEX, .9, (240, 240, 240), 2)
-            cv2.putText(image, f'Frame {tick:05d}', (70, 130), cv2.FONT_HERSHEY_SIMPLEX, .7, (150, 200, 160), 2)
-            frames.put('rgb', {'jpeg': jpeg_from_bgr(image), 'source': 'Synthetic demo', 'stamp': stamp, 'source_age': 0.})
-            tick += 1
-            self.stop.wait(1 / fps)
-
-    def close(self):
-        self.stop.set()
-        self.thread.join(timeout=2)
