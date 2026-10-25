@@ -30,13 +30,14 @@ button{border:1px solid #3b4a58;background:#202f3c;color:#dce7f0;border-radius:6
  <div class="tools"><span class="tag">RGB 与点云独立刷新，本界面不进行图像与点云融合。</span></div>
  <div id="rgbMeta" class="meta">等待相机连接；相机不可用时，点云仍可显示。</div></section>
 </main>
-<section class="status"><div class="stat"><small>可视化服务</small><strong id="connection">正在连接…</strong></div><div class="stat"><small>机器人位置 / 点云坐标系一致时显示标记</small><strong id="pose">等待里程计</strong></div><div class="stat"><small>显示刷新上限 / 不是运动控制频率</small><strong id="rate">—</strong></div></section>
+<section class="status"><div class="stat"><small>可视化服务</small><strong id="connection">正在连接…</strong> <button id="reconnect" hidden>重新连接</button></div><div class="stat"><small>机器人位置 / 点云坐标系一致时显示标记</small><strong id="pose">等待里程计</strong></div><div class="stat"><small>显示刷新上限 / 不是运动控制频率</small><strong id="rate">—</strong></div></section>
 <div id="errors" role="status"></div>
 <footer>默认点云坐标系为 odom，属于局部里程计坐标，不代表全局定位。关闭此界面不会停止导航，请在 run.py 控制台操作。</footer>
 <script>
 'use strict';
 const $=id=>document.getElementById(id), canvas=$('cloud'), ctx=canvas.getContext('2d');
 let data=null, yaw=-.75, pitch=.7, scale=42, center=[0,0,0], pan=[0,0], drag=null, centered=false, offline=true;
+let pollTimer=null, polling=false;
 const colors=Array.from({length:128},(_,i)=>`hsl(${205-i*1.35} 68% ${47+i*.12}%)`);
 function project(p,w,h){const x=p[0]-center[0],y=p[1]-center[1],z=p[2]-center[2];
  const u=Math.cos(yaw)*x-Math.sin(yaw)*y,v=Math.sin(yaw)*x+Math.cos(yaw)*y;
@@ -64,9 +65,10 @@ canvas.onpointerup=canvas.onpointercancel=()=>drag=null;
 canvas.addEventListener('wheel',e=>{e.preventDefault();scale=Math.max(8,Math.min(260,scale*Math.exp(-e.deltaY*.001)));draw();},{passive:false});
 new ResizeObserver(draw).observe(canvas);
 function markStale(name,stale){$(name+'Stale').style.display=stale?'block':'none';if(name==='rgb')$('rgb').style.opacity=stale?'.35':'1';}
-async function poll(){const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),2500);let delay=200;
+async function poll(){if(polling)return;polling=true;clearTimeout(pollTimer);$('reconnect').disabled=true;
+ const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),2500);let delay=null;
  try{const response=await fetch('/api/frame',{signal:abort.signal,cache:'no-store'});if(!response.ok)throw Error('HTTP '+response.status);data=await response.json();offline=false;
-  delay=1000/data.fps;$('connection').textContent='已连接 · 只读';$('rate').textContent=data.fps+' Hz';
+  delay=1000/data.fps;$('connection').textContent='已连接 · 只读';$('rate').textContent=data.fps+' Hz';$('reconnect').hidden=true;
   $('demo').textContent=data.demo?'演示模式：合成数据，未连接机器人':'';
   if(data.cloud){$('cloudEmpty').style.display='none';$('cloudMeta').textContent=`${data.cloud_topic}  |  ${data.cloud.frame}\n${data.cloud.count.toLocaleString()} 点 → 显示 ${data.cloud.points.length.toLocaleString()} 点 · 接收距今 ${data.cloud.age.toFixed(2)} s`;
    if(!centered){recenter();centered=true;}if($('follow').checked&&data.pose_overlay)center=[...data.pose.position];}
@@ -76,8 +78,9 @@ async function poll(){const abort=new AbortController(),timer=setTimeout(()=>abo
   markStale('rgb',!!data.rgb?.stale);
   $('pose').textContent=data.pose?data.pose.position.map(x=>x.toFixed(2)).join(', ')+` m (${data.pose.frame})`+(data.pose.stale?' · 已过期':data.pose_overlay?'':' · 未叠加'):'等待里程计';
   $('errors').textContent=Object.entries(data.errors).map(([k,v])=>k+': '+v).join('\n');draw();
- }catch(error){offline=true;$('connection').textContent='连接中断 · 保留最后画面';markStale('cloud',true);markStale('rgb',true);$('pose').textContent='服务断开 · 位姿不可用';$('errors').textContent=String(error);draw();delay=1000;}
- finally{clearTimeout(timer);setTimeout(poll,delay);}}
+ }catch(error){offline=true;delay=null;$('connection').textContent='连接中断 · 已停止刷新';$('reconnect').hidden=false;markStale('cloud',true);markStale('rgb',true);$('pose').textContent='服务断开 · 位姿不可用';$('errors').textContent='请在可视化服务恢复后点击“重新连接”。\n'+String(error);draw();}
+ finally{clearTimeout(timer);polling=false;$('reconnect').disabled=false;if(delay!==null)pollTimer=setTimeout(poll,delay);}}
+$('reconnect').onclick=()=>{$('connection').textContent='正在重新连接…';poll();};
 poll();
 </script>
 </html>

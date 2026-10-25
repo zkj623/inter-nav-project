@@ -77,13 +77,13 @@ serve_models.py → perception/server.py → 原有 serve_semantic_perception.py
 先确保机器人上的目标目录已存在，正在运行的任务已停止。
 
 ```bash
-bash deploy/scripts/sync.sh user@go2 /home/user/inter-nav-project
-bash deploy/scripts/sync.sh user@go2 /home/user/inter-nav-project --apply
+bash deploy/scripts/sync.sh unitree@192.168.123.18 /home/unitree/inter-nav-project
+bash deploy/scripts/sync.sh unitree@192.168.123.18 /home/unitree/inter-nav-project --apply
 ```
 
 第一条仅预览，第二条才同步。包含 Git 跟踪与非忽略的新文件，不同步 `.git`、环境、
 忽略的场景/模型/结果目录，不删除远端文件，并写入来源版本 `.deploy-source.json`。正式更新建议同步到新目录，避免已删除旧文件残留。设备自己的配置放到仓库外，运行时用
-`--config-dir /home/user/go2-config` 指定，避免代码同步覆盖标定。
+`--config-dir /home/unitree/go2-config` 指定，避免代码同步覆盖标定。
 
 ## 2. Go2 计算机安装
 
@@ -91,7 +91,7 @@ bash deploy/scripts/sync.sh user@go2 /home/user/inter-nav-project --apply
 
 ```bash
 source ~/unitree_ros2/setup.sh
-cd /home/user/inter-nav-project
+cd ~/inter-nav-project
 bash deploy/scripts/install.sh
 source .venv-deploy/bin/activate
 cd deploy
@@ -141,6 +141,28 @@ ROS 输入契约：
 这些是起始配置，需要根据实测频率、延迟和停止距离调整。真实输入使用同步的系统时间，不能开启仿真时钟。
 固定地图范围必须覆盖实际工作区域；定位大跳变会锁定错误，要求重新建图，不能直接继续沿旧地图行走。
 
+### 开机后检查与一次性校时
+
+在 **Go2 SSH 终端**加载 ROS 和部署环境后、启动 `run.py` / `view.py` 之前执行：
+
+```bash
+source ~/unitree_ros2/setup.sh
+cd ~/inter-nav-project
+source .venv-deploy/bin/activate
+cd deploy
+python sync_time.py
+```
+
+它先检查现有点云和里程计的时间；不满足原有新鲜度阈值时，以配置中的里程计话题
+（默认 `/utlidar/robot_odom`）采集时间为参考，一次性调整 Orin 系统时间，并复测。
+需要调整时会通过 sudo 请求系统权限；不会发送运动命令、修改验收标记或放宽时间校验。
+只检查可用 `python sync_time.py --check`；独立标定配置用同样的 `--config-dir` 指定。
+
+这不是互联网标准时间同步：它依赖已确认的里程计时间源，单向消息无法精确测出网络延迟。
+没有设置持续同步、开机服务或 RTC；每次重启后重新检查，长期漂移和外部 NTP 跳时仍需关注。
+不同传感器的时间基准不一致、样本不足或时序波动过大时拒绝校时；不会把消息改成接收时间。
+时间检查通过不代表 DDS、标定或运动验收通过。
+
 ### 只读诊断与 DDS 排查
 
 在 Go2 的已初始化 ROS、已激活部署环境中，从 `deploy/` 执行：
@@ -152,7 +174,18 @@ python run.py --diagnose --duration 10 --output /tmp/go2-ros-diagnostic.json 2>/
 它只订阅，不创建 SportClient、不发送控制命令。记录实际收到的消息数、频率、最大接收间隔、帧名、时间戳、
 点云字段/字节数、当前发布者数量、Python/ROS 路径，以及本机 `.msg` / `.idl` 文件哈希。
 无法加载自定义视频类型时，会保留错误并继续检查点云与里程计；不直接输出巨大的点云/视频载荷。
-退出码 0 只说明本次收到默认位姿和点云，不代表 DDS、全局定位或运动验收通过。
+退出码 0 表示本次收到默认位姿和点云，且收到的样本未触发诊断解析错误；不代表 DDS、全局定位或运动验收通过。
+
+当前实机的 `/frontvideostream` 存在同名消息的线格式差异：本机与官方 `Go2FrontVideoData`
+声明为 `uint64 + 三路 uint8[]`，实收为 `uint64 + uint32 流标记 + 一路 uint8[]`，
+已观测到标记 360、720 和 Annex B 起始码。旧类型解析会把流标记误当数组长度，导致
+`invalid data size` / `unable initialize generic sequence`，并拖慢同一诊断进程中的其他回调。
+诊断现在对该话题使用 `raw=True` 接收，再按有界 CDR 解析器逐包验证长度、对齐和封装；
+同时兼容声明的三路格式。JSON 分别记录 `received`、`validated_messages`、`sample_error_count`、
+`wire_layout_counts` 和流标记计数，兼容布局会明确标为 `declared_schema_matches=false`。
+未知或损坏包仍报告错误并使诊断退出码为 2；没有关闭错误日志或跳过视频订阅。
+这只修复本项目诊断的接收适配，没有替换系统消息包；直接用旧类型执行 `ros2 topic echo`
+仍可能报错。视频包结构通过验证不代表图像解码或 RGB-D 验收通过，`time_frame` 不当作 ROS 时间使用。
 
 `invalid data size` 可能发生在进入 Python 回调之前，因此额外保留 stderr；JSON 不会自动宣称没有 DDS 错误。
 先根据错误日志确认受影响话题，对比发布端与订阅端 `unitree_go` 消息定义和生成环境，检查 ROS 1/ROS 2 环境混用、
@@ -275,10 +308,10 @@ run_summary.json           # 任务结果、结束原因、停止反馈
 界面借鉴 zkj 版本的点云视角和 RGB 分屏；原版渲染器依赖仿真对象并用于录像，
 这里改成直接读取真机传感器的浏览器界面。没有 Isaac、Qt、Open3D、Node 或外部 CDN 依赖。
 
-**笔记本终端：** 将 `<用户>`、`<Go2地址>` 和下面的项目路径替换为实际值。
+**笔记本终端：** 使用已配置的 `go2` SSH 别名；未配置时将它替换为 `unitree@192.168.123.18`。
 
 ```bash
-ssh -L 8080:127.0.0.1:8080 <用户>@<Go2地址>
+ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -L 8080:127.0.0.1:8080 go2
 ```
 
 **进入 Go2 的 SSH 终端后：**
@@ -295,6 +328,12 @@ python view.py
 SSH 终端运行，保持它运行即可。此处无需 `--allow-motion`，不修改标定验收开关。
 服务只监听 Go2 的回环地址，通过 SSH 转发访问；不需要 SSH 图形转发或在 Orin 上接显示器。
 端口占用时，用 `--port 8081`，SSH 的两处端口及浏览器地址也一起改成 8081。
+
+退出时先关闭浏览器观测页，再在 Go2 终端按 Ctrl+C 结束 `view.py`，最后用 `exit` 退出 SSH。
+服务断开后，新版页面会停止轮询；服务恢复后点击“重新连接”，避免持续请求已关闭端口。
+旧页面可能仍反复触发 SSH 的 `channel ... Connection refused`，关闭该页面即可停止请求。
+上面的保活选项使断网后的 SSH 约 45 秒无响应时退出；若需要立即退出卡住的 SSH，
+按 Enter 后依次输入 `~.`。这是退出当前 SSH 连接，不是机器人停止指令。
 
 界面功能：
 

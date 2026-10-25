@@ -6,6 +6,7 @@ from pathlib import Path
 import platform
 import sys
 import time
+from .front_video import describe_front_video
 
 
 AUDITED_TOPICS = {
@@ -73,7 +74,9 @@ def run(config, duration, output):
         'topics': {}, 'local_interfaces': {},
         'limitations': ['Receipt is not global localization or motion acceptance.',
                        'DDS errors before deserialization may never reach callbacks. Save stderr separately.',
-                       'Local interface hashes do not establish publisher compatibility; compare on publisher host.'],
+                       'Local interface hashes do not establish publisher compatibility; compare on publisher host.',
+                       'Front video uses validated raw CDR envelopes; a compatibility layout is not the declared ROS schema.',
+                       'Video time_frame units are publisher-defined; it is not treated as a ROS timestamp or RGB-D.'],
     }
     destination = Path(output)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -92,7 +95,18 @@ def run(config, duration, output):
                 state['max_gap_s'] = max(state.get('max_gap_s', 0), now-previous)
             state['last_received_monotonic'] = now
             try:
-                sample = describe(message, node.get_clock().now().nanoseconds*1e-9)
+                if state['subscription_mode'] == 'serialized_cdr':
+                    sample = describe_front_video(message)
+                    state['validated_messages'] += 1
+                    layouts = state['wire_layout_counts']
+                    layout = sample['wire_layout']
+                    layouts[layout] = layouts.get(layout, 0)+1
+                    if 'stream_tag' in sample:
+                        tags = state['stream_tag_counts']
+                        tag = str(sample['stream_tag'])
+                        tags[tag] = tags.get(tag, 0)+1
+                else:
+                    sample = describe(message, node.get_clock().now().nanoseconds*1e-9)
                 previous_sample = state.get('last_sample', {})
                 if 'stamp_s' in sample:
                     for name, failed in (
@@ -104,11 +118,17 @@ def run(config, duration, output):
                 state['last_sample'] = sample
             except Exception as error:
                 state['sample_error'] = str(error)
+                state['sample_error_count'] = state.get('sample_error_count', 0)+1
         return receive
 
     try:
         for topic, type_name in topics.items():
-            state = report['topics'][topic] = {'expected_type': type_name, 'received': 0}
+            state = report['topics'][topic] = {'expected_type': type_name, 'received': 0,
+                                              'sample_error_count': 0}
+            raw_video = type_name == 'unitree_go/msg/Go2FrontVideoData'
+            state['subscription_mode'] = 'serialized_cdr' if raw_video else 'typed_ros'
+            if raw_video:
+                state.update(validated_messages=0, wire_layout_counts={}, stream_tag_counts={})
             try:
                 cls = get_message(type_name)
                 state['local_fields'] = cls.get_fields_and_field_types()
@@ -119,7 +139,7 @@ def run(config, duration, output):
                     if source.is_file():
                         report['local_interfaces'][str(source)] = hashlib.sha256(source.read_bytes()).hexdigest()
                 subscriptions.append(node.create_subscription(
-                    cls, topic, callback(topic), qos_profile_sensor_data))
+                    cls, topic, callback(topic), qos_profile_sensor_data, raw=raw_video))
             except Exception as error:
                 state['subscription_error'] = f'{type(error).__name__}: {error}'
         deadline = time.monotonic()+duration
@@ -134,11 +154,16 @@ def run(config, duration, output):
                 elapsed = state['last_received_monotonic']-state['first_received_monotonic']
                 state['received_hz'] = (state['received']-1)/elapsed if elapsed > 0 else None
             print(f"{topic}: publishers={state['publishers']} received={state['received']}", flush=True)
+            if state['subscription_mode'] == 'serialized_cdr':
+                print(f"  video CDR: validated={state['validated_messages']} "
+                      f"errors={state.get('sample_error_count', 0)} layouts={state['wire_layout_counts']}", flush=True)
     finally:
         node.destroy_node()
         rclpy.shutdown()
         destination.write_text(json.dumps(report, ensure_ascii=False, indent=2))
         print(f'诊断记录：{destination.resolve()}', flush=True)
-    # This indicates input receipt only. DDS compatibility must be assessed separately.
-    return 0 if all(report['topics'][robot[key]]['received'] > 0
-                    for key in ('odom_topic', 'lidar_topic')) else 2
+    # Receipt and envelope checks are not complete DDS/hardware acceptance.
+    geometry_received = all(report['topics'][robot[key]]['received'] > 0
+                            for key in ('odom_topic', 'lidar_topic'))
+    samples_valid = not any(s.get('sample_error_count', 0) for s in report['topics'].values())
+    return 0 if geometry_received and samples_valid else 2
