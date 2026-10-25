@@ -90,6 +90,32 @@ def test_packets_keep_raw_observations_and_count_evicted_frames(session):
     assert requests.get(session.url+'/api/record?frame=-1').status_code == 400
 
 
+def test_display_does_not_compress_recording_and_keeps_true_map_age(session, monkeypatch):
+    import deploy.app.session as module
+    calls = []
+    original = module.encode_packet
+    def encode(*args):
+        calls.append(1)
+        return original(*args)
+    monkeypatch.setattr(module, 'encode_packet', encode)
+    tasks = Tasks(load()['navigation'])
+    snapshot = DemoSensors(session).latest()
+    tasks.update(snapshot, snapshot.captured_at)
+    tasks.last_mapping_at = time.monotonic()-2
+    session.update(snapshot, tasks, 'disabled')
+    wait_until(lambda: session.frame_id)
+    display = session.display()
+    assert not calls
+    assert display['map']['stale'] and display['cloud']['stale']
+    assert display['map']['age'] >= 2
+    assert display['performance']['encode_ms'] >= 0 and display['fps'] == 5
+    batch = session.batch(0, 0)
+    assert len(calls) == 1 and 'packet' in batch['frames'][0]
+    assert not any(k.startswith('_') for k in batch['frames'][0])
+    session.batch(0, 0)
+    assert len(calls) == 1  # compressed packet reused by another recorder
+
+
 def test_display_sampling_uses_original_public_mapping_api():
     voxels = VoxelPointCloudMap(MappingConfig(voxel_size=.01))
     points = np.column_stack((np.arange(100)/10, np.zeros(100), np.ones(100)))
@@ -103,6 +129,40 @@ def test_display_sampling_uses_original_public_mapping_api():
     assert display_points(VoxelPointCloudMap(MappingConfig())).shape == (0, 3)
     with pytest.raises(ValueError):
         display_points(voxels, limit=0)
+
+
+def test_display_sampling_does_not_replace_history_when_count_crosses_budget():
+    voxels = VoxelPointCloudMap(MappingConfig(voxel_size=.01))
+    voxels.update(np.column_stack((np.arange(20)/10, np.zeros(20), np.ones(20))), 1, 'lidar')
+    before = display_points(voxels, limit=10)
+    voxels.update(np.array([[5., 0., 1.]]), 2, 'lidar')
+    after = display_points(voxels, limit=10)
+    # Only the new voxel can replace one sampled old voxel, not a global stride change.
+    retained = sum(np.any(np.all(after == p, axis=1)) for p in before)
+    assert retained >= 9
+
+
+def test_session_cloud_updates_vacated_geometry_without_erasing_unseen_history(session):
+    tasks = Tasks(load()['navigation'])
+    source = DemoSensors(session)
+    old = [1.05, .05, .55]
+    unseen = [1.05, 1.05, .55]
+    farther = [3.05, .05, .55]
+    for i, points in enumerate(([old, unseen], [farther], [farther], [farther])):
+        snapshot = source.latest()
+        snapshot.observation['sensors']['lidar'].update(
+            position=np.array([.05, .05, .55]), pointcloud=np.asarray(points), physics_step=i)
+        tasks.update(snapshot, snapshot.captured_at)
+        session.last_publish = float('-inf')
+        session.update(snapshot, tasks, 'disabled')
+        wait_until(lambda: session.frame_id == i+1)
+    displayed = np.asarray(session.display()['cloud']['points'])
+    assert session.display()['cloud']['accumulated']
+    assert not np.any(np.linalg.norm(displayed-old, axis=1) < .01)
+    for kept in (unseen, farther):
+        assert np.any(np.linalg.norm(displayed-kept, axis=1) < .01)
+    # Re-reading from another viewer does not mutate or reset the shared map.
+    np.testing.assert_array_equal(session.display()['cloud']['points'], displayed)
 
 
 def free_port():

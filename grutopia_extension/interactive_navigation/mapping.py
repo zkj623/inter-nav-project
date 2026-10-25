@@ -43,6 +43,9 @@ class MappingConfig:
     # Azimuth resolution of the flattened top-down lidar scan (0.5 degrees).
     lidar_scan_bins: int = 720
     max_voxel_points_per_update: int = 5000
+    # Opt-in removal of old LiDAR-only geometry after distinct scans confirm
+    # free space along measured 3D rays. Zero preserves the static-map policy.
+    voxel_clear_observations: int = 0
     graph_stride: int = 5
     safe_recovery_y_limits: Tuple[float, float] = (-1.25, 1.25)
 
@@ -70,6 +73,8 @@ class MappingConfig:
             raise ValueError('lidar_scan_bins must be positive')
         if self.lidar_free_height_layers <= 0:
             raise ValueError('lidar_free_height_layers must be positive')
+        if type(self.voxel_clear_observations) is not int or self.voxel_clear_observations < 0:
+            raise ValueError('voxel_clear_observations must be a nonnegative integer')
         if self.obstacle_height[0] >= self.obstacle_height[1]:
             raise ValueError('obstacle_height must be increasing')
         if self.obstacle_inflation_radius is not None and self.obstacle_inflation_radius <= 0:
@@ -133,11 +138,13 @@ class SceneGraphSnapshot:
 @dataclass
 class _Voxel:
     position_sum: np.ndarray = field(default_factory=lambda: np.zeros(3, dtype=np.float64))
+    centroid: np.ndarray = field(default_factory=lambda: np.zeros(3, dtype=np.float64))
     color_sum: np.ndarray = field(default_factory=lambda: np.zeros(3, dtype=np.float64))
     count: int = 0
     color_count: int = 0
     source_mask: int = 0
     last_step: int = 0
+    free_observations: int = 0
 
 
 class VoxelPointCloudMap:
@@ -184,11 +191,15 @@ class VoxelPointCloudMap:
         source_bit = self._SOURCE_BITS[source]
         for index, (point, key_array) in enumerate(zip(points, keys)):
             key = tuple(int(value) for value in key_array)
-            voxel = self._voxels.setdefault(key, _Voxel())
+            voxel = self._voxels.get(key)
+            if voxel is None:
+                voxel = self._voxels[key] = _Voxel()
             voxel.position_sum += point
             voxel.count += 1
+            np.divide(voxel.position_sum, voxel.count, out=voxel.centroid)
             voxel.source_mask |= source_bit
             voxel.last_step = step
+            voxel.free_observations = 0
             if colors is not None:
                 color = np.asarray(colors[index], dtype=np.float64)
                 if np.nanmax(color) <= 1.0:
@@ -196,11 +207,69 @@ class VoxelPointCloudMap:
                 voxel.color_sum += np.clip(color, 0.0, 255.0)
                 voxel.color_count += 1
 
+    def clear_lidar_free_space(self, origin: Vector3, points: np.ndarray, max_range: float):
+        """Remove contradicted geometry, never geometry merely absent from a scan.
+
+        Only a measured ray passing close to the old centroid and ending
+        farther away is evidence. Hits in the current frame protect their
+        entire voxel. Occluded, unseen and RGB-fused voxels remain untouched.
+        The caller must supply each LiDAR scan only once, as MappingRuntime does.
+        """
+        threshold = self.config.voxel_clear_observations
+        if not threshold or not self._voxels:
+            return
+        from scipy.spatial import cKDTree
+
+        origin = np.asarray(origin, dtype=np.float64)
+        points = _points_array(points)
+        points = points[np.isfinite(points).all(axis=1)]
+        if origin.shape != (3,) or not np.isfinite(origin).all() or not np.isfinite(max_range):
+            return
+        vectors = points - origin
+        ranges = np.linalg.norm(vectors, axis=1)
+        valid = (ranges >= .25) & (ranges < max_range * .99)
+        points, vectors, ranges = points[valid], vectors[valid], ranges[valid]
+        if not len(points):
+            return
+        hits = {tuple(key) for key in np.floor(points / self.config.voxel_size).astype(np.int64)}
+        candidates = [(key, voxel) for key, voxel in self._voxels.items()
+                      if key not in hits and voxel.source_mask == self._SOURCE_BITS['lidar']]
+        if not candidates:
+            return
+        # Retain all endpoints: sampling away a nearer return could make a
+        # farther ray incorrectly clear an occluded voxel.
+        directions = vectors / ranges[:, None]
+        deltas = np.asarray([voxel.centroid for _, voxel in candidates]) - origin
+        distances = np.linalg.norm(deltas, axis=1)
+        eligible = (distances >= .25) & (distances < max_range * .99)
+        indices = np.flatnonzero(eligible)
+        if not len(indices):
+            return
+        tree = cKDTree(directions)
+        unit = deltas[indices] / distances[indices, None]
+        _, ray = tree.query(unit)
+        along = np.einsum('ij,ij->i', deltas[indices], directions[ray])
+        perpendicular_squared = np.maximum(0., distances[indices]**2 - along**2)
+        size = self.config.voxel_size
+        clear = ((along >= .25) & (along < ranges[ray] - 2*size)
+                 & (perpendicular_squared <= (.25*size)**2))
+        for local_index in np.flatnonzero(clear):
+            index = indices[local_index]
+            # Also respect nearer returns in a small angular neighborhood,
+            # including duplicate beam directions and multi-return scans.
+            neighbors = tree.query_ball_point(unit[local_index], .5*size/distances[index])
+            if neighbors and distances[index] >= np.min(ranges[neighbors]) - 2*size:
+                continue
+            key, voxel = candidates[index]
+            voxel.free_observations += 1
+            if voxel.free_observations >= threshold:
+                del self._voxels[key]
+
     def points(self) -> np.ndarray:
         if not self._voxels:
             return np.empty((0, 3), dtype=np.float32)
         return np.asarray(
-            [voxel.position_sum / voxel.count for voxel in self._voxels.values()],
+            [voxel.centroid for voxel in self._voxels.values()],
             dtype=np.float32,
         )
 
@@ -546,6 +615,8 @@ class OccupancyGridMap:
         )
 
     def _inflate(self, occupied: np.ndarray, radius: float) -> np.ndarray:
+        if not occupied.any():
+            return occupied.copy()
         radius_cells = int(np.ceil(radius / self.config.grid_resolution))
         inflated = occupied.copy()
         for row_offset in range(-radius_cells, radius_cells + 1):
@@ -984,6 +1055,7 @@ class FusedMap:
         points = _points_array(points)
         if len(points) == 0:
             return
+        self.voxels.clear_lidar_free_space(origin, points, max_range)
         self.voxels.update(points, step=step, source='lidar')
         self.occupancy.update_lidar(origin, points, max_range=max_range)
         self.lidar_frames += 1

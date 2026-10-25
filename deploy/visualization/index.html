@@ -33,7 +33,7 @@ button{border:1px solid #3b4a58;background:transparent;color:#bdcbd7;padding:4px
  <div class="tools"><button id="reset" aria-pressed="true">背后跟随</button><button id="fit" aria-pressed="false">全图</button><button id="top">俯视</button></div>
  <div id="viewMode"></div><div class="legend" id="cloudMeta">浅灰：地面 · 彩色：其他高度</div></section>
 </main>
-<div class="status"><span id="connection">连接中</span><button id="reconnect" hidden>重新连接</button><span id="demo"></span><span id="task"></span></div>
+<div class="status"><span id="connection">连接中</span><button id="reconnect" hidden>重新连接</button><span id="demo"></span><span id="task"></span><span id="performance"></span></div>
 <div id="errors" role="status"></div>
 <script>
 'use strict';
@@ -113,17 +113,21 @@ canvas.addEventListener('wheel',e=>{e.preventDefault();if(follow){cameraZoom=Mat
 new ResizeObserver(draw).observe(canvas);
 function markStale(name,stale){$(name+'Stale').style.display=stale?'block':'none';if(name==='rgb')$('rgb').style.opacity=stale?'.35':'1';if(name==='map')$('mapImage').style.opacity=stale?'.35':'1';}
 async function poll(){if(polling)return;polling=true;clearTimeout(pollTimer);$('reconnect').disabled=true;
- const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),2500);let delay=null;
+ const started=performance.now(),abort=new AbortController(),timer=setTimeout(()=>abort.abort(),2500);let delay=null;
  try{const response=await fetch('/api/frame',{signal:abort.signal,cache:'no-store'});if(!response.ok)throw Error('HTTP '+response.status);const incoming=await response.json();
   if(data?.session_id!==incoming.session_id){autoFit=false;follow=true;cameraPose=null;cameraZoom=1;pan=[0,0];}
   data=incoming;offline=!!data.finished||data.session_age>2;
   if(!offline&&data.pose_overlay)cameraPose={position:[...data.pose.position],yaw:data.pose.yaw};
   delay=data.finished?null:1000/data.fps;$('connection').textContent=data.finished?'本轮运行已结束':offline?'主程序心跳已过期':'已连接';$('reconnect').hidden=!data.finished;
   $('demo').textContent=data.demo?'演示数据':'';
-  if(data.cloud){$('cloudEmpty').style.display='none';$('cloudMeta').textContent=data.cloud.ground_relative_z?'浅灰：地面 · 彩色：其他高度':'未标定 · 当前帧点云';
+  if(data.cloud){$('cloudEmpty').style.display='none';$('cloudMeta').textContent=data.cloud.accumulated?`累计场景：${data.cloud.count} 个体素 · 显示 ${data.cloud.display_count} 点 · 浅灰为地面`:'未标定 · 当前帧点云';
    if(follow&&data.pose_overlay)center=[...data.pose.position];}
   if(!data.cloud){$('cloudEmpty').style.display='grid';}
   markStale('cloud',offline||!!data.cloud?.stale);
+  const metrics=data.performance;
+  if(metrics){$('performance').textContent=`显示 ${metrics.display_fps.toFixed(1)} 帧/秒 · 点云年龄 ${((data.cloud?.age||0)*1000).toFixed(0)} ms`;
+   $('cloudStale').textContent=offline?'数据源已断开':metrics.input_stale?'输入观测已过期':'点云显示更新延迟';
+   $('mapStale').textContent=offline?'数据源已断开':metrics.input_stale?'输入观测已过期':'地图更新延迟';}
   $('task').textContent=data.status?.state==='observe'?'':`${data.status?.mode||''} · ${data.status?.state||''}`;
   if(data.map?.ready){$('mapEmpty').style.display='none';$('mapImage').style.display='block';
    const url='data:image/png;base64,'+data.map.png;if($('mapImage').getAttribute('src')!==url)$('mapImage').src=url;
@@ -136,7 +140,7 @@ async function poll(){if(polling)return;polling=true;clearTimeout(pollTimer);$('
   markStale('rgb',offline||!!data.rgb?.stale);
   $('errors').textContent=Object.entries({...data.errors,...(data.status?.error?{run:data.status.error}:{})}).map(([k,v])=>k+': '+v).join('\n');draw();
  }catch(error){offline=true;delay=null;$('connection').textContent='连接中断 · 已停止刷新';$('reconnect').hidden=false;markStale('cloud',true);markStale('rgb',true);markStale('map',true);$('errors').textContent='数据源不可用，请恢复连接后重试。';draw();}
- finally{clearTimeout(timer);polling=false;$('reconnect').disabled=false;if(delay!==null)pollTimer=setTimeout(poll,delay);}}
+ finally{clearTimeout(timer);polling=false;$('reconnect').disabled=false;if(delay!==null)pollTimer=setTimeout(poll,Math.max(0,delay-(performance.now()-started)));}}
 $('reconnect').onclick=()=>{$('connection').textContent='正在重新连接…';poll();};
 poll();
 </script>

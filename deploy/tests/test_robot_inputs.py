@@ -56,6 +56,72 @@ def test_cloud_layout_and_endianness(bigendian):
     np.testing.assert_allclose(decode_cloud(cloud(bigendian=bigendian)), [[2, .2, .7], [3, .2, .7]])
 
 
+def test_sensor_error_recovers_only_when_its_own_stream_recovers():
+    source = sensor()
+    def receive(ok):
+        if not ok:
+            raise ValueError('bad timestamp')
+    odom = source._guard(receive, 'odom')
+    lidar = source._guard(receive, 'lidar')
+    odom(False)
+    lidar(True)
+    assert 'odom' in source.last_error
+    odom(True)
+    assert source.last_error is None
+
+
+def test_observe_maintenance_uses_wall_interval_without_advancing_task_timeout():
+    source = sensor()
+    source._pose(odometry(1_000_000_000, 1.))
+    source._pose(odometry(1_020_000_000, 1.02))
+    source._lidar(cloud())
+    snapshot = source.latest()
+    engine = Tasks(load()['navigation'])
+    calls = []
+    engine.component.mapping.update = lambda step, obs, **kwargs: calls.append((step, kwargs['maintenance']))
+    for now in (10., 10.1, 10.3, 10.9, 11.2, 11.3):
+        engine.update(snapshot, now)
+    assert [step for step, _ in calls] == list(range(6))
+    assert [due for _, due in calls] == [True, False, False, False, True, False]
+    assert engine.elapsed == 0 and engine.last_step == -1
+
+
+def test_observation_freshness_error_identifies_stream_and_direction():
+    from deploy.robot.observation import Snapshot
+    snapshot = Snapshot({}, 10., 9.5, 10., None, (0, 0, 0), 1)
+    with pytest.raises(ValueError, match='odom observation stale: age=500.0 ms'):
+        snapshot.require_fresh(10., .4)
+    snapshot.pose_at, snapshot.lidar_at = 10., 10.06
+    with pytest.raises(ValueError, match='lidar observation future: ahead=60.0 ms'):
+        snapshot.require_fresh(10., .4)
+
+
+def test_deskewed_padding_is_removed_before_tf_without_removing_real_origin():
+    def message(points):
+        a = np.asarray(points, dtype='<f4').reshape(-1, 3)
+        return Message(width=len(a), height=1, point_step=12, row_step=len(a)*12,
+                       data=a.tobytes(), is_bigendian=False,
+                       fields=[Message(name=name, offset=i*4, count=1, datatype=7)
+                               for i, name in enumerate(('x', 'y', 'z'))],
+                       header=Message(frame_id='odom', stamp=1_010_000_000))
+
+    returns = np.array([[1., 2., .3], [0., 0., 0.], [2., 1., .4]], dtype=np.float32)
+    padded = message(np.concatenate([np.zeros((10000, 3)), returns]))
+    np.testing.assert_array_equal(decode_cloud(padded, strip_utlidar_padding=True), returns)
+    assert len(decode_cloud(padded)) == 10003  # Generic decoding remains lossless.
+    np.testing.assert_array_equal(decode_cloud(message(returns), strip_utlidar_padding=True), returns)
+    with pytest.raises(ValueError, match='no finite returns'):
+        decode_cloud(message(np.zeros((10000, 3))), strip_utlidar_padding=True)
+
+    source = sensor()
+    source._lidar(padded)
+    np.testing.assert_array_equal(source.lidar[1]['pointcloud'], returns)
+    source.config['lidar_topic'] = '/utlidar/cloud_base'
+    padded.header.stamp += 1
+    source._lidar(padded)
+    assert len(source.lidar[1]['pointcloud']) == 10003
+
+
 @pytest.mark.parametrize('corruption', ['truncated', 'stride', 'missing_xyz', 'field_offset', 'all_nan'])
 def test_malformed_cloud_is_not_free_space(corruption):
     message = cloud()

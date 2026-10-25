@@ -26,6 +26,58 @@ from grutopia_extension.interactive_navigation.state_machine import (
 
 
 class InteractionNavigationMappingTest(unittest.TestCase):
+    def test_lidar_scene_retains_unseen_geometry_and_removes_confirmed_vacated_voxel(self):
+        config = MappingConfig(voxel_size=.1, voxel_clear_observations=3)
+        mapping = FusedMap(config)
+        origin = (.05, .05, .55)
+        old = [1.05, .05, .55]
+        unseen = [1.05, 1.05, .55]
+        occluded = [4.05, .05, .55]
+        ground = [1.05, .05, .05]
+        mapping.update_lidar(origin, np.array([old, unseen, occluded, ground]), 0, 8.)
+        farther = np.array([[3.05, .05, .55]])
+        for step in (1, 2):
+            mapping.update_lidar(origin, farther, step, 8.)
+            self.assertTrue(np.any(np.linalg.norm(mapping.voxels.points()-old, axis=1) < .01))
+        mapping.update_lidar(origin, farther, 3, 8.)
+        points = mapping.voxels.points()
+        self.assertFalse(np.any(np.linalg.norm(points-old, axis=1) < .01))
+        for kept in (unseen, occluded, ground, farther[0]):
+            self.assertTrue(np.any(np.linalg.norm(points-kept, axis=1) < .01))
+
+    def test_lidar_scene_respects_hits_and_nearer_returns_and_resets_free_evidence(self):
+        mapping = FusedMap(MappingConfig(voxel_clear_observations=3))
+        origin = (.05, .05, .55)
+        old = np.array([[1.05, .05, .55]])
+        farther = np.array([[3.05, .05, .55]])
+        mapping.update_lidar(origin, old, 0, 8.)
+        for step in (1, 2):
+            mapping.update_lidar(origin, farther, step, 8.)
+        # A new hit overrides pending free evidence, including a farther return.
+        mapping.update_lidar(origin, np.concatenate([farther, old]), 3, 8.)
+        for step in (4, 5):
+            mapping.update_lidar(origin, farther, step, 8.)
+        self.assertTrue(np.any(np.linalg.norm(mapping.voxels.points()-old[0], axis=1) < .01))
+        # A nearer return occludes the old voxel, independent of return ordering.
+        nearer = np.array([[.55, .05, .55]])
+        for step in range(6, 12):
+            rays = np.concatenate([farther, nearer])
+            mapping.update_lidar(origin, rays if step % 2 else rays[::-1], step, 8.)
+        self.assertTrue(np.any(np.linalg.norm(mapping.voxels.points()-old[0], axis=1) < .01))
+        mapping.update_lidar(origin, farther, 12, 8.)
+        self.assertFalse(np.any(np.linalg.norm(mapping.voxels.points()-old[0], axis=1) < .01))
+
+    def test_lidar_scene_does_not_clear_from_invalid_or_range_limit_returns(self):
+        for count in (0, 3):
+            mapping = FusedMap(MappingConfig(voxel_clear_observations=count))
+            origin = (.05, .05, .55)
+            old = np.array([[1.05, .05, .55]])
+            mapping.update_lidar(origin, old, 0, 8.)
+            for step in range(1, 5):
+                rays = np.array([[8.05, .05, .55], [np.nan, 0, 0]]) if count else np.array([[3.05, .05, .55]])
+                mapping.update_lidar(origin, rays, step, 8.)
+            self.assertTrue(np.any(np.linalg.norm(mapping.voxels.points()-old[0], axis=1) < .01))
+
     def test_ray_budget_preserves_nearest_thin_obstacle_before_flattening(self):
         config = MappingConfig(
             x_limits=(0.0, 8.0), y_limits=(-2.0, 2.0),

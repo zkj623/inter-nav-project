@@ -16,8 +16,18 @@ def display_points(voxel_map, limit=12000):
     if limit < 1:
         raise ValueError('display point limit must be positive')
     points = voxel_map.points()
-    stride = max(1, (len(points)+limit-1)//limit)
-    return points[::stride].copy()
+    if len(points) <= limit:
+        return points.copy()
+    # Stable spatial sampling: changing the total voxel count must not change
+    # a global stride and make whole bands of historical geometry blink out.
+    keys = np.floor(points / voxel_map.config.voxel_size).astype(np.int64).astype(np.uint64)
+    hashes = (keys[:, 0]*np.uint64(73856093) ^ keys[:, 1]*np.uint64(19349663)
+              ^ keys[:, 2]*np.uint64(83492791))
+    hashes = (hashes ^ (hashes >> np.uint64(30))) * np.uint64(0xbf58476d1ce4e5b9)
+    hashes = (hashes ^ (hashes >> np.uint64(27))) * np.uint64(0x94d049bb133111eb)
+    hashes ^= hashes >> np.uint64(31)
+    selected = np.argpartition(hashes, limit-1)[:limit]
+    return points[np.sort(selected)].copy()
 
 
 class SceneCapture:
@@ -29,6 +39,7 @@ class SceneCapture:
         if not self.trajectory or np.linalg.norm(position - self.trajectory[-1]) > .03:
             self.trajectory.append(position)
         result = {'ready': bool(tasks.map_ready and snapshot.geometry_calibrated),
+                  'updated_at': tasks.last_mapping_at,
                   'frame': snapshot.planning_frame, 'position': position,
                   'orientation': snapshot.observation['orientation'].copy(),
                   'trajectory': np.asarray(self.trajectory), 'state': tasks.state, 'mode': tasks.mode,

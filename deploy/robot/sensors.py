@@ -27,7 +27,7 @@ def decode_image(message):
     return image
 
 
-def decode_cloud(message):
+def decode_cloud(message, *, strip_utlidar_padding=False):
     """Foxy-compatible PointCloud2 XYZ reader; honour fields, stride and byte order."""
     if message.width <= 0 or message.height <= 0 or message.point_step <= 0:
         raise ValueError('Empty or invalid PointCloud2 dimensions')
@@ -48,6 +48,11 @@ def decode_cloud(message):
                                   buffer=payload, offset=field.offset,
                                   strides=(message.row_step, message.point_step)).reshape(-1))
     points = np.column_stack(columns).astype(np.float32)
+    # Observed on /utlidar/cloud_deskewed: 10,000 zero XYZ slots precede
+    # the actual scan. Match the raw prefix BEFORE finite filtering/TF.
+    # Do not discard isolated world-origin returns or zeros on other topics.
+    if strip_utlidar_padding and len(points) >= 10000 and np.all(points[:10000] == 0):
+        points = points[10000:]
     points = points[np.isfinite(points).all(axis=1)]
     if not len(points):
         raise ValueError('PointCloud2 contains no finite returns')
@@ -74,6 +79,7 @@ class RosSensors:
         self.sequence = 0
         self.pose_history = PoseHistory(config['pose_cloud_tolerance_s'])
         self.last_stamps = {}
+        self._errors = {}
         self.continuity = PoseContinuity(config['max_position_jump_m'], config['max_orientation_jump_rad'])
         for topic, cls, callback in (
             ('odom_topic', Odometry, self._pose), ('lidar_topic', PointCloud2, self._lidar),
@@ -83,7 +89,7 @@ class RosSensors:
         ):
             if topic in ('rgb_topic', 'depth_topic', 'camera_info_topic') and config['camera_mode'] != 'rgbd':
                 continue
-            self.node.create_subscription(cls, config[topic], self._guard(callback), qos_profile_sensor_data)
+            self.node.create_subscription(cls, config[topic], self._guard(callback, topic), qos_profile_sensor_data)
         if preview_rgb is not None and preview_topic:
             last_preview = [float('-inf')]
             def preview(message):
@@ -100,20 +106,37 @@ class RosSensors:
         self.thread = threading.Thread(target=rclpy.spin, args=(self.node,), daemon=True)
         self.thread.start()
 
-    def _guard(self, callback):
+    @property
+    def last_error(self):
+        errors = getattr(self, '_errors', {}).copy()
+        return '; '.join(errors.values()) or getattr(self, '_pair_error', None)
+
+    @last_error.setter
+    def last_error(self, value):
+        self._pair_error = value
+
+    def _guard(self, callback, key='preview'):
         def invoke(message):
+            if not hasattr(self, '_errors'):
+                self._errors = {}
             try:
                 callback(message)
             except Exception as error:
-                self.last_error = f'{type(error).__name__}: {error}'
+                self._errors[key] = f'{key}: {type(error).__name__}: {error}'
+            else:
+                self._errors.pop(key, None)
         return invoke
 
     def _stamp(self, message):
         stamp = message.header.stamp
         seconds = stamp.sec + stamp.nanosec*1e-9
         age = self.node.get_clock().now().nanoseconds*1e-9 - seconds
-        if seconds <= 0 or age < -.05 or age > self.config['max_data_age_s']:
-            raise ValueError('ROS timestamp stale/future; synchronize real clocks')
+        if seconds <= 0:
+            raise ValueError('ROS timestamp invalid')
+        if age < -.05:
+            raise ValueError(f'ROS clock mismatch: message ahead of Orin by {-age*1000:.1f} ms (limit 50 ms); use sync_time.py --watch before run')
+        if age > self.config['max_data_age_s']:
+            raise ValueError(f'ROS timestamp stale: age={age*1000:.1f} ms, limit={self.config["max_data_age_s"]*1000:.0f} ms; check clocks and receive delay')
         return stamp.sec*1_000_000_000 + stamp.nanosec, time.monotonic()-max(0, age)
 
     def _tf(self, frame, stamp):
@@ -154,7 +177,9 @@ class RosSensors:
         p, q = self._tf(message.header.frame_id, message.header.stamp)
         if seq <= self.last_stamps.get('lidar', -1):
             raise ValueError('Non-increasing point-cloud timestamp')
-        points = decode_cloud(message)
+        points = decode_cloud(message, strip_utlidar_padding=(
+            self.config['lidar_topic'] == '/utlidar/cloud_deskewed'
+            and message.header.frame_id == 'odom'))
         points = transform(points, p, q).astype(np.float32)
         with self.lock:
             self.last_stamps['lidar'] = seq
@@ -204,6 +229,7 @@ class RosSensors:
             except ValueError as error:
                 self.last_error = str(error)
                 return None
+            self._pair_error = None
             offset = self.config['lidar_origin_offset_base_m']
             calibrated = offset is not None and self.config['ground_z'] is not None
             # Missing calibration permits recording only; runtime must not build a map.

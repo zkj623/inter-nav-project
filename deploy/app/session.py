@@ -46,6 +46,11 @@ class Session:
         self.frames_ring, self.events_ring = deque(maxlen=frame_limit), deque(maxlen=event_limit)
         self.frame_id = self.event_id = self.dropped = 0
         self.last_publish = float('-inf')
+        self.publish_interval = .2
+        self.input_times = None
+        self.published_at = None
+        self.publish_times = deque(maxlen=30)
+        self.timings = {}
         self.map = {'ready': False, 'reason': '等待 run.py 的有效观测和标定'}
         self.map_at = None
         self.status = {'state': 'starting', 'motion': 'disabled', 'mode': 'observe'}
@@ -76,15 +81,21 @@ class Session:
             self.heartbeat = now
             self.status = {'state': tasks.state, 'mode': tasks.mode, 'motion': motion, 'error': error,
                            'map_ready': tasks.map_ready, 'result': tasks.result}
-        if snapshot is None or now-self.last_publish < .5:
+            self.input_times = (snapshot.pose_at, snapshot.lidar_at) if snapshot is not None else None
+        if snapshot is None or now-self.last_publish < self.publish_interval:
             return
         self.last_publish = now
         if self.pending.full():
-            self.dropped += 1
-            return
+            try:
+                self.pending.get_nowait()
+                self.dropped += 1
+            except queue.Empty:
+                pass
         try:
             # Mutable planner arrays are copied only on their owning thread.
-            self.pending.put_nowait((snapshot, self.capture.capture(snapshot, tasks)))
+            scene = self.capture.capture(snapshot, tasks)
+            captured = time.monotonic()
+            self.pending.put_nowait((snapshot, scene, captured, (captured-now)*1000))
         except Exception as exc:
             self.frames.error('session', exc)
             self.dropped += 1
@@ -97,20 +108,22 @@ class Session:
     def _encode_loop(self):
         while not self.worker_stop.is_set() or not self.pending.empty():
             try:
-                snapshot, scene = self.pending.get(timeout=.1)
+                snapshot, scene, queued_at, capture_ms = self.pending.get(timeout=.1)
             except queue.Empty:
                 continue
             try:
-                packet = encode_packet(snapshot, scene)
+                encoding_started = time.monotonic()
                 map_image = map_payload(scene)
                 lidar = snapshot.observation['sensors']['lidar']
                 points = scene['points'] if scene['ready'] else lidar['pointcloud']
                 if len(points) > 12000:
                     points = points[np.linspace(0, len(points)-1, 12000, dtype=int)]
                 display_count = scene['voxel_count'] if scene['ready'] else len(lidar['pointcloud'])
+                map_at = scene['updated_at'] if scene['ready'] else snapshot.lidar_at
                 cloud_payload = {'points': np.round(np.asarray(points, dtype=float), 3).tolist(),
                                          'count': display_count, 'frame': snapshot.planning_frame,
-                                         'stamp': snapshot.lidar_at, 'source_age': None,
+                                         'display_count': len(points), 'accumulated': bool(scene['ready']),
+                                         'stamp': map_at, 'source_age': None,
                                          'ground_relative_z': snapshot.geometry_calibrated,
                                          'kind': '累计建图点云' if scene['ready'] else '当前原始点云（未建图）'}
                 w, x, y, z = snapshot.observation['orientation']
@@ -122,11 +135,15 @@ class Session:
                 if camera is not None:
                     self.rgb(camera['rgba'], snapshot.camera_at, 'ROS RGB-D colour')
                 with self.lock:
-                    self.frames.put('cloud', cloud_payload, snapshot.lidar_at)
+                    self.frames.put('cloud', cloud_payload, map_at)
                     self.frames.put('pose', pose_payload, snapshot.pose_at)
-                    self.map, self.map_at = map_image, snapshot.lidar_at
+                    self.map, self.map_at = map_image, map_at
+                    self.published_at = time.monotonic()
+                    self.publish_times.append(self.published_at)
+                    self.timings = {'capture_ms': capture_ms, 'queue_ms': (encoding_started-queued_at)*1000,
+                                    'encode_ms': (self.published_at-encoding_started)*1000}
                     self.frame_id += 1
-                    self.frames_ring.append({'frame_id': self.frame_id, 'packet': packet,
+                    self.frames_ring.append({'frame_id': self.frame_id, '_snapshot': snapshot, '_scene': scene,
                                              'visual': self.frames.snapshot(), 'map': map_image})
                 with self.frames.lock:
                     self.frames.errors.pop('session', None)
@@ -137,25 +154,41 @@ class Session:
     def display(self):
         now = time.monotonic()
         with self.lock:
-            mapping = dict(self.map, stale=self.map_at is None or now-self.map_at > 1.)
+            mapping = dict(self.map, age=None if self.map_at is None else max(0., now-self.map_at),
+                           stale=self.map_at is None or now-self.map_at > 1.)
             state = dict(self.status)
             age = now-self.heartbeat
             finished = self.summary is not None
             sequence = self.frame_id
             frames = self.frames.snapshot()
+            input_ages = None if self.input_times is None else [now-t for t in self.input_times]
+            input_stale = input_ages is None or any(t > self.info['config']['robot']['max_data_age_s'] or t < -.05 for t in input_ages)
+            measured_fps = ((len(self.publish_times)-1)/(self.publish_times[-1]-self.publish_times[0])
+                            if len(self.publish_times) > 1 else 0.)
+            performance = dict(self.timings, display_fps=measured_fps, input_ages_s=input_ages,
+                               input_stale=input_stale,
+                               display_age_s=None if self.published_at is None else now-self.published_at)
         return dict(frames, session_id=self.info['session_id'], sequence=sequence,
-                    map=mapping, status=state, session_age=age, finished=finished, fps=2.,
+                    map=mapping, status=state, session_age=age, finished=finished, fps=5., performance=performance,
                     cloud_topic=self.info['config']['robot']['lidar_topic'])
 
     def batch(self, after_frame, after_event):
         with self.lock:
             oldest_frame = self.frames_ring[0]['frame_id'] if self.frames_ring else self.frame_id+1
             oldest_event = self.events_ring[0]['event_id'] if self.events_ring else self.event_id+1
-            return {'info': self.info, 'frames': [p for p in self.frames_ring if p['frame_id'] > after_frame],
+            result = {'info': self.info, 'frames': [p for p in self.frames_ring if p['frame_id'] > after_frame],
                     'events': [p for p in self.events_ring if p['event_id'] > after_event],
                     'frame_gap': max(0, oldest_frame-after_frame-1),
                     'event_gap': max(0, oldest_event-after_event-1),
                     'producer_dropped': self.dropped, 'summary': self.summary}
+        # Recording compression is demand-driven and outside the display lock.
+        # An unused recorder must not delay every live visual frame.
+        frames = []
+        for frame in result['frames']:
+            if 'packet' not in frame:
+                frame['packet'] = encode_packet(frame['_snapshot'], frame['_scene'])
+            frames.append({k: v for k, v in frame.items() if not k.startswith('_')})
+        return dict(result, frames=frames)
 
     def _server(self, port):
         session = self
@@ -175,7 +208,7 @@ class Session:
                     else:
                         self.send_error(404)
                         return
-                    body = json.dumps(payload, default=json_value, allow_nan=False).encode()
+                    body = json.dumps(payload, default=json_value, allow_nan=False, separators=(',', ':')).encode()
                 except (ValueError, TypeError):
                     self.send_error(400)
                     return

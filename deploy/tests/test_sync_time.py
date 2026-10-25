@@ -1,6 +1,6 @@
 """Clock-reference checks only; never sets a clock or imports ROS."""
 import unittest
-from deploy.sync_time import source_offset, ages_valid
+from deploy.sync_time import source_offset, ages_valid, watch_correction
 
 
 class ClockReferenceTests(unittest.TestCase):
@@ -34,3 +34,14 @@ class ClockReferenceTests(unittest.TestCase):
         for age, expected in [(-.06, False), (.1, True), (.41, False)]:
             self.assertEqual(ages_valid([(100., stamp, stamp+age)], .4), expected)
         self.assertFalse(ages_valid([], .4))
+
+    def test_watch_only_corrects_small_common_clock_drift(self):
+        odom = [(m, s, s-.002) for m, s, _ in self.samples()]
+        cloud = [(m+.01, s, w+.01) for m, s, w in odom]
+        self.assertAlmostEqual(watch_correction({'odom': odom, 'lidar': cloud}, .4), .002, places=5)
+        for delta in (.03, -.03, 2.):
+            shifted = [(m, s, s+delta) for m, s, _ in odom]
+            with self.assertRaises(ValueError):
+                watch_correction({'odom': shifted, 'lidar': cloud}, .4)
+        with self.assertRaises(ValueError):
+            watch_correction({'odom': odom, 'lidar': [(m, s-1, w) for m, s, w in cloud]}, .4)

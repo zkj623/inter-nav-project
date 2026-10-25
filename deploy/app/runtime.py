@@ -158,6 +158,10 @@ def run_live(args, config):
                     if event['state'] == 'fault':
                         print(f"运动状态异常：{event['detail']}", flush=True)
             snapshot = sensors.latest()
+            # Sensor callbacks may advance while keyboard/events/locks run.
+            # Compare against time AFTER acquiring the observation.
+            now = time.monotonic()
+            observation_error = None
             if operation:
                 key, value = operation
                 session.event('operator', key=key, value=value)
@@ -237,15 +241,16 @@ def run_live(args, config):
                         if motion:
                             motion.stop(str(exc))
                         session.event('task_paused', reason=str(exc))
-                    sensors.last_error = str(exc)
+                    observation_error = str(exc)
             elif tasks.state == 'active':
                 tasks.pause()
                 if motion:
                     motion.stop('missing_sensor_data')
-            session.update(snapshot, tasks, motion.state if motion else 'disabled', sensors.last_error)
+            current_error = sensors.last_error or observation_error
+            session.update(snapshot, tasks, motion.state if motion else 'disabled', current_error)
             if now-last_status >= 2 and (keyboard is None or keyboard.editing is None):
                 print(f'状态={tasks.state} 任务={tasks.mode} 运动={motion.state if motion else "disabled"}'
-                      f' 观测={"ready" if snapshot else "waiting"} 建图={tasks.map_ready} 最近错误={sensors.last_error}', flush=True)
+                      f' 观测={"ready" if snapshot else "waiting"} 建图={tasks.map_ready} 最近错误={current_error}', flush=True)
                 last_status = now
             time.sleep(max(0, 1/nav['tick_hz']-(time.monotonic()-now)))
     except Exception as exc:

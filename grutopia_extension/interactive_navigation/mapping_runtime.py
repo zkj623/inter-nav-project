@@ -275,8 +275,9 @@ class MapNavigationRuntime:
             self._static_obstacle_boxes.append((label, minimum, maximum))
             known_labels.add(label)
 
-    def update(self, step: int, robot_observation: dict):
-        if step % self.topology_update_interval == 0:
+    def update(self, step: int, robot_observation: dict, *, maintenance=None):
+        maintain = step % self.topology_update_interval == 0 if maintenance is None else maintenance
+        if maintain:
             # Low-frequency maintenance before new evidence arrives: cells that
             # stayed weak and isolated through the whole interval are noise,
             # while anything hit repeatedly has passed the confirmation level.
@@ -338,9 +339,9 @@ class MapNavigationRuntime:
                 and not navigation_grid.inflated_mask()[cell]
             ):
                 self._last_safe_position = tuple(float(value) for value in position[:3])
-        if step % self.topology_update_interval == 0:
+        if maintain:
             self._mark_person_obstacles()
-        if self.semantic_voronoi is not None and step % self.topology_update_interval == 0:
+        if self.semantic_voronoi is not None and maintain:
             self.semantic_voronoi.update()
             self.semantic_voronoi.attach_semantics(
                 self.map.scene_graph.object_nodes()

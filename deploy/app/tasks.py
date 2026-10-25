@@ -24,6 +24,9 @@ class Tasks:
         self.result = None
         self.label_baseline = {}
         self.map_ready = False
+        self._observe_tick = -1
+        self._maintenance_due = None
+        self.last_mapping_at = None
 
     def _point(self, goal):
         c = self.config
@@ -36,6 +39,7 @@ class Tasks:
             max_forward_speed=c['max_forward_speed'], max_lateral_speed=c['max_lateral_speed']))
         # Geometry-only tasks have no detector; never enable Isaac fallback.
         component.mapping.semantic_detection_mode = SemanticDetectionMode.OPEN_VOCABULARY
+        component.mapping.topology_update_interval = max(1, round(c['topology_interval_s']*c['tick_hz']))
         return component
 
     def _explore(self, target):
@@ -136,7 +140,13 @@ class Tasks:
                     self.perception.set_frame(frame, snapshot.camera_at)
         if self.state != 'active':
             # Continue sensing while paused/manual; no task elapsed time advances.
-            self.component.mapping.update(max(0, self.last_step), observation)
+            due = self._maintenance_due is None or now >= self._maintenance_due
+            if due:
+                self._maintenance_due = now + self.config['topology_interval_s']
+            self._observe_tick += 1
+            self.component.mapping.update(self._observe_tick, observation, maintenance=due)
+            if 'lidar' in observation['sensors']:
+                self.last_mapping_at = snapshot.lidar_at
             return None
         self.elapsed += max(0, now-self.last_time)
         self.last_time = now
@@ -147,6 +157,8 @@ class Tasks:
             self.result = {'success': False, 'reason': 'task_timeout'}
             return None
         self.component.update(step, observation)
+        if 'lidar' in observation['sensors']:
+            self.last_mapping_at = snapshot.lidar_at
         result = self.component.evaluate(step, observation)
         if result.success and self.mode == 'explore' and not self.fresh_target_confirmed():
             # Retained semantic maps can guide a new task, but cannot prove a fresh find.

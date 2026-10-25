@@ -18,13 +18,19 @@ class Snapshot:
     planning_frame: str = "unknown"
 
     def require_fresh(self, now, max_age, camera=False):
-        times = [self.pose_at, self.lidar_at]
+        times = [('odom', self.pose_at), ('lidar', self.lidar_at)]
         if camera:
             if self.camera_at is None:
                 raise ValueError('RGB-D observation is missing')
-            times.append(self.camera_at)
-        if any(not np.isfinite(t) or now-t > max_age or t-now > .05 for t in times):
-            raise ValueError('Observation is stale or has a future timestamp')
+            times.append(('camera', self.camera_at))
+        for name, stamp in times:
+            age = now-stamp
+            if not np.isfinite(age):
+                raise ValueError(f'{name} observation has an invalid timestamp')
+            if age > max_age:
+                raise ValueError(f'{name} observation stale: age={age*1000:.1f} ms, limit={max_age*1000:.0f} ms')
+            if age < -.05:
+                raise ValueError(f'{name} observation future: ahead={-age*1000:.1f} ms, limit=50 ms')
 
 
 def normalize(observation, ground_z=0.0):
