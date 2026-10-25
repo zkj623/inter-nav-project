@@ -15,6 +15,7 @@ class FixedCubeCfg(ObjectCfg):
     type: Optional[str] = 'FixedCube'
     color: Optional[Tuple[float, float, float]] = None
     semantic_label: Optional[str] = None
+    visible: bool = True
 
 
 class VisualCubeCfg(ObjectCfg):

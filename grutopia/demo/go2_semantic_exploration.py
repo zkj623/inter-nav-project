@@ -142,7 +142,7 @@ def build_semantic_objects(args):
     return objects
 
 
-def build_grscene_floor(profile):
+def build_grscene_floor(profile, floor_top=GRSCENE_FLOOR_TOP):
     """Give Go2 a flat collision plane above the scanned mesh floor.
 
     The 0.15 m top surface balances two constraints: low enough that lidar
@@ -151,6 +151,10 @@ def build_grscene_floor(profile):
     plinths that the locomotion policy would otherwise climb and get stuck on
     (observed with a 0.10 m floor).
     """
+    import math
+    floor_top = float(floor_top)
+    if not math.isfinite(floor_top) or not 0 < floor_top <= 0.30:
+        raise ValueError('Collision floor top must be within (0, 0.30] m')
     x_limits = profile.mapping.x_limits
     y_limits = profile.mapping.y_limits
     return [
@@ -160,15 +164,16 @@ def build_grscene_floor(profile):
             position=(
                 (x_limits[0] + x_limits[1]) / 2.0,
                 (y_limits[0] + y_limits[1]) / 2.0,
-                GRSCENE_FLOOR_TOP / 2.0,
+                floor_top / 2.0,
             ),
             scale=(
                 x_limits[1] - x_limits[0],
                 y_limits[1] - y_limits[0],
-                GRSCENE_FLOOR_TOP,
+                floor_top,
             ),
             color=(0.42, 0.42, 0.44),
             semantic_label='floor',
+            visible=False,
         )
     ]
 

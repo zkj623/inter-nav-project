@@ -22,5 +22,8 @@ class FixedCube(ObjectCommon):
             color=np.asarray(self._config.color, dtype=float),
         )
         scene.add(cube)
+        if not self._config.visible:
+            from pxr import UsdGeom
+            UsdGeom.Imageable(cube.prim).MakeInvisible()
         if self._config.semantic_label:
             add_update_semantics(cube.prim, self._config.semantic_label)
