@@ -8,6 +8,38 @@ Voronoi exploration.
 The default demo places Go2 in a GRScenes home. It explores until it matches
 a text target such as `refrigerator` and walks up to the scanned object.
 
+## Go2 可交互箱子场景导航
+
+原尺寸 MV7 中的点到点导航、交互决策和侧推清路入口为 `grutopia/demo/go2_side_clearance_navigation.py`。
+以下命令在本实验室服务器上运行 T05 并保存完整视频；在 `codex/go2-interactive-navigation-20261026` 分支的仓库根目录执行，GPU 编号按空闲情况修改。
+
+```bash
+source /data20t/embodied/share/inter-nav/env.sh
+
+go2_inputs=/data20t/embodied/zkj/inter-nav-results/go2-voronoi-heading-up-20261025/collision-corrected-inputs
+go2_out="/data20t/embodied/zkj/inter-nav-results/go2-interactive-nav-$(date +%Y%m%d-%H%M%S)"
+
+set -o pipefail
+"$ISAAC_PYTHON" -u grutopia/demo/go2_side_clearance_navigation.py \
+  --benchmark-dir "$go2_inputs" \
+  --task-ids T05 \
+  --gpu 1 \
+  --floor-top 0.01 \
+  --max-steps 30000 \
+  --record-video --material-mode preview \
+  --route-planner voronoi --navigation-heading path \
+  --path-controller pure --roadmap-shape footprint --route-clearance 0.22 \
+  --push-max-speed 0.95 --turn-speed 1.0 \
+  --contact-centering-speed 0.25 --contact-yaw-tolerance 0.10 --contact-front-gap 0.40 \
+  --output "$go2_out" 2>&1 | tee "${go2_out}.log"
+```
+
+只跑两组推箱任务时将 `--task-ids T05` 改为 `--task-ids T04,T05`；全部五组使用 `--task-ids T01,T02,T03,T04,T05`。
+输出目录的 `T05/video/combined.mp4` 是完整四画面录像，`third_person.mp4` 为随狗朝向转动、狗头朝上的正上方视角；各组任务独立保存 25 fps 视频。
+
+T01 已有独立正式成功结果；最新 T04/T05 长距离推箱任务仍因失稳未完成。上述命令复现当前实验实现，任务是否成功请查看 `result.json` 的 `success`/`reason`。
+外部场景、布局/碰撞数据及模型需要服务器共享环境，详情、五组起终点和已知失败阶段见 [HANDOFF：Go2 可交互箱子导航](HANDOFF.md#go2-interactive-navigation)。
+
 ## Environment setup
 
 On this lab server, `embodied` members should clone the repo and use the
