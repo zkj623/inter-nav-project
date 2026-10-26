@@ -43,7 +43,7 @@ set -o pipefail
 
 地图使用 1 Hz 全局规划层和 10 Hz 局部动态层。箱子位移后清除其旧占据，保留墙体和其他物体；清路完成会立即刷新全局路线。录像地图同时显示推箱原因、侧停方向、预测路径收益和局部碰撞图。设计与限制见 [分层交互导航说明](docs/go2_layered_navigation.md)。
 
-本轮 **T04 已在原始起终点下成功**：19810 步，停稳后终点误差 0.086 m，完整机身穿门，五路全程录像通过逐帧审计。T05 及其余任务继续验证中；详见 [本轮正式结果](HANDOFF.md#go2-layered-results)。请查看每组 `result.json` 的 `success`/`reason`、终点误差与 `rollout_health`。启动时换过起点的 `calibration_only` 结果不能作为原任务成功记录。完整材质场景占用较多内存，同一时间只启动一个仿真进程。`--task-ids` 列表会在同一场景中逐组复位机器人、全部箱子和地图，并各自保存录像。
+本轮 **T04（v14）和 T05（v19）均已在原始起终点下成功**，停稳后终点误差均约 0.086 m，完整机身穿门。T05 为 10456 个控制步，五路录像各 2215 帧、25 fps，全部导航、地图、健康及录像审计通过。T04 的最新代码复查和 T01/T02/T03 本轮验证仍在进行；详见 [本轮正式结果](HANDOFF.md#go2-layered-results)。请查看每组 `result.json` 的 `success`/`reason`、终点误差与 `rollout_health`。启动时换过起点的 `calibration_only` 结果不能作为原任务成功记录。完整材质场景占用较多内存，同一时间只启动一个仿真进程。`--task-ids` 列表会在同一场景中逐组复位机器人、全部箱子和地图，并各自保存录像。
 外部场景、布局/碰撞数据及模型需要服务器共享环境，详情、五组起终点和已知失败阶段见 [HANDOFF：Go2 可交互箱子导航](HANDOFF.md#go2-interactive-navigation)。
 
 ## Environment setup
