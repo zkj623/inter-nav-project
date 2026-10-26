@@ -3,6 +3,11 @@ import numpy as np
 from grutopia_extension.interactive_navigation.mapping import AStarMapPlanner
 
 
+# Contact-pose stopping response is about 0.4 s of current speed. A 1 s
+# prediction cancelled small lateral requests before the rough gait stepped.
+CONTACT_BRAKING_HORIZON_S = .40
+
+
 def approach_alignment_ready(position, approach, planner, blocked, radius=.35):
     """Hand a nearby, footprint-safe approach to the contact gait controller."""
     if np.linalg.norm(np.asarray(position[:2])-np.asarray(approach[:2])) >= radius:

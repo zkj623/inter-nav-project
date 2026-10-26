@@ -84,7 +84,7 @@ def main():
     from grutopia_extension.interactive_navigation.go2_exploration_tracking import ExplorationPathTracker as Go2VelocityPathTracker
     from grutopia_extension.interactive_navigation.go2_exploration_tracking import decision_buffer_recovery
     from grutopia_extension.interactive_navigation.go2_contact_control import (
-        nose_aligned_body_target,approach_alignment_ready,contact_centering_velocity,contact_braking_required,contact_pose_ready,safe_contact_retreat,push_centerline_velocity,ContactAlignmentGate)
+        nose_aligned_body_target,approach_alignment_ready,contact_centering_velocity,contact_braking_required,contact_pose_ready,safe_contact_retreat,push_centerline_velocity,ContactAlignmentGate,CONTACT_BRAKING_HORIZON_S)
     from grutopia_extension.interactive_navigation.go2_voronoi_navigation import (
         ExplorationVoronoiRoutes,ForwardExplorationPathTracker,update_task_cameras,body_rotation_clear,body_motion_clear,navigation_body_blocked,body_translation_recovery_clear)
     from grutopia_extension.interactive_navigation.layered_navigation_map import LayeredNavigationMap
@@ -230,7 +230,7 @@ def main():
                 'turn_speed':args.turn_speed,
                 'contact_yaw_tolerance':args.contact_yaw_tolerance,
                 'contact_centering_speed':args.contact_centering_speed,
-                'contact_front_gap_m':args.contact_front_gap,'contact_braking_horizon_s':1.0,
+                'contact_front_gap_m':args.contact_front_gap,'contact_braking_horizon_s':CONTACT_BRAKING_HORIZON_S,
                 'contact_centering_axes':'lateral correction before longitudinal approach',
                 'live_control_config':str(args.control_config) if args.control_config else None,
                 'third_person_offset':[args.third_person_forward,0.,args.third_person_height],'third_person_pitch_degrees':90,
@@ -624,7 +624,7 @@ def main():
                     c,s=math.cos(heading),math.sin(heading)
                     body_velocity=robot._go2_locomotion_control.body_lin_vel[:2]
                     world_velocity=np.array([c*body_velocity[0]-s*body_velocity[1],s*body_velocity[0]+c*body_velocity[1]])
-                    brake=contact_braking_required(delta,world_velocity)
+                    brake=contact_braking_required(delta,world_velocity,horizon=CONTACT_BRAKING_HORIZON_S)
                     tangent=np.array([-direction[1],direction[0]])
                     nose=p[:2]+.33*np.array([math.cos(heading),math.sin(heading)])
                     contact_error=abs(float(np.dot(np.array(box.xy)-nose,tangent)))

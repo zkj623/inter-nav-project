@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
 from grutopia_extension.interactive_navigation.side_push_navigation import SidePushPlanner
-from grutopia_extension.interactive_navigation.go2_contact_control import safe_contact_retreat,push_centerline_velocity,ContactAlignmentGate
+from grutopia_extension.interactive_navigation.go2_contact_control import safe_contact_retreat,push_centerline_velocity,ContactAlignmentGate,contact_braking_required,CONTACT_BRAKING_HORIZON_S
 from grutopia_extension.interactive_navigation.go2_voronoi_navigation import body_translation_recovery_clear
 
 
@@ -72,6 +72,14 @@ class ContactWithdrawalTests(unittest.TestCase):
         paused=[gate.settling_required('hold',step) for step in range(250)]
         self.assertTrue(all(paused[:100]))
         self.assertFalse(any(paused[100:]))
+
+    def test_contact_braking_allows_a_step_but_stops_near_the_pose(self):
+        # The observed 9 cm residual was repeatedly cancelled by the initial
+        # COM sway, before a useful lateral footstep had formed.
+        delta=(0.,.09);sway=(0.,.10)
+        self.assertTrue(contact_braking_required(delta,sway,horizon=1.0))
+        self.assertFalse(contact_braking_required(delta,sway,horizon=CONTACT_BRAKING_HORIZON_S))
+        self.assertTrue(contact_braking_required((0.,.04),(0.,.15),horizon=CONTACT_BRAKING_HORIZON_S))
 
 
 if __name__=='__main__':unittest.main()
