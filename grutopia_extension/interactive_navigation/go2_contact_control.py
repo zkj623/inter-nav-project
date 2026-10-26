@@ -102,6 +102,15 @@ class ContactAlignmentGate:
     """Finish one correction with hysteresis before switching correction axes."""
     def __init__(self):
         self.axis=None
+        self.motion_mode=None
+        self.settle_until=-1
+
+    def settling_required(self,mode,step,settle_ticks=100):
+        """Brake once on a mode change, without interrupting every yaw tick."""
+        if mode!=self.motion_mode:
+            self.motion_mode=mode
+            self.settle_until=step+settle_ticks
+        return step<self.settle_until
 
     def select(self,lateral_error,yaw_error,yaw_tolerance):
         lateral=abs(float(lateral_error));yaw=abs(float(yaw_error))

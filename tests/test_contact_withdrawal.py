@@ -57,5 +57,21 @@ class ContactWithdrawalTests(unittest.TestCase):
             self.assertEqual(gate.select(.03,yaw,.10),'yaw')
         self.assertIsNone(gate.select(.03,.069,.10))
 
+    def test_yaw_finishes_continuously_then_lateral_correction_settles_once(self):
+        gate=ContactAlignmentGate();trace=[]
+        for step in range(450):
+            yaw_error=max(.02,.18-step*.0004)
+            axis=gate.select(.08,yaw_error,.10)
+            trace.append((axis,gate.settling_required(axis or 'hold',step)))
+        self.assertTrue(all(axis=='yaw' and not paused for axis,paused in trace[100:270]))
+        self.assertTrue(all(axis=='lateral' and paused for axis,paused in trace[280:370]))
+        self.assertTrue(all(axis=='lateral' and not paused for axis,paused in trace[380:450]))
+
+    def test_ready_pose_hold_does_not_rearm_its_settling_window_forever(self):
+        gate=ContactAlignmentGate()
+        paused=[gate.settling_required('hold',step) for step in range(250)]
+        self.assertTrue(all(paused[:100]))
+        self.assertFalse(any(paused[100:]))
+
 
 if __name__=='__main__':unittest.main()

@@ -631,15 +631,21 @@ def main():
                     front_gap=float(np.dot(np.array(box.xy)-nose,direction)-extent)
                     alignment_axis=contact_alignment.select(contact_error,error,args.contact_yaw_tolerance)
                     ready=alignment_axis is None and contact_pose_ready(p,heading,box.xy,box.dimensions,direction,args.contact_front_gap,args.contact_yaw_tolerance)
-                    slowing=brake or (alignment_axis=='yaw' and np.linalg.norm(body_velocity)>.08)
+                    motion_mode='hold' if ready else (alignment_axis or 'longitudinal')
+                    mode_settling=contact_alignment.settling_required(motion_mode,step)
+                    # A turning gait has oscillating COM linear velocity.
+                    # Braking on every such sample repeatedly cancelled yaw.
+                    # Settle on transitions, then finish the same yaw action;
+                    # retain predictive braking for translation toward a pose.
+                    slowing=brake and alignment_axis!='yaw'
                     if front_gap<.26 and (contact_error>.035 or abs(error)>args.contact_yaw_tolerance):
                         phase='contact_brake';phase_start=step;contact_stable_ticks=0;action=stop
                         event('paw_clearance_before_alignment',step=step,front_gap=front_gap,contact_offset=contact_error)
-                    elif ready or slowing or step<contact_pause_until:
-                        if contact_pause_until<step and (ready or slowing):contact_pause_until=step+100
+                    elif ready or slowing or mode_settling or step<contact_pause_until:
+                        if contact_pause_until<step and slowing:contact_pause_until=step+100
                         action=stop
                         contact_stable_ticks=contact_stable_ticks+1 if ready and np.linalg.norm(body_velocity)<.08 else 0
-                        if contact_stable_ticks>=40:
+                        if contact_stable_ticks>=40 and not mode_settling:
                             phase='push';phase_start=step
                             event('contact_realign_end',step=step,position=p.tolist(),contact_offset=contact_error)
                     elif alignment_axis=='yaw':
@@ -651,7 +657,8 @@ def main():
                         action={'move_by_speed':[float(c*v[0]+s*v[1]),float(-s*v[0]+c*v[1]),0.]}
                     if step%200==0:event('contact_center_tracking',step=step,position=p.tolist(),target=center_target.tolist(),
                         position_error=centering_error,contact_offset=contact_error,heading_error=error,command=action['move_by_speed'],
-                        actual_body_velocity=body_velocity.tolist(),safe_contact_pose=bool(ready),pause_until=contact_pause_until)
+                        actual_body_velocity=body_velocity.tolist(),safe_contact_pose=bool(ready),pause_until=contact_pause_until,
+                        alignment_axis=alignment_axis,motion_mode=motion_mode,mode_settling=bool(mode_settling))
                     if step-phase_start>2500:reason='contact_centering_timeout';break
                 elif phase=='release':
                     direction=np.array(plan.direction);backed=float(np.dot(release_start-p[:2],direction))
