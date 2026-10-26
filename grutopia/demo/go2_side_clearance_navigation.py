@@ -22,6 +22,12 @@ def main():
     parser.add_argument('--max-steps',type=int,default=30000)
     parser.add_argument('--preflight-only',action='store_true')
     parser.add_argument('--record-video',action='store_true')
+    parser.add_argument('--third-person-height',type=float,default=1.35)
+    parser.add_argument('--third-person-forward',type=float,default=.25)
+    parser.add_argument('--third-person-fov',type=float,default=100.)
+    parser.add_argument('--local-map-hz',type=float,default=10.)
+    parser.add_argument('--global-map-hz',type=float,default=1.)
+    parser.add_argument('--local-map-radius',type=float,default=3.)
     parser.add_argument('--record-every',type=int,default=1)
     parser.add_argument('--floor-top',type=float,default=.01,
                         help='Auxiliary collision-floor top in world metres (default: 1 cm)')
@@ -29,7 +35,9 @@ def main():
     parser.add_argument('--navigation-heading',choices=['path','fixed'],default='path')
     parser.add_argument('--path-controller',choices=['pure','guarded'],default='pure')
     parser.add_argument('--route-clearance',type=float,default=.30)
-    parser.add_argument('--roadmap-shape',choices=['circle','footprint'],default='footprint')
+    parser.add_argument('--roadmap-shape',choices=['circle','footprint'],default='circle')
+    parser.add_argument('--navigation-half-width',type=float,default=.22)
+    parser.add_argument('--voronoi-clearance-weight',type=float,default=.30)
     parser.add_argument('--push-max-speed',type=float,default=.85,
                         help='Maximum forward policy request during box contact (m/s)')
     parser.add_argument('--turn-speed',type=float,default=.50,
@@ -48,8 +56,15 @@ def main():
     if not np.isfinite(args.floor_top) or not 0 < args.floor_top <= .30:
         raise ValueError('floor-top must be within (0, 0.30] m')
     floor_top=args.floor_top
+    if not 1.0<=args.third_person_height<=2.5:raise ValueError('third-person-height must be in [1.0,2.5] m')
+    if not -.3<=args.third_person_forward<=.6 or not 60<=args.third_person_fov<=110:
+        raise ValueError('Invalid third-person framing parameters')
+    if not 1<=args.local_map_hz<=20 or not .1<=args.global_map_hz<=args.local_map_hz:
+        raise ValueError('Map rates must satisfy 0.1 <= global <= local <= 20 Hz')
     if not np.isfinite(args.route_clearance) or not .20<=args.route_clearance<=.45:
         raise ValueError('route-clearance must be within 0.20-0.45 m')
+    if not .20<=args.navigation_half_width<=.32:raise ValueError('navigation-half-width must be in [0.20,0.32] m')
+    if not 0<=args.voronoi_clearance_weight<=2:raise ValueError('voronoi-clearance-weight must be in [0,2]')
     spawn_height=floor_top+.40
     if args.record_every != 1:
         raise ValueError('Complete task videos capture every rendered frame; use --record-every 1')
@@ -69,9 +84,13 @@ def main():
     from grutopia_extension.interactive_navigation.go2_exploration_tracking import ExplorationPathTracker as Go2VelocityPathTracker
     from grutopia_extension.interactive_navigation.go2_exploration_tracking import decision_buffer_recovery
     from grutopia_extension.interactive_navigation.go2_contact_control import (
-        nose_aligned_body_target,approach_alignment_ready,contact_centering_velocity,contact_braking_required,contact_pose_ready)
+        nose_aligned_body_target,approach_alignment_ready,contact_centering_velocity,contact_braking_required,contact_pose_ready,safe_contact_retreat)
     from grutopia_extension.interactive_navigation.go2_voronoi_navigation import (
-        ExplorationVoronoiRoutes,ForwardExplorationPathTracker,update_task_cameras,body_rotation_clear)
+        ExplorationVoronoiRoutes,ForwardExplorationPathTracker,update_task_cameras,body_rotation_clear,body_motion_clear,navigation_body_blocked,body_translation_recovery_clear)
+    from grutopia_extension.interactive_navigation.layered_navigation_map import LayeredNavigationMap
+    from grutopia_extension.interactive_navigation.go2_rollout_health import Go2RolloutHealth
+    from grutopia_extension.interactive_navigation.local_path_guidance import local_guidance_path
+    from scipy.ndimage import distance_transform_edt
     from grutopia.demo.go2_semantic_exploration import build_grscene_floor
     from grutopia_extension.interactive_navigation.mapping_runtime import MapNavigationRuntime
     from grutopia_extension.interactive_navigation.point_navigation_profiles import load_point_navigation_profile
@@ -84,9 +103,30 @@ def main():
         passages=json.loads((args.benchmark_dir/'passages.json').read_text()))
     if 'box_free' in grid:planner.box_free=grid['box_free']
     planner.navigation_route_radius=args.route_clearance
-    routes=ExplorationVoronoiRoutes(planner)
-    def ordinary_path(start,goal,boxes):
-        return routes.plan(start,goal,boxes) if args.route_planner=='voronoi' else planner.path(start,goal,boxes)
+    planner.navigation_half_width=args.navigation_half_width
+    planner.voronoi_clearance_weight=args.voronoi_clearance_weight
+    planner.full_navigation_footprint=True
+    planner.layered_local_control=True
+    base_static_free=planner.free.copy()
+    routes=ExplorationVoronoiRoutes(planner);layers=None
+    def ordinary_path(start,goal,boxes,local=False):
+        def plan(view_boxes):
+            return routes.plan(start,goal,view_boxes) if args.route_planner=='voronoi' else planner.path(start,goal,view_boxes)
+        if layers is not None and local and layers.global_path:
+            path,detail=local_guidance_path(planner,start,layers.global_path,boxes,
+                planner.robot_heading if planner.robot_heading is not None else 0.,args.local_map_radius)
+            routes.last_plan={**detail,'map_scope':'local_dynamic'}
+            layers.local_path=detail.get('local_prefix',())
+            layers.local_replans+=bool(path)
+            return path
+        if layers is not None and not local:
+            with layers.global_planning() as global_boxes:path=plan(global_boxes)
+        else:path=plan(boxes)
+        if layers is not None:
+            if local:layers.local_path=path
+            else:layers.global_path=path;layers.local_path=();layers.guidance_revision=layers.global_revision
+        routes.last_plan['map_scope']='local_dynamic' if local else 'global_guidance'
+        return path
     def ordinary_tracker(start,path,fixed_heading):
         return (ForwardExplorationPathTracker(start,path,guard_motion=args.path_controller=='guarded') if args.navigation_heading=='path'
             else Go2VelocityPathTracker(start,path,fixed_heading=fixed_heading))
@@ -107,6 +147,10 @@ def main():
         'grutopia_extension/interactive_navigation/go2_exploration_tracking.py',
         'grutopia_extension/interactive_navigation/go2_contact_control.py',
         'grutopia_extension/interactive_navigation/go2_voronoi_navigation.py',
+        'grutopia_extension/interactive_navigation/layered_navigation_map.py',
+        'grutopia_extension/interactive_navigation/go2_rollout_health.py',
+        'grutopia_extension/interactive_navigation/local_path_guidance.py',
+        'grutopia_extension/interactive_navigation/local_turn_maneuver.py',
         'grutopia_extension/interactive_navigation/semantic_voronoi.py',
         'grutopia_extension/controllers/go2_policy.py',
         'grutopia_extension/interactive_navigation/go2_turn_calibration.py',
@@ -123,6 +167,8 @@ def main():
     import torch
     # A single robot uses tiny batches; a large CPU thread pool adds latency.
     torch.set_num_threads(1)
+    import cv2
+    cv2.setNumThreads(2)
     from grutopia.core.runtime import SimulatorRuntime
     from grutopia.core.gym_env import Env
     from grutopia_extension import import_extensions
@@ -157,7 +203,7 @@ def main():
                 body=RigidPrim(str(prim.GetPath()),name='tracked_'+prim.GetName());body.initialize()
                 bodies[prim.GetName()]=body
         assert set(bodies)=={o['id'] for o in layout}
-        first_camera=third_camera=None;recording_enabled=False;recording_tick=0;record_phase='start';record_component=None
+        first_camera=third_camera=None;recording_enabled=False;recording_tick=0;record_phase='start';record_component=None;task_health=None
         if args.record_video:
             from grutopia_extension.interactive_navigation.visualization import FollowingRobotCamera
             from grutopia_extension.interactive_navigation.go2_navigation_runner import GO2_FIRST_PERSON_OFFSET,GO2_FIRST_PERSON_PITCH_DEGREES
@@ -170,8 +216,8 @@ def main():
             print(json.dumps({'event':'video_camera_initialization','material_mode':args.material_mode}),flush=True)
             first_camera=FollowingRobotCamera(resolution=(1280,736),offset=GO2_FIRST_PERSON_OFFSET,pitch_degrees=GO2_FIRST_PERSON_PITCH_DEGREES,
                 enable_bounding_boxes=False,prim_path='/World/Go2TaskFirstCamera')
-            third_camera=FollowingRobotCamera(resolution=(1280,736),offset=(0.,0.,2.5),pitch_degrees=90,
-                horizontal_fov_degrees=80,enable_bounding_boxes=False,prim_path='/World/Go2TaskThirdCamera')
+            third_camera=FollowingRobotCamera(resolution=(1280,736),offset=(args.third_person_forward,0.,args.third_person_height),pitch_degrees=90,
+                horizontal_fov_degrees=args.third_person_fov,enable_bounding_boxes=False,prim_path='/World/Go2TaskThirdCamera')
             print(json.dumps({'event':'video_cameras_ready'}),flush=True)
             (args.output/'recording_config.json').write_text(json.dumps({
                 'full_task_recording':True,'capture':'every rendered observation','fps':25,
@@ -187,12 +233,18 @@ def main():
                 'contact_front_gap_m':args.contact_front_gap,'contact_braking_horizon_s':1.0,
                 'contact_centering_axes':'lateral correction before longitudinal approach',
                 'live_control_config':str(args.control_config) if args.control_config else None,
-                'third_person_offset':[0.,0.,2.5],'third_person_pitch_degrees':90,
+                'third_person_offset':[args.third_person_forward,0.,args.third_person_height],'third_person_pitch_degrees':90,
+                'third_person_fov_degrees':args.third_person_fov,
+                'global_map_hz':args.global_map_hz,'local_map_hz':args.local_map_hz,
+                'local_map_radius_m':args.local_map_radius,
                 'third_person_orientation':'dog forward up, actual yaw following',
                 'route_planner':args.route_planner,'navigation_heading':args.navigation_heading,
                 'path_controller':args.path_controller,
                 'route_clearance_m':args.route_clearance,
                 'roadmap_shape':args.roadmap_shape,
+                'navigation_half_width_m':args.navigation_half_width,
+                'voronoi_clearance_weight_m':args.voronoi_clearance_weight,
+                'local_collision_model':'actual_yaw_full_footprint_and_motion_sweep',
                 'ordinary_forward_speed_law':'exploration_cosine_squared',
                 'first_person_offset':list(GO2_FIRST_PERSON_OFFSET),
                 'first_person_pitch_degrees':GO2_FIRST_PERSON_PITCH_DEGREES,
@@ -219,10 +271,18 @@ def main():
             return heights
         def tick(action):
             nonlocal recording_tick
+            if task_health is not None and not task_health.healthy:action=stop
             if first_camera:
                 position,orientation=robot.get_world_pose()
                 update_task_cameras(first_camera,third_camera,position,orientation)
             observation=env.step(action)[0]
+            if task_health is not None:task_health.observe(observation['position'],observation['orientation'])
+            if layers is not None:
+                now=robot._go2_locomotion_control._simulation_time()
+                now=float(now) if now is not None else layers.now+.008
+                if now-layers.last_local>=layers.local_period-1e-8:
+                    layers.update(now,observation,box_states())
+                    if record_component is not None:layers.synchronize_display(record_component.mapping,step)
             if recording_enabled and recorder:
                 if observation.get('render',False):
                     observation.setdefault('sensors',{})['recording_camera']=first_camera.get_data()
@@ -268,6 +328,10 @@ def main():
         tuning_stamp=None
         for task in tasks:
             recording_enabled=False
+            layers=None;record_component=None;task_health=None
+            planner.free=base_static_free.copy()
+            planner.static_clear=distance_transform_edt(planner.free)*planner.resolution>planner.radius
+            routes=ExplorationVoronoiRoutes(planner)
             if first_camera:
                 for camera in [first_camera,third_camera]:camera._smoothed_position=None;camera._smoothed_yaw=None
             folder=args.output/task['id'];folder.mkdir(exist_ok=True)
@@ -301,9 +365,15 @@ def main():
                   ground_height=floor_top,box_heights=box_height_states())
             if not startup_ok:
                 results.append({**task,'success':False,'reason':'startup_unstable','position':p.tolist()});eventfile.close();continue
+            task_health=Go2RolloutHealth(floor_top)
             component=PointNavigationComponent(PointNavigationConfig(goal=(*task['goal'],floor_top+.32),mapping=profile.mapping,
                 safe_base_height=floor_top+.32,fall_height=floor_top+.20,success_distance=.20,max_steps=args.max_steps,
                 use_scene_graph=False,prefer_voronoi_paths=True))
+            record_component=component
+            layers=LayeredNavigationMap(planner,profile.mapping,local_hz=args.local_map_hz,
+                global_hz=args.global_map_hz,local_radius=args.local_map_radius)
+            layers.update(float(robot._go2_locomotion_control._simulation_time() or 0.),obs,box_states(),force=True)
+            layers.synchronize_display(component.mapping,0)
             if args.record_video:
                 recorder=TaskVideoRecorder(str(folder/'video'),task=task,capture_interval=1,
                     fps=25,show_scene_graph=False,show_semantic_visuals=False,record_robot_topdown=False)
@@ -311,10 +381,12 @@ def main():
                 camera_trace=(folder/'video/camera_heading.jsonl').open('w')
             release_start=None;planned_positions={};last_action=stop;last_tracking=None;tracker=None;realign_count=0;decision_recovery_start=None
             last_route_replan=-100
+            decision_recovery_tracker=None
             contact_pause_until=-1;contact_stable_ticks=0
             for step in range(args.max_steps):
                 iteration_tracking=None
-                if phase!='push_center':contact_pause_until=-1;contact_stable_ticks=0
+                if (args.output/'STOP').exists():reason='stop_requested';break
+                if phase not in ['push_center','contact_brake']:contact_pause_until=-1;contact_stable_ticks=0
                 if args.control_config and step%200==0:
                     stamp=args.control_config.stat().st_mtime_ns
                     if stamp!=tuning_stamp:
@@ -335,11 +407,20 @@ def main():
                 q/=np.linalg.norm(q);tilt=math.degrees(math.acos(np.clip(1-2*(q[1]**2+q[2]**2),-1,1)))
                 maximum_tilt=max(maximum_tilt,tilt);current=box_states();by_id={b.id:b for b in current}
                 distance=float(np.linalg.norm(p[:2]-task['goal']))
-                if step%8==0:component.update(step,obs)
+                if step%800==0:
+                    layers.save(folder/'live')
+                    (folder/'live'/'state.json').write_text(json.dumps({'step':step,'phase':phase,
+                        'position':p.tolist(),'orientation':q.tolist(),'decision':layers.decision,
+                        'tracking':last_tracking,'path':list(getattr(tracker,'_planned_path',()) or ()),
+                        'waypoint_index':int(getattr(tracker,'_waypoint_index',0)),
+                        'global_path':layers.global_path,'goal':task['goal']}))
+                if step%8==0:
+                    component.update(step,layers.filter_robot_returns(obs))
+                    layers.synchronize_display(component.mapping,step)
                 if phase not in ['navigate','approach']:component.mapping._planned_path=()
                 if step%20==0:samples.append({'step':step,'phase':phase,'robot':p.tolist(),'orientation':q.tolist(),
                     'boxes':{b.id:list(b.xy) for b in current},'previous_action':last_action,'previous_tracking':last_tracking})
-                if p[2]<floor_top+.20 or tilt>30:reason='robot_unstable';break
+                if p[2]<floor_top+.20 or tilt>30 or not task_health.healthy:reason='robot_unstable';break
                 planner.robot_heading=None
                 crossed=completed_box is None or crossed_passage(p,q,completed_box)
                 if distance<.20 and crossed and phase in ['navigate','decide','cross_passage'] and not planner.blocked(current)[planner.cell(task['goal'])]:
@@ -348,6 +429,7 @@ def main():
                     # the gait drifts outside the final goal tolerance afterwards.
                     record_phase='goal_settling'
                     for _ in range(260 if args.record_video else 200):obs=tick(stop)
+                    if not task_health.healthy:reason='robot_unstable';break
                     crossed=completed_box is None or crossed_passage(np.array(obs['position']),np.array(obs['orientation']),completed_box)
                     settled_error=float(np.linalg.norm(np.array(obs['position'][:2])-task['goal']))
                     event('goal_settled',step=step,distance=settled_error,full_body_crossed=bool(crossed))
@@ -358,8 +440,19 @@ def main():
                     last_action=stop
                     continue
                 if phase=='decide':
-                    recovery=decision_buffer_recovery(p[:2],heading,planner,current,task['goal'],
-                        heading if args.navigation_heading=='path' else nav_heading)
+                    recovery=None
+                    if navigation_body_blocked(planner,current,heading)[planner.cell(p[:2])]:
+                        if decision_recovery_tracker is None:
+                            decision_recovery_tracker=ForwardExplorationPathTracker(p[:2],[(*task['goal'],0.)],guard_motion=False)
+                        recovery=decision_recovery_tracker.action(p[:2],heading,planner,current)
+                    else:decision_recovery_tracker=None
+                    if recovery is None and args.roadmap_shape=='circle':
+                        with layers.global_planning() as global_boxes:
+                            attachment=decision_buffer_recovery(p[:2],heading,planner,global_boxes,task['goal'],heading)
+                        if attachment is not None:
+                            command=attachment[0]['move_by_speed']
+                            if body_motion_clear(planner,current,p[:2],heading,command[0],command[2],horizon=.5,lateral=command[1]):
+                                recovery=attachment;recovery[1]['controller']='rejoin_global_clearance'
                     if recovery is not None:
                         if decision_recovery_start is None:decision_recovery_start=step
                         action,tracking=recovery;record_phase='recover_navigation_buffer'
@@ -368,9 +461,13 @@ def main():
                         obs=tick(action);last_action=action;last_tracking=tracking;continue
                     decision_recovery_start=None
                     planner.robot_heading=heading if args.navigation_heading=='path' else nav_heading
-                    decision=planner.decide(p[:2],task['goal'],current)
+                    layers.refresh_global(current,reason='decision')
+                    with layers.global_planning() as global_boxes:
+                        decision=planner.decide(p[:2],task['goal'],global_boxes)
+                    layers.decision=decision.explanation
                     event('decision',step=step,kind=decision.kind,reason=decision.reason,
-                          plan=vars(decision.push) if decision.push else None)
+                          plan=vars(decision.push) if decision.push else None,explanation=decision.explanation,
+                          global_map_revision=layers.global_revision,local_map_revision=layers.local_revision)
                     if decision.kind=='failed':reason=decision.reason;break
                     if decision.kind=='navigate':path=decision.path;phase='navigate'
                     else:plan=decision.push;path=plan.approach_path;phase='approach'
@@ -398,17 +495,22 @@ def main():
                         phase='align';phase_start=step;action=stop
                     else:
                         action,tracking=tracker.action(p[:2],heading,planner,current)
-                        if ((tracking.get('needs_replan') or step%200==0 and np.linalg.norm(np.array(tracking['target'])-p[:2])<.10)
+                        if (tracking.get('needs_replan')
                                 and (np.linalg.norm(p[:2]-endpoint)>.30 or tracking.get('buffer_cleared_replan'))
                                 and step-last_route_replan>=100):
                             last_route_replan=step
-                            replanned=ordinary_path(p[:2],endpoint,current)
+                            replanned=ordinary_path(p[:2],endpoint,current,local=True)
                             if replanned:
                                 tracker=ordinary_tracker(p[:2],replanned,nav_heading)
                                 action,tracking=tracker.action(p[:2],heading,planner,current)
-                                event('path_replanned_from_actual_pose',step=step)
+                                event('path_replanned_from_actual_pose',step=step,map_scope='local_dynamic',
+                                      global_map_revision=layers.global_revision,local_map_revision=layers.local_revision)
+                            elif layers.global_revision!=getattr(layers,'guidance_revision',layers.global_revision):
+                                phase='decide';action=stop
+                                event('global_replan_after_local_block',step=step,global_map_revision=layers.global_revision)
                         iteration_tracking=tracking
                         if tracking.get('recovering_buffer'):record_phase='navigation_buffer_recovery'
+                        if tracking.get('local_turn_maneuver'):record_phase=tracking['controller']
                         component.mapping._planned_path=tracker._planned_path[tracker._waypoint_index:]
                         if step%400==0:event('path_tracking',step=step,**tracking)
                     if step-phase_start>16000:reason='navigation_timeout';break
@@ -437,6 +539,7 @@ def main():
                     if abs(side_error)>.15:reason='box_left_safe_push_line';break
                     release=p[:2]-.45*direction
                     if step%20==0 and clearance['passage_clearance_margin_m']>=.025 and planner.path(release,task['goal'],current) and planner.path(task['start'],task['goal'],current):
+                        layers.refresh_global(current,reason='side_push_cleared_passage')
                         phase='release';phase_start=step;release_start=p[:2].copy();action=stop
                         event('side_push_end',step=step,box_id=box.id,position=list(box.xy),clearance=clearance)
                     else:
@@ -449,12 +552,13 @@ def main():
                             front_gap=float(np.dot(np.array(box.xy)-nose,direction)-extent)
                             # Already separated from the box: center directly.
                             # An unnecessary retreat can enter furniture behind us.
-                            required_gap=.15 if abs(error)>.18 else .04
-                            phase='push_center' if front_gap>required_gap else 'push_retract'
+                            # Front paws extend ~0.17 m beyond the nose. Any
+                            # lateral/yaw correction needs their clearance too.
+                            phase='contact_brake';contact_stable_ticks=0
                             phase_start=step;realign_origin=p[:2].copy()
                             realign_count+=1;action=stop
                             event('contact_realign_begin',step=step,heading_error=error,contact_offset=cross_error,
-                                  front_gap=front_gap,retraction_required=phase=='push_retract')
+                                  front_gap=front_gap,retraction_required=front_gap<=.26)
                         else:
                             force_speed=min(args.push_max_speed,.30+.00045*(step-phase_start))
                             v=force_speed*direction+np.clip(cross_error*.8,-.08,.08)*tangent
@@ -465,14 +569,41 @@ def main():
                         if step-phase_start>8000:reason='push_timeout';break
                         if step%200==0:event('push_progress',step=step,position=p.tolist(),box=list(box.xy),clearance=clearance,
                             command=action['move_by_speed'],actual_body_velocity=robot._go2_locomotion_control.body_lin_vel.tolist())
+                elif phase=='contact_brake':
+                    # The rough gait continues moving after a zero request.
+                    # Settle before changing from a forward push to lateral/yaw
+                    # correction; otherwise that switch can drag a paw sideways
+                    # into the carton or the wall behind the approach lane.
+                    action=stop
+                    speed=float(np.linalg.norm(robot._go2_locomotion_control.body_lin_vel[:2]))
+                    contact_stable_ticks=contact_stable_ticks+1 if speed<.08 else 0
+                    if contact_stable_ticks>=40:
+                        box=by_id[plan.box_id];direction=np.asarray(plan.direction)
+                        nose=p[:2]+.33*np.array([math.cos(heading),math.sin(heading)])
+                        extent=float(np.dot(np.abs(direction),np.asarray(box.dimensions[:2]))/2)
+                        front_gap=float(np.dot(np.asarray(box.xy)-nose,direction)-extent)
+                        phase='push_retract' if front_gap<.30 else 'push_center'
+                        phase_start=step;realign_origin=p[:2].copy()
+                        event('contact_direction_switch_settled',step=step,front_gap=front_gap,next_phase=phase)
+                    if step-phase_start>600:reason='contact_braking_timeout';break
                 elif phase=='push_retract':
                     direction=np.array(plan.direction)
                     backed=float(np.dot(realign_origin-p[:2],direction))
-                    if backed>=.20:
+                    box=by_id[plan.box_id]
+                    extent=float(np.dot(np.abs(direction),np.array(box.dimensions[:2]))/2)
+                    nose=p[:2]+.33*np.array([math.cos(heading),math.sin(heading)])
+                    front_gap=float(np.dot(np.array(box.xy)-nose,direction)-extent)
+                    if front_gap>=max(.30,args.contact_front_gap):
                         phase='push_center';phase_start=step;action=stop
                     else:
-                        v=-.20*direction;c,s=math.cos(heading),math.sin(heading)
-                        action={'move_by_speed':[float(c*v[0]+s*v[1]),float(-s*v[0]+c*v[1]),0.]}
+                        others=[b for b in current if b.id!=plan.box_id]
+                        retreat=safe_contact_retreat(planner,others,p[:2],heading,direction,max(.30,args.contact_front_gap)-front_gap)
+                        if retreat is None:reason='contact_retreat_blocked_by_other_geometry';break
+                        v,retreat_target=retreat;c,s=math.cos(heading),math.sin(heading)
+                        command=[float(c*v[0]+s*v[1]),float(-s*v[0]+c*v[1]),0.]
+                        if step%100==0:event('contact_retreat_target',step=step,front_gap=front_gap,target=retreat_target.tolist())
+                        action={'move_by_speed':command}
+                    if backed>.70:reason='contact_retreat_distance_exceeded';break
                     if step-phase_start>1800:reason='contact_retraction_timeout';break
                 elif phase=='push_center':
                     box=by_id[plan.box_id];direction=np.array(plan.direction)
@@ -487,9 +618,13 @@ def main():
                     tangent=np.array([-direction[1],direction[0]])
                     nose=p[:2]+.33*np.array([math.cos(heading),math.sin(heading)])
                     contact_error=abs(float(np.dot(np.array(box.xy)-nose,tangent)))
+                    front_gap=float(np.dot(np.array(box.xy)-nose,direction)-extent)
                     ready=contact_pose_ready(p,heading,box.xy,box.dimensions,direction,args.contact_front_gap,args.contact_yaw_tolerance)
-                    slowing=brake and contact_error<.055 and abs(error)<args.contact_yaw_tolerance
-                    if ready or slowing or step<contact_pause_until:
+                    slowing=brake or (abs(error)>args.contact_yaw_tolerance and np.linalg.norm(body_velocity)>.08)
+                    if front_gap<.26 and (contact_error>.035 or abs(error)>args.contact_yaw_tolerance):
+                        phase='contact_brake';phase_start=step;contact_stable_ticks=0;action=stop
+                        event('paw_clearance_before_alignment',step=step,front_gap=front_gap,contact_offset=contact_error)
+                    elif ready or slowing or step<contact_pause_until:
                         if contact_pause_until<step and (ready or slowing):contact_pause_until=step+100
                         action=stop
                         contact_stable_ticks=contact_stable_ticks+1 if ready and np.linalg.norm(body_velocity)<.08 else 0
@@ -570,8 +705,11 @@ def main():
                     action={'move_by_speed':[float(c*v[0]+s*v[1]),float(-s*v[0]+c*v[1]),rotation]}
                     if abs(error)<.08:
                         for _ in range(120):obs=tick(stop)
-                        nav_heading=desired_heading;phase='cross_passage';phase_start=step;action=stop
+                        # Use a fresh collision-checked route through the opened
+                        # doorway; blind lateral centering ignored nearby furniture.
+                        nav_heading=desired_heading;phase='decide';phase_start=step;action=stop
                         if args.roadmap_shape=='footprint':planner.navigation_pose_heading=desired_heading
+                        layers.refresh_global(box_states(),reason='replan_through_cleared_passage')
                         event('aligned_to_cleared_passage',step=step,position=p.tolist())
                     if step-phase_start>4000:reason='passage_alignment_timeout';break
                 elif phase=='cross_passage':
@@ -605,6 +743,7 @@ def main():
                     if step-phase_start>5000:reason='passage_traversal_timeout';break
                 obs=tick(action);last_action=action;last_tracking=iteration_tracking
                 if step%800==0:event('progress',step=step,phase=phase,position=list(map(float,obs['position'])),distance=distance)
+            if not task_health.healthy:success=False;reason='robot_unstable'
             record_phase='goal_reached' if success else reason
             if not success:
                 for _ in range(160 if args.record_video else 100):obs=tick(stop)
@@ -617,7 +756,8 @@ def main():
             result={**task,'success':success,'reason':reason,'steps':step+1,'push_count':push_count,
                 'final_position':list(map(float,obs['position'])),'goal_error_m':float(np.linalg.norm(np.array(obs['position'][:2])-task['goal'])),
                 'final_orientation':final_q.tolist(),'final_tilt_degrees':final_tilt,
-                'maximum_tilt_degrees':maximum_tilt,'wall_seconds':time.time()-start_time,
+                'maximum_tilt_degrees':max(maximum_tilt,task_health.max_tilt),'wall_seconds':time.time()-start_time,
+                'rollout_health':task_health.report(),
                 'contact_realignments':realign_count,
                 'actual_path_length_m':float(sum(np.linalg.norm(np.array(b['robot'][:2])-a['robot'][:2]) for a,b in zip(samples,samples[1:]))),
                 'final_boxes':[vars(b) for b in box_states()],'final_box_heights':box_height_states(),
@@ -628,6 +768,8 @@ def main():
                 'full_body_passage_crossed':(crossed_passage(np.array(obs['position']),np.array(obs['orientation']),completed_box)
                     if completed_box is not None else (False if task['decision']=='push' else None)),
                 'go2_policy_inferences':int(robot._go2_locomotion_control.policy_inferences)}
+            layers.save(folder)
+            result['layered_mapping']=layers.statistics()
             if recorder:
                 recording_enabled=False;camera_trace.close();camera_trace=None;recorder.close();recorder=None
                 result['video_directory']=str(folder/'video')

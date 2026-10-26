@@ -1,15 +1,15 @@
 # HANDOFF
 
 更新时间：2026-10-26（Asia/Shanghai）
-发布分支：`codex/go2-interactive-navigation-20261026`
-服务器发布工作树：`/data20t/embodied/zkj/inter-nav-publish-go2-20261026`
-实验工作树：`/data20t/embodied/zkj/inter-nav-project`
+当前实验分支：`codex/go2-dynamic-interaction-20261026`
+服务器工作树：`/data20t/embodied/zkj/inter-nav-dynamic-go2-20261026`
+上一版发布分支：`codex/go2-interactive-navigation-20261026`（提交 `a2a07ab`）
 
 <a id="go2-interactive-navigation"></a>
 
 ## Go2 原尺寸 MV7：可交互箱子点到点导航（2026-10-26）
 
-入口为 `grutopia/demo/go2_side_clearance_navigation.py`，本次发布分支为 `codex/go2-interactive-navigation-20261026`。场景和 Go2 均为原尺寸，辅助碰撞地面高 0.01 m；程序判断是否需要交互，需要时将挡路箱子侧推到通路一边，再穿过通路到达终点。
+入口为 `grutopia/demo/go2_side_clearance_navigation.py`。场景和 Go2 均为原尺寸，辅助碰撞地面高 0.01 m；程序判断是否需要交互，需要时将挡路箱子侧推到通路一边，再穿过通路到达终点。本轮加入分层地图、交互收益显示和全机身转向检查；完整任务仍需物理复跑验证，不能把校准试验当作长距离任务成功。
 
 ### 连接服务器并运行一组推箱任务
 
@@ -22,8 +22,9 @@ ssh zkj@162.105.195.166
 随后在服务器的 Bash 中执行以下命令。示例进入已准备好的发布工作树；若自行 clone，请先检出上述分支，并把 `cd` 路径改为自己的仓库目录。示例运行原始起终点的 **T05**，使用 GPU 1；可按空闲 GPU 情况修改 `--gpu`。
 
 ```bash
-cd /data20t/embodied/zkj/inter-nav-publish-go2-20261026
+cd /data20t/embodied/zkj/inter-nav-dynamic-go2-20261026
 source /data20t/embodied/share/inter-nav/env.sh
+export MALLOC_ARENA_MAX=2
 
 go2_inputs=/data20t/embodied/zkj/inter-nav-results/go2-voronoi-heading-up-20261025/collision-corrected-inputs
 go2_out="/data20t/embodied/zkj/inter-nav-results/go2-interactive-nav-$(date +%Y%m%d-%H%M%S)"
@@ -37,7 +38,10 @@ set -o pipefail
   --max-steps 30000 \
   --record-video --material-mode preview \
   --route-planner voronoi --navigation-heading path \
-  --path-controller pure --roadmap-shape footprint --route-clearance 0.22 \
+  --path-controller pure --roadmap-shape circle --route-clearance 0.30 \
+  --voronoi-clearance-weight 0.30 --navigation-half-width 0.22 \
+  --global-map-hz 1 --local-map-hz 10 --local-map-radius 3 \
+  --third-person-height 1.35 --third-person-forward 0.25 --third-person-fov 100 \
   --push-max-speed 0.95 --turn-speed 1.0 \
   --contact-centering-speed 0.25 --contact-yaw-tolerance 0.10 --contact-front-gap 0.40 \
   --output "$go2_out" 2>&1 | tee "${go2_out}.log"
@@ -64,7 +68,18 @@ set -o pipefail
 - 无录像的物理调试：去掉 `--record-video`，将 `--material-mode preview` 改为 `--material-mode simple`。
 - 普通导航复用纯探索的 Voronoi 骨架规划和原路径跟随控制，机身朝向随路径变化。规划图使用已有碰撞先验和仿真箱子位姿，LiDAR 在线建图同时运行；图不连通时的栅格回退记录在结果中。
 - `--contact-centering-speed 0.25` 是接触对齐的纵向速度请求；当前控制器横向纠偏为 0.35 m/s、后退至少 0.35 m/s。`--contact-front-gap 0.40` 为鼻端预接触目标间距，转向容差 `0.10` 的单位是 rad。这些是当前实验参数，尚未证明完整任务稳定成功。
-- 录像为完整 25 fps，第三视角正上方 2.5 m、俯角 90°、FOV 80°，狗前方朝画面上方并随实际 yaw 转动。
+- 录像为完整 25 fps，第三视角机身上方 1.35 m、前移 0.25 m、俯角 90°、水平 FOV 100°，狗前方朝画面上方并随实际 yaw 转动。降低相机用于减少灯具遮挡；没有改变场景物体的可见性或碰撞属性。
+- 完整材质场景建议逐组启动新进程，每次只跑一个任务，避免多个场景同时加载造成内存不足。
+
+### 分层地图与交互解释
+
+详细数据流和限制见 [Go2 分层交互导航](docs/go2_layered_navigation.md)。
+
+- 固定碰撞先验只读保存；1 Hz 全局层更新箱子布局和持续观测到的稳定障碍，供 Voronoi 全局规划使用。
+- 10 Hz 局部层维护机器人周围 6 m × 6 m 窗口，融合 LiDAR 占据/自由射线，供局部避障与全机身运动检查使用。临时证据过期不影响墙体或已跟踪箱子。
+- 箱子旧位置、新位置分别维护；腾空区去除旧箱子证据，保留重叠物体。侧推结束触发即时全局刷新，机器人从真实当前位置规划穿门路线。
+- 每次决策记录不交互的路线、侧停后的预测路线、接近距离、推动距离和代价。原本不连通时显示“恢复连通”，不输出无穷大的距离收益。
+- 地图显示 S/G、箱子编号、推向侧边的箭头、当前路线、预测路线、局部碰撞图与地图版本号。这里的箱子身份/尺寸/位姿由仿真提供，尚未实现现实场景中的自主箱子识别与跟踪。
 
 ### 输出与结果判断
 
@@ -76,6 +91,8 @@ recording_config.json               # 本次实际录像/控制配置
 source/、source_manifest.json        # 启动源码快照及哈希
 T05/result.json                     # 本组结果、侧推/穿门状态、规划统计
 T05/events.jsonl、trajectory.json    # 事件和轨迹
+T05/layered_map.npz、layered_map.json # 最终分层地图及更新统计
+T05/map_events.jsonl                # 物体移动、全局刷新等地图事件
 T05/video/combined.mp4              # 四画面完整录像
 T05/video/third_person.mp4          # 头朝上第三视角
 T05/video/robot_rgb.mp4             # 第一视角
@@ -101,7 +118,9 @@ T05/video/pointcloud_map.mp4        # LiDAR 点云
 
 `grutopia/demo/go2_walk_demo.py` 提供无路径规划的恒速步态诊断，可用于区分 locomotion 与导航控制问题。
 
-### 本次发布验证
+### 上一版发布验证（a2a07ab）
+
+本轮分层地图与控制代码的自动测试为 297 passed、1 deselected；设计说明记录了校准进展与限制。本轮还没有新的原始 T04/T05 正式成功结果。下面保留上一版发布的验证信息，便于区分代码检查与物理导航结果。
 
 在基于 `origin/main` 的独立 Go2 发布工作树中，265 项测试通过。主分支已有的 `test_g1_third_person_is_close_and_elevated` 依赖未包含在该分支的 G1 配置文件，本次未运行该项；其余测试均通过。测试日志和命令预检记录位于服务器结果目录的 `publish-20261026/`。
 

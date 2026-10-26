@@ -11,10 +11,11 @@ a text target such as `refrigerator` and walks up to the scanned object.
 ## Go2 可交互箱子场景导航
 
 原尺寸 MV7 中的点到点导航、交互决策和侧推清路入口为 `grutopia/demo/go2_side_clearance_navigation.py`。
-以下命令在本实验室服务器上运行 T05 并保存完整视频；在 `codex/go2-interactive-navigation-20261026` 分支的仓库根目录执行，GPU 编号按空闲情况修改。
+以下命令在本实验室服务器上运行 T05 并保存完整视频；在 `codex/go2-dynamic-interaction-20261026` 分支的仓库根目录执行，GPU 编号按空闲情况修改。
 
 ```bash
 source /data20t/embodied/share/inter-nav/env.sh
+export MALLOC_ARENA_MAX=2
 
 go2_inputs=/data20t/embodied/zkj/inter-nav-results/go2-voronoi-heading-up-20261025/collision-corrected-inputs
 go2_out="/data20t/embodied/zkj/inter-nav-results/go2-interactive-nav-$(date +%Y%m%d-%H%M%S)"
@@ -28,7 +29,10 @@ set -o pipefail
   --max-steps 30000 \
   --record-video --material-mode preview \
   --route-planner voronoi --navigation-heading path \
-  --path-controller pure --roadmap-shape footprint --route-clearance 0.22 \
+  --path-controller pure --roadmap-shape circle --route-clearance 0.30 \
+  --voronoi-clearance-weight 0.30 --navigation-half-width 0.22 \
+  --global-map-hz 1 --local-map-hz 10 --local-map-radius 3 \
+  --third-person-height 1.35 --third-person-forward 0.25 --third-person-fov 100 \
   --push-max-speed 0.95 --turn-speed 1.0 \
   --contact-centering-speed 0.25 --contact-yaw-tolerance 0.10 --contact-front-gap 0.40 \
   --output "$go2_out" 2>&1 | tee "${go2_out}.log"
@@ -37,7 +41,9 @@ set -o pipefail
 只跑两组推箱任务时将 `--task-ids T05` 改为 `--task-ids T04,T05`；全部五组使用 `--task-ids T01,T02,T03,T04,T05`。
 输出目录的 `T05/video/combined.mp4` 是完整四画面录像，`third_person.mp4` 为随狗朝向转动、狗头朝上的正上方视角；各组任务独立保存 25 fps 视频。
 
-T01 已有独立正式成功结果；最新 T04/T05 长距离推箱任务仍因失稳未完成。上述命令复现当前实验实现，任务是否成功请查看 `result.json` 的 `success`/`reason`。
+地图使用 1 Hz 全局规划层和 10 Hz 局部动态层。箱子位移后清除其旧占据，保留墙体和其他物体；清路完成会立即刷新全局路线。录像地图同时显示推箱原因、侧停方向、预测路径收益和局部碰撞图。设计与限制见 [分层交互导航说明](docs/go2_layered_navigation.md)。
+
+T01 在旧版本已有独立正式成功结果；本轮 T04/T05 全程仍在验证，不能据此声明任务成功。请查看每组 `result.json` 的 `success`/`reason`、终点误差与 `rollout_health`。启动时换过起点的 `calibration_only` 结果不能作为原任务成功记录。完整材质场景占用较多内存，建议每次只运行一组，进程结束后再启动下一组。
 外部场景、布局/碰撞数据及模型需要服务器共享环境，详情、五组起终点和已知失败阶段见 [HANDOFF：Go2 可交互箱子导航](HANDOFF.md#go2-interactive-navigation)。
 
 ## Environment setup
