@@ -180,11 +180,14 @@ class VoxelPointCloudMap:
                 colors = colors[indices]
 
         self.input_points += len(points)
-        keys = np.floor(points / self.config.voxel_size).astype(np.int64)
+        keys = np.floor(points / self.config.voxel_size).astype(np.int64).tolist()
         source_bit = self._SOURCE_BITS[source]
         for index, (point, key_array) in enumerate(zip(points, keys)):
-            key = tuple(int(value) for value in key_array)
-            voxel = self._voxels.setdefault(key, _Voxel())
+            key = tuple(key_array)
+            voxel = self._voxels.get(key)
+            if voxel is None:
+                voxel = _Voxel()
+                self._voxels[key] = voxel
             voxel.position_sum += point
             voxel.count += 1
             voxel.source_mask |= source_bit
@@ -199,10 +202,10 @@ class VoxelPointCloudMap:
     def points(self) -> np.ndarray:
         if not self._voxels:
             return np.empty((0, 3), dtype=np.float32)
-        return np.asarray(
-            [voxel.position_sum / voxel.count for voxel in self._voxels.values()],
-            dtype=np.float32,
-        )
+        voxels = list(self._voxels.values())
+        position_sums = np.asarray([voxel.position_sum for voxel in voxels], dtype=np.float64)
+        counts = np.fromiter((voxel.count for voxel in voxels), dtype=np.float64, count=len(voxels))
+        return (position_sums / counts[:, None]).astype(np.float32)
 
     def colors(self) -> np.ndarray:
         if not self._voxels:
