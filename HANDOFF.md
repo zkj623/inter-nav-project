@@ -23,7 +23,7 @@
 - 本机：`E:\inter-nav-results\go2-dynamic-interaction-20261026\full-layered-v14-T04\T04\video\`
 - `combined.mp4` 为四画面合成；运行根目录的 `validation.json` 保存完整审计。
 
-T04 v14 的实际轨迹长约 27.14 m，包含 6 次接触重新对齐，交互效率仍有改进空间。T05 v14 在首次对齐时靠箱过近，前脚阻挡转向，于 7316 步主动中止。v15 已将首次接触统一到带停稳、间距检查和退让保护的准备流程，正在从原始起点复跑 T05；通过后会用最新流程复查 T04，再顺序复位运行 T01/T02/T03。不能据此宣称五组全部成功。
+T04 v14 的实际轨迹长约 27.14 m，包含 6 次接触重新对齐，交互效率仍有改进空间。T05 v14 在首次对齐时靠箱过近，前脚阻挡转向，于 7316 步主动中止。v15 已将首次接触统一到带停稳、间距检查和退让保护的准备流程，但该次录制因 GPU 4 显存不足而作废。v16 使用完全相同的代码，改在启动时有 15949 MiB 空闲显存的 GPU 7 上重跑 T05；通过后复查 T04，再顺序复位运行 T01/T02/T03。不能据此宣称五组全部成功。
 
 ### 连接服务器并运行一组推箱任务
 
@@ -62,6 +62,8 @@ set -o pipefail
 ```
 
 使用共享环境的 `$ISAAC_PYTHON`，GPU 通过 `--gpu` 选择，不设置 `CUDA_VISIBLE_DEVICES`。每次使用新的输出目录。上述命令前台运行，日志同步保存为 `${go2_out}.log`。
+
+完整场景录制建议启动前至少有 14000 MiB 空闲显存。可用 `nvidia-smi --query-gpu=index,memory.free,utilization.gpu --format=csv` 选择显存余量充足的卡。本轮队列还监控渲染日志；出现 `ERROR_OUT_OF_DEVICE_MEMORY` 会请求停止并将录制标为无效，即使物理仿真仍能继续运行也不作为完整可视化结果。
 
 输入目录已包含箱子布局、门口通道、修正后的碰撞栅格及任务：`scene_profile.json`、`layout.json`、`passages.json`、`navigation_grid.npz`、`original_metadata.json`、`tasks_preflight.json`，另有地面配置和碰撞修正审计。场景配置引用服务器资产 `/data20t/embodied/zkj/inter-nav-results/rectangular-boxes-five-scenes-xy100-20261021-v2/mv7/after_scene.usda`；复现时需要保留这些外部数据和共享 Go2 模型/policy。
 
