@@ -36,5 +36,32 @@ class PassageCertificateTests(unittest.TestCase):
         p=self.planner();box=BoxState('B',(.58,-.55),(.60,.50,.70))
         self.assertIsNone(p.certify_cleared_passage(box,[(-.12,-.2)],(-.12,-1.5),[box]))
 
+    def test_near_goal_does_not_require_driving_into_wall_beyond_it(self):
+        p=self.planner();box=BoxState('B',(.58,-.55),(.60,.50,.70))
+        y=-2.5+(np.arange(201)+.5)*p.resolution
+        p.free[y>1.20,:]=False
+        start=(-.12,-1.5);goal=(-.12,.60)
+        path=p.path(start,goal,[box])
+        self.assertTrue(path)
+        certificate=p.certify_cleared_passage(box,path,start,[box])
+        self.assertIsNotNone(certificate)
+        self.assertTrue(certificate['ends_at_goal'])
+        self.assertEqual(certificate['route_goal'],list(goal))
+        self.assertAlmostEqual(certificate['corridor_end'][1],goal[1])
+        self.assertEqual(certificate['body_margin_m'],.04)
+
+    def test_near_goal_still_checks_body_beyond_robot_center(self):
+        p=self.planner();box=BoxState('B',(.58,-.55),(.60,.50,.70))
+        y=-2.5+(np.arange(201)+.5)*p.resolution
+        p.free[y>1.05,:]=False
+        start=(-.12,-1.5);goal=(-.12,.60)
+        path=p.path(start,goal,[box])
+        self.assertTrue(path)
+        self.assertIsNone(p.certify_cleared_passage(box,path,start,[box]))
+
+    def test_goal_must_allow_full_rear_to_cross_the_door(self):
+        p=self.planner();box=BoxState('B',(.58,-.55),(.60,.50,.70))
+        self.assertIsNone(p.certify_cleared_passage(box,[(-.12,.20)],(-.12,-1.5),[box]))
+
 
 if __name__=='__main__':unittest.main()

@@ -116,18 +116,36 @@ class SidePushPlanner(BoxPushPlanner):
         a route checked on the current global map; this method additionally
         checks the local map and all boxes through the whole door approach.
         """
-        from grutopia_extension.interactive_navigation.go2_voronoi_navigation import body_rotation_clear
+        from grutopia_extension.interactive_navigation.go2_voronoi_navigation import (
+            body_rotation_clear, navigation_footprint_samples)
         if not path or box.id not in self.passages:return None
         passage=self.passages[box.id]
         axis=np.asarray(passage['axis'],float);axis/=np.linalg.norm(axis)
         nominal=np.asarray(passage['center'],float);normal=np.array([-axis[1],axis[0]])
         heading=math.atan2(axis[1],axis[0])
         points=[np.asarray(start[:2]),*[np.asarray(point[:2]) for point in path]]
+        goal=points[-1]
+        goal_offset=float(np.dot(goal-nominal,axis))
+        # Certify the requested route, not an extension beyond its endpoint.
+        # A nearby goal must still leave the entire rear of the body past the
+        # door; limiting the sweep must never permit a partial crossing.
+        longitudinal,_=navigation_footprint_samples(self,margin=margin)
+        if goal_offset<=-float(longitudinal.min()):return None
+        end_offset=min(.7,goal_offset)
+        sample_spacing=min(.025,self.resolution)
         for a,b in zip(points,points[1:]):
             first=float(np.dot(a-nominal,axis));last=float(np.dot(b-nominal,axis))
             if not first<=0<last:continue
             center=a+(b-a)*(-first)/(last-first)
-            poses=[center+offset*axis for offset in np.linspace(-1.,.7,69)]
+            poses=[center+offset*axis for offset in np.linspace(-1.,end_offset,
+                int(math.ceil((1.+end_offset)/sample_spacing))+1)]
+            corridor_end=poses[-1].copy()
+            if goal_offset<.7:
+                # A shifted door crossing may not lie directly below the goal.
+                # Check the complete body along that final connector too.
+                connector_length=float(np.linalg.norm(goal-corridor_end))
+                poses.extend(corridor_end+t*(goal-corridor_end) for t in np.linspace(0.,1.,
+                    max(1,int(math.ceil(connector_length/sample_spacing)))+1)[1:])
             if not all(body_rotation_clear(self,boxes,xy,heading,heading,margin=margin) for xy in poses):continue
             theta=math.radians(box.yaw)
             u=np.array([math.cos(theta),math.sin(theta)]);v=np.array([-u[1],u[0]])
@@ -140,7 +158,9 @@ class SidePushPlanner(BoxPushPlanner):
                 'passage_clearance_margin_m':float(lateral-half-protected),
                 'robot_passage_width_m':2*protected,'side_parked':True,
                 'completion_rule':'current_global_route_and_full_body_local_corridor',
-                'body_margin_m':margin,'corridor_start':poses[0].tolist(),'corridor_end':poses[-1].tolist()}
+                'body_margin_m':margin,'corridor_start':poses[0].tolist(),'corridor_end':corridor_end.tolist(),
+                'route_goal':goal.tolist(),'ends_at_goal':bool(goal_offset<.7),
+                'checked_pose_count':len(poses)}
         return None
 
     def decide(self,start,goal,boxes,excluded=()):
