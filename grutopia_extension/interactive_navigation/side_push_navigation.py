@@ -2,6 +2,7 @@
 import math
 import numpy as np
 import cv2
+from scipy.ndimage import distance_transform_edt
 from grutopia_extension.interactive_navigation.box_push_navigation import BoxPushPlanner
 
 
@@ -14,7 +15,16 @@ class SidePushPlanner(BoxPushPlanner):
             max_push_distance=1.6,parking_rule=self.side_parking_allowed,**kwargs)
 
     def blocked(self,boxes,omit=None):
+        if getattr(self,'planning_scope','local')=='global' and getattr(self,'navigation_pose_heading',None) is None:
+            free=self.free.copy()
+            for box in boxes:
+                if box.id!=omit:free &= ~self.box_mask(box)
+            radius=getattr(self,'navigation_route_radius',self.radius)
+            return distance_transform_edt(free)*self.resolution<=radius
         if self.robot_heading is None:return super().blocked(boxes,omit)
+        if getattr(self,'full_navigation_footprint',False):
+            from grutopia_extension.interactive_navigation.go2_voronoi_navigation import navigation_body_blocked
+            return navigation_body_blocked(self,[box for box in boxes if box.id!=omit],self.robot_heading)
         free=self.free.copy()
         for box in boxes:
             if box.id!=omit:free &= ~self.box_mask(box)
@@ -48,13 +58,14 @@ class SidePushPlanner(BoxPushPlanner):
 
     def turning_blocked(self, boxes, first_heading, last_heading, margin=.05):
         """Union of body footprints through the turn, including gait clearance."""
+        from grutopia_extension.interactive_navigation.go2_voronoi_navigation import navigation_body_blocked
         saved=self.robot_heading
         delta=(last_heading-first_heading+math.pi)%(2*math.pi)-math.pi
         blocked=np.zeros_like(self.free,dtype=bool)
         try:
             for theta in np.linspace(first_heading,first_heading+delta,19):
                 self.robot_heading=theta
-                blocked |= self.blocked(boxes)
+                blocked |= navigation_body_blocked(self,boxes,theta)
         finally:self.robot_heading=saved
         pixels=int(math.ceil(margin/self.resolution))
         return cv2.dilate(blocked.astype(np.uint8),np.ones((2*pixels+1,2*pixels+1),np.uint8)).astype(bool)

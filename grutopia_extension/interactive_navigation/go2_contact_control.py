@@ -62,3 +62,29 @@ def contact_pose_ready(position, heading, box_xy, dimensions, direction,
     heading_error=(np.arctan2(direction[1],direction[0])-heading+np.pi)%(2*np.pi)-np.pi
     return (minimum_gap<=gap<=front_gap+.075 and abs(float(np.dot(delta,tangent)))<.055
             and abs(heading_error)<yaw_tolerance)
+
+
+def safe_contact_retreat(planner, boxes, position, heading, direction, required_distance):
+    """Select a whole-body-safe withdrawal, including escape from mild overlap.
+
+    The selected contact box is omitted by the caller. Existing overlap with
+    other geometry may only decrease, and the destination must be fully free.
+    A fixed 24 cm test incorrectly rejected withdrawals needing one more cell.
+    """
+    from grutopia_extension.interactive_navigation.go2_voronoi_navigation import body_translation_recovery_clear
+    position=np.asarray(position[:2],float)
+    direction=np.asarray(direction,float);direction/=np.linalg.norm(direction)
+    tangent=np.array([-direction[1],direction[0]])
+    candidates=[]
+    minimum=max(.25,min(.50,float(required_distance)+.10))
+    for distance in [minimum,minimum+.10,minimum+.20]:
+        for lateral in [0.,-.10,.10,-.20,.20]:
+            delta=-distance*direction+lateral*tangent
+            candidates.append((np.linalg.norm(delta)+abs(lateral),delta))
+    for _,delta in sorted(candidates,key=lambda entry:entry[0]):
+        target=position+delta
+        if not body_translation_recovery_clear(planner,boxes,position,heading,target):
+            continue
+        velocity=.35*delta/max(np.linalg.norm(delta),1e-9)
+        return velocity,target
+    return None
