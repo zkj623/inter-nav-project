@@ -499,7 +499,14 @@ def main():
                                 heading+angle(math.atan2(plan.direction[1],plan.direction[0])-heading))):
                         event('approach_alignment_handoff',step=step,position=p.tolist(),
                               approach=list(plan.approach_xy),distance=float(np.linalg.norm(p[:2]-plan.approach_xy)))
-                        phase='align';phase_start=step;action=stop
+                        # Use the same guarded preparation as every later
+                        # realignment. A separate yaw/line-only align stage
+                        # could walk into the box while turning and then keep
+                        # commanding yaw with its front paws trapped against it.
+                        phase='push_center';phase_start=step;action=stop;push_count+=1
+                        contact_alignment=ContactAlignmentGate()
+                        event('initial_contact_prepare',step=step,position=p.tolist())
+                        event('side_push_begin',step=step,box_id=plan.box_id,passage=planner.active_passages[plan.box_id])
                     else:
                         action,tracking=tracker.action(p[:2],heading,planner,current)
                         if (tracking.get('needs_replan')
@@ -521,24 +528,6 @@ def main():
                         component.mapping._planned_path=tracker._planned_path[tracker._waypoint_index:]
                         if step%400==0:event('path_tracking',step=step,**tracking)
                     if step-phase_start>16000:reason='navigation_timeout';break
-                elif phase=='align':
-                    desired_heading=math.atan2(plan.direction[1],plan.direction[0]);error=angle(desired_heading-heading)
-                    action={'move_by_speed':[0.,0.,math.copysign(args.turn_speed,error) if abs(error)>.06 else 0.]}
-                    line_error=abs(float(np.cross(np.array(plan.direction),p[:2]-plan.approach_xy)))
-                    if line_error>.035 and abs(error)<=.06:
-                        tangent=np.array([-plan.direction[1],plan.direction[0]])
-                        lateral=float(np.dot(np.array(plan.approach_xy)-p[:2],tangent));v=.30*np.sign(lateral)*tangent
-                        c,s=math.cos(heading),math.sin(heading)
-                        action={'move_by_speed':[float(c*v[0]+s*v[1]),float(-s*v[0]+c*v[1]),float(np.clip(error*.5,-.2,.2))]}
-                    if abs(error)<.06 and line_error<.035:
-                        for _ in range(150):obs=tick(stop)
-                        # Every first contact must hit the nose target and
-                        # settle too. Yaw/line alignment alone can still let
-                        # the advancing gait strike a tall carton abruptly.
-                        phase='push_center';phase_start=step;push_count+=1
-                        event('initial_contact_alignment',step=step,position=list(map(float,obs['position'])))
-                        event('side_push_begin',step=step,box_id=plan.box_id,passage=planner.active_passages[plan.box_id])
-                    if step-phase_start>2500:reason='alignment_timeout';break
                 elif phase=='push':
                     box=by_id[plan.box_id];direction=np.array(plan.direction)
                     c,s=math.cos(heading),math.sin(heading)
