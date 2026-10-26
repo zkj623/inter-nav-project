@@ -489,7 +489,12 @@ def main():
                     # The rough gait stalls under the generic 0.08 m/s lateral
                     # pose request. Hand the safe final approach to the contact
                     # stages, which center the nose and validate the settled pose.
-                    if (phase=='approach' and approach_alignment_ready(p[:2],plan.approach_xy,planner,planner.blocked(current))
+                    # Contact has a prescribed push heading. Checking the goal
+                    # footprint at the current walking yaw can reject a safe
+                    # east/west-facing approach just because the final short
+                    # navigation segment points north toward the door wall.
+                    if (phase=='approach' and approach_alignment_ready(p[:2],plan.approach_xy,planner,
+                            navigation_body_blocked(planner,current,math.atan2(plan.direction[1],plan.direction[0])))
                             and body_rotation_clear(planner,current,p[:2],heading,
                                 heading+angle(math.atan2(plan.direction[1],plan.direction[0])-heading))):
                         event('approach_alignment_handoff',step=step,position=p.tolist(),
