@@ -78,7 +78,7 @@ def safe_contact_retreat(planner, boxes, position, heading, direction, required_
     candidates=[]
     minimum=max(.25,min(.50,float(required_distance)+.10))
     for distance in [minimum,minimum+.10,minimum+.20]:
-        for lateral in [0.,-.10,.10,-.20,.20]:
+        for lateral in [0.,-.10,.10,-.20,.20,-.30,.30,-.40,.40]:
             delta=-distance*direction+lateral*tangent
             candidates.append((np.linalg.norm(delta)+abs(lateral),delta))
     for _,delta in sorted(candidates,key=lambda entry:entry[0]):
@@ -88,3 +88,29 @@ def safe_contact_retreat(planner, boxes, position, heading, direction, required_
         velocity=.35*delta/max(np.linalg.norm(delta),1e-9)
         return velocity,target
     return None
+
+
+def push_centerline_velocity(direction, forward_speed, lateral_error, lateral_velocity):
+    """Damp lateral gait drift before it grows into a contact realignment."""
+    direction=np.asarray(direction,float);direction/=np.linalg.norm(direction)
+    tangent=np.array([-direction[1],direction[0]])
+    correction=float(np.clip(3.*lateral_error-.6*lateral_velocity,-.20,.20))
+    return forward_speed*direction+correction*tangent
+
+
+class ContactAlignmentGate:
+    """Finish one correction with hysteresis before switching correction axes."""
+    def __init__(self):
+        self.axis=None
+
+    def select(self,lateral_error,yaw_error,yaw_tolerance):
+        lateral=abs(float(lateral_error));yaw=abs(float(yaw_error))
+        if self.axis=='yaw' and yaw<=.7*yaw_tolerance:self.axis=None
+        if self.axis=='lateral' and lateral<=.035:self.axis=None
+        # Large orientation errors take precedence over a lateral correction.
+        if yaw>.18:self.axis='yaw'
+        if self.axis is None:
+            if yaw>max(.15,yaw_tolerance+.04):self.axis='yaw'
+            elif lateral>.055:self.axis='lateral'
+            elif yaw>yaw_tolerance:self.axis='yaw'
+        return self.axis
