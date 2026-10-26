@@ -37,6 +37,7 @@ class BoxDecision:
     reason: str
     path: tuple = ()
     push: object = None
+    explanation: object = None
 
 
 class BoxPushPlanner:
@@ -177,17 +178,41 @@ class BoxPushPlanner:
     def decide(self,start,goal,boxes,excluded=()):
         direct=self.path(start,goal,boxes)
         optimistic=self.path(start,goal,[])
-        if not optimistic:return BoxDecision('failed','fixed_geometry_blocks_task')
+        finite=lambda value:float(value) if math.isfinite(value) else None
+        details={'start':list(map(float,start)),'goal':list(map(float,goal)),
+            'before_path':direct,'without_boxes_path':optimistic,
+            'before_length_m':finite(self.length(start,direct)),
+            'without_boxes_length_m':finite(self.length(start,optimistic)),
+            'candidate_count':0,'cost_formula':'approach + 2.5 * push_distance + remaining_route',
+            'map_source':'static_prior_plus_current_obstacles'}
+        def decision(kind,reason,path=(),push=None):
+            details['kind']=kind;details['reason']=reason
+            return BoxDecision(kind,reason,path,push,details)
+        if not optimistic:return decision('failed','fixed_geometry_blocks_task')
         if direct and self.length(start,direct)<=self.detour_ratio*self.length(start,optimistic)+.5:
-            return BoxDecision('navigate','ordinary_path_available',direct)
+            return decision('navigate','ordinary_path_available',direct)
         candidates=[]
         for box in boxes:
             if box.id in excluded or not self.route_intersects(start,optimistic,box):continue
             candidates.extend(self.push_candidates(start,goal,boxes,box,optimistic))
         if not candidates:
-            if direct:return BoxDecision('navigate','no_feasible_push_use_detour',direct)
-            return BoxDecision('failed','no_safe_contact_push_or_parking_pose')
+            if direct:return decision('navigate','no_feasible_push_use_detour',direct)
+            return decision('failed','no_safe_contact_push_or_parking_pose')
         best=min(candidates,key=lambda p:p.score)
+        moved=next(replace(box,xy=best.destination_xy) for box in boxes if box.id==best.box_id)
+        after=[moved if box.id==best.box_id else box for box in boxes]
+        after_path=self.path(start,goal,after)
+        before_length=self.length(start,direct);after_length=self.length(start,after_path)
+        details.update(candidate_count=len(candidates),box_id=best.box_id,
+            initial_xy=list(best.initial_xy),destination_xy=list(best.destination_xy),
+            push_direction=list(best.direction),approach_path=best.approach_path,
+            approach_length_m=self.length(start,best.approach_path),push_distance_m=best.push_distance,
+            weighted_push_cost=best.push_distance*2.5,total_push_cost=best.score,
+            after_path=after_path,after_length_m=finite(after_length),
+            path_saving_m=finite(before_length-after_length) if direct and after_path else None,
+            cost_saving=finite(before_length-best.score) if direct else None,
+            opens_connectivity=bool(not direct and after_path),
+            passage_clearance=(self.clearance(moved) if hasattr(self,'clearance') else None))
         if direct and self.length(start,direct)<=best.score:
-            return BoxDecision('navigate','detour_cheaper_than_push',direct)
-        return BoxDecision('push','movable_box_blocks_efficient_route',push=best)
+            return decision('navigate','detour_cheaper_than_push',direct)
+        return decision('push','movable_box_blocks_efficient_route',push=best)
