@@ -432,6 +432,8 @@ def route_blocked(planner,boxes):
     """Use the existing heading-independent navigation clearance for the graph."""
     pose=getattr(planner,'navigation_pose_heading',None)
     if pose is not None:return navigation_body_blocked(planner,boxes,pose)
+    if getattr(planner,'planning_scope','local')=='global' and getattr(planner,'planning_observed',None) is not None:
+        return planner.blocked(boxes)
     radius=getattr(planner,'navigation_route_radius',planner.radius)
     if radius!=planner.radius:
         raw=planner.free.copy()

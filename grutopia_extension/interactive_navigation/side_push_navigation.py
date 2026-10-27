@@ -20,6 +20,14 @@ class SidePushPlanner(BoxPushPlanner):
             for box in boxes:
                 if box.id!=omit:free &= ~self.box_mask(box)
             radius=getattr(self,'navigation_route_radius',self.radius)
+            observed=getattr(self,'planning_observed',None)
+            if observed is not None:
+                # Match online exploration: inflate measured obstacles, then
+                # reject unknown route centers. Inflating unknown cells as
+                # if they were walls closes observed corridors around sparse
+                # scan gaps and creates needless short sideways waypoints.
+                occupied=~free & observed
+                return (distance_transform_edt(~occupied)*self.resolution<=radius) | ~observed
             return distance_transform_edt(free)*self.resolution<=radius
         if self.robot_heading is None:return super().blocked(boxes,omit)
         if getattr(self,'full_navigation_footprint',False):
