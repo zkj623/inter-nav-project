@@ -103,7 +103,9 @@ class ExplorationPathTracker:
         if self.fixed_heading is not None:
             error=(self.fixed_heading-heading+np.pi)%(2*np.pi)-np.pi
             action['move_by_speed'][2]=float(np.clip(1.8*error,-.45,.45))
-        target=self._lookahead_target(np.asarray(position[:2]))
+        target=getattr(self,'_last_velocity_target',None)
+        if target is None:target=self._lookahead_target(np.asarray(position[:2]))
+        target=np.asarray(target,float)
         return action,{'target':target.tolist(),'recovering_buffer':False,'needs_replan':self._needs_replan,
                        'planned_heading':self.fixed_heading,
                        'controller':'original_exploration_translation_with_planned_heading' if self.fixed_heading is not None

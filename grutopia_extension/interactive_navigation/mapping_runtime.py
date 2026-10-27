@@ -763,6 +763,7 @@ class MapNavigationRuntime:
         max_forward_speed: float = 0.75,
         max_lateral_speed: float = 0.35,
     ) -> dict:
+        self._last_velocity_target = None
         fallback_action = self.action_for(decision, robot_observation, step=step)
         if 'move_by_speed' in fallback_action or not self._planned_path:
             return fallback_action
@@ -798,6 +799,9 @@ class MapNavigationRuntime:
                     # Stop and replan without relaxing the forward-path check.
                     self._record_replan('reached_tracking_waypoint', step, position)
                     return {'move_by_speed': [0.0, 0.0, 0.0]}
+        # Consumers that attenuate speed or draw the target must use the
+        # effective fallback waypoint, not recompute a different carrot.
+        self._last_velocity_target = tuple(map(float, target[:2]))
         error_world = target - position
         distance = float(np.linalg.norm(error_world))
         if (
