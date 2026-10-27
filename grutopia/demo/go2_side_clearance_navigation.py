@@ -619,7 +619,13 @@ def main():
                             phase='decide';obs=tick(last_action);continue
                     if (step%200==0 and not getattr(tracker,'staging_active',False) and any(b.id not in planned_positions or np.linalg.norm(np.array(b.xy)-planned_positions[b.id])>.08 for b in current)
                             and not planner.blocked(current)[planner.cell(p[:2])]):
-                        phase='decide';obs=tick(stop);last_action=stop;continue
+                        # A newly observed distant box requires reconsidering
+                        # the route, not an unconditional zero-speed pulse.
+                        # The old route's next twist is checked against all
+                        # current obstacles before the next decision tick.
+                        action,tracking=(tracker.action(p[:2],heading,planner,current)
+                                         if args.path_controller=='continuous' else (stop,{}))
+                        phase='decide';obs=tick(action);last_action=action;last_tracking=tracking;continue
                     approach_error=abs(float(np.cross(np.array(plan.direction),p[:2]-plan.approach_xy))) if phase=='approach' else 0.
                     # The rough gait stalls under the generic 0.08 m/s lateral
                     # pose request. Hand the safe final approach to the contact

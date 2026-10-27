@@ -41,5 +41,17 @@ class TurnResponseTests(unittest.TestCase):
         target=LocalTurnManeuver(-.6)._select_stage(p,[],position,0.,require_stepping_arc=True)
         self.assertIsNotNone(target);self.assertTrue(stepping_arc_clear(p,[],target,0.,-1.))
         self.assertTrue(body_translation_recovery_clear(p,[],position,0.,target))
+    def test_last_centimetres_keep_a_gait_command_then_brake_on_actual_motion(self):
+        from unittest.mock import patch
+        from grutopia_extension.interactive_navigation.local_staging_control import LocalStagingControl
+        p,limiter,_=self.make();stage=LocalStagingControl([0,0],0,-.6,p,[],0.)
+        target=np.array([.04,0.]);stage.target=target
+        module='grutopia_extension.interactive_navigation.local_staging_control.'
+        with patch(module+'body_rotation_clear',return_value=False),patch(module+'stepping_arc_clear',return_value=False),patch.object(stage.selector,'_select_stage',return_value=target):
+            command,_=stage.update([0,0],0,p,[],limiter,.1)
+            self.assertAlmostEqual(command[0],.2)
+            limiter.measured=np.array([.2,0,0])
+            command,_=stage.update([0,0],0,p,[],limiter,.2)
+            np.testing.assert_array_equal(command,[0,0,0])
 
 if __name__=='__main__':unittest.main()
