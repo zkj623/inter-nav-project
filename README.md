@@ -8,7 +8,48 @@ Voronoi exploration.
 The default demo places Go2 in a GRScenes home. It explores until it matches
 a text target such as `refrigerator` and walks up to the scanned object.
 
-## Go2 可交互箱子场景导航
+## Go2 在线建图、规划与交互导航
+
+未知地图版本的入口是 `grutopia/demo/go2_online_interactive_navigation.py`。
+它保留原尺寸 Go2 / MV7、1 cm 地面、原始起终点和物理侧推；每个任务从空占据地图开始。
+墙体地图由在线 LiDAR 建立，目标尚不可达时沿 Voronoi 路线探索可达边界。
+全局层 1 Hz 更新，局部层 10 Hz 更新，箱子移开后的空间需要新射线确认才会通行。
+
+在实验分支 `codex/go2-online-smooth-20261027` 的仓库根目录执行：
+
+```bash
+source /data20t/embodied/share/inter-nav/env.sh
+export MALLOC_ARENA_MAX=2
+export PYTHONPATH="$PWD:$PYTHONPATH"
+go2_inputs=/data20t/embodied/zkj/inter-nav-results/go2-voronoi-heading-up-20261025/collision-corrected-inputs
+go2_out="/data20t/embodied/zkj/inter-nav-results/go2-online-$(date +%Y%m%d-%H%M%S)"
+"$ISAAC_PYTHON" -u grutopia/demo/go2_online_interactive_navigation.py \
+  --benchmark-dir "$go2_inputs" --output "$go2_out" \
+  --task-ids T01,T02,T03,T04,T05 --gpu 1 --max-steps 30000 \
+  --floor-top .01 --map-source online --path-controller continuous \
+  --route-planner voronoi --navigation-heading path \
+  --roadmap-shape circle --route-clearance .30 --navigation-half-width .22 \
+  --voronoi-clearance-weight .30 \
+  --global-map-hz 1 --local-map-hz 10 --local-map-radius 3 \
+  --push-max-speed .95 --turn-speed 1.0 --contact-centering-speed .25 \
+  --contact-yaw-tolerance .10 --contact-front-gap .40 \
+  --record-video --material-mode preview \
+  --third-person-height 1.35 --third-person-forward .25 --third-person-fov 100
+```
+
+`--task-ids T04` 可单独运行一组。完整视频为 `<输出目录>/T04/video/combined.mp4`，
+地图灰色为未观测区域，绿色起点和红色目标始终标在请求坐标。
+不录像的物理诊断可去掉 `--record-video` 并使用 `--material-mode simple`。
+完整材质场景加载时间较长，建议保留至少 78 GiB 可用内存和 14 GiB 显存。
+
+在线模式仅从输入目录读取仿真场景配置、箱子布局和任务坐标，不把 `navigation_grid.npz`、
+`original_metadata.json` 或 `passages.json` 交给规划器。箱子身份/尺寸/位姿仍是仿真检测接口，
+只有当前 LiDAR 命中后才加入规划；这部分尚未替换为真实视觉识别。定位沿用仿真位姿。
+设计、证据和验证状态见 [在线导航说明](docs/go2_online_navigation.md)。
+
+## 历史结果：使用已知全局地图的箱子导航
+
+以下命令和视频来自先前的**预生成全局碰撞地图**版本，不能作为上方未知地图版本的验证结果。
 
 原尺寸 MV7 中的点到点导航、交互决策和侧推清路入口为 `grutopia/demo/go2_side_clearance_navigation.py`。
 以下命令在本实验室服务器上按已验证的 v19 源码运行 T05 并保存完整视频；在仓库根目录执行，GPU 编号按空闲情况修改。实验分支 `codex/go2-dynamic-interaction-20261026` 保存相关提交；复现请使用下方列出的确切源码版本。

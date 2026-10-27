@@ -1,9 +1,28 @@
 # HANDOFF
 
-更新时间：2026-10-27（Asia/Shanghai）
-当前实验分支：`codex/go2-dynamic-interaction-20261026`
-服务器工作树：`/data20t/embodied/zkj/inter-nav-dynamic-go2-20261026`
+更新时间：2026-10-28（Asia/Shanghai）
+当前实验分支：`codex/go2-online-smooth-20261027`
+服务器工作树：`/data20t/embodied/zkj/inter-nav-online-go2-20261027`
 上一版发布分支：`codex/go2-interactive-navigation-20261026`（提交 `a2a07ab`）
+
+## 当前任务：未知地图与连续运动（2026-10-27）
+
+入口改为 `grutopia/demo/go2_online_interactive_navigation.py`，具体运行命令在
+[README 的在线交互导航部分](README.md#go2-在线建图规划与交互导航)，设计与验证记录见
+[docs/go2_online_navigation.md](docs/go2_online_navigation.md)。
+
+旧交互版本的全局碰撞网格确为预先已知。当前分支改为初始空地图、LiDAR 在线融合、
+Voronoi 边界探索、1 Hz 全局层与 10 Hz 局部层。保留原 Go2 policy，恢复连续探索速度律，
+并修复遗漏空量程/地面自由射线及不可执行目标假设引起的反复改路。
+箱子识别仍使用激光可见性门控的仿真候选接口，定位仍是仿真位姿。
+
+实验产物根目录：服务器 `/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027`；
+本机 `E:\inter-nav-results\go2-online-smooth-20261027`。
+新版本端到端复跑状态以在线导航说明为准。下方历史成功视频使用预生成地图，不能替代在线版本验证。
+
+## 历史记录（已知地图分支）
+
+工作树 `/data20t/embodied/zkj/inter-nav-dynamic-go2-20261026`，分支 `codex/go2-dynamic-interaction-20261026`。
 
 <a id="go2-interactive-navigation"></a>
 
