@@ -95,6 +95,40 @@ def safe_contact_retreat(planner, boxes, position, heading, direction, required_
     return None
 
 
+def observed_contact_retreat(planner, boxes, position, heading, direction, limiter, now):
+    """Take a bounded observed step when the full withdrawal is still unknown.
+
+    Include the contact box: its existing footprint overlap may decrease but
+    may not deepen. Never authorize movement by treating unknown as free.
+    The caller keeps sensing and recomputes the remaining withdrawal.
+    """
+    from grutopia_extension.interactive_navigation.go2_voronoi_navigation import body_translation_recovery_clear
+    position=np.asarray(position[:2],float);direction=np.asarray(direction,float)
+    direction/=max(np.linalg.norm(direction),1e-9)
+    c,s=np.cos(heading),np.sin(heading);rotation=np.array([[c,-s],[s,c]])
+    measured=np.zeros(3) if limiter is None else limiter.measured
+    if abs(measured[2])>.15:return None
+    measured_target=position+rotation@measured[:2]*.25
+    if not body_translation_recovery_clear(planner,boxes,position,heading,measured_target,require_clear_end=False):return None
+    tangent=np.array([-direction[1],direction[0]])
+    candidates=[-rotation[:,0],-direction]
+    candidates.extend(-direction+ratio*tangent for ratio in [.2,-.2,.4,-.4])
+    for unit in candidates:
+        unit=unit/max(np.linalg.norm(unit),1e-9)
+        if float(np.dot(unit,-direction))<.75:continue
+        velocity=.20*unit;target=position+velocity*.9
+        if not body_translation_recovery_clear(planner,boxes,position,heading,target,require_clear_end=False):continue
+        request=np.array([*(rotation.T@velocity),0.])
+        applied=request if limiter is None else limiter.preview(request,now)
+        if abs(applied[2])>1e-8:continue
+        acceleration=.65 if limiter is None else limiter.linear_acceleration
+        horizon=.4+max(np.linalg.norm(applied[:2]),np.linalg.norm(measured[:2]))/(2*acceleration)
+        endpoint=position+(rotation@applied[:2])*horizon
+        if not body_translation_recovery_clear(planner,boxes,position,heading,endpoint,require_clear_end=False):continue
+        return applied,target
+    return None
+
+
 def push_centerline_velocity(direction, forward_speed, lateral_error, lateral_velocity):
     """Damp lateral gait drift before it grows into a contact realignment."""
     direction=np.asarray(direction,float);direction/=np.linalg.norm(direction)

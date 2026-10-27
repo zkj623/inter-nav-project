@@ -87,7 +87,7 @@ def main():
     from grutopia_extension.interactive_navigation.go2_exploration_tracking import ExplorationPathTracker as Go2VelocityPathTracker
     from grutopia_extension.interactive_navigation.go2_exploration_tracking import decision_buffer_recovery
     from grutopia_extension.interactive_navigation.go2_contact_control import (
-        nose_aligned_body_target,approach_alignment_ready,contact_centering_velocity,contact_braking_required,contact_pose_ready,safe_contact_retreat,push_centerline_velocity,ContactAlignmentGate,CONTACT_BRAKING_HORIZON_S)
+        nose_aligned_body_target,approach_alignment_ready,contact_centering_velocity,contact_braking_required,contact_pose_ready,safe_contact_retreat,observed_contact_retreat,push_centerline_velocity,ContactAlignmentGate,CONTACT_BRAKING_HORIZON_S)
     from grutopia_extension.interactive_navigation.go2_voronoi_navigation import (
         ExplorationVoronoiRoutes,ForwardExplorationPathTracker,update_task_cameras,body_rotation_clear,body_motion_clear,navigation_body_blocked,body_translation_recovery_clear)
     from grutopia_extension.interactive_navigation.layered_navigation_map import LayeredNavigationMap
@@ -390,6 +390,7 @@ def main():
             print(json.dumps({'event':'turn_calibration_completed','selected_turn_speed':args.turn_speed}),flush=True)
         tuning_stamp=None
         for task in tasks:
+            record_phase='start'
             step=0  # Sensor-map warmup runs before the first control iteration.
             recording_enabled=False
             layers=None;record_component=None;task_health=None
@@ -463,6 +464,7 @@ def main():
             last_route_replan=-100
             decision_recovery_tracker=None
             contact_pause_until=-1;contact_stable_ticks=0;push_lateral_velocity=0.
+            retreat_wait_since=None
             contact_alignment=ContactAlignmentGate()
             attitude_recovery=NavigationAttitudeRecovery()
             for step in range(args.max_steps):
@@ -755,15 +757,29 @@ def main():
                     nose=p[:2]+.33*np.array([math.cos(heading),math.sin(heading)])
                     front_gap=float(np.dot(np.array(box.xy)-nose,direction)-extent)
                     if front_gap>=max(.30,args.contact_front_gap):
-                        phase='push_center';phase_start=step;action=stop
+                        phase='push_center';phase_start=step;action=stop;retreat_wait_since=None
                     else:
                         others=[b for b in current if b.id!=plan.box_id]
                         retreat=safe_contact_retreat(planner,others,p[:2],heading,direction,max(.30,args.contact_front_gap)-front_gap)
-                        if retreat is None:reason='contact_retreat_blocked_by_other_geometry';break
-                        v,retreat_target=retreat;c,s=math.cos(heading),math.sin(heading)
-                        command=[float(c*v[0]+s*v[1]),float(-s*v[0]+c*v[1]),0.]
-                        if step%100==0:event('contact_retreat_target',step=step,front_gap=front_gap,target=retreat_target.tolist())
-                        action={'move_by_speed':command}
+                        if retreat is None:
+                            partial=(observed_contact_retreat(planner,current,p[:2],heading,direction,smooth_limiter,planner.control_time)
+                                     if args.map_source=='online' else None)
+                            if partial is not None:
+                                command,retreat_target=partial;action={'move_by_speed':command.tolist()}
+                                retreat_wait_since=None;record_phase='push_retract_observe'
+                                if step%50==0:event('contact_retreat_observation_step',step=step,front_gap=front_gap,
+                                    target=retreat_target.tolist(),command=command.tolist(),map_source='observed_local_map')
+                            else:
+                                action=stop;record_phase='contact_retreat_observation_wait'
+                                if retreat_wait_since is None:retreat_wait_since=planner.control_time
+                                if args.map_source!='online' or planner.control_time-retreat_wait_since>3.:
+                                    reason='contact_retreat_blocked_by_other_geometry';break
+                        else:
+                            retreat_wait_since=None
+                            v,retreat_target=retreat;c,s=math.cos(heading),math.sin(heading)
+                            command=[float(c*v[0]+s*v[1]),float(-s*v[0]+c*v[1]),0.]
+                            if step%100==0:event('contact_retreat_target',step=step,front_gap=front_gap,target=retreat_target.tolist())
+                            action={'move_by_speed':command}
                     if backed>.70:reason='contact_retreat_distance_exceeded';break
                     if step-phase_start>1800:reason='contact_retraction_timeout';break
                 elif phase=='push_center':
