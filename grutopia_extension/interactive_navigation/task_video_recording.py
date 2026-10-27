@@ -42,6 +42,8 @@ class TaskVideoRecorder(InteractionVideoRecorder):
         grid[layers.global_tracked & ~layers.tracked_occupied]=(216,221,230)
         grid[layers.local_dynamic]=(55,65,223)
         grid[layers.tracked_occupied]=(70,181,245)
+        if hasattr(layers,'observed'):
+            grid[~layers.observed]=(164,168,175)
         height,width=grid.shape[:2];plot_width=775
         scale=min(plot_width/width,650/height);w,h=int(width*scale),int(height*scale)
         left=(plot_width-w)//2;top=46+(650-h)//2
@@ -98,6 +100,8 @@ class TaskVideoRecorder(InteractionVideoRecorder):
         choice=details.get('kind','at goal' if 'goal' in state else 'deciding').upper()
         line(choice+(' '+details['box_id'] if choice=='PUSH' else ''),(145,40,145),.66)
         reasons={'ordinary_path_available':'Open route: no interaction needed',
+            'goal_not_connected_in_observed_map':'Goal unseen / disconnected: observe frontier',
+            'no_reachable_observed_frontier':'Waiting for a safe observed route',
             'detour_cheaper_than_push':'Detour costs less than interaction',
             'movable_box_blocks_efficient_route':('Clearing opens a blocked route' if details.get('opens_connectivity') else 'Side push costs less than detour'),
             'no_feasible_push_use_detour':'No safe parking: use detour'}
@@ -115,6 +119,8 @@ class TaskVideoRecorder(InteractionVideoRecorder):
         line(f"Goal distance: {np.linalg.norm(layers.robot_xy-np.array(self.task['goal'])):.2f} m",(45,70,180),.48)
         line(f'Global {1/layers.global_period:g} Hz | local {1/layers.local_period:g} Hz',scale=.47)
         line(f'Revisions G{layers.global_revision} / L{layers.local_revision}',scale=.44)
+        if hasattr(layers,'observed'):
+            line(f'Online map: {100*layers.observed.mean():.1f}% observed | grey: unknown',scale=.43)
         line('Gold: box   Red: live local obstacle',scale=.42)
         line('Green: vacated   Blue: current route',scale=.42)
         # The inset uses the exact high-frequency collision layer, not a

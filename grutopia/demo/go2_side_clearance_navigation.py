@@ -33,7 +33,8 @@ def main():
                         help='Auxiliary collision-floor top in world metres (default: 1 cm)')
     parser.add_argument('--route-planner',choices=['voronoi','grid'],default='voronoi')
     parser.add_argument('--navigation-heading',choices=['path','fixed'],default='path')
-    parser.add_argument('--path-controller',choices=['pure','guarded'],default='pure')
+    parser.add_argument('--path-controller',choices=['pure','guarded','continuous'],default='pure')
+    parser.add_argument('--map-source',choices=['prior','online'],default='prior')
     parser.add_argument('--navigation-attitude-recovery',action='store_true',
                         help='Stop on rising navigation tilt, settle with the original policy, then replan')
     parser.add_argument('--route-clearance',type=float,default=.30)
@@ -91,6 +92,9 @@ def main():
         ExplorationVoronoiRoutes,ForwardExplorationPathTracker,update_task_cameras,body_rotation_clear,body_motion_clear,navigation_body_blocked,body_translation_recovery_clear)
     from grutopia_extension.interactive_navigation.layered_navigation_map import LayeredNavigationMap
     from grutopia_extension.interactive_navigation.go2_rollout_health import Go2RolloutHealth
+    from grutopia_extension.interactive_navigation.online_navigation_map import OnlineNavigationMap
+    from grutopia_extension.interactive_navigation.online_navigation_decision import OnlineGoalSelector
+    from grutopia_extension.interactive_navigation.smooth_go2_navigation import SmoothExplorationTracker,VelocitySlewLimiter
     from grutopia_extension.interactive_navigation.go2_attitude_recovery import NavigationAttitudeRecovery
     from grutopia_extension.interactive_navigation.local_path_guidance import local_guidance_path
     from scipy.ndimage import distance_transform_edt
@@ -100,18 +104,29 @@ def main():
     from grutopia_extension.interactive_navigation.go2_navigation_runner import build_go2_navigation_config,Go2NavigationRunConfig
     profile=load_point_navigation_profile(str(args.benchmark_dir/'scene_profile.json'))
     layout=json.loads((args.benchmark_dir/'layout.json').read_text())['objects']
-    original_metadata=json.loads((args.benchmark_dir/'original_metadata.json').read_text())
-    grid=np.load(args.benchmark_dir/'navigation_grid.npz')
-    planner=SidePushPlanner(grid['free'],[profile.mapping.x_limits,profile.mapping.y_limits],
-        passages=json.loads((args.benchmark_dir/'passages.json').read_text()))
-    if 'box_free' in grid:planner.box_free=grid['box_free']
+    if args.map_source=='online':
+        # Bounds and requested S/G are known; architectural geometry is not.
+        # The simulator asset/layout below is only the physical environment.
+        profile=replace(profile,mapping=replace(profile.mapping,grid_resolution=.05,
+            obstacle_height=(floor_top+.05,floor_top+.50),sticky_free_scale=.25))
+        from grutopia_extension.interactive_navigation.mapping import OccupancyGridMap
+        blank=OccupancyGridMap(profile.mapping)
+        planner=SidePushPlanner(np.zeros_like(blank.observed),[profile.mapping.x_limits,profile.mapping.y_limits],
+            resolution=profile.mapping.grid_resolution,passages={})
+        original_metadata={}
+    else:
+        original_metadata=json.loads((args.benchmark_dir/'original_metadata.json').read_text())
+        grid=np.load(args.benchmark_dir/'navigation_grid.npz')
+        planner=SidePushPlanner(grid['free'],[profile.mapping.x_limits,profile.mapping.y_limits],
+            passages=json.loads((args.benchmark_dir/'passages.json').read_text()))
+        if 'box_free' in grid:planner.box_free=grid['box_free']
     planner.navigation_route_radius=args.route_clearance
     planner.navigation_half_width=args.navigation_half_width
     planner.voronoi_clearance_weight=args.voronoi_clearance_weight
     planner.full_navigation_footprint=True
     planner.layered_local_control=True
     base_static_free=planner.free.copy()
-    routes=ExplorationVoronoiRoutes(planner);layers=None
+    routes=ExplorationVoronoiRoutes(planner);layers=None;smooth_limiter=None;control_log=None
     def ordinary_path(start,goal,boxes,local=False):
         def plan(view_boxes):
             return routes.plan(start,goal,view_boxes) if args.route_planner=='voronoi' else planner.path(start,goal,view_boxes)
@@ -131,11 +146,14 @@ def main():
         routes.last_plan['map_scope']='local_dynamic' if local else 'global_guidance'
         return path
     def ordinary_tracker(start,path,fixed_heading):
+        if args.path_controller=='continuous':
+            return SmoothExplorationTracker(start,path,smooth_limiter)
         return (ForwardExplorationPathTracker(start,path,guard_motion=args.path_controller=='guarded') if args.navigation_heading=='path'
             else Go2VelocityPathTracker(start,path,fixed_heading=fixed_heading))
     tasks=[t for t in json.loads((args.benchmark_dir/'tasks_preflight.json').read_text())['tasks']
            if t['id'] in args.task_ids.split(',')]
-    if not tasks or any(t['decision']=='failed' for t in tasks):raise ValueError('Rejected task configuration')
+    if args.map_source=='online':tasks=[{k:t[k] for k in ['id','start','goal']} for t in tasks]
+    if not tasks or any(t.get('decision')=='failed' for t in tasks):raise ValueError('Rejected task configuration')
     if args.start_override:
         if len(tasks)!=1:raise ValueError('start-override requires one task')
         tasks[0]={**tasks[0],'start':args.start_override,'calibration_only':True}
@@ -144,6 +162,7 @@ def main():
     repo=Path(__file__).resolve().parents[2]
     manifest={}
     for rel in ['grutopia/demo/go2_side_clearance_navigation.py','grutopia_extension/interactive_navigation/side_push_navigation.py',
+        'grutopia/demo/go2_online_interactive_navigation.py',
         'grutopia_extension/interactive_navigation/box_push_navigation.py','grutopia_extension/controllers/isaac_go2_ctrl.py',
         'grutopia_extension/interactive_navigation/go2_path_tracking.py','grutopia_extension/interactive_navigation/task_video_recording.py',
         'grutopia_extension/interactive_navigation/carton_materials.py',
@@ -153,6 +172,9 @@ def main():
         'grutopia_extension/interactive_navigation/layered_navigation_map.py',
         'grutopia_extension/interactive_navigation/go2_rollout_health.py',
         'grutopia_extension/interactive_navigation/go2_attitude_recovery.py',
+        'grutopia_extension/interactive_navigation/online_navigation_map.py',
+        'grutopia_extension/interactive_navigation/online_navigation_decision.py',
+        'grutopia_extension/interactive_navigation/smooth_go2_navigation.py',
         'grutopia_extension/interactive_navigation/local_path_guidance.py',
         'grutopia_extension/interactive_navigation/local_turn_maneuver.py',
         'grutopia_extension/interactive_navigation/semantic_voronoi.py',
@@ -245,6 +267,9 @@ def main():
                 'route_planner':args.route_planner,'navigation_heading':args.navigation_heading,
                 'path_controller':args.path_controller,
                 'navigation_attitude_recovery':args.navigation_attitude_recovery,
+                'map_source':args.map_source,'initial_map':'unknown' if args.map_source=='online' else 'scene_prior',
+                'uses_navigation_grid':args.map_source=='prior','uses_static_metadata':args.map_source=='prior',
+                'normal_navigation_max_forward':.50 if args.path_controller=='continuous' else .40,
                 'route_clearance_m':args.route_clearance,
                 'roadmap_shape':args.roadmap_shape,
                 'navigation_half_width_m':args.navigation_half_width,
@@ -274,13 +299,18 @@ def main():
                 heights.append({'id':item['id'],'center_z_m':float(p[2]),'bottom_z_m':float(p[2]-half),
                                 'top_z_m':float(p[2]+half),'bottom_above_aux_floor_m':float(p[2]-half-floor_top)})
             return heights
+        def planning_boxes():
+            return list(layers.current_boxes) if args.map_source=='online' and layers is not None else box_states()
         def tick(action):
             nonlocal recording_tick
             if task_health is not None and not task_health.healthy:action=stop
             if first_camera:
                 position,orientation=robot.get_world_pose()
                 update_task_cameras(first_camera,third_camera,position,orientation)
+            command_time=float(robot._go2_locomotion_control._simulation_time() or 0.)
+            if smooth_limiter is not None:smooth_limiter.accept(action.get('move_by_speed',[0.,0.,0.]),command_time)
             observation=env.step(action)[0]
+            now=float(robot._go2_locomotion_control._simulation_time() or 0.)
             if task_health is not None:task_health.observe(observation['position'],observation['orientation'])
             if layers is not None:
                 now=robot._go2_locomotion_control._simulation_time()
@@ -288,6 +318,17 @@ def main():
                 if now-layers.last_local>=layers.local_period-1e-8:
                     layers.update(now,observation,box_states())
                     if record_component is not None:layers.synchronize_display(record_component.mapping,step)
+            if control_log is not None:
+                diagnostic=robot._go2_locomotion_control.get_obs()
+                root_position,root_orientation=robot.isaac_robot.get_world_pose()
+                control_log.write(json.dumps({'time_s':now,'phase':record_phase,'command':action.get('move_by_speed'),
+                    'policy_command':diagnostic['policy_command'].tolist(),
+                    'body_velocity':diagnostic['body_lin_vel'].tolist(),'body_angular_velocity':diagnostic['body_ang_vel'].tolist(),
+                    'position':list(map(float,observation['position'])),'orientation':list(map(float,observation['orientation'])),
+                    'controller_root_position':list(map(float,root_position)),
+                    'controller_root_orientation':list(map(float,root_orientation)),
+                    'policy_inferences':diagnostic['policy_inferences'],
+                    'observed_cells':int(layers.observed.sum()) if hasattr(layers,'observed') else None})+'\n')
             if recording_enabled and recorder:
                 if observation.get('render',False):
                     observation.setdefault('sensors',{})['recording_camera']=first_camera.get_data()
@@ -313,8 +354,10 @@ def main():
                 marker.GetPrim().SetCustomDataByKey('task_id',task['id'])
         def crossed_passage(position,orientation,box_id):
             passage=planner.passages[box_id];axis=np.array(passage['axis'])
-            door=original_metadata[passage['door_id']]
-            boundary=max(np.dot(door['min_points'][:2],axis),np.dot(door['max_points'][:2],axis))
+            if args.map_source=='online':boundary=passage['boundary']
+            else:
+                door=original_metadata[passage['door_id']]
+                boundary=max(np.dot(door['min_points'][:2],axis),np.dot(door['max_points'][:2],axis))
             heading=yaw(orientation);forward=np.array([math.cos(heading),math.sin(heading)])
             side=np.array([-forward[1],forward[0]])
             rear=max(.32*np.dot(forward,axis),-.50*np.dot(forward,axis))+.25*abs(np.dot(side,axis))
@@ -332,6 +375,7 @@ def main():
             print(json.dumps({'event':'turn_calibration_completed','selected_turn_speed':args.turn_speed}),flush=True)
         tuning_stamp=None
         for task in tasks:
+            step=0  # Sensor-map warmup runs before the first control iteration.
             recording_enabled=False
             layers=None;record_component=None;task_health=None
             planner.free=base_static_free.copy()
@@ -340,6 +384,10 @@ def main():
             if first_camera:
                 for camera in [first_camera,third_camera]:camera._smoothed_position=None;camera._smoothed_yaw=None
             folder=args.output/task['id'];folder.mkdir(exist_ok=True)
+            control_log=(folder/'control_trace.jsonl').open('w',buffering=1)
+            smooth_limiter=VelocitySlewLimiter() if args.path_controller=='continuous' else None
+            online_selector=OnlineGoalSelector();goal_kind='task';online_wait_start=None
+            if args.map_source=='online':planner.passages={};planner.active_passages={}
             events=[];samples=[];phase='decide';phase_start=0;plan=None;path=();push_count=0
             success=False;reason='global_step_limit';maximum_tilt=0.;start_time=time.time();initial_positions={}
             eventfile=(folder/'events.jsonl').open('w')
@@ -375,8 +423,13 @@ def main():
                 safe_base_height=floor_top+.32,fall_height=floor_top+.20,success_distance=.20,max_steps=args.max_steps,
                 use_scene_graph=False,prefer_voronoi_paths=True))
             record_component=component
-            layers=LayeredNavigationMap(planner,profile.mapping,local_hz=args.local_map_hz,
+            map_class=OnlineNavigationMap if args.map_source=='online' else LayeredNavigationMap
+            layers=map_class(planner,profile.mapping,local_hz=args.local_map_hz,
                 global_hz=args.global_map_hz,local_radius=args.local_map_radius)
+            if args.map_source=='online':
+                layers.save(folder/'initial_unknown')
+                event('online_map_initial',observed_cells=int(layers.observed.sum()),occupied_cells=int(layers.global_occupied.sum()),
+                      scene_prior_loaded=False,box_count=len(layers.current_boxes))
             layers.update(float(robot._go2_locomotion_control._simulation_time() or 0.),obs,box_states(),force=True)
             layers.synchronize_display(component.mapping,0)
             if args.record_video:
@@ -384,6 +437,10 @@ def main():
                     fps=25,show_scene_graph=False,show_semantic_visuals=False,record_robot_topdown=False)
                 record_component=component;recording_tick=0;recording_enabled=True
                 camera_trace=(folder/'video/camera_heading.jsonl').open('w')
+            if args.map_source=='online':
+                record_phase='map_warmup'
+                for _ in range(120):obs=tick(stop)
+                event('online_map_warmed',**layers.statistics())
             release_start=None;planned_positions={};last_action=stop;last_tracking=None;tracker=None;realign_count=0;decision_recovery_start=None
             last_route_replan=-100
             decision_recovery_tracker=None
@@ -413,7 +470,9 @@ def main():
                 record_phase=phase
                 p=np.array(obs['position']);q=np.array(obs['orientation']);heading=yaw(q)
                 q/=np.linalg.norm(q);tilt=math.degrees(math.acos(np.clip(1-2*(q[1]**2+q[2]**2),-1,1)))
-                maximum_tilt=max(maximum_tilt,tilt);current=box_states();by_id={b.id:b for b in current}
+                maximum_tilt=max(maximum_tilt,tilt);current=planning_boxes();by_id={b.id:b for b in current}
+                planner.control_time=float(robot._go2_locomotion_control._simulation_time() or 0.)
+                if args.map_source=='online' and goal_kind=='frontier' and phase=='navigate':record_phase='explore_navigate'
                 distance=float(np.linalg.norm(p[:2]-task['goal']))
                 if step%800==0:
                     layers.save(folder/'live')
@@ -468,12 +527,12 @@ def main():
                     continue
                 if phase=='decide':
                     recovery=None
-                    if navigation_body_blocked(planner,current,heading)[planner.cell(p[:2])]:
+                    if args.map_source!='online' and navigation_body_blocked(planner,current,heading)[planner.cell(p[:2])]:
                         if decision_recovery_tracker is None:
                             decision_recovery_tracker=ForwardExplorationPathTracker(p[:2],[(*task['goal'],0.)],guard_motion=False)
                         recovery=decision_recovery_tracker.action(p[:2],heading,planner,current)
                     else:decision_recovery_tracker=None
-                    if recovery is None and args.roadmap_shape=='circle':
+                    if recovery is None and args.roadmap_shape=='circle' and args.map_source!='online':
                         local_motion_free=planner.free.copy()
                         with layers.global_planning() as global_boxes:
                             attachment=decision_buffer_recovery(p[:2],heading,planner,global_boxes,task['goal'],heading,
@@ -491,26 +550,47 @@ def main():
                     decision_recovery_start=None
                     planner.robot_heading=heading if args.navigation_heading=='path' else nav_heading
                     layers.refresh_global(current,reason='decision')
-                    with layers.global_planning() as global_boxes:
-                        decision=planner.decide(p[:2],task['goal'],global_boxes)
+                    if args.map_source=='online':
+                        decision,online_endpoint=online_selector.decide(layers,p[:2],task['goal'])
+                        if decision.kind=='wait':
+                            layers.decision=decision.explanation
+                            if online_wait_start is None:online_wait_start=step
+                            if step%200==0:event('online_observation_wait',step=step,reason=decision.reason,**layers.statistics())
+                            if step-online_wait_start>1200:reason='no_observed_route_or_frontier';break
+                            obs=tick(stop);last_action=stop;continue
+                        online_wait_start=None
+                    else:
+                        with layers.global_planning() as global_boxes:
+                            decision=planner.decide(p[:2],task['goal'],global_boxes)
                     layers.decision=decision.explanation
                     event('decision',step=step,kind=decision.kind,reason=decision.reason,
                           position=p.tolist(),orientation=q.tolist(),
                           plan=vars(decision.push) if decision.push else None,explanation=decision.explanation,
                           global_map_revision=layers.global_revision,local_map_revision=layers.local_revision)
                     if decision.kind=='failed':reason=decision.reason;break
-                    if decision.kind=='navigate':path=decision.path;phase='navigate'
+                    if decision.kind in ['navigate','explore']:
+                        path=decision.path;phase='navigate';goal_kind='frontier' if decision.kind=='explore' else 'task'
                     else:plan=decision.push;path=plan.approach_path;phase='approach'
                     planner.robot_heading=heading if args.navigation_heading=='path' else nav_heading
-                    endpoint=task['goal'] if phase=='navigate' else plan.approach_xy
+                    endpoint=(online_endpoint if args.map_source=='online' else task['goal']) if phase=='navigate' else plan.approach_xy
                     path=ordinary_path(p[:2],endpoint,current)
                     if not path:reason='body_footprint_blocks_navigation';break
                     tracker=ordinary_tracker(p[:2],path,nav_heading)
                     event('ordinary_route',step=step,path=path,**(routes.last_plan if args.route_planner=='voronoi' else {'engine':'grid_astar'}))
                     phase_start=step;planned_positions={b.id:np.array(b.xy) for b in current};action=stop
+                    if args.path_controller=='continuous':
+                        action,iteration_tracking=tracker.action(p[:2],heading,planner,current)
+                        component.mapping._planned_path=tracker._planned_path[tracker._waypoint_index:]
                 elif phase in ['navigate','approach']:
                     planner.robot_heading=heading if args.navigation_heading=='path' else nav_heading
-                    if (step%200==0 and any(np.linalg.norm(np.array(b.xy)-planned_positions[b.id])>.08 for b in current)
+                    if args.map_source=='online' and phase=='navigate' and goal_kind=='frontier':
+                        reconsider=np.linalg.norm(p[:2]-endpoint)<.35
+                        if step%125==0:
+                            with layers.global_planning():reconsider |= bool(planner.path(p[:2],task['goal'],[]))
+                        if reconsider:
+                            if np.linalg.norm(p[:2]-endpoint)<.35:online_selector.reached_frontier(endpoint,layers.observed.sum())
+                            phase='decide';obs=tick(last_action);continue
+                    if (step%200==0 and any(b.id not in planned_positions or np.linalg.norm(np.array(b.xy)-planned_positions[b.id])>.08 for b in current)
                             and not planner.blocked(current)[planner.cell(p[:2])]):
                         phase='decide';obs=tick(stop);last_action=stop;continue
                     approach_error=abs(float(np.cross(np.array(plan.direction),p[:2]-plan.approach_xy))) if phase=='approach' else 0.
@@ -552,6 +632,9 @@ def main():
                                 phase='decide';action=stop
                                 event('global_replan_after_local_block',step=step,global_map_revision=layers.global_revision)
                         iteration_tracking=tracking
+                        if args.map_source=='online' and tracking.get('needs_replan') and tracking.get('blocked_ticks',0)>30:
+                            if goal_kind=='frontier':online_selector.reached_frontier(endpoint,layers.observed.sum())
+                            phase='decide'
                         if tracking.get('recovering_buffer'):record_phase='navigation_buffer_recovery'
                         if tracking.get('local_turn_maneuver'):record_phase=tracking['controller']
                         component.mapping._planned_path=tracker._planned_path[tracker._waypoint_index:]
@@ -693,7 +776,7 @@ def main():
                     direction=np.array(plan.direction);backed=float(np.dot(release_start-p[:2],direction))
                     if backed>=.45:
                         for _ in range(120):obs=tick(stop)
-                        current=box_states();box=next(b for b in current if b.id==plan.box_id)
+                        current=planning_boxes();box=next(b for b in current if b.id==plan.box_id)
                         with layers.global_planning():
                             route=planner.path(np.array(obs['position'][:2]),task['goal'],current)
                             full=planner.path(task['start'],task['goal'],current)
@@ -702,6 +785,9 @@ def main():
                         if not clear or not route or not full:reason='side_passage_not_clear';break
                         passage_certificate=clear
                         completed_box=box.id
+                        if args.path_controller=='continuous':
+                            layers.refresh_global(reason='released_box_replan')
+                            phase='decide';phase_start=step;tracker=None;obs=tick(stop);last_action=stop;continue
                         nav_heading=math.atan2(plan.direction[1],plan.direction[0])
                         turn_point,path,turn_blocked=planner.turning_staging(np.array(obs['position'][:2]),box.id,current,nav_heading,
                             passage_center=clear['center'])
@@ -813,15 +899,18 @@ def main():
                 'actual_path_length_m':float(sum(np.linalg.norm(np.array(b['robot'][:2])-a['robot'][:2]) for a,b in zip(samples,samples[1:]))),
                 'final_boxes':[vars(b) for b in box_states()],'final_box_heights':box_height_states(),
                 'ground_height':floor_top,'teleports_during_rollout':False,
-                'ordinary_route_planning':routes.statistics(),
+                'ordinary_route_planning':{**routes.statistics(),'map_source':args.map_source},
                 'navigation_heading':args.navigation_heading,
                 'path_controller':args.path_controller,
                 'full_body_passage_crossed':(crossed_passage(np.array(obs['position']),np.array(obs['orientation']),completed_box)
-                    if completed_box is not None else (False if task['decision']=='push' else None)),
+                    if completed_box is not None else (False if task.get('decision')=='push' else None)),
                 'go2_policy_inferences':int(robot._go2_locomotion_control.policy_inferences)}
             layers.save(folder)
             result['layered_mapping']=layers.statistics()
             result['passage_certificate']=passage_certificate
+            result['map_source']=args.map_source
+            result['goal_source']='requested_coordinates'
+            if control_log is not None:control_log.close();control_log=None
             if recorder:
                 recording_enabled=False;camera_trace.close();camera_trace=None;recorder.close();recorder=None
                 result['video_directory']=str(folder/'video')
