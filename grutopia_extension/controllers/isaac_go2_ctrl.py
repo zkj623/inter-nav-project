@@ -45,6 +45,7 @@ from grutopia_extension.controllers.go2_policy import (
 )
 from grutopia_extension.configs.robots.go2 import GO2_JOINT_NAMES
 from grutopia_extension.robots.go2_asset import GO2_DEFAULT_JOINT_POSITIONS
+from grutopia_extension.interactive_navigation.go2_actuation import dc_motor_efforts
 
 # Isaac Lab trained Go2 at 50 Hz with dt=0.005. Their play cfg uses 40 Hz.
 POLICY_DECIMATION = 4
@@ -96,8 +97,13 @@ class Go2RSLControl:
         articulation,
         joint_names: Iterable[str],
         ground_height: float = 0.0,
+        actuator_mode: str = 'implicit_pd',
     ) -> None:
         init_base_vel_cmd(1)
+        if actuator_mode not in ['implicit_pd','explicit_dc']:raise ValueError('Invalid Go2 actuator mode')
+        self.actuator_mode=actuator_mode
+        self._last_control_time=None
+        self.applied_joint_efforts=np.zeros(12,dtype=np.float32)
         self.ground_height = float(ground_height)
         joint_names = list(joint_names)
         self.policy = load_go2_actor(policy_weights_path)
@@ -124,6 +130,8 @@ class Go2RSLControl:
     def reset(self):
         """Discard policy and timing state when the physical robot resets."""
         self.policy_command.fill(0)
+        self._last_control_time=None
+        if hasattr(self,'applied_joint_efforts'):self.applied_joint_efforts.fill(0.)
         self.last_action.fill(0)
         self.applied_joint_positions = self.default_joint_positions.copy()
         self.apply_times_left = 0
@@ -148,8 +156,21 @@ class Go2RSLControl:
         return set_base_vel_cmd(command).numpy()
 
     def step(self) -> ArticulationAction:
+        now=self._simulation_time()
+        previous=getattr(self,'_last_control_time',None)
+        if getattr(self,'actuator_mode','implicit_pd')=='explicit_dc' and now is not None and previous is not None:
+            if now-previous>.005+1e-6:
+                raise RuntimeError('Explicit Go2 DC control requires one 5 ms physics step per actuator update')
+        self._last_control_time=now
         if self._should_infer():
             self._infer_policy()
+        if getattr(self,'actuator_mode','implicit_pd')=='explicit_dc':
+            self.applied_joint_efforts=dc_motor_efforts(self.applied_joint_positions,
+                self.joint_subset.get_joint_positions(),self.joint_subset.get_joint_velocities(),
+                stiffness=STIFFNESS,damping=DAMPING,saturation_effort=SATURATION_EFFORT,
+                effort_limit=SATURATION_EFFORT,velocity_limit=VELOCITY_LIMIT)
+            return ArticulationAction(joint_efforts=self.applied_joint_efforts.copy(),
+                                      joint_indices=self.joint_subset.joint_indices)
         # Position targets against the implicit PhysX drive: the drive
         # recomputes PD torque at every physics substep while the target is
         # held, including physics steps advanced during rendering.
@@ -205,6 +226,7 @@ class Go2RSLControl:
             'policy_name': self.policy_name,
             'observation_dim': self.observation_dim,
             'policy_backend': 'rsl',
+            'actuator_mode':getattr(self,'actuator_mode','implicit_pd'),
             'body_lin_vel': self.body_lin_vel.copy(),
             'body_ang_vel': self.body_ang_vel.copy(),
             'yaw': self.yaw,

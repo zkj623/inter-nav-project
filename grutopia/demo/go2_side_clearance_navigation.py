@@ -35,6 +35,8 @@ def main():
     parser.add_argument('--navigation-heading',choices=['path','fixed'],default='path')
     parser.add_argument('--path-controller',choices=['pure','guarded','continuous'],default='continuous')
     parser.add_argument('--map-source',choices=['prior','online'],default='online')
+    parser.add_argument('--actuator-mode',choices=['implicit_pd','explicit_dc'],default=None,
+                        help='Online mode defaults to per-physics-step DC torque control; legacy mode remains available')
     parser.add_argument('--navigation-attitude-recovery',action='store_true',
                         help='Stop on rising navigation tilt, settle with the original policy, then replan')
     parser.add_argument('--route-clearance',type=float,default=.30)
@@ -56,6 +58,7 @@ def main():
                         help='Simple materials avoid compiling thousands of scene MDL instances')
     parser.add_argument('--start-override',type=float,nargs=2,help='Isolated contact calibration; use with one task ID')
     args=parser.parse_args()
+    if args.actuator_mode is None:args.actuator_mode='explicit_dc' if args.map_source=='online' else 'implicit_pd'
     if not np.isfinite(args.floor_top) or not 0 < args.floor_top <= .30:
         raise ValueError('floor-top must be within (0, 0.30] m')
     floor_top=args.floor_top
@@ -92,6 +95,7 @@ def main():
         ExplorationVoronoiRoutes,ForwardExplorationPathTracker,update_task_cameras,body_rotation_clear,body_motion_clear,navigation_body_blocked,body_translation_recovery_clear)
     from grutopia_extension.interactive_navigation.layered_navigation_map import LayeredNavigationMap
     from grutopia_extension.interactive_navigation.go2_rollout_health import Go2RolloutHealth
+    from grutopia_extension.interactive_navigation.go2_actuation import physics_steps_per_command
     from grutopia_extension.interactive_navigation.go2_passage_confirmation import observed_passage_routes
     from grutopia_extension.interactive_navigation.online_navigation_map import OnlineNavigationMap
     from grutopia_extension.interactive_navigation.online_navigation_decision import OnlineGoalSelector
@@ -180,6 +184,9 @@ def main():
         'grutopia_extension/interactive_navigation/local_staging_control.py',
         'grutopia_extension/interactive_navigation/go2_turn_response.py',
         'grutopia_extension/interactive_navigation/go2_passage_confirmation.py',
+        'grutopia_extension/interactive_navigation/go2_actuation.py',
+        'grutopia_extension/controllers/go2_move_by_speed_controller.py',
+        'grutopia_extension/configs/controllers/go2_move_by_speed_controller.py',
         'grutopia_extension/interactive_navigation/local_path_guidance.py',
         'grutopia_extension/interactive_navigation/local_turn_maneuver.py',
         'grutopia_extension/interactive_navigation/semantic_voronoi.py',
@@ -207,6 +214,7 @@ def main():
     from grutopia_extension.interactive_navigation.scene_paths import configure_scene_mdl_paths
     config=Go2NavigationRunConfig(gpu=args.gpu,ground_height=floor_top,
         max_steps=args.max_steps,rendering_interval=4,use_fabric=False,lidar_max_range=5.0,
+        actuator_mode=args.actuator_mode,
         lidar_resolution=(.5,2.5) if args.map_source=='online' else (2.,5.),
         material_mode=args.material_mode,generate_fallback_asset=False)
     configure_scene_mdl_paths(profile.scene_asset_path)
@@ -224,6 +232,15 @@ def main():
         from grutopia_extension.interactive_navigation.go2_navigation_runner import _apply_high_friction_material
         _apply_high_friction_material('/World/env_0/objects/grscene_go2_floor')
         active=next(iter(env.runner.current_tasks.values()));robot=next(iter(active.robots.values()))
+        native=robot.isaac_robot._articulation_view._physics_view
+        native_gains={'stiffness':np.asarray(native.get_dof_stiffnesses()).tolist(),
+                      'damping':np.asarray(native.get_dof_dampings()).tolist()}
+        if args.actuator_mode=='explicit_dc' and any(np.any(np.asarray(v)!=0.) for v in native_gains.values()):
+            raise RuntimeError('Explicit DC control cannot run with active implicit joint drives')
+        (args.output/'actuator_contract.json').write_text(json.dumps({'mode':args.actuator_mode,
+            'policy_frequency_hz':50,'physics_frequency_hz':200,
+            'rendering_dt':simulation_config.simulator.rendering_dt,
+            'rendering_interval':simulation_config.simulator.rendering_interval,**native_gains},indent=2))
         from grutopia_extension.interactive_navigation.carton_materials import restore_carton_materials
         material_audit=restore_carton_materials(stage,'/World/env_0/scene',[o['id'] for o in layout])
         (args.output/'carton_material_audit.json').write_text(json.dumps(material_audit,indent=2))
@@ -253,8 +270,12 @@ def main():
             print(json.dumps({'event':'video_cameras_ready'}),flush=True)
             (args.output/'recording_config.json').write_text(json.dumps({
                 'full_task_recording':True,'capture':'every rendered observation','fps':25,
-                'physics_dt':.005,'rendering_dt':.020,'rendering_interval':4,
+                'physics_dt':.005,'rendering_dt':float(simulation_config.simulator.rendering_dt),
+                'rendering_interval':simulation_config.simulator.rendering_interval,
                 'effective_env_ticks_per_render':5,'scene_scale':list(profile.scene_scale),
+                'actuator_mode':args.actuator_mode,
+                'physics_steps_per_command_cycle':([1,2,1,2,2] if args.actuator_mode=='explicit_dc' else None),
+                'physics_steps_per_render':8,
                 'material_mode':args.material_mode,'ground_height':floor_top,
                 'spawn_base_height':spawn_height,
                 'lidar_max_range':config.lidar_max_range,
@@ -315,20 +336,27 @@ def main():
                 base_position=np.asarray(observation['position']),base_orientation=np.asarray(observation['orientation']),
                 physics_step=int(lidar.get('physics_step',-1)),max_range=float(lidar.get('max_range',5.)),
                 self_hits_removed=int(lidar.get('self_hits_removed',0)))
+        command_tick_index=0
         def tick(action):
-            nonlocal recording_tick
+            nonlocal recording_tick,command_tick_index
             if task_health is not None and not task_health.healthy:action=stop
-            if first_camera:
-                position,orientation=robot.get_world_pose()
-                update_task_cameras(first_camera,third_camera,position,orientation)
             command_time=float(robot._go2_locomotion_control._simulation_time() or 0.)
             if smooth_limiter is not None:smooth_limiter.accept(action.get('move_by_speed',[0.,0.,0.]),command_time)
-            observation=env.step(action)[0]
+            microsteps=physics_steps_per_command(command_tick_index,args.actuator_mode)
+            physical_commands=[]
+            for _ in range(microsteps):
+                micro_action=stop if task_health is not None and not task_health.healthy else action
+                physical_commands.append(list(micro_action.get('move_by_speed',[0.,0.,0.])))
+                if first_camera:
+                    position,orientation=robot.get_world_pose()
+                    update_task_cameras(first_camera,third_camera,position,orientation)
+                observation=env.step(micro_action)[0]
+                if task_health is not None:task_health.observe(observation['position'],observation['orientation'])
+            command_tick_index+=1
             now=float(robot._go2_locomotion_control._simulation_time() or 0.)
             if smooth_limiter is not None:
                 controller=robot._go2_locomotion_control
                 smooth_limiter.observe([*controller.body_lin_vel[:2],controller.body_ang_vel[2]],now)
-            if task_health is not None:task_health.observe(observation['position'],observation['orientation'])
             if layers is not None:
                 now=robot._go2_locomotion_control._simulation_time()
                 now=float(now) if now is not None else layers.now+.008
@@ -345,6 +373,7 @@ def main():
                     'controller_root_position':list(map(float,root_position)),
                     'controller_root_orientation':list(map(float,root_orientation)),
                     'policy_inferences':diagnostic['policy_inferences'],
+                    'actuator_mode':args.actuator_mode,'physics_substeps':microsteps,'physical_commands':physical_commands,
                     'observed_cells':int(layers.observed.sum()) if hasattr(layers,'observed') else None})+'\n')
             if recording_enabled and recorder:
                 if observation.get('render',False):
@@ -391,6 +420,8 @@ def main():
             (args.output/'recording_config.json').write_text(json.dumps(recording,indent=2))
             print(json.dumps({'event':'turn_calibration_completed','selected_turn_speed':args.turn_speed}),flush=True)
         tuning_stamp=None
+        if args.actuator_mode=='explicit_dc':env.runner.render_trigger=0
+        command_tick_index=0
         for task in tasks:
             record_phase='start'
             step=0  # Sensor-map warmup runs before the first control iteration.
@@ -976,6 +1007,7 @@ def main():
                 'ordinary_route_planning':{**routes.statistics(),'map_source':args.map_source},
                 'navigation_heading':args.navigation_heading,
                 'path_controller':args.path_controller,
+                'actuator_mode':args.actuator_mode,
                 'full_body_passage_crossed':(crossed_passage(np.array(obs['position']),np.array(obs['orientation']),completed_box)
                     if completed_box is not None else (False if task.get('decision')=='push' else None)),
                 'go2_policy_inferences':int(robot._go2_locomotion_control.policy_inferences)}

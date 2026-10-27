@@ -91,7 +91,7 @@ class Go2(IsaacRobot):
             scale=scale,
         )
 
-    def configure_locomotion(self):
+    def configure_locomotion(self,actuator_mode='implicit_pd'):
         from grutopia_extension.controllers.isaac_go2_ctrl import (
             DAMPING,
             SATURATION_EFFORT,
@@ -135,6 +135,11 @@ class Go2(IsaacRobot):
             joint_indices=joint_indices,
         )
         apply_isaaclab_go2_physics(self.prim_path)
+        if actuator_mode=='explicit_dc':
+            articulation_controller.switch_control_mode('effort')
+            self._articulation_view.set_gains(kps=backend.expand_dims(np.zeros(12),0),
+                kds=backend.expand_dims(np.zeros(12),0),save_to_usd=False,joint_indices=joint_indices)
+        elif actuator_mode!='implicit_pd':raise ValueError('Invalid Go2 actuator mode')
 
 
 @BaseRobot.register('Go2Robot')
@@ -201,8 +206,10 @@ class Go2Robot(BaseRobot):
             np.zeros(12, dtype=np.float32),
             joint_indices=joint_indices,
         )
-        self.isaac_robot.configure_locomotion()
         control = getattr(self, '_go2_locomotion_control', None)
+        if control is not None and getattr(control,'actuator_mode','implicit_pd')=='explicit_dc':
+            self.isaac_robot.configure_locomotion(actuator_mode='explicit_dc')
+        else:self.isaac_robot.configure_locomotion()
         if control is not None:
             control.reset()
 
