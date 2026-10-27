@@ -86,7 +86,7 @@ def main():
     args.output.mkdir(parents=True,exist_ok=True)
     if (args.output/'summary.json').exists():raise ValueError('Use a new output directory')
     from grutopia_extension.interactive_navigation.go2_contact_turn import ContactTurnControl,checked_contact_turn_command
-    from grutopia_extension.interactive_navigation.go2_contact_control import damped_contact_centering_velocity,contact_heading_hold
+    from grutopia_extension.interactive_navigation.go2_contact_control import damped_contact_centering_velocity,contact_heading_hold,ContactYawServo
     from grutopia_extension.interactive_navigation.box_push_navigation import BoxState
     from grutopia_extension.interactive_navigation.side_push_navigation import SidePushPlanner
     from grutopia_extension.interactive_navigation.go2_exploration_tracking import ExplorationPathTracker as Go2VelocityPathTracker
@@ -500,7 +500,7 @@ def main():
             last_route_replan=-100
             decision_recovery_tracker=None
             contact_pause_until=-1;contact_stable_ticks=0;push_lateral_velocity=0.
-            retreat_wait_since=None;contact_turn=None
+            retreat_wait_since=None;contact_turn=None;contact_yaw_servo=ContactYawServo(args.contact_yaw_tolerance)
             contact_alignment=ContactAlignmentGate()
             attitude_recovery=NavigationAttitudeRecovery()
             for step in range(args.max_steps):
@@ -843,6 +843,7 @@ def main():
                             reason='no_observed_safe_contact_turn';break
                         if result is None:
                             contact_turn=None;contact_alignment=ContactAlignmentGate();phase_start=step
+                            contact_yaw_servo=ContactYawServo(args.contact_yaw_tolerance)
                             action=stop;record_phase='contact_turn_settled'
                             event('contact_turn_staging_end',step=step,position=p.tolist(),heading_error=error)
                         else:
@@ -880,7 +881,12 @@ def main():
                             event('contact_realign_end',step=step,position=p.tolist(),contact_offset=contact_error)
                     elif alignment_axis=='yaw':
                         contact_stable_ticks=0
-                        action={'move_by_speed':[0.,0.,math.copysign(args.turn_speed,error)]}
+                        if smooth_limiter is None:
+                            action={'move_by_speed':[0.,0.,math.copysign(args.turn_speed,error)]}
+                        else:
+                            request=[0.,0.,contact_yaw_servo.update(error,float(smooth_limiter.measured[2]),planner.control_time)]
+                            command,_=checked_contact_turn_command(request,p[:2],heading,planner,current,smooth_limiter,planner.control_time)
+                            action={'move_by_speed':command.tolist()}
                     else:
                         contact_stable_ticks=0
                         if smooth_limiter is None:

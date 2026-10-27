@@ -79,6 +79,30 @@ def contact_heading_hold(heading_error, measured_yaw_rate):
     return float(np.clip(3.*heading_error-.35*measured_yaw_rate,-.35,.35))
 
 
+class ContactYawServo:
+    """Finish a small heading correction with measured braking before reversal."""
+    def __init__(self,tolerance=.10):
+        self.tolerance=float(tolerance)
+        self.braking=False;self.stable_since=None;self.direction=0.
+
+    def update(self,error,measured_rate,now):
+        if self.braking:
+            if abs(measured_rate)<.06:
+                if self.stable_since is None:self.stable_since=now
+                if now-self.stable_since>=.20:
+                    self.braking=False;self.direction=0.;self.stable_since=None
+            else:self.stable_since=None
+            return 0.
+        if self.direction==0.:self.direction=float(np.sign(error))
+        toward=self.direction*measured_rate
+        stopping_angle=max(0.,toward)*.55+.025
+        if (abs(error)<.7*self.tolerance or error*self.direction<0
+                or (toward>.06 and abs(error)<stopping_angle)):
+            self.braking=True;self.stable_since=None
+            return 0.
+        return self.direction*float(np.clip(3.*abs(error)+.25,.40,.65))
+
+
 def contact_braking_required(delta, velocity, horizon=1.0, stop_margin=.025):
     """Allow for gait travel after a zero-speed request near the contact pose."""
     delta=np.asarray(delta,dtype=float)
