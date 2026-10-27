@@ -86,7 +86,7 @@ def main():
     args.output.mkdir(parents=True,exist_ok=True)
     if (args.output/'summary.json').exists():raise ValueError('Use a new output directory')
     from grutopia_extension.interactive_navigation.go2_contact_turn import ContactTurnControl,checked_contact_turn_command
-    from grutopia_extension.interactive_navigation.go2_contact_control import damped_contact_centering_velocity
+    from grutopia_extension.interactive_navigation.go2_contact_control import damped_contact_centering_velocity,contact_heading_hold
     from grutopia_extension.interactive_navigation.box_push_navigation import BoxState
     from grutopia_extension.interactive_navigation.side_push_navigation import SidePushPlanner
     from grutopia_extension.interactive_navigation.go2_exploration_tracking import ExplorationPathTracker as Go2VelocityPathTracker
@@ -888,7 +888,8 @@ def main():
                             action={'move_by_speed':[float(c*v[0]+s*v[1]),float(-s*v[0]+c*v[1]),0.]}
                         else:
                             v=damped_contact_centering_velocity(delta,direction,centering_velocity,args.contact_centering_speed,motion_mode)
-                            request=[float(c*v[0]+s*v[1]),float(-s*v[0]+c*v[1]),0.]
+                            request=[float(c*v[0]+s*v[1]),float(-s*v[0]+c*v[1]),
+                                     contact_heading_hold(error,float(smooth_limiter.measured[2]))]
                             command,safe=checked_contact_turn_command(request,p[:2],heading,planner,current,smooth_limiter,planner.control_time)
                             action={'move_by_speed':command.tolist()}
                             if not safe:record_phase='contact_centering_safety_brake'

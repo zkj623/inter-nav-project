@@ -74,6 +74,11 @@ def damped_contact_centering_velocity(delta, direction, velocity, max_speed, axi
     return speed*unit
 
 
+def contact_heading_hold(heading_error, measured_yaw_rate):
+    """Counter the measured yaw drift of a centering sidestep before realignment."""
+    return float(np.clip(3.*heading_error-.35*measured_yaw_rate,-.35,.35))
+
+
 def contact_braking_required(delta, velocity, horizon=1.0, stop_margin=.025):
     """Allow for gait travel after a zero-speed request near the contact pose."""
     delta=np.asarray(delta,dtype=float)
