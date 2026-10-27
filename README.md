@@ -14,6 +14,8 @@ a text target such as `refrigerator` and walks up to the scanned object.
 它保留原尺寸 Go2 / MV7、1 cm 地面、原始起终点和物理侧推；每个任务从空占据地图开始。
 墙体地图由在线 LiDAR 建立，目标尚不可达时沿 Voronoi 路线探索可达边界。
 全局层 1 Hz 更新，局部层 10 Hz 更新，箱子移开后的空间需要新射线确认才会通行。
+在线模式默认使用固定 200 Hz 物理步长的 DC 电机控制、50 Hz 原 Go2 policy 和 25 fps 录像。
+当前五组统一物理验收尚未完成；各版本成功及失败结果见下方在线导航说明。
 
 在实验分支 `codex/go2-online-smooth-20261027` 的仓库根目录执行：
 
