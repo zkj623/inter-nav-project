@@ -14,7 +14,7 @@ class TurnResponseAssist:
         self.sign=None;self.heading=None;self.last_progress=None
         self.assist_origin=None;self.assist_heading=None;self.assist_speed=None
 
-    def update(self,command,position,heading,planner,boxes,limiter,now):
+    def update(self,command,position,heading,planner,boxes,limiter,now,*,maintain_arc=False):
         command=np.asarray(command,float).copy();position=np.asarray(position[:2],float)
         sign=np.sign(command[2])
         if np.linalg.norm(command[:2])>.01 or abs(command[2])<.3:
@@ -27,7 +27,7 @@ class TurnResponseAssist:
             self.heading=heading;self.last_progress=now
         if self.assist_origin is not None:
             rotation=sign*((heading-self.assist_heading+math.pi)%(2*math.pi)-math.pi)
-            if rotation>.18 or np.linalg.norm(position-self.assist_origin)>.20:
+            if (rotation>.18 and not maintain_arc) or np.linalg.norm(position-self.assist_origin)>.20:
                 self.assist_origin=None;self.assist_speed=None;self.last_progress=now
                 return command,{'turn_assist':'gait_started'}
         stalled=(now-self.last_progress>.8 and abs(limiter.measured[2])<.15)

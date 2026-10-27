@@ -69,7 +69,7 @@ class LocalStagingControl:
             else:self.stable_since=None
             return np.zeros(3),{**state,'staging_phase':self.phase}
         if self.phase=='staging_turn':
-            if not can_turn:
+            if not can_turn and self.turn_response.assist_origin is None:
                 self.phase='staging_brake';self.stable_since=None
                 return np.zeros(3),{**state,'staging_phase':self.phase}
             stopping_angle=abs(limiter.measured[2])*.25+limiter.command[2]**2/(2*limiter.yaw_acceleration)+.03
@@ -78,7 +78,9 @@ class LocalStagingControl:
                 self.phase='staging_turn_brake';self.stable_since=None
                 return np.zeros(3),{**state,'staging_phase':self.phase}
             request=np.array([0.,0.,math.copysign(1.,error)])
-            request,detail=self.turn_response.update(request,position,heading,planner,boxes,limiter,now)
+            # Keep the effective stepping gait until predictive braking.
+            # Returning to pure yaw after only 0.18 rad repeatedly stalls it.
+            request,detail=self.turn_response.update(request,position,heading,planner,boxes,limiter,now,maintain_arc=True)
             if detail.get('turn_assist')=='no_observed_safe_arc':
                 self.phase='staging_move';self.turn_response=TurnResponseAssist()
                 request=np.zeros(3)

@@ -8,6 +8,16 @@ from grutopia_extension.interactive_navigation.local_staging_control import Loca
 
 
 class SmoothControlTests(unittest.TestCase):
+    def test_staging_completion_replans_before_resuming_the_old_carrot(self):
+        from types import SimpleNamespace
+        p=SidePushPlanner(np.ones((120,120),bool),[[-3,3],[-3,3]],resolution=.05)
+        p.control_time=1.;limiter=VelocitySlewLimiter();limiter.accept([0,0,0],.99)
+        limiter.staging=SimpleNamespace(update=lambda *args:None)
+        tracker=SmoothExplorationTracker([0,0],[[2,0]],limiter)
+        action,state=tracker.action(np.array([.8,.3]),0,p,[])
+        self.assertTrue(state['staging_completed']);self.assertTrue(state['needs_replan'])
+        np.testing.assert_array_equal(action['move_by_speed'],[0,0,0])
+        self.assertIsNone(limiter.staging)
     def corner(self):
         p=SidePushPlanner(np.ones((201,201),bool),[[-2.5,2.5],[-2.5,2.5]])
         x=-2.5+(np.arange(201)+.5)*p.resolution;xx,yy=np.meshgrid(x,x)

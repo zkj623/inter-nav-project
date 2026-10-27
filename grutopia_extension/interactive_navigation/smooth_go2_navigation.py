@@ -149,6 +149,7 @@ class SmoothExplorationTracker(ExplorationPathTracker):
             if result is None:
                 self.limiter.staging=None;self.limiter.progress_time=now
                 self.limiter.progress_position=np.asarray(position[:2]).copy()
+                state.update(needs_replan=True,buffer_cleared_replan=True,staging_completed=True,recovering_buffer=False)
             else:
                 staging_command,stage_state=result;state.update(stage_state)
                 if self.limiter.staging.failed:
@@ -160,7 +161,11 @@ class SmoothExplorationTracker(ExplorationPathTracker):
         preview_horizon=.60+float(np.linalg.norm(desired[:2]))/(2*self.limiter.linear_acceleration)
         desired_clear=body_motion_clear(planner,boxes,position,heading,desired[0],desired[2],horizon=preview_horizon,lateral=desired[1])
         unknown_gap=(not desired_clear and self._only_unknown_blocks(desired,position,heading,planner,boxes,preview_horizon))
-        if staging_command is None and (state.get('needs_replan') or unknown_gap):
+        if state.get('staging_completed'):
+            # The staging maneuver displaced the base away from the old
+            # route. Hand off to a route from this actual pose before moving.
+            desired=np.zeros(3)
+        elif staging_command is None and (state.get('needs_replan') or unknown_gap):
             observation=self._observe_gap(position,heading,state['target'],planner,boxes,now,confirmed_gap=unknown_gap)
             if observation is not None:
                 desired=observation;state['needs_replan']=False

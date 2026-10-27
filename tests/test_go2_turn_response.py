@@ -23,6 +23,14 @@ class TurnResponseTests(unittest.TestCase):
         assist.update([0,0,1],[0,0],0,p,[],limiter,0.)
         cmd,state=assist.update([0,0,1],[0,0],.2,p,[],limiter,1.)
         np.testing.assert_array_equal(cmd,[0,0,1])
+    def test_staging_can_keep_the_gait_until_braking_without_exceeding_translation_bound(self):
+        p,limiter,assist=self.make()
+        assist.update([0,0,1],[0,0],0,p,[],limiter,0.,maintain_arc=True)
+        assist.update([0,0,1],[0,0],0,p,[],limiter,1.,maintain_arc=True)
+        cmd,state=assist.update([0,0,1],[-.05,0],.25,p,[],limiter,1.3,maintain_arc=True)
+        self.assertLess(cmd[0],0.)
+        cmd,state=assist.update([0,0,1],[-.21,0],.9,p,[],limiter,2.,maintain_arc=True)
+        np.testing.assert_array_equal(cmd,[0,0,1])
     def test_unknown_space_cannot_be_used_to_start_the_turn(self):
         p,limiter,assist=self.make();p.free[:]=False
         assist.update([0,0,1],[0,0],0,p,[],limiter,0.)

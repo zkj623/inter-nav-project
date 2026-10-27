@@ -654,7 +654,7 @@ def main():
                         action,tracking=tracker.action(p[:2],heading,planner,current)
                         if (tracking.get('needs_replan')
                                 and (np.linalg.norm(p[:2]-endpoint)>.30 or tracking.get('buffer_cleared_replan'))
-                                and step-last_route_replan>=100):
+                                and (step-last_route_replan>=100 or tracking.get('staging_completed'))):
                             last_route_replan=step
                             replanned=ordinary_path(p[:2],endpoint,current,local=True)
                             if replanned:
@@ -831,12 +831,23 @@ def main():
                     direction=np.array(plan.direction);backed=float(np.dot(release_start-p[:2],direction))
                     if backed>=.45:
                         for _ in range(120):obs=tick(stop)
-                        current=planning_boxes();box=next(b for b in current if b.id==plan.box_id)
-                        with layers.global_planning():
-                            route=planner.path(np.array(obs['position'][:2]),task['goal'],current)
-                            full=planner.path(task['start'],task['goal'],current)
-                        clear=planner.certify_cleared_passage(box,full,task['start'],current)
-                        event('passage_check',step=step,clearance=clear,route_available=bool(route),full_route_available=bool(full))
+                        record_phase='verify_cleared_passage'
+                        confirmation_deadline=float(robot._go2_locomotion_control._simulation_time())+3.
+                        layers.refresh_global(reason='released_box_revalidation')
+                        confirmation_attempt=0
+                        while True:
+                            current=planning_boxes();box=next(b for b in current if b.id==plan.box_id)
+                            with layers.global_planning():
+                                route=planner.path(np.array(obs['position'][:2]),task['goal'],current)
+                                full=planner.path(task['start'],task['goal'],current)
+                            clear=planner.certify_cleared_passage(box,full,task['start'],current)
+                            event('passage_check',step=step,clearance=clear,route_available=bool(route),full_route_available=bool(full),
+                                  observation_attempt=confirmation_attempt,global_map_revision=layers.global_revision,local_map_revision=layers.local_revision)
+                            if (clear and route and full) or not task_health.healthy:break
+                            if float(robot._go2_locomotion_control._simulation_time())>=confirmation_deadline:break
+                            for _ in range(25):obs=tick(stop)
+                            confirmation_attempt+=1
+                        if not task_health.healthy:reason='robot_unstable';break
                         if not clear or not route or not full:reason='side_passage_not_clear';break
                         passage_certificate=clear
                         completed_box=box.id
