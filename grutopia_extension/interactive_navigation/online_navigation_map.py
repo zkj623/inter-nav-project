@@ -15,6 +15,7 @@ from scipy.ndimage import distance_transform_edt
 from grutopia_extension.interactive_navigation.mapping import OccupancyGridMap
 from grutopia_extension.interactive_navigation.box_push_navigation import BoxState
 from grutopia_extension.interactive_navigation.layered_navigation_map import LayeredNavigationMap
+from grutopia_extension.interactive_navigation.online_lidar_evidence import online_lidar_masks
 
 
 class OnlineNavigationMap(LayeredNavigationMap):
@@ -27,6 +28,7 @@ class OnlineNavigationMap(LayeredNavigationMap):
         self.global_observed=np.zeros_like(self.observed)
         self.floor_height=floor_height;self.detected_boxes={}
         self.visible_box_ids=[];self.scan_count=0
+        self.ray_statistics={}
         self.initial_observed_cells=0;self.initial_occupied_cells=0
         self._latest_static=np.zeros_like(self.observed)
         self.static_digest=hashlib.sha256(self.static_occupied.tobytes()).hexdigest()
@@ -72,7 +74,10 @@ class OnlineNavigationMap(LayeredNavigationMap):
         fresh=bool(points.size and (scan is None or scan!=self.last_scan))
         self.visible_box_ids=[]
         if fresh:
-            visible=self._visible_proposals(points,boxes)
+            origin=np.asarray(lidar.get('position',observation['position']),float)
+            distances=np.linalg.norm(points[:,:3]-origin,axis=1)
+            returns=points[distances<float(lidar.get('max_range',5.))*.99]
+            visible=self._visible_proposals(returns,boxes)
             self.visible_box_ids=[b.id for b in visible]
             self.detected_boxes.update({b.id:b for b in visible})
         self.current_boxes=list(self.detected_boxes.values())
@@ -94,11 +99,11 @@ class OnlineNavigationMap(LayeredNavigationMap):
             if part is not None:self.tracked_sensor_mask |= part
         if fresh:
             filtered=self.filter_robot_returns(observation,count=True)['sensors']['lidar']
-            frame=OccupancyGridMap(self.config)
-            frame.update_lidar(filtered.get('position',observation['position']),
-                np.asarray(filtered['pointcloud']),max_range=float(filtered.get('max_range',5.)))
-            hit=frame.occupied_mask() & ~self.tracked_sensor_mask & ~self.robot_footprint
-            free=frame.observed & ~frame.occupied_mask() & ~new_mask
+            measured_hit,measured_free,self.ray_statistics=online_lidar_masks(self.config,
+                filtered.get('position',observation['position']),np.asarray(filtered['pointcloud']),
+                max_range=float(filtered.get('max_range',5.)),min_range=float(filtered.get('min_range',.25)))
+            hit=measured_hit & ~self.tracked_sensor_mask & ~self.robot_footprint
+            free=measured_free & ~new_mask
             self.ingest_scan_masks(hit,free)
             self.scan_count+=1;self.last_scan=scan
         # The object's full extent is observed by the admitted object sensor,
@@ -124,6 +129,7 @@ class OnlineNavigationMap(LayeredNavigationMap):
         self.seen_time[hit|free]=self.now
 
     def refresh_global(self,boxes=None,*,reason='interaction_completed'):
+        if reason=='decision' and self.now-self.last_global<self.global_period-1e-8:return self.global_revision
         # The optional boxes argument is intentionally ignored. Only boxes
         # admitted from observations may be published to the global planner.
         self.global_boxes=list(self.current_boxes)
@@ -197,6 +203,10 @@ class OnlineNavigationMap(LayeredNavigationMap):
             'global_observed_cells':int(self.global_observed.sum()),'scan_count':self.scan_count,
             'global_hz':1/self.global_period,'local_hz':1/self.local_period,
             'grid_resolution_m':self.planner.resolution,'limits':self.planner.limits,
+            'obstacle_height_band_m':list(self.config.obstacle_height),
+            'ray_traversal':self.config.ray_traversal,
+            'free_ray_model':'height_clipped_actual_rays_with_conservative_range_endpoints',
+            'latest_ray_statistics':self.ray_statistics,
             'local_radius_m':self.local_radius,'global_revision':self.global_revision,
             'local_revision':self.local_revision,'local_updates':self.local_updates,
             'global_updates':self.global_updates,'local_replans':self.local_replans,

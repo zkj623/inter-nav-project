@@ -1,4 +1,6 @@
 import unittest
+import json
+import math
 import numpy as np
 from grutopia_extension.interactive_navigation.mapping import MappingConfig,OccupancyGridMap
 from grutopia_extension.interactive_navigation.box_push_navigation import BoxState
@@ -6,6 +8,7 @@ from grutopia_extension.interactive_navigation.side_push_navigation import SideP
 from grutopia_extension.interactive_navigation.online_navigation_map import OnlineNavigationMap
 from grutopia_extension.interactive_navigation.online_navigation_decision import OnlineGoalSelector
 from grutopia_extension.interactive_navigation.go2_voronoi_navigation import ExplorationVoronoiRoutes,route_blocked
+from grutopia_extension.interactive_navigation.go2_exploration_tracking import decision_buffer_recovery
 
 
 class OnlineMapTests(unittest.TestCase):
@@ -63,6 +66,28 @@ class OnlineMapTests(unittest.TestCase):
         d,target=OnlineGoalSelector().decide(m,(0,0),(1,0))
         self.assertEqual(d.kind,'navigate');self.assertEqual(target,(1,0))
 
+    def test_box_free_hypothesis_does_not_interrupt_a_frontier_without_a_feasible_task_plan(self):
+        from unittest.mock import patch
+        from grutopia_extension.interactive_navigation.box_push_navigation import BoxDecision
+        p,m=self.make();m.ingest_scan_masks(np.zeros_like(m.observed),np.ones_like(m.observed));m.refresh_global();m._bind_local()
+        with m.global_planning():self.assertTrue(p.path((0,0),(1,0),[]))
+        with patch.object(p,'decide',return_value=BoxDecision('failed','no_safe_contact_push_or_parking_pose')):
+            self.assertIsNone(OnlineGoalSelector().task_decision(m,(0,0),(1,0)))
+
+    def test_actual_empty_range_ray_enters_online_map(self):
+        p,m=self.make()
+        m.update(0,self.obs(points=[(5.25,0,.5)]),[],force=True)
+        self.assertTrue(m.observed[p.cell((2,0))])
+        self.assertFalse(m.global_occupied[p.cell((2,0))])
+        self.assertFalse(m.observed[p.cell((2,1))])
+
+    def test_no_hit_range_endpoints_cannot_detect_an_unseen_box(self):
+        p,m=self.make();box=BoxState('unseen',(2.25,0),(.5,.5,.5))
+        obs=self.obs(points=[(2.25,0,.5),(2.25,.02,.5),(2.25,-.02,.5)])
+        obs['sensors']['lidar']['max_range']=2.
+        m.update(0,obs,[box],force=True)
+        self.assertEqual(m.current_boxes,[])
+
     def test_unknown_centers_are_blocked_but_do_not_inflate_like_obstacles(self):
         p,m=self.make();m.ingest_scan_masks(np.zeros_like(m.observed),np.ones_like(m.observed))
         hole=p.cell((1,.10));m.observed[hole]=False;m.refresh_global();m._bind_local()
@@ -86,6 +111,37 @@ class OnlineMapTests(unittest.TestCase):
         p,m=self.make();free=np.ones_like(m.observed);free[:,58:64]=False
         m.ingest_scan_masks(np.zeros_like(free),free);m.refresh_global()
         with m.global_planning() as boxes:self.assertFalse(p.path((-1,0),(1,0),boxes))
+
+    def test_unreachable_goal_wait_explanation_is_json_serializable(self):
+        p,m=self.make();hit=np.zeros_like(m.observed);hit[:,70]=True
+        m.ingest_scan_masks(hit,np.ones_like(hit));m.refresh_global()
+        decision,_=OnlineGoalSelector().decide(m,np.array([-1.,0.],np.float32),np.array([1.5,0.],np.float32))
+        self.assertEqual(decision.kind,'wait')
+        json.dumps(decision.explanation)
+
+    def test_local_exit_does_not_require_an_unobserved_goal_to_be_connected(self):
+        res=.025;xx=-3+(np.arange(240)+.5)*res
+        observed=np.broadcast_to(xx<1.5,(240,240)).copy()
+        free=np.broadcast_to((xx>=-.25)&(xx<1.5),(240,240)).copy()
+        p=SidePushPlanner(free,[[-3,3],[-3,3]],resolution=res)
+        p.navigation_route_radius=.30;p.navigation_pose_heading=None;p.navigation_half_width=.22
+        p.full_navigation_footprint=True;p.layered_local_control=True;p.planning_scope='global';p.planning_observed=observed
+        goal=(2.5,1.)
+        recovery=decision_buffer_recovery((0.,0.),math.pi/2,p,[],goal,math.pi/2,
+            local_free=free,local_boxes=[],require_goal_connection=False)
+        self.assertIsNotNone(recovery)
+        self.assertFalse(p.blocked([])[p.cell(recovery[1]['target'])])
+        self.assertFalse(recovery[1]['goal_connection_checked'])
+        self.assertFalse(p.path(recovery[1]['target'],goal,[]))
+        self.assertIsNone(decision_buffer_recovery((0.,0.),math.pi/2,p,[],goal,math.pi/2,
+            local_free=free,local_boxes=[],require_goal_connection=True))
+
+    def test_repeated_decisions_do_not_force_high_frequency_global_updates(self):
+        p,m=self.make();m.update(0,self.obs(),[],force=True);count=m.global_updates
+        for t in [.1,.2,.5,.9]:m.now=t;m.refresh_global(reason='decision')
+        self.assertEqual(m.global_updates,count)
+        m.now=1.;m.refresh_global(reason='decision');self.assertEqual(m.global_updates,count+1)
+        m.now=1.01;m.refresh_global(reason='side_push_cleared_passage');self.assertEqual(m.global_updates,count+2)
 
 
 if __name__=='__main__':unittest.main()

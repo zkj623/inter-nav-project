@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from heapq import heappop, heappush
-from math import hypot, sqrt
+from math import hypot, sqrt, inf, floor
 from typing import Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
@@ -42,6 +42,7 @@ class MappingConfig:
     lidar_free_height_layers: int = 1
     # Azimuth resolution of the flattened top-down lidar scan (0.5 degrees).
     lidar_scan_bins: int = 720
+    ray_traversal: str = 'bresenham'
     max_voxel_points_per_update: int = 5000
     graph_stride: int = 5
     safe_recovery_y_limits: Tuple[float, float] = (-1.25, 1.25)
@@ -68,6 +69,8 @@ class MappingConfig:
             raise ValueError('mapping sample limits and graph_stride must be positive')
         if self.lidar_scan_bins <= 0:
             raise ValueError('lidar_scan_bins must be positive')
+        if self.ray_traversal not in ('bresenham','exact'):
+            raise ValueError('ray_traversal must be bresenham or exact')
         if self.lidar_free_height_layers <= 0:
             raise ValueError('lidar_free_height_layers must be positive')
         if self.obstacle_height[0] >= self.obstacle_height[1]:
@@ -363,7 +366,8 @@ class OccupancyGridMap:
             endpoint_cell = self.world_to_cell(endpoint[:2])
             if endpoint_cell is None:
                 continue
-            ray = _bresenham(origin_cell, endpoint_cell)
+            ray = (world_ray_cells(origin_array,endpoint,self.config) if self.config.ray_traversal=='exact'
+                   else _bresenham(origin_cell, endpoint_cell))
             if not ray:
                 continue
             if obstacle_index is None:
@@ -376,6 +380,10 @@ class OccupancyGridMap:
             else:
                 for ray_index, cell in enumerate(free_cells):
                     fraction = ray_index / max(1, len(ray) - 1)
+                    if self.config.ray_traversal=='exact':
+                        direction=endpoint[:2]-origin_array[:2]
+                        center=np.asarray(self.cell_to_world(cell))
+                        fraction=float(np.clip(np.dot(center-origin_array[:2],direction)/max(np.dot(direction,direction),1e-12),0.,1.))
                     ray_height = origin_array[2] + fraction * (endpoint[2] - origin_array[2])
                     if ray_height < min_height or ray_height > max_height:
                         continue
@@ -952,10 +960,14 @@ class FusedMap:
         points = _points_array(points)
         if len(points) == 0:
             return
-        self.voxels.update(points, step=step, source='lidar')
+        # Max-range/no-return endpoints encode empty rays, not 3-D surfaces.
+        # Keep them available to ray fusion without drawing a phantom shell.
+        distance=np.linalg.norm(points-np.asarray(origin),axis=1)
+        measured=points[np.isfinite(points).all(axis=1)&(distance<max_range*.99)]
+        self.voxels.update(measured, step=step, source='lidar')
         self.occupancy.update_lidar(origin, points, max_range=max_range)
         self.lidar_frames += 1
-        self.lidar_points += len(points)
+        self.lidar_points += len(measured)
 
     def update_rgb(
         self,
@@ -1054,6 +1066,31 @@ def _shift_slices(length: int, offset: int):
     if offset >= 0:
         return slice(0, length - offset), slice(offset, length)
     return slice(-offset, length), slice(0, length + offset)
+
+
+def world_ray_cells(origin,endpoint,config: MappingConfig) -> List[GridCell]:
+    """Visit cells crossed by the actual world ray, without snapping it to
+    cell centers. Exact corner touches do not clear either adjacent cell.
+
+    The caller retains the final hit cell as occupied and never traces beyond
+    the measured endpoint. This fills discretization gaps, not unseen space.
+    """
+    offset=np.array([config.x_limits[0],config.y_limits[0]])
+    a=(np.asarray(origin[:2],float)-offset)/config.grid_resolution
+    b=(np.asarray(endpoint[:2],float)-offset)/config.grid_resolution
+    col,row=map(floor,a);end_col,end_row=map(floor,b)
+    dx,dy=b-a;sx=int(np.sign(dx));sy=int(np.sign(dy))
+    tx=((col+1-a[0])/dx if sx>0 else (col-a[0])/dx) if sx else inf
+    ty=((row+1-a[1])/dy if sy>0 else (row-a[1])/dy) if sy else inf
+    dtx=abs(1/dx) if sx else inf;dty=abs(1/dy) if sy else inf
+    cells=[(row,col)]
+    for _ in range(abs(end_col-col)+abs(end_row-row)+3):
+        if col==end_col and row==end_row:return cells
+        if abs(tx-ty)<1e-10:col+=sx;row+=sy;tx+=dtx;ty+=dty
+        elif tx<ty:col+=sx;tx+=dtx
+        else:row+=sy;ty+=dty
+        cells.append((row,col))
+    raise RuntimeError('World-ray traversal did not reach its endpoint')
 
 
 def _bresenham(start: GridCell, end: GridCell) -> List[GridCell]:

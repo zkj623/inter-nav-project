@@ -17,14 +17,17 @@ class OnlineGoalSelector:
     @staticmethod
     def key(xy):return tuple(np.rint(np.asarray(xy[:2])/.40).astype(int))
 
-    def decide(self,layers,start,goal):
-        p=layers.planner;self.selection_count+=1
+    def task_decision(self,layers,start,goal):
+        """A geometric box-free path alone is not an executable task plan."""
+        p=layers.planner
         with layers.global_planning() as boxes:
             # Unknown cells stay blocked even in the box-free hypothesis.
             optimistic=p.path(start,goal,[])
             if optimistic:
                 decision=p.decide(start,goal,boxes)
                 if decision.kind!='failed':
+                    decision.explanation.update(map_source='online_lidar_observed_cells_only',
+                        requested_goal=list(map(float,goal)),goal_observed=True)
                     if decision.kind=='push':
                         box=next(b for b in boxes if b.id==decision.push.box_id)
                         passage=dict(p.active_passages[box.id])
@@ -35,7 +38,14 @@ class OnlineGoalSelector:
                         passage['axis']=axis.tolist()
                         passage['boundary']=float(np.dot(passage['center'],axis))
                         p.passages[box.id]=passage;p.active_passages[box.id]=passage
-                    return decision,tuple(goal)
+                    return decision
+        return None
+
+    def decide(self,layers,start,goal):
+        p=layers.planner;self.selection_count+=1
+        task_decision=self.task_decision(layers,start,goal)
+        if task_decision is not None:return task_decision,tuple(goal)
+        with layers.global_planning() as boxes:
             grid=layers.frontier_grid();graph=SemanticVoronoiGraph(grid);graph.update()
             snapshot=graph.cached_snapshot()
             blocked=p.blocked(boxes);safe=~blocked
@@ -63,7 +73,7 @@ class OnlineGoalSelector:
                 if len(choices)>=8:break
             if not choices:
                 return BoxDecision('wait','no_reachable_observed_frontier',explanation={
-                    'kind':'wait','reason':'no_reachable_observed_frontier','start':list(start),'goal':list(goal),
+                    'kind':'wait','reason':'no_reachable_observed_frontier','start':list(map(float,start)),'goal':list(map(float,goal)),
                     'observed_cells':int(layers.observed.sum())}),None
             _,xy,gain,path=min(choices,key=lambda entry:entry[0]);self.last_frontier=tuple(xy)
             details={'kind':'explore','reason':'goal_not_connected_in_observed_map',
