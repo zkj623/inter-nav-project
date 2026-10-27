@@ -8,6 +8,33 @@ from grutopia_extension.interactive_navigation.local_staging_control import Loca
 
 
 class SmoothControlTests(unittest.TestCase):
+    def test_sharp_turn_brakes_before_combining_reverse_strafe_and_yaw(self):
+        p=SidePushPlanner(np.ones((160,160),bool),[[-4,4],[-4,4]],resolution=.05)
+        p.navigation_half_width=.22;p.control_time=.01
+        limiter=VelocitySlewLimiter();limiter.accept([.4,0,0],0)
+        limiter.measured=np.array([.4,0,0])
+        tracker=SmoothExplorationTracker([0,0],[[-1,1]],limiter)
+        action,state=tracker.action(np.zeros(2),0,p,[])
+        self.assertTrue(state['local_staging'])
+        self.assertEqual(state['staging_phase'],'staging_brake')
+        np.testing.assert_array_equal(state['desired_command'],[0,0,0])
+        self.assertGreater(action['move_by_speed'][0],0)
+        self.assertLess(action['move_by_speed'][0],.4)
+        self.assertEqual(action['move_by_speed'][1:],[0.,0.])
+
+    def test_sharp_turn_keeps_heading_until_settled_instead_of_chasing_new_carrot(self):
+        p=SidePushPlanner(np.ones((160,160),bool),[[-4,4],[-4,4]],resolution=.05)
+        p.navigation_half_width=.22;p.control_time=.01
+        limiter=VelocitySlewLimiter();limiter.accept([0,0,0],0)
+        tracker=SmoothExplorationTracker([0,0],[[0,2]],limiter)
+        tracker.action(np.zeros(2),0,p,[])
+        original=limiter.staging
+        replacement=SmoothExplorationTracker([0,0],[[2,0]],limiter)
+        p.control_time=.02
+        action,state=replacement.action(np.zeros(2),0,p,[])
+        self.assertIs(limiter.staging,original)
+        self.assertAlmostEqual(state['target_heading_rad'],np.pi/2)
+
     def test_stalled_short_carrot_aligns_to_the_outgoing_corner_segment(self):
         p=self.corner();p.free[:]=True;p.control_time=2.
         x=-2.5+(np.arange(201)+.5)*p.resolution;xx,yy=np.meshgrid(x,x)

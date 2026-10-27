@@ -155,7 +155,19 @@ class SmoothExplorationTracker(ExplorationPathTracker):
                 corner_heading=future_heading;target_heading=heading+future_error
                 state['blocked_corner_heading_rad']=float(future_heading)
         stage_error=(target_heading-heading+math.pi)%(2*math.pi)-math.pi
-        if (not self.staging_active and stalled and (not state.get('recovering_buffer') or corner_heading is not None) and abs(stage_error)>.25
+        sharp_turn=not state.get('recovering_buffer') and abs(stage_error)>.85 and distance>.10
+        if not self.staging_active and sharp_turn:
+            # A world-directed shortcut can request reverse/strafe and large
+            # yaw together when a frontier or corner moves behind the dog.
+            # Brake first, then finish a checked turn before resuming travel.
+            candidate=LocalStagingControl(position,heading,target_heading,planner,boxes,now)
+            if not candidate.failed:
+                candidate.phase='staging_brake'
+                self.limiter.staging=candidate
+            else:
+                desired[:]=0.;state['needs_replan']=True
+                state['sharp_turn_space_unavailable']=True
+        elif (not self.staging_active and stalled and (not state.get('recovering_buffer') or corner_heading is not None) and abs(stage_error)>.25
                 and np.linalg.norm(self.limiter.measured[:2])<.08
                 and (corner_heading is not None or not body_rotation_clear(planner,boxes,position,heading,target_heading,margin=.025))):
             candidate=LocalStagingControl(position,heading,target_heading,planner,boxes,now)
