@@ -167,39 +167,9 @@ class ForwardExplorationPathTracker(ExplorationPathTracker):
         self._heading_recovery=False
         self._local_turn_ticks=0;self._local_turn_sign=0.
         self._corner_maneuver=None
-        self._gait_turn_target=None
-        self._gait_brake_ticks=0
-        self._gait_brake_positions=[]
-        self._gait_brake_headings=[]
 
     def action(self,position,heading,planner,boxes):
         planner.robot_heading=heading
-        if self._gait_turn_target is not None:
-            self._gait_brake_ticks+=1
-            self._gait_brake_positions.append(np.asarray(position[:2],float).copy())
-            self._gait_brake_headings.append(float(heading))
-            self._gait_brake_positions=self._gait_brake_positions[-21:]
-            self._gait_brake_headings=self._gait_brake_headings[-21:]
-            settled=(len(self._gait_brake_positions)==21 and
-                max(np.linalg.norm(p-self._gait_brake_positions[-1]) for p in self._gait_brake_positions)<.02 and
-                max(abs((h-heading+math.pi)%(2*math.pi)-math.pi) for h in self._gait_brake_headings)<.035)
-            state={'target':self._gait_turn_target.tolist(),'recovering_buffer':True,
-                'needs_replan':False,'local_turn_maneuver':True,'controller':'gait_turn_braking',
-                'braking_ticks':self._gait_brake_ticks,'pose_settled':bool(settled)}
-            if self._gait_brake_ticks>=400 and not settled:
-                self._gait_turn_target=None
-                state.update(needs_replan=True,controller='gait_turn_braking_timeout')
-                return {'move_by_speed':[0.,0.,0.]},state
-            if self._gait_brake_ticks<100 or not settled:
-                return {'move_by_speed':[0.,0.,0.]},state
-            target=self._gait_turn_target.copy();self._gait_turn_target=None
-            maneuver=self._begin_corner_maneuver(position,heading,planner,boxes,target=target)
-            if maneuver is not None:return maneuver
-            delta=target-np.asarray(position[:2])
-            error=(math.atan2(delta[1],delta[0])-heading+math.pi)%(2*math.pi)-math.pi
-            if np.linalg.norm(delta)>.05 and abs(error)>.12:
-                state.update(needs_replan=True,controller='gait_turn_space_unavailable')
-                return {'move_by_speed':[0.,0.,0.]},state
         if self._corner_maneuver is not None:
             result=self._corner_maneuver.action(position,heading,planner,boxes)
             if result is not None:
@@ -332,23 +302,6 @@ class ForwardExplorationPathTracker(ExplorationPathTracker):
                     state={**state,'needs_replan':False,'controller':'align_to_global_guidance','foot_clearance_turn':True}
                     return self._calibrate_local_action({'move_by_speed':[0.,0.,rotation]},state,position,heading,planner,boxes)
             return action,state
-        delta=np.asarray(state['target'])-np.asarray(position[:2])
-        heading_error=(math.atan2(delta[1],delta[0])-heading+math.pi)%(2*math.pi)-math.pi
-        if (getattr(planner,'layered_local_control',False) and abs(heading_error)>.5 and
-                np.linalg.norm(action['move_by_speed'][:2])>.15 and
-                body_rotation_clear(planner,boxes,position,heading,heading+heading_error,margin=.04)):
-            # A geometrically clear curved chord can still excite the rough
-            # gait when lateral motion and yaw rise together. Finish braking
-            # before using the existing body-checked turning maneuver. Tight
-            # corners without room for a full heading change retain their
-            # incremental, collision-checked turn/translation recovery.
-            self._gait_turn_target=np.asarray(state['target'],float).copy()
-            self._gait_brake_ticks=0
-            self._gait_brake_positions=[np.asarray(position[:2],float).copy()]
-            self._gait_brake_headings=[float(heading)]
-            return {'move_by_speed':[0.,0.,0.]},{**state,'recovering_buffer':True,
-                'needs_replan':False,'local_turn_maneuver':True,'controller':'gait_turn_braking',
-                'heading_error_rad':float(heading_error),'braking_ticks':0,'pose_settled':False}
         if not self.guard_motion:
             state['controller']='pure_exploration_velocity_action_for'
             vf,vl,rotation=action['move_by_speed']
@@ -423,8 +376,8 @@ class ForwardExplorationPathTracker(ExplorationPathTracker):
         ticks=self._local_turn_ticks if sign==self._local_turn_sign else 0
         return sign*min(1.,.4+.01*ticks)
 
-    def _begin_corner_maneuver(self,position,heading,planner,boxes,target=None):
-        if target is None:target=super()._lookahead_target(np.asarray(position[:2],float))
+    def _begin_corner_maneuver(self,position,heading,planner,boxes):
+        target=super()._lookahead_target(np.asarray(position[:2],float))
         delta=np.asarray(target)-np.asarray(position[:2])
         if np.linalg.norm(delta)<.05:return None
         desired=math.atan2(delta[1],delta[0])
