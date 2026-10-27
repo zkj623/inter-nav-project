@@ -27,7 +27,7 @@ def nose_aligned_body_target(box_xy, dimensions, direction, heading, nose_offset
     return nose_target-nose_offset*forward
 
 
-def contact_centering_velocity(delta, direction, forward_speed, lateral_speed=.35, lateral_tolerance=.035):
+def contact_centering_velocity(delta, direction, forward_speed, lateral_speed=.35, lateral_tolerance=.035,axis=None):
     """Correct the contact line before advancing toward the carton.
 
     A normalized diagonal request can leave its lateral component below the
@@ -39,11 +39,21 @@ def contact_centering_velocity(delta, direction, forward_speed, lateral_speed=.3
     delta=np.asarray(delta,dtype=float)
     tangent=np.array([-direction[1],direction[0]])
     lateral=float(np.dot(delta,tangent))
-    if abs(lateral)>lateral_tolerance:
+    if axis not in [None,'lateral','longitudinal']:raise ValueError('Unknown contact correction axis')
+    if axis=='lateral' or (axis is None and abs(lateral)>lateral_tolerance):
         return lateral_speed*np.sign(lateral)*tangent
     longitudinal=float(np.dot(delta,direction))
     speed=forward_speed if longitudinal>=0 else max(forward_speed,.35)
     return speed*np.sign(longitudinal)*direction
+
+
+def contact_axis_delta(delta,direction,axis):
+    """Distance remaining along the axis actually commanded to the gait."""
+    direction=np.asarray(direction,float);direction/=np.linalg.norm(direction)
+    if axis=='lateral':unit=np.array([-direction[1],direction[0]])
+    elif axis=='longitudinal':unit=direction
+    else:raise ValueError('Contact braking requires a translation axis')
+    return unit*float(np.dot(np.asarray(delta,float),unit))
 
 
 def contact_braking_required(delta, velocity, horizon=1.0, stop_margin=.025):
@@ -152,13 +162,18 @@ class ContactAlignmentGate:
         self.axis=None
         self.motion_mode=None
         self.settle_until=-1
+        self.settling=False
 
-    def settling_required(self,mode,step,settle_ticks=100):
+    def settling_required(self,mode,step,settle_ticks=100,measured_speed=None):
         """Brake once on a mode change, without interrupting every yaw tick."""
         if mode!=self.motion_mode:
             self.motion_mode=mode
             self.settle_until=step+settle_ticks
-        return step<self.settle_until
+            self.settling=True
+        if self.settling:
+            if step<self.settle_until or (measured_speed is not None and measured_speed>=.08):return True
+            self.settling=False
+        return False
 
     def select(self,lateral_error,yaw_error,yaw_tolerance):
         lateral=abs(float(lateral_error));yaw=abs(float(yaw_error))

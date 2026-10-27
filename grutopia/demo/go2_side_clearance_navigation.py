@@ -87,11 +87,12 @@ def main():
     from grutopia_extension.interactive_navigation.go2_exploration_tracking import ExplorationPathTracker as Go2VelocityPathTracker
     from grutopia_extension.interactive_navigation.go2_exploration_tracking import decision_buffer_recovery
     from grutopia_extension.interactive_navigation.go2_contact_control import (
-        nose_aligned_body_target,approach_alignment_ready,contact_centering_velocity,contact_braking_required,contact_pose_ready,safe_contact_retreat,observed_contact_retreat,push_centerline_velocity,push_completion_state,ContactAlignmentGate,CONTACT_BRAKING_HORIZON_S)
+        nose_aligned_body_target,approach_alignment_ready,contact_centering_velocity,contact_axis_delta,contact_braking_required,contact_pose_ready,safe_contact_retreat,observed_contact_retreat,push_centerline_velocity,push_completion_state,ContactAlignmentGate,CONTACT_BRAKING_HORIZON_S)
     from grutopia_extension.interactive_navigation.go2_voronoi_navigation import (
         ExplorationVoronoiRoutes,ForwardExplorationPathTracker,update_task_cameras,body_rotation_clear,body_motion_clear,navigation_body_blocked,body_translation_recovery_clear)
     from grutopia_extension.interactive_navigation.layered_navigation_map import LayeredNavigationMap
     from grutopia_extension.interactive_navigation.go2_rollout_health import Go2RolloutHealth
+    from grutopia_extension.interactive_navigation.go2_passage_confirmation import observed_passage_routes
     from grutopia_extension.interactive_navigation.online_navigation_map import OnlineNavigationMap
     from grutopia_extension.interactive_navigation.online_navigation_decision import OnlineGoalSelector
     from grutopia_extension.interactive_navigation.smooth_go2_navigation import SmoothExplorationTracker,VelocitySlewLimiter,smooth_recovery_action
@@ -178,6 +179,7 @@ def main():
         'grutopia_extension/interactive_navigation/smooth_go2_navigation.py',
         'grutopia_extension/interactive_navigation/local_staging_control.py',
         'grutopia_extension/interactive_navigation/go2_turn_response.py',
+        'grutopia_extension/interactive_navigation/go2_passage_confirmation.py',
         'grutopia_extension/interactive_navigation/local_path_guidance.py',
         'grutopia_extension/interactive_navigation/local_turn_maneuver.py',
         'grutopia_extension/interactive_navigation/semantic_voronoi.py',
@@ -794,7 +796,6 @@ def main():
                     c,s=math.cos(heading),math.sin(heading)
                     body_velocity=robot._go2_locomotion_control.body_lin_vel[:2]
                     world_velocity=np.array([c*body_velocity[0]-s*body_velocity[1],s*body_velocity[0]+c*body_velocity[1]])
-                    brake=contact_braking_required(delta,world_velocity,horizon=CONTACT_BRAKING_HORIZON_S)
                     tangent=np.array([-direction[1],direction[0]])
                     nose=p[:2]+.33*np.array([math.cos(heading),math.sin(heading)])
                     contact_error=abs(float(np.dot(np.array(box.xy)-nose,tangent)))
@@ -802,7 +803,11 @@ def main():
                     alignment_axis=contact_alignment.select(contact_error,error,args.contact_yaw_tolerance)
                     ready=alignment_axis is None and contact_pose_ready(p,heading,box.xy,box.dimensions,direction,args.contact_front_gap,args.contact_yaw_tolerance)
                     motion_mode='hold' if ready else (alignment_axis or 'longitudinal')
-                    mode_settling=contact_alignment.settling_required(motion_mode,step)
+                    filtered_speed=(float(np.linalg.norm(smooth_limiter.measured[:2])) if smooth_limiter is not None else None)
+                    mode_settling=contact_alignment.settling_required(motion_mode,step,measured_speed=filtered_speed)
+                    brake=(contact_braking_required(contact_axis_delta(delta,direction,motion_mode),world_velocity,
+                                                   horizon=CONTACT_BRAKING_HORIZON_S)
+                           if motion_mode in ['lateral','longitudinal'] else False)
                     # A turning gait has oscillating COM linear velocity.
                     # Braking on every such sample repeatedly cancelled yaw.
                     # Settle on transitions, then finish the same yaw action;
@@ -823,7 +828,7 @@ def main():
                         action={'move_by_speed':[0.,0.,math.copysign(args.turn_speed,error)]}
                     else:
                         contact_stable_ticks=0
-                        v=contact_centering_velocity(delta,direction,args.contact_centering_speed)
+                        v=contact_centering_velocity(delta,direction,args.contact_centering_speed,axis=motion_mode)
                         action={'move_by_speed':[float(c*v[0]+s*v[1]),float(-s*v[0]+c*v[1]),0.]}
                     if step%200==0:event('contact_center_tracking',step=step,position=p.tolist(),target=center_target.tolist(),
                         position_error=centering_error,contact_offset=contact_error,heading_error=error,command=action['move_by_speed'],
@@ -841,10 +846,8 @@ def main():
                         confirmation_attempt=0
                         while True:
                             current=planning_boxes();box=next(b for b in current if b.id==plan.box_id)
-                            with layers.global_planning():
-                                route=planner.path(np.array(obs['position'][:2]),task['goal'],current)
-                                full=planner.path(task['start'],task['goal'],current)
-                            clear=planner.certify_cleared_passage(box,full,task['start'],current)
+                            clear,route,full=observed_passage_routes(layers,box,task['start'],task['goal'],
+                                np.array(obs['position'][:2]),current)
                             event('passage_check',step=step,clearance=clear,route_available=bool(route),full_route_available=bool(full),
                                   observation_attempt=confirmation_attempt,global_map_revision=layers.global_revision,local_map_revision=layers.local_revision)
                             if (clear and route and full) or not task_health.healthy:break
