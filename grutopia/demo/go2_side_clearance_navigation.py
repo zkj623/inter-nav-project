@@ -85,6 +85,7 @@ def main():
     if not .10<=args.contact_front_gap<=.45:raise ValueError('contact-front-gap must be within 0.10-0.45 m')
     args.output.mkdir(parents=True,exist_ok=True)
     if (args.output/'summary.json').exists():raise ValueError('Use a new output directory')
+    from grutopia_extension.interactive_navigation.go2_contact_turn import ContactTurnControl
     from grutopia_extension.interactive_navigation.box_push_navigation import BoxState
     from grutopia_extension.interactive_navigation.side_push_navigation import SidePushPlanner
     from grutopia_extension.interactive_navigation.go2_exploration_tracking import ExplorationPathTracker as Go2VelocityPathTracker
@@ -173,6 +174,7 @@ def main():
         'grutopia_extension/interactive_navigation/carton_materials.py',
         'grutopia_extension/interactive_navigation/go2_exploration_tracking.py',
         'grutopia_extension/interactive_navigation/go2_contact_control.py',
+        'grutopia_extension/interactive_navigation/go2_contact_turn.py',
         'grutopia_extension/interactive_navigation/go2_voronoi_navigation.py',
         'grutopia_extension/interactive_navigation/layered_navigation_map.py',
         'grutopia_extension/interactive_navigation/go2_rollout_health.py',
@@ -497,7 +499,7 @@ def main():
             last_route_replan=-100
             decision_recovery_tracker=None
             contact_pause_until=-1;contact_stable_ticks=0;push_lateral_velocity=0.
-            retreat_wait_since=None
+            retreat_wait_since=None;contact_turn=None
             contact_alignment=ContactAlignmentGate()
             attitude_recovery=NavigationAttitudeRecovery()
             for step in range(args.max_steps):
@@ -831,6 +833,24 @@ def main():
                     nose=p[:2]+.33*np.array([math.cos(heading),math.sin(heading)])
                     contact_error=abs(float(np.dot(np.array(box.xy)-nose,tangent)))
                     front_gap=float(np.dot(np.array(box.xy)-nose,direction)-extent)
+                    if smooth_limiter is not None and (abs(error)>.18 or contact_turn is not None):
+                        if contact_turn is None:
+                            contact_turn=ContactTurnControl(p[:2],heading,desired_heading,planner,current,planner.control_time)
+                            event('contact_turn_staging_begin',step=step,position=p.tolist(),heading_error=error)
+                        result=contact_turn.update(p[:2],heading,planner,current,smooth_limiter,planner.control_time)
+                        if contact_turn.failed:
+                            reason='no_observed_safe_contact_turn';break
+                        if result is None:
+                            contact_turn=None;contact_alignment=ContactAlignmentGate();phase_start=step
+                            action=stop;record_phase='contact_turn_settled'
+                            event('contact_turn_staging_end',step=step,position=p.tolist(),heading_error=error)
+                        else:
+                            command,detail=result;action={'move_by_speed':command.tolist()}
+                            record_phase='contact_'+detail['staging_phase']
+                            component.mapping._planned_path=(tuple(detail['target']),)
+                            last_tracking=detail
+                            if step%100==0:event('contact_turn_staging',step=step,position=p.tolist(),**detail)
+                        obs=tick(action);last_action=action;continue
                     alignment_axis=contact_alignment.select(contact_error,error,args.contact_yaw_tolerance)
                     ready=alignment_axis is None and contact_pose_ready(p,heading,box.xy,box.dimensions,direction,args.contact_front_gap,args.contact_yaw_tolerance)
                     motion_mode='hold' if ready else (alignment_axis or 'longitudinal')
