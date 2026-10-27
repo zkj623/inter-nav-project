@@ -40,6 +40,8 @@ def sensor(calibrated=True):
     source.config = load()['robot']
     if calibrated:
         source.config.update(ground_z=-.3, lidar_origin_offset_base_m=[.1, 0., .1])
+    else:
+        source.config.update(ground_z=None, lidar_origin_offset_base_m=None)
     source.lock = threading.Lock()
     source.pose_history = PoseHistory(.05)
     source.continuity = PoseContinuity(.5, .7)

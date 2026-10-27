@@ -12,9 +12,13 @@ front_video_topic: /frontvideostream
 rgb_topic: ""
 depth_topic: ""
 camera_info_topic: ""
-# Measure these before building a navigation map. Never assume odom Z=ground height.
-ground_z: null
-lidar_origin_offset_base_m: null  # measured [x, y, z] optical/range origin in base_link
+# This Go2, 2026-10-25: standing on level ground; height in upstream odom, metres.
+# Recheck ground_z after odom resets or the floor/reference changes.
+ground_z: -0.012
+# 2026-10-27: use the supplied official base->radar URDF at the user's direction.
+# Adopt base == base_link and radar origin == range origin for this robot.
+# URDF rpy=[0, 2.8782, 0]; incoming cloud is already in odom: do not rotate it again.
+lidar_origin_offset_base_m: [0.28945, 0.0, -0.046825]
 lidar_max_range: 8.0
 pose_cloud_tolerance_s: 0.05
 image_sync_tolerance_s: 0.04
@@ -22,11 +26,17 @@ max_data_age_s: 0.4
 max_position_jump_m: 0.5
 max_orientation_jump_rad: 0.7
 # Receipt alone does not establish calibration, filtering, DDS or motion readiness.
-calibration_verified: false
+# Acceptance basis: measured ground + user-accepted URDF frame correspondence.
+# This is not an independent physical survey or motion acceptance.
+calibration_verified: true
 deskew_and_self_filter_verified: false
 communication_verified: false
 remote_arbitration_verified: false
 # Button bit mask in wireless_remote bytes 2:4; choose after inspecting remote.
 takeover_button_mask: 0
 sport_state_topic: rt/sportmodestate
+# 2026-10-27: operator confirmed 100 permits motion on this Go2 (Agile state).
+# SportModeState.error_code is not the SportClient RPC return code.
+# Only these device-specific state values may pass the telemetry state check.
+sport_state_motion_codes: [100]
 low_state_topic: rt/lowstate

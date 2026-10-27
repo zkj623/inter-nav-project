@@ -23,7 +23,7 @@ from deploy.tests.make_fixture import make_fixture
 
 
 def test_default_configuration_cannot_enable_motion():
-    with pytest.raises(ValueError, match='calibration_verified'):
+    with pytest.raises(ValueError, match='deskew_and_self_filter_verified'):
         check_motion_configuration(load())
 
 

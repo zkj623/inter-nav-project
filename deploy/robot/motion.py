@@ -40,7 +40,10 @@ class UnitreeSport:
         if self.state is None or now-self.state_at > .5 or now-self.remote_at > .5:
             return False
         q = self.state.imu_state.quaternion
-        return (self.state.error_code == 0 and len(q) == 4 and all(math.isfinite(x) for x in q)
+        # This telemetry field can carry an FSM state (100 on this Go2),
+        # unlike the RPC return code. Missing/unknown states remain blocked.
+        return (self.state.error_code in self.robot.get('sport_state_motion_codes', ())
+                and len(q) == 4 and all(math.isfinite(x) for x in q)
                 and abs(sum(float(x)**2 for x in q)-1.) < .1
                 and all(math.isfinite(float(x)) for x in self.state.velocity)
                 and math.isfinite(float(self.state.yaw_speed))

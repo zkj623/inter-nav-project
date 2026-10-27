@@ -61,6 +61,11 @@ def load(directory=None):
         raise ValueError('lidar_origin_offset_base_m must be null or three finite metres')
     if robot['ground_z'] is not None and type(robot['ground_z']) not in (int, float):
         raise ValueError('ground_z must be null or a finite measured height')
+    if 'sport_state_motion_codes' in robot:
+        codes = robot['sport_state_motion_codes']
+        if (not isinstance(codes, list) or not codes
+                or not all(type(code) is int and 0 <= code <= 0xffffffff for code in codes)):
+            raise ValueError('sport_state_motion_codes must be a nonempty list of reviewed uint32 state values')
     return result
 
 
@@ -75,6 +80,8 @@ def check_motion_configuration(config):
         raise ValueError('Measure ground_z and lidar_origin_offset_base_m before enabling motion')
     if not 0 < int(robot['takeover_button_mask']) <= 65535:
         raise ValueError('Configure a verified takeover_button_mask')
+    if not robot.get('sport_state_motion_codes'):
+        raise ValueError('Configure sport_state_motion_codes for this robot before enabling motion')
 
 
 def check_task_inputs(robot, snapshot, exploring=False):
