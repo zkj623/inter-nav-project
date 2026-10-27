@@ -106,6 +106,10 @@ class TaskVideoRecorder(InteractionVideoRecorder):
             'movable_box_blocks_efficient_route':('Clearing opens a blocked route' if details.get('opens_connectivity') else 'Side push costs less than detour'),
             'no_feasible_push_use_detour':'No safe parking: use detour'}
         line(reasons.get(details.get('reason'),'Evaluating route and parking'),scale=.45)
+        execution=details.get('execution_state')
+        if execution=='side_parked_pending_observation':line('Parked: corridor observation pending',scale=.44)
+        elif execution=='confirming_after_release':line('Released: confirming the observed corridor',scale=.42)
+        elif execution=='observed_corridor_clear':line('Observed full-body corridor confirmed',(35,160,45),.43)
         line('Before: '+(distance(details['before_length_m']) if 'before_length_m' in details else 'not evaluated'),(20,120,230))
         if details.get('after_length_m') is not None:
             line('Predicted route: '+distance(details['after_length_m']),(35,160,45))

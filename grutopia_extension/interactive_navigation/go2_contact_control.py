@@ -137,6 +137,15 @@ def push_centerline_velocity(direction, forward_speed, lateral_error, lateral_ve
     return forward_speed*direction+correction*tangent
 
 
+def push_completion_state(certificate, clearance, moved_along, online):
+    """Stop force at safe side parking; sensor confirmation follows release."""
+    if certificate:return 'observed_corridor_clear'
+    if (online and moved_along>.25 and clearance.get('side_parked',False)
+            and clearance.get('passage_clearance_margin_m',-1.)>=.025):
+        return 'side_parked_pending_observation'
+    return None
+
+
 class ContactAlignmentGate:
     """Finish one correction with hysteresis before switching correction axes."""
     def __init__(self):

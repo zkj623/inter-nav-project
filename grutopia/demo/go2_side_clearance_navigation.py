@@ -87,7 +87,7 @@ def main():
     from grutopia_extension.interactive_navigation.go2_exploration_tracking import ExplorationPathTracker as Go2VelocityPathTracker
     from grutopia_extension.interactive_navigation.go2_exploration_tracking import decision_buffer_recovery
     from grutopia_extension.interactive_navigation.go2_contact_control import (
-        nose_aligned_body_target,approach_alignment_ready,contact_centering_velocity,contact_braking_required,contact_pose_ready,safe_contact_retreat,observed_contact_retreat,push_centerline_velocity,ContactAlignmentGate,CONTACT_BRAKING_HORIZON_S)
+        nose_aligned_body_target,approach_alignment_ready,contact_centering_velocity,contact_braking_required,contact_pose_ready,safe_contact_retreat,observed_contact_retreat,push_centerline_velocity,push_completion_state,ContactAlignmentGate,CONTACT_BRAKING_HORIZON_S)
     from grutopia_extension.interactive_navigation.go2_voronoi_navigation import (
         ExplorationVoronoiRoutes,ForwardExplorationPathTracker,update_task_cameras,body_rotation_clear,body_motion_clear,navigation_body_blocked,body_translation_recovery_clear)
     from grutopia_extension.interactive_navigation.layered_navigation_map import LayeredNavigationMap
@@ -699,12 +699,15 @@ def main():
                             release_route=planner.path(release,task['goal'],current) if full_route else ()
                         if release_route:
                             certificate=planner.certify_cleared_passage(box,full_route,task['start'],current)
-                    if certificate:
-                        layers.refresh_global(current,reason='side_push_cleared_passage')
+                    completion=push_completion_state(certificate,clearance,along,args.map_source=='online')
+                    if completion:
+                        layers.refresh_global(current,reason='side_push_cleared_passage' if certificate else 'side_push_parked_pending_observation')
                         phase='release';phase_start=step;release_start=p[:2].copy();action=stop
                         passage_certificate=certificate
-                        event('side_push_end',step=step,box_id=box.id,position=list(box.xy),clearance=certificate,
-                              nominal_center_clearance=clearance,actual_push_distance_m=along)
+                        layers.decision={**(layers.decision or {}),'execution_state':completion}
+                        event('side_push_end',step=step,box_id=box.id,position=list(box.xy),
+                              clearance=certificate or {**clearance,'completion_rule':completion,'corridor_confirmed':False},
+                              completion_state=completion,nominal_center_clearance=clearance,actual_push_distance_m=along)
                     else:
                         desired_heading=math.atan2(direction[1],direction[0]);error=angle(desired_heading-heading)
                         tangent=np.array([-direction[1],direction[0]])
@@ -832,6 +835,7 @@ def main():
                     if backed>=.45:
                         for _ in range(120):obs=tick(stop)
                         record_phase='verify_cleared_passage'
+                        layers.decision={**(layers.decision or {}),'execution_state':'confirming_after_release'}
                         confirmation_deadline=float(robot._go2_locomotion_control._simulation_time())+3.
                         layers.refresh_global(reason='released_box_revalidation')
                         confirmation_attempt=0
@@ -850,6 +854,7 @@ def main():
                         if not task_health.healthy:reason='robot_unstable';break
                         if not clear or not route or not full:reason='side_passage_not_clear';break
                         passage_certificate=clear
+                        layers.decision={**(layers.decision or {}),'execution_state':'observed_corridor_clear'}
                         completed_box=box.id
                         if args.path_controller=='continuous':
                             layers.refresh_global(reason='released_box_replan')
