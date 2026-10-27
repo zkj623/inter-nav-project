@@ -167,9 +167,33 @@ class ForwardExplorationPathTracker(ExplorationPathTracker):
         self._heading_recovery=False
         self._local_turn_ticks=0;self._local_turn_sign=0.
         self._corner_maneuver=None
+        self._buffer_turn_target=None
+        self._buffer_turn_blocked_since=None
 
     def action(self,position,heading,planner,boxes):
         planner.robot_heading=heading
+        if self._buffer_turn_target is not None:
+            # Once recovery starts a turn, a newly feasible translation is
+            # not a reason to cancel it. Cell rounding used to alternate yaw
+            # and backing about ten times per second, before the gait moved.
+            now=float(getattr(planner,'control_time',0.))
+            error=(self._buffer_turn_target-heading+math.pi)%(2*math.pi)-math.pi
+            state={'target':list(map(float,position[:2])), 'recovering_buffer':True,
+                   'needs_replan':False,'controller':'latched_body_recovery_turn',
+                   'target_heading_rad':self._buffer_turn_target}
+            if abs(error)<.05:
+                self._buffer_turn_target=None;self._turn_ramp_ticks=0
+                return {'move_by_speed':[0.,0.,0.]},{**state,'needs_replan':True}
+            if not turn_reduces_overlap(planner,boxes,position,heading,heading+error):
+                if self._buffer_turn_blocked_since is None:self._buffer_turn_blocked_since=now
+                retry=now-self._buffer_turn_blocked_since>1.
+                if retry:self._buffer_turn_target=None
+                return {'move_by_speed':[0.,0.,0.]},{**state,'needs_replan':retry,
+                    'controller':'recovery_turn_observation_hold'}
+            self._buffer_turn_blocked_since=None
+            rotation=math.copysign(min(.8,.4+.01*self._turn_ramp_ticks),error)
+            self._turn_ramp_ticks+=1
+            return {'move_by_speed':[0.,0.,rotation]},state
         if self._corner_maneuver is not None:
             result=self._corner_maneuver.action(position,heading,planner,boxes)
             if result is not None:
@@ -246,9 +270,12 @@ class ForwardExplorationPathTracker(ExplorationPathTracker):
                             if sign!=self._turn_ramp_sign:self._turn_ramp_ticks=0
                             self._turn_ramp_sign=sign
                             rotation=sign*min(.8,.4+.01*self._turn_ramp_ticks);self._turn_ramp_ticks+=1
+                            self._buffer_turn_target=heading+delta
+                            self._buffer_turn_blocked_since=None
                             self._buffer_target=None;self._buffer_active=False
                             return {'move_by_speed':[0.,0.,rotation]},{'target':list(map(float,position[:2])),
-                                'recovering_buffer':True,'needs_replan':False,'controller':'body_safe_recovery_turn'}
+                                'recovering_buffer':True,'needs_replan':False,'controller':'body_safe_recovery_turn',
+                                'target_heading_rad':self._buffer_turn_target}
                     return {'move_by_speed':[0.,0.,0.]},{'target':list(map(float,position[:2])),
                         'recovering_buffer':True,'needs_replan':True,'controller':'no_body_safe_buffer_exit'}
                 self._buffer_target=target
