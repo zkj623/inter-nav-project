@@ -449,8 +449,10 @@ def main():
                         recovery=decision_recovery_tracker.action(p[:2],heading,planner,current)
                     else:decision_recovery_tracker=None
                     if recovery is None and args.roadmap_shape=='circle':
+                        local_motion_free=planner.free.copy()
                         with layers.global_planning() as global_boxes:
-                            attachment=decision_buffer_recovery(p[:2],heading,planner,global_boxes,task['goal'],heading)
+                            attachment=decision_buffer_recovery(p[:2],heading,planner,global_boxes,task['goal'],heading,
+                                local_free=local_motion_free,local_boxes=current)
                         if attachment is not None:
                             command=attachment[0]['move_by_speed']
                             if body_motion_clear(planner,current,p[:2],heading,command[0],command[2],horizon=.5,lateral=command[1]):
@@ -468,6 +470,7 @@ def main():
                         decision=planner.decide(p[:2],task['goal'],global_boxes)
                     layers.decision=decision.explanation
                     event('decision',step=step,kind=decision.kind,reason=decision.reason,
+                          position=p.tolist(),orientation=q.tolist(),
                           plan=vars(decision.push) if decision.push else None,explanation=decision.explanation,
                           global_map_revision=layers.global_revision,local_map_revision=layers.local_revision)
                     if decision.kind=='failed':reason=decision.reason;break
@@ -518,7 +521,8 @@ def main():
                                 tracker=ordinary_tracker(p[:2],replanned,nav_heading)
                                 action,tracking=tracker.action(p[:2],heading,planner,current)
                                 event('path_replanned_from_actual_pose',step=step,map_scope='local_dynamic',
-                                      global_map_revision=layers.global_revision,local_map_revision=layers.local_revision)
+                                      global_map_revision=layers.global_revision,local_map_revision=layers.local_revision,
+                                      position=p.tolist(),orientation=q.tolist(),path=[list(map(float,point)) for point in replanned])
                             elif layers.global_revision!=getattr(layers,'guidance_revision',layers.global_revision):
                                 phase='decide';action=stop
                                 event('global_replan_after_local_block',step=step,global_map_revision=layers.global_revision)

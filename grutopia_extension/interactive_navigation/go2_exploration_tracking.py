@@ -7,8 +7,13 @@ from grutopia_extension.interactive_navigation.mapping import AStarMapPlanner
 from grutopia_extension.interactive_navigation.state_machine import StateMachineDecision,InteractionState,ControllerCommand
 
 
-def decision_buffer_recovery(position,heading,planner,boxes,goal,fixed_heading):
+def decision_buffer_recovery(position,heading,planner,boxes,goal,fixed_heading,*,local_free=None,local_boxes=None):
     """Exit a footprint buffer before a new decision declares the route blocked."""
+    if (getattr(planner,'layered_local_control',False) and
+            getattr(planner,'planning_scope','local')=='global' and
+            getattr(planner,'navigation_pose_heading',None) is None):
+        return _body_safe_global_buffer_exit(position,heading,planner,boxes,goal,
+            local_free=local_free,local_boxes=local_boxes)
     cell=planner.cell(position)
     raw_free=planner.free.copy()
     for box in boxes:raw_free &= ~planner.box_mask(box)
@@ -27,6 +32,77 @@ def decision_buffer_recovery(position,heading,planner,boxes,goal,fixed_heading):
     command[:2]=[float(v*.25/norm) for v in command[:2]]
     state['controller']='original_buffer_exit_direction_with_gait_staging_speed'
     return action,state
+
+
+def _body_safe_global_buffer_exit(position,heading,planner,boxes,goal,*,local_free=None,local_boxes=None):
+    """Connect an oriented local pose to a usable circular global-plan seed.
+
+    The nearest global free point can require dragging a paw through another
+    obstacle. Search alternatives, check their whole local-body connections,
+    and keep a valid selected target until the global buffer has been left.
+    """
+    from grutopia_extension.interactive_navigation.go2_voronoi_navigation import (
+        body_motion_clear,body_translation_recovery_clear)
+    position=np.asarray(position[:2],float);goal_key=tuple(map(float,goal[:2]))
+    cell=planner.cell(position);global_free=planner.free
+    raw=global_free.copy()
+    for box in boxes:raw &= ~planner.box_mask(box)
+    if not planner.valid_cell(cell) or not raw[cell]:
+        planner._global_buffer_exit=None
+        return None
+    blocked=planner.blocked(boxes)
+    if not blocked[cell]:
+        planner._global_buffer_exit=None
+        return None
+    clearance=distance_transform_edt(~blocked)*planner.resolution
+    motion_free=global_free if local_free is None else local_free
+    motion_boxes=boxes if local_boxes is None else local_boxes
+    c,s=np.cos(heading),np.sin(heading)
+
+    def safe_command(target):
+        target=np.asarray(target,float);delta=target-position
+        distance=float(np.linalg.norm(delta));rc=planner.cell(target)
+        if (distance<1e-6 or distance>1.05 or not planner.valid_cell(rc) or
+                clearance[rc]<planner.resolution-1e-9):return None
+        world=.25*delta/distance
+        command=[float(c*world[0]+s*world[1]),float(-s*world[0]+c*world[1]),0.]
+        saved=planner.free;planner.free=motion_free
+        try:
+            if not body_translation_recovery_clear(planner,motion_boxes,position,heading,target):return None
+            if not body_motion_clear(planner,motion_boxes,position,heading,command[0],0.,
+                    lateral=command[1],horizon=.5):return None
+        finally:planner.free=saved
+        return command
+
+    cached=getattr(planner,'_global_buffer_exit',None)
+    if cached is not None and cached['goal']==goal_key:
+        command=safe_command(cached['target'])
+        if command is not None:
+            return {'move_by_speed':command},{'target':list(cached['target']),
+                'recovering_buffer':True,'needs_replan':False,'controller':'body_safe_global_buffer_exit',
+                'reused_exit_target':True}
+    planner._global_buffer_exit=None
+    candidates=[]
+    for angle in np.linspace(-np.pi,np.pi,32,endpoint=False):
+        unit=np.array([np.cos(angle),np.sin(angle)])
+        for distance in [.10,.15,.20,.30,.45,.60,.80,1.0]:
+            target=position+distance*unit;command=safe_command(target)
+            if command is None:continue
+            score=distance+float(np.linalg.norm(target-np.asarray(goal[:2])))
+            candidates.append((score,distance,target,command))
+    candidates.sort(key=lambda r:r[:2])
+    # Check the best geometric candidates until one connects, rather than
+    # solving an entire global route for every candidate on every selection.
+    for omit_boxes in [False,True]:
+        for _,_,target,command in candidates:
+            # A box may still require interaction after the buffer exit.
+            # Every motion check above included the real current boxes.
+            if not planner.path(target,goal,[] if omit_boxes else boxes):continue
+            planner._global_buffer_exit={'goal':goal_key,'target':tuple(map(float,target))}
+            return {'move_by_speed':command},{'target':target.tolist(),'recovering_buffer':True,
+                'needs_replan':False,'controller':'body_safe_global_buffer_exit','reused_exit_target':False,
+                'safe_exit_candidates':len(candidates)}
+    return None
 
 
 class ExplorationPathTracker:
