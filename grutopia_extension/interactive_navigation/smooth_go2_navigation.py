@@ -138,9 +138,26 @@ class SmoothExplorationTracker(ExplorationPathTracker):
             self.limiter.progress_position=np.asarray(position[:2]).copy();self.limiter.progress_time=now
         stalled=now-self.limiter.progress_time>1.5
         target_heading=heading+error
-        if (not self.staging_active and stalled and not state.get('recovering_buffer') and abs(error)>.25
+        corner_heading=None
+        index=self._waypoint_index
+        if stalled and index+1<len(self._planned_path):
+            corner=np.asarray(self._planned_path[index]);following=np.asarray(self._planned_path[index+1])
+            to_corner=corner-np.asarray(position[:2]);segment=following-corner
+            approach_error=(math.atan2(to_corner[1],to_corner[0])-heading+math.pi)%(2*math.pi)-math.pi
+            future_heading=math.atan2(segment[1],segment[0])
+            future_error=(future_heading-heading+math.pi)%(2*math.pi)-math.pi
+            if (np.linalg.norm(to_corner)<.28 and np.linalg.norm(segment)>.08
+                    and abs(approach_error)<.35 and abs(future_error)>.35):
+                # A short fallback carrot can point straight at the near
+                # waypoint while the body must turn for the outgoing segment.
+                # Use that route tangent for a checked turn, never for an
+                # unchecked shortcut across the corner.
+                corner_heading=future_heading;target_heading=heading+future_error
+                state['blocked_corner_heading_rad']=float(future_heading)
+        stage_error=(target_heading-heading+math.pi)%(2*math.pi)-math.pi
+        if (not self.staging_active and stalled and (not state.get('recovering_buffer') or corner_heading is not None) and abs(stage_error)>.25
                 and np.linalg.norm(self.limiter.measured[:2])<.08
-                and not body_rotation_clear(planner,boxes,position,heading,target_heading,margin=.025)):
+                and (corner_heading is not None or not body_rotation_clear(planner,boxes,position,heading,target_heading,margin=.025))):
             candidate=LocalStagingControl(position,heading,target_heading,planner,boxes,now)
             if not candidate.failed:self.limiter.staging=candidate
         staging_command=None

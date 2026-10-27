@@ -8,6 +8,18 @@ from grutopia_extension.interactive_navigation.local_staging_control import Loca
 
 
 class SmoothControlTests(unittest.TestCase):
+    def test_stalled_short_carrot_aligns_to_the_outgoing_corner_segment(self):
+        p=self.corner();p.free[:]=True;p.control_time=2.
+        x=-2.5+(np.arange(201)+.5)*p.resolution;xx,yy=np.meshgrid(x,x)
+        p.free[((xx-1.20)**2+(yy-.10)**2<=.13**2)|((xx>=-.6)&(xx<=.6)&(yy>=-.9)&(yy<=-.3))]=False
+        start=np.array([.55,0.])
+        limiter=VelocitySlewLimiter();limiter.accept([0,0,0],1.99)
+        limiter.progress_position=start.copy();limiter.progress_time=0.
+        tracker=SmoothExplorationTracker(start,[[.75,0],[1.15,-.75],[1.9,-1.5]],limiter)
+        action,state=tracker.action(start,0,p,[])
+        self.assertTrue(state['local_staging'])
+        self.assertAlmostEqual(state['target_heading_rad'],np.arctan2(-.75,.4))
+        self.assertTrue(body_translation_recovery_clear(p,[],start,0,limiter.staging.target))
     def test_staging_completion_replans_before_resuming_the_old_carrot(self):
         from types import SimpleNamespace
         p=SidePushPlanner(np.ones((120,120),bool),[[-3,3],[-3,3]],resolution=.05)
