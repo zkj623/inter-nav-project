@@ -11,9 +11,10 @@ a text target such as `refrigerator` and walks up to the scanned object.
 ## Go2 可交互箱子场景导航
 
 原尺寸 MV7 中的点到点导航、交互决策和侧推清路入口为 `grutopia/demo/go2_side_clearance_navigation.py`。
-以下命令在本实验室服务器上运行 T05 并保存完整视频；在 `codex/go2-dynamic-interaction-20261026` 分支的仓库根目录执行，GPU 编号按空闲情况修改。
+以下命令在本实验室服务器上按已验证的 v19 源码运行 T05 并保存完整视频；在仓库根目录执行，GPU 编号按空闲情况修改。实验分支 `codex/go2-dynamic-interaction-20261026` 保存相关提交；复现请使用下方列出的确切源码版本。
 
 ```bash
+git switch --detach e028847
 source /data20t/embodied/share/inter-nav/env.sh
 export MALLOC_ARENA_MAX=2
 
@@ -38,13 +39,16 @@ set -o pipefail
   --output "$go2_out" 2>&1 | tee "${go2_out}.log"
 ```
 
-只跑两组推箱任务时将 `--task-ids T05` 改为 `--task-ids T04,T05`；全部五组使用 `--task-ids T01,T02,T03,T04,T05`。
+`--task-ids` 支持逗号分隔的列表；但本轮五组成功录像采用下述两套源码/配置，不能将某一套参数直接标作五组统一验证通过。
 输出目录的 `T05/video/combined.mp4` 是完整四画面录像，`third_person.mp4` 为随狗朝向转动、狗头朝上的正上方视角；各组任务独立保存 25 fps 视频。
 
 地图使用 1 Hz 全局规划层和 10 Hz 局部动态层。箱子位移后清除其旧占据，保留墙体和其他物体；清路完成会立即刷新全局路线。录像地图同时显示推箱原因、侧停方向、预测路径收益和局部碰撞图。设计与限制见 [分层交互导航说明](docs/go2_layered_navigation.md)。
 
-本轮 **T04 和 T05 已使用同一版 v19 代码完成原始起终点任务**：停稳后终点误差分别为 0.124 m 和 0.086 m，完整机身穿门，全部导航、地图、健康及录像审计通过。每组五路完整录像为 25 fps，T04 各 3820 帧、T05 各 2215 帧。v19 普通回归中 T01、T03 已完成，T02 在急转弯时失稳；v20 停车转向未解决失稳且已回退，v21 重规划衔接失败、v22 再次失稳；v23 加入可选导航倾角恢复后，T02 原始起终点快速物理验证通过，五组完整录像复测中；详见 [本轮正式结果](HANDOFF.md#go2-layered-results)。请查看每组 `result.json` 的 `success`/`reason`、终点误差与 `rollout_health`。启动时换过起点的 `calibration_only` 结果不能作为原任务成功记录。完整材质场景占用较多内存，同一时间只启动一个仿真进程。`--task-ids` 列表会在同一场景中逐组复位机器人、全部箱子和地图，并各自保存录像。
-当前 v23 验证配置将上面命令的 `--path-controller pure` 替换为 `--path-controller guarded --navigation-attitude-recovery`。新保护在导航倾角达到 18° 时请求原 policy 停步，待连续位姿稳定后按实际位置重规划；原 30° 失稳阈值仍逐 tick 检查。T02 简化材质、无录像的原起终点快速验证为 5906 步、误差 0.135690 m、最大倾角 20.2546°、两次恢复后到达，不能替代正式视频。`full-layered-v23-all` 正在同一份代码下录制五组；326 项自动测试通过，1 项既有 G1 依赖测试未运行。尚不能宣称五组完整录像统一通过。
+已整理五组**个体审计通过**的原始任务完整录像：T01/T03/T04/T05 使用 `e028847` + `pure`，T02 使用 `f7e33cf` + `guarded --navigation-attitude-recovery`。T04/T05 完整机身穿门并到达原目标，停稳误差分别为 0.124 m、0.086 m；T02 正式完整材质录像为 5400 步、误差 0.167428 m，五路视频各 1132 帧、25 fps。全部25段选定视频均已逐帧解码并保存于 E 盘。具体路径、版本及限制见 [五组已验证录像](docs/go2_verified_runs.md) 和 [HANDOFF 结果](HANDOFF.md#go2-layered-results)。
+
+这不是同一配置五组统一通过：v23 的 T01 在第 3867 步失稳；T02 完成后已停止该统一试验，T03/T04/T05 的该批次记录为 `stop_requested`，不选作交付结果。T02 正式运行全程健康，但最高倾角 29.929° 接近 30° 阈值；新配置尚未证明普遍稳定，四组继续采用已验证的 v19 录像与配置。箱子身份/尺寸/位姿由仿真提供。
+
+复现 T02 时，将上方命令的源码版本 `e028847` 改为 `f7e33cf`，`--task-ids T05` 改为 `--task-ids T02`，并将 `--path-controller pure` 改为 `--path-controller guarded --navigation-attitude-recovery`。源码快照逐文件哈希已核对到这两个提交。当前代码自动测试为 326 passed、1 deselected；未运行的一项 G1 测试依赖本分支不含的人形配置。
 
 外部场景、布局/碰撞数据及模型需要服务器共享环境，详情、五组起终点和已知失败阶段见 [HANDOFF：Go2 可交互箱子导航](HANDOFF.md#go2-interactive-navigation)。
 
