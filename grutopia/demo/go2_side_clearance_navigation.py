@@ -34,6 +34,8 @@ def main():
     parser.add_argument('--route-planner',choices=['voronoi','grid'],default='voronoi')
     parser.add_argument('--navigation-heading',choices=['path','fixed'],default='path')
     parser.add_argument('--path-controller',choices=['pure','guarded'],default='pure')
+    parser.add_argument('--navigation-attitude-recovery',action='store_true',
+                        help='Stop on rising navigation tilt, settle with the original policy, then replan')
     parser.add_argument('--route-clearance',type=float,default=.30)
     parser.add_argument('--roadmap-shape',choices=['circle','footprint'],default='circle')
     parser.add_argument('--navigation-half-width',type=float,default=.22)
@@ -89,6 +91,7 @@ def main():
         ExplorationVoronoiRoutes,ForwardExplorationPathTracker,update_task_cameras,body_rotation_clear,body_motion_clear,navigation_body_blocked,body_translation_recovery_clear)
     from grutopia_extension.interactive_navigation.layered_navigation_map import LayeredNavigationMap
     from grutopia_extension.interactive_navigation.go2_rollout_health import Go2RolloutHealth
+    from grutopia_extension.interactive_navigation.go2_attitude_recovery import NavigationAttitudeRecovery
     from grutopia_extension.interactive_navigation.local_path_guidance import local_guidance_path
     from scipy.ndimage import distance_transform_edt
     from grutopia.demo.go2_semantic_exploration import build_grscene_floor
@@ -149,6 +152,7 @@ def main():
         'grutopia_extension/interactive_navigation/go2_voronoi_navigation.py',
         'grutopia_extension/interactive_navigation/layered_navigation_map.py',
         'grutopia_extension/interactive_navigation/go2_rollout_health.py',
+        'grutopia_extension/interactive_navigation/go2_attitude_recovery.py',
         'grutopia_extension/interactive_navigation/local_path_guidance.py',
         'grutopia_extension/interactive_navigation/local_turn_maneuver.py',
         'grutopia_extension/interactive_navigation/semantic_voronoi.py',
@@ -240,6 +244,7 @@ def main():
                 'third_person_orientation':'dog forward up, actual yaw following',
                 'route_planner':args.route_planner,'navigation_heading':args.navigation_heading,
                 'path_controller':args.path_controller,
+                'navigation_attitude_recovery':args.navigation_attitude_recovery,
                 'route_clearance_m':args.route_clearance,
                 'roadmap_shape':args.roadmap_shape,
                 'navigation_half_width_m':args.navigation_half_width,
@@ -384,6 +389,7 @@ def main():
             decision_recovery_tracker=None
             contact_pause_until=-1;contact_stable_ticks=0;push_lateral_velocity=0.
             contact_alignment=ContactAlignmentGate()
+            attitude_recovery=NavigationAttitudeRecovery()
             for step in range(args.max_steps):
                 iteration_tracking=None
                 if (args.output/'STOP').exists():reason='stop_requested';break
@@ -423,6 +429,25 @@ def main():
                 if step%20==0:samples.append({'step':step,'phase':phase,'robot':p.tolist(),'orientation':q.tolist(),
                     'boxes':{b.id:list(b.xy) for b in current},'previous_action':last_action,'previous_tracking':last_tracking})
                 if p[2]<floor_top+.20 or tilt>30 or not task_health.healthy:reason='robot_unstable';break
+                if args.navigation_attitude_recovery:
+                    recovery=attitude_recovery.update(p,q,
+                        enabled=phase in ['navigate','approach','decide','cross_passage'])
+                    if recovery['started']:
+                        event('navigation_attitude_recovery_begin',step=step,phase=phase,
+                              position=p.tolist(),**recovery)
+                    if recovery['state']=='failed':
+                        event('navigation_attitude_recovery_failed',step=step,position=p.tolist(),**recovery)
+                        reason='navigation_attitude_recovery_timeout';break
+                    if recovery['state']=='hold':
+                        record_phase='navigation_attitude_recovery'
+                        obs=tick(stop);last_action=stop;last_tracking=recovery;continue
+                    if recovery['state']=='released':
+                        event('navigation_attitude_recovery_end',step=step,position=p.tolist(),**recovery)
+                        # Gait settling can drift. Replan on the latest maps
+                        # instead of continuing a stale local turning target.
+                        phase='decide';phase_start=step;tracker=None
+                        decision_recovery_tracker=None;decision_recovery_start=None
+                        obs=tick(stop);last_action=stop;last_tracking=recovery;continue
                 planner.robot_heading=None
                 crossed=completed_box is None or crossed_passage(p,q,completed_box)
                 if distance<.20 and crossed and phase in ['navigate','decide','cross_passage'] and not planner.blocked(current)[planner.cell(task['goal'])]:
@@ -783,6 +808,7 @@ def main():
                 'final_orientation':final_q.tolist(),'final_tilt_degrees':final_tilt,
                 'maximum_tilt_degrees':max(maximum_tilt,task_health.max_tilt),'wall_seconds':time.time()-start_time,
                 'rollout_health':task_health.report(),
+                'navigation_attitude_recovery':{'enabled':args.navigation_attitude_recovery,**attitude_recovery.report()},
                 'contact_realignments':realign_count,
                 'actual_path_length_m':float(sum(np.linalg.norm(np.array(b['robot'][:2])-a['robot'][:2]) for a,b in zip(samples,samples[1:]))),
                 'final_boxes':[vars(b) for b in box_states()],'final_box_heights':box_height_states(),
