@@ -77,6 +77,7 @@ class Go2NavigationRunConfig:
     use_fabric: bool = False
     material_mode: str | None = None
     lidar_max_range: float = 8.0
+    lidar_resolution: tuple[float, float] = (2.0, 5.0)
 
     def __post_init__(self):
         if self.material_mode not in (None, 'original', 'preview', 'simple'):
@@ -97,6 +98,8 @@ class Go2NavigationRunConfig:
             raise ValueError('robot_usd_path cannot be empty')
         if self.lidar_max_range <= 0.25:
             raise ValueError('lidar_max_range must exceed 0.25 m')
+        if len(self.lidar_resolution) != 2 or not all(math.isfinite(v) and v > 0 for v in self.lidar_resolution):
+            raise ValueError('lidar_resolution must contain two positive finite angles')
 
 
 @dataclass(frozen=True)
@@ -177,6 +180,7 @@ def build_go2_navigation_config(
                 prim_path='base/MappingLidar',
                 translation=(0.24, 0.0, 0.10),
                 fov=(360.0, 40.0),
+                resolution=run.lidar_resolution,
                 valid_range=(0.25, run.lidar_max_range),
             ),
         ],

@@ -15,7 +15,7 @@ class LocalTurnManeuver:
         self.ticks=0;self.max_ticks=max_ticks;self.turn_ticks=0;self.turn_sign=0.
         self.origin=None;self.failed=False
 
-    def _select_stage(self,planner,boxes,position,heading):
+    def _select_stage(self,planner,boxes,position,heading,require_stepping_arc=False):
         c,s=math.cos(heading),math.sin(heading)
         last_heading=heading+wrap(self.goal_heading-heading)
         choices=[]
@@ -30,6 +30,9 @@ class LocalTurnManeuver:
             for _,target in choices:
                 cell=planner.cell(target)
                 if not planner.valid_cell(cell):continue
+                if require_stepping_arc:
+                    from grutopia_extension.interactive_navigation.go2_turn_response import stepping_arc_clear
+                    if not stepping_arc_clear(planner,boxes,target,heading,math.copysign(1.,last_heading-heading)):continue
                 if (body_rotation_clear(planner,boxes,target,heading,last_heading,margin=margin)
                         and body_translation_recovery_clear(planner,boxes,position,heading,target)):
                     self.stage_margin=margin

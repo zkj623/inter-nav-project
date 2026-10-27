@@ -33,8 +33,8 @@ def main():
                         help='Auxiliary collision-floor top in world metres (default: 1 cm)')
     parser.add_argument('--route-planner',choices=['voronoi','grid'],default='voronoi')
     parser.add_argument('--navigation-heading',choices=['path','fixed'],default='path')
-    parser.add_argument('--path-controller',choices=['pure','guarded','continuous'],default='pure')
-    parser.add_argument('--map-source',choices=['prior','online'],default='prior')
+    parser.add_argument('--path-controller',choices=['pure','guarded','continuous'],default='continuous')
+    parser.add_argument('--map-source',choices=['prior','online'],default='online')
     parser.add_argument('--navigation-attitude-recovery',action='store_true',
                         help='Stop on rising navigation tilt, settle with the original policy, then replan')
     parser.add_argument('--route-clearance',type=float,default=.30)
@@ -94,7 +94,7 @@ def main():
     from grutopia_extension.interactive_navigation.go2_rollout_health import Go2RolloutHealth
     from grutopia_extension.interactive_navigation.online_navigation_map import OnlineNavigationMap
     from grutopia_extension.interactive_navigation.online_navigation_decision import OnlineGoalSelector
-    from grutopia_extension.interactive_navigation.smooth_go2_navigation import SmoothExplorationTracker,VelocitySlewLimiter
+    from grutopia_extension.interactive_navigation.smooth_go2_navigation import SmoothExplorationTracker,VelocitySlewLimiter,smooth_recovery_action
     from grutopia_extension.interactive_navigation.go2_attitude_recovery import NavigationAttitudeRecovery
     from grutopia_extension.interactive_navigation.local_path_guidance import local_guidance_path
     from scipy.ndimage import distance_transform_edt
@@ -108,7 +108,7 @@ def main():
         # Bounds and requested S/G are known; architectural geometry is not.
         # The simulator asset/layout below is only the physical environment.
         profile=replace(profile,mapping=replace(profile.mapping,grid_resolution=.05,
-            obstacle_height=(floor_top+.05,floor_top+.50),sticky_free_scale=.25))
+            obstacle_height=(floor_top+.05,floor_top+.50),sticky_free_scale=.25,ray_traversal='exact'))
         from grutopia_extension.interactive_navigation.mapping import OccupancyGridMap
         blank=OccupancyGridMap(profile.mapping)
         planner=SidePushPlanner(np.zeros_like(blank.observed),[profile.mapping.x_limits,profile.mapping.y_limits],
@@ -173,8 +173,11 @@ def main():
         'grutopia_extension/interactive_navigation/go2_rollout_health.py',
         'grutopia_extension/interactive_navigation/go2_attitude_recovery.py',
         'grutopia_extension/interactive_navigation/online_navigation_map.py',
+        'grutopia_extension/interactive_navigation/online_lidar_evidence.py',
         'grutopia_extension/interactive_navigation/online_navigation_decision.py',
         'grutopia_extension/interactive_navigation/smooth_go2_navigation.py',
+        'grutopia_extension/interactive_navigation/local_staging_control.py',
+        'grutopia_extension/interactive_navigation/go2_turn_response.py',
         'grutopia_extension/interactive_navigation/local_path_guidance.py',
         'grutopia_extension/interactive_navigation/local_turn_maneuver.py',
         'grutopia_extension/interactive_navigation/semantic_voronoi.py',
@@ -202,6 +205,7 @@ def main():
     from grutopia_extension.interactive_navigation.scene_paths import configure_scene_mdl_paths
     config=Go2NavigationRunConfig(gpu=args.gpu,ground_height=floor_top,
         max_steps=args.max_steps,rendering_interval=4,use_fabric=False,lidar_max_range=5.0,
+        lidar_resolution=(.5,2.5) if args.map_source=='online' else (2.,5.),
         material_mode=args.material_mode,generate_fallback_asset=False)
     configure_scene_mdl_paths(profile.scene_asset_path)
     simulation_config=build_go2_navigation_config(profile,config,objects=build_grscene_floor(profile,floor_top=floor_top))
@@ -252,6 +256,7 @@ def main():
                 'material_mode':args.material_mode,'ground_height':floor_top,
                 'spawn_base_height':spawn_height,
                 'lidar_max_range':config.lidar_max_range,
+                'lidar_resolution_degrees':list(config.lidar_resolution),
                 'push_max_speed':args.push_max_speed,
                 'turn_speed':args.turn_speed,
                 'contact_yaw_tolerance':args.contact_yaw_tolerance,
@@ -301,6 +306,13 @@ def main():
             return heights
         def planning_boxes():
             return list(layers.current_boxes) if args.map_source=='online' and layers is not None else box_states()
+        def save_lidar_sample(observation,path):
+            lidar=observation.get('sensors',{}).get('lidar',{})
+            np.savez_compressed(path,points=np.asarray(lidar.get('pointcloud',[]),dtype=np.float32),
+                origin=np.asarray(lidar.get('position',observation['position'])),
+                base_position=np.asarray(observation['position']),base_orientation=np.asarray(observation['orientation']),
+                physics_step=int(lidar.get('physics_step',-1)),max_range=float(lidar.get('max_range',5.)),
+                self_hits_removed=int(lidar.get('self_hits_removed',0)))
         def tick(action):
             nonlocal recording_tick
             if task_health is not None and not task_health.healthy:action=stop
@@ -311,6 +323,9 @@ def main():
             if smooth_limiter is not None:smooth_limiter.accept(action.get('move_by_speed',[0.,0.,0.]),command_time)
             observation=env.step(action)[0]
             now=float(robot._go2_locomotion_control._simulation_time() or 0.)
+            if smooth_limiter is not None:
+                controller=robot._go2_locomotion_control
+                smooth_limiter.observe([*controller.body_lin_vel[:2],controller.body_ang_vel[2]],now)
             if task_health is not None:task_health.observe(observation['position'],observation['orientation'])
             if layers is not None:
                 now=robot._go2_locomotion_control._simulation_time()
@@ -321,7 +336,7 @@ def main():
             if control_log is not None:
                 diagnostic=robot._go2_locomotion_control.get_obs()
                 root_position,root_orientation=robot.isaac_robot.get_world_pose()
-                control_log.write(json.dumps({'time_s':now,'phase':record_phase,'command':action.get('move_by_speed'),
+                control_log.write(json.dumps({'time_s':now,'command_time_s':command_time,'phase':record_phase,'command':action.get('move_by_speed'),
                     'policy_command':diagnostic['policy_command'].tolist(),
                     'body_velocity':diagnostic['body_lin_vel'].tolist(),'body_angular_velocity':diagnostic['body_ang_vel'].tolist(),
                     'position':list(map(float,observation['position'])),'orientation':list(map(float,observation['orientation'])),
@@ -386,7 +401,7 @@ def main():
             folder=args.output/task['id'];folder.mkdir(exist_ok=True)
             control_log=(folder/'control_trace.jsonl').open('w',buffering=1)
             smooth_limiter=VelocitySlewLimiter() if args.path_controller=='continuous' else None
-            online_selector=OnlineGoalSelector();goal_kind='task';online_wait_start=None
+            online_selector=OnlineGoalSelector();goal_kind='task';online_wait_start=None;online_next_decision_time=0.
             if args.map_source=='online':planner.passages={};planner.active_passages={}
             events=[];samples=[];phase='decide';phase_start=0;plan=None;path=();push_count=0
             success=False;reason='global_step_limit';maximum_tilt=0.;start_time=time.time();initial_positions={}
@@ -431,6 +446,7 @@ def main():
                 event('online_map_initial',observed_cells=int(layers.observed.sum()),occupied_cells=int(layers.global_occupied.sum()),
                       scene_prior_loaded=False,box_count=len(layers.current_boxes))
             layers.update(float(robot._go2_locomotion_control._simulation_time() or 0.),obs,box_states(),force=True)
+            if args.map_source=='online':save_lidar_sample(obs,folder/'lidar_initial.npz')
             layers.synchronize_display(component.mapping,0)
             if args.record_video:
                 recorder=TaskVideoRecorder(str(folder/'video'),task=task,capture_interval=1,
@@ -440,6 +456,8 @@ def main():
             if args.map_source=='online':
                 record_phase='map_warmup'
                 for _ in range(120):obs=tick(stop)
+                save_lidar_sample(obs,folder/'lidar_warmed.npz')
+                layers.refresh_global(reason='map_warmup_completed')
                 event('online_map_warmed',**layers.statistics())
             release_start=None;planned_positions={};last_action=stop;last_tracking=None;tracker=None;realign_count=0;decision_recovery_start=None
             last_route_replan=-100
@@ -526,24 +544,32 @@ def main():
                     last_action=stop
                     continue
                 if phase=='decide':
+                    if args.map_source=='online' and online_wait_start is not None and planner.control_time<online_next_decision_time:
+                        if step-online_wait_start>1200:reason='no_observed_route_or_frontier';break
+                        obs=tick(stop);last_action=stop;continue
                     recovery=None
-                    if args.map_source!='online' and navigation_body_blocked(planner,current,heading)[planner.cell(p[:2])]:
+                    if navigation_body_blocked(planner,current,heading)[planner.cell(p[:2])]:
                         if decision_recovery_tracker is None:
                             decision_recovery_tracker=ForwardExplorationPathTracker(p[:2],[(*task['goal'],0.)],guard_motion=False)
                         recovery=decision_recovery_tracker.action(p[:2],heading,planner,current)
                     else:decision_recovery_tracker=None
-                    if recovery is None and args.roadmap_shape=='circle' and args.map_source!='online':
+                    if recovery is not None and recovery[1].get('needs_replan'):recovery=None
+                    if recovery is None and args.roadmap_shape=='circle':
                         local_motion_free=planner.free.copy()
                         with layers.global_planning() as global_boxes:
                             attachment=decision_buffer_recovery(p[:2],heading,planner,global_boxes,task['goal'],heading,
-                                local_free=local_motion_free,local_boxes=current)
+                                local_free=local_motion_free,local_boxes=current,
+                                require_goal_connection=args.map_source!='online')
                         if attachment is not None:
-                            command=attachment[0]['move_by_speed']
-                            if body_motion_clear(planner,current,p[:2],heading,command[0],command[2],horizon=.5,lateral=command[1]):
-                                recovery=attachment;recovery[1]['controller']='rejoin_global_clearance'
+                            # The helper already checked the complete local
+                            # body connection and monotone overlap reduction.
+                            recovery=attachment;recovery[1]['controller']='rejoin_global_clearance'
                     if recovery is not None:
+                        online_wait_start=None
                         if decision_recovery_start is None:decision_recovery_start=step
                         action,tracking=recovery;record_phase='recover_navigation_buffer'
+                        if smooth_limiter is not None:
+                            action=smooth_recovery_action(action,p[:2],heading,planner,current,smooth_limiter,planner.control_time)
                         if step%100==0:event('decision_buffer_recovery',step=step,position=p.tolist(),**tracking,command=action['move_by_speed'])
                         if step-decision_recovery_start>2500:reason='decision_buffer_recovery_timeout';break
                         obs=tick(action);last_action=action;last_tracking=tracking;continue
@@ -555,6 +581,7 @@ def main():
                         if decision.kind=='wait':
                             layers.decision=decision.explanation
                             if online_wait_start is None:online_wait_start=step
+                            online_next_decision_time=planner.control_time+layers.global_period
                             if step%200==0:event('online_observation_wait',step=step,reason=decision.reason,**layers.statistics())
                             if step-online_wait_start>1200:reason='no_observed_route_or_frontier';break
                             obs=tick(stop);last_action=stop;continue
@@ -583,14 +610,14 @@ def main():
                         component.mapping._planned_path=tracker._planned_path[tracker._waypoint_index:]
                 elif phase in ['navigate','approach']:
                     planner.robot_heading=heading if args.navigation_heading=='path' else nav_heading
-                    if args.map_source=='online' and phase=='navigate' and goal_kind=='frontier':
+                    if args.map_source=='online' and phase=='navigate' and goal_kind=='frontier' and not getattr(tracker,'staging_active',False):
                         reconsider=np.linalg.norm(p[:2]-endpoint)<.35
                         if step%125==0:
-                            with layers.global_planning():reconsider |= bool(planner.path(p[:2],task['goal'],[]))
+                            reconsider |= online_selector.task_decision(layers,p[:2],task['goal']) is not None
                         if reconsider:
                             if np.linalg.norm(p[:2]-endpoint)<.35:online_selector.reached_frontier(endpoint,layers.observed.sum())
                             phase='decide';obs=tick(last_action);continue
-                    if (step%200==0 and any(b.id not in planned_positions or np.linalg.norm(np.array(b.xy)-planned_positions[b.id])>.08 for b in current)
+                    if (step%200==0 and not getattr(tracker,'staging_active',False) and any(b.id not in planned_positions or np.linalg.norm(np.array(b.xy)-planned_positions[b.id])>.08 for b in current)
                             and not planner.blocked(current)[planner.cell(p[:2])]):
                         phase='decide';obs=tick(stop);last_action=stop;continue
                     approach_error=abs(float(np.cross(np.array(plan.direction),p[:2]-plan.approach_xy))) if phase=='approach' else 0.
@@ -632,12 +659,18 @@ def main():
                                 phase='decide';action=stop
                                 event('global_replan_after_local_block',step=step,global_map_revision=layers.global_revision)
                         iteration_tracking=tracking
+                        if args.map_source=='online' and last_tracking and last_tracking.get('observation_motion') and not tracking.get('observation_motion'):
+                            if not (folder/'lidar_after_observation.npz').exists():save_lidar_sample(obs,folder/'lidar_after_observation.npz')
                         if args.map_source=='online' and tracking.get('needs_replan') and tracking.get('blocked_ticks',0)>30:
                             if goal_kind=='frontier':online_selector.reached_frontier(endpoint,layers.observed.sum())
                             phase='decide'
                         if tracking.get('recovering_buffer'):record_phase='navigation_buffer_recovery'
                         if tracking.get('local_turn_maneuver'):record_phase=tracking['controller']
+                        if tracking.get('observation_motion'):record_phase='observe_local_map'
                         component.mapping._planned_path=tracker._planned_path[tracker._waypoint_index:]
+                        if tracking.get('local_staging'):
+                            record_phase=tracking['staging_phase']
+                            component.mapping._planned_path=(tuple(tracking['target']),)
                         if step%400==0:event('path_tracking',step=step,**tracking)
                     if step-phase_start>16000:reason='navigation_timeout';break
                 elif phase=='push':

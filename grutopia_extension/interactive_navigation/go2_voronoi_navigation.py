@@ -5,7 +5,7 @@ import hashlib
 import math
 from heapq import heappop,heappush
 import numpy as np
-from scipy.ndimage import distance_transform_edt
+from scipy.ndimage import distance_transform_edt,maximum_filter
 
 from grutopia_extension.interactive_navigation.mapping import (
     AStarMapPlanner, OccupancyGridMap, PlanningError,
@@ -458,7 +458,7 @@ def navigation_footprint_samples(planner,margin=0.):
         np.linspace(-halfwidth,halfwidth,int(math.ceil(2*halfwidth/planner.resolution))+1))
 
 
-def body_translation_recovery_clear(planner,boxes,position,heading,target):
+def body_translation_recovery_clear(planner,boxes,position,heading,target,require_clear_end=True):
     """Allow existing mild overlap to decrease, never a deeper/new body collision."""
     raw=planner.free.copy()
     for box in boxes:
@@ -470,16 +470,31 @@ def body_translation_recovery_clear(planner,boxes,position,heading,target):
     dy=np.rint((s*xx+c*yy)/planner.resolution).astype(int)
     position=np.asarray(position[:2],float);delta=np.asarray(target[:2])-position
     count=max(2,int(np.ceil(np.linalg.norm(delta)/planner.resolution))+1)
-    first=None;last=None
+    first=None;last=None;initial_hit=None;initial_depth=None
+    penetration=distance_transform_edt(~raw)*planner.resolution
     for fraction in np.linspace(0.,1.,count):
         r,col=planner.cell(position+fraction*delta);rows=r+dy;cols=col+dx
         if rows.min()<0 or cols.min()<0 or rows.max()>=raw.shape[0] or cols.max()>=raw.shape[1]:return False
-        overlap=int((~raw[rows,cols]).sum())
-        if first is None:first=overlap
-        if overlap>first:return False
-        if first>0 and fraction*np.linalg.norm(delta)>.05 and overlap>=first:return False
+        hit=~raw[rows,cols]
+        overlap=int(hit.sum());depth=penetration[rows,cols]
+        if first is None:
+            first=overlap
+            # Cell-center and rotated-footprint rounding can move a corner
+            # contact by one sample while sliding away. Localize that grid
+            # uncertainty to the original contact neighborhood; total overlap
+            # and penetration still may not increase.
+            initial_hit=maximum_filter(hit.astype(np.uint8),size=3,mode='constant').astype(bool)
+            initial_depth=maximum_filter(depth,size=3,mode='constant')
+        # Track contact by body sample, not by world cell: sliding out of an
+        # existing wall overlap visits different wall cells but is valid.
+        # No distant clear body sample may acquire a new contact, and existing
+        # contacts may not deepen. Endpoint clearance remains mandatory.
+        if (hit & ~initial_hit).any():return False
+        if (depth>initial_depth+1e-9).any():return False
+        if last is not None and overlap>last:return False
+        if first>0 and fraction*np.linalg.norm(delta)>max(.05,2*planner.resolution) and overlap>=first:return False
         last=overlap
-    return last==0
+    return last==0 if require_clear_end else last<=first
 
 
 def navigation_body_blocked(planner,boxes,heading):

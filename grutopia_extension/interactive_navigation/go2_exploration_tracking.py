@@ -7,13 +7,13 @@ from grutopia_extension.interactive_navigation.mapping import AStarMapPlanner
 from grutopia_extension.interactive_navigation.state_machine import StateMachineDecision,InteractionState,ControllerCommand
 
 
-def decision_buffer_recovery(position,heading,planner,boxes,goal,fixed_heading,*,local_free=None,local_boxes=None):
+def decision_buffer_recovery(position,heading,planner,boxes,goal,fixed_heading,*,local_free=None,local_boxes=None,require_goal_connection=True):
     """Exit a footprint buffer before a new decision declares the route blocked."""
     if (getattr(planner,'layered_local_control',False) and
             getattr(planner,'planning_scope','local')=='global' and
             getattr(planner,'navigation_pose_heading',None) is None):
         return _body_safe_global_buffer_exit(position,heading,planner,boxes,goal,
-            local_free=local_free,local_boxes=local_boxes)
+            local_free=local_free,local_boxes=local_boxes,require_goal_connection=require_goal_connection)
     cell=planner.cell(position)
     raw_free=planner.free.copy()
     for box in boxes:raw_free &= ~planner.box_mask(box)
@@ -34,7 +34,7 @@ def decision_buffer_recovery(position,heading,planner,boxes,goal,fixed_heading,*
     return action,state
 
 
-def _body_safe_global_buffer_exit(position,heading,planner,boxes,goal,*,local_free=None,local_boxes=None):
+def _body_safe_global_buffer_exit(position,heading,planner,boxes,goal,*,local_free=None,local_boxes=None,require_goal_connection=True):
     """Connect an oriented local pose to a usable circular global-plan seed.
 
     The nearest global free point can require dragging a paw through another
@@ -69,18 +69,21 @@ def _body_safe_global_buffer_exit(position,heading,planner,boxes,goal,*,local_fr
         saved=planner.free;planner.free=motion_free
         try:
             if not body_translation_recovery_clear(planner,motion_boxes,position,heading,target):return None
-            if not body_motion_clear(planner,motion_boxes,position,heading,command[0],0.,
-                    lateral=command[1],horizon=.5):return None
+            # The full target must clear the body, but the first short
+            # command is allowed to reduce pre-existing modeled overlap.
+            # A strict sweep at t=0 would reject every such recovery.
+            if not body_translation_recovery_clear(planner,motion_boxes,position,heading,
+                    position+world*.5,require_clear_end=False):return None
         finally:planner.free=saved
         return command
 
     cached=getattr(planner,'_global_buffer_exit',None)
-    if cached is not None and cached['goal']==goal_key:
+    if cached is not None and cached['goal']==goal_key and cached.get('require_goal_connection',True)==require_goal_connection:
         command=safe_command(cached['target'])
         if command is not None:
             return {'move_by_speed':command},{'target':list(cached['target']),
                 'recovering_buffer':True,'needs_replan':False,'controller':'body_safe_global_buffer_exit',
-                'reused_exit_target':True}
+                'reused_exit_target':True,'goal_connection_checked':require_goal_connection}
     planner._global_buffer_exit=None
     candidates=[]
     for angle in np.linspace(-np.pi,np.pi,32,endpoint=False):
@@ -97,20 +100,22 @@ def _body_safe_global_buffer_exit(position,heading,planner,boxes,goal,*,local_fr
         for _,_,target,command in candidates:
             # A box may still require interaction after the buffer exit.
             # Every motion check above included the real current boxes.
-            if not planner.path(target,goal,[] if omit_boxes else boxes):continue
-            planner._global_buffer_exit={'goal':goal_key,'target':tuple(map(float,target))}
+            if require_goal_connection and not planner.path(target,goal,[] if omit_boxes else boxes):continue
+            planner._global_buffer_exit={'goal':goal_key,'target':tuple(map(float,target)),
+                'require_goal_connection':require_goal_connection}
             return {'move_by_speed':command},{'target':target.tolist(),'recovering_buffer':True,
                 'needs_replan':False,'controller':'body_safe_global_buffer_exit','reused_exit_target':False,
-                'safe_exit_candidates':len(candidates)}
+                'safe_exit_candidates':len(candidates),'goal_connection_checked':require_goal_connection}
     return None
 
 
 class ExplorationPathTracker:
-    def __init__(self,start,path,lookahead=.55,fixed_heading=None):
+    def __init__(self,start,path,lookahead=.55,fixed_heading=None,max_forward_speed=.40,max_lateral_speed=.20):
         self._planned_start=np.asarray(start[:2],dtype=float)
         self._planned_path=tuple(tuple(p[:2]) for p in path)
         self._waypoint_index=0
         self.fixed_heading=fixed_heading
+        self.max_forward_speed=max_forward_speed;self.max_lateral_speed=max_lateral_speed
         self.velocity_lookahead_distance=lookahead
         self.final_goal_slow_radius=.75
         self.safe_path_tracking=True
@@ -175,7 +180,7 @@ class ExplorationPathTracker:
                      'orientation':(np.cos(heading/2),0.,0.,np.sin(heading/2))}
         decision=StateMachineDecision(state=InteractionState.NAVIGATE_TO_GOAL,
             command=ControllerCommand('move_along_path',((self._planned_path[-1],),)))
-        action=MapNavigationRuntime.velocity_action_for(self,decision,observation,max_forward_speed=.40,max_lateral_speed=.20)
+        action=MapNavigationRuntime.velocity_action_for(self,decision,observation,max_forward_speed=self.max_forward_speed,max_lateral_speed=self.max_lateral_speed)
         if self.fixed_heading is not None:
             error=(self.fixed_heading-heading+np.pi)%(2*np.pi)-np.pi
             action['move_by_speed'][2]=float(np.clip(1.8*error,-.45,.45))
