@@ -56,6 +56,24 @@ def contact_axis_delta(delta,direction,axis):
     return unit*float(np.dot(np.asarray(delta,float),unit))
 
 
+def damped_contact_centering_velocity(delta, direction, velocity, max_speed, axis):
+    """Use the requested speed limit on either contact correction axis.
+
+    Maintain a stepping request until the separate predictive brake activates;
+    reduce that request as measured motion catches up. This avoids repeatedly
+    launching a fixed 0.35 m/s sidestep at a few-centimetre residual error.
+    """
+    if not np.isfinite(max_speed) or not .20 <= max_speed <= .50:
+        raise ValueError('Contact centering speed must be within 0.20-0.50 m/s')
+    correction=contact_axis_delta(delta,direction,axis)
+    distance=float(np.linalg.norm(correction))
+    if distance<1e-9:return np.zeros(2)
+    unit=correction/distance
+    toward=float(np.dot(np.asarray(velocity,float)[:2],unit))
+    speed=float(np.clip(1.5*distance-.6*toward,.20,max_speed))
+    return speed*unit
+
+
 def contact_braking_required(delta, velocity, horizon=1.0, stop_margin=.025):
     """Allow for gait travel after a zero-speed request near the contact pose."""
     delta=np.asarray(delta,dtype=float)

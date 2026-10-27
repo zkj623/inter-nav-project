@@ -85,7 +85,8 @@ def main():
     if not .10<=args.contact_front_gap<=.45:raise ValueError('contact-front-gap must be within 0.10-0.45 m')
     args.output.mkdir(parents=True,exist_ok=True)
     if (args.output/'summary.json').exists():raise ValueError('Use a new output directory')
-    from grutopia_extension.interactive_navigation.go2_contact_turn import ContactTurnControl
+    from grutopia_extension.interactive_navigation.go2_contact_turn import ContactTurnControl,checked_contact_turn_command
+    from grutopia_extension.interactive_navigation.go2_contact_control import damped_contact_centering_velocity
     from grutopia_extension.interactive_navigation.box_push_navigation import BoxState
     from grutopia_extension.interactive_navigation.side_push_navigation import SidePushPlanner
     from grutopia_extension.interactive_navigation.go2_exploration_tracking import ExplorationPathTracker as Go2VelocityPathTracker
@@ -856,7 +857,10 @@ def main():
                     motion_mode='hold' if ready else (alignment_axis or 'longitudinal')
                     filtered_speed=(float(np.linalg.norm(smooth_limiter.measured[:2])) if smooth_limiter is not None else None)
                     mode_settling=contact_alignment.settling_required(motion_mode,step,measured_speed=filtered_speed)
-                    brake=(contact_braking_required(contact_axis_delta(delta,direction,motion_mode),world_velocity,
+                    centering_velocity=(np.array([c*smooth_limiter.measured[0]-s*smooth_limiter.measured[1],
+                                                   s*smooth_limiter.measured[0]+c*smooth_limiter.measured[1]])
+                                        if smooth_limiter is not None else world_velocity)
+                    brake=(contact_braking_required(contact_axis_delta(delta,direction,motion_mode),centering_velocity,
                                                    horizon=CONTACT_BRAKING_HORIZON_S)
                            if motion_mode in ['lateral','longitudinal'] else False)
                     # A turning gait has oscillating COM linear velocity.
@@ -879,8 +883,15 @@ def main():
                         action={'move_by_speed':[0.,0.,math.copysign(args.turn_speed,error)]}
                     else:
                         contact_stable_ticks=0
-                        v=contact_centering_velocity(delta,direction,args.contact_centering_speed,axis=motion_mode)
-                        action={'move_by_speed':[float(c*v[0]+s*v[1]),float(-s*v[0]+c*v[1]),0.]}
+                        if smooth_limiter is None:
+                            v=contact_centering_velocity(delta,direction,args.contact_centering_speed,axis=motion_mode)
+                            action={'move_by_speed':[float(c*v[0]+s*v[1]),float(-s*v[0]+c*v[1]),0.]}
+                        else:
+                            v=damped_contact_centering_velocity(delta,direction,centering_velocity,args.contact_centering_speed,motion_mode)
+                            request=[float(c*v[0]+s*v[1]),float(-s*v[0]+c*v[1]),0.]
+                            command,safe=checked_contact_turn_command(request,p[:2],heading,planner,current,smooth_limiter,planner.control_time)
+                            action={'move_by_speed':command.tolist()}
+                            if not safe:record_phase='contact_centering_safety_brake'
                     if step%200==0:event('contact_center_tracking',step=step,position=p.tolist(),target=center_target.tolist(),
                         position_error=centering_error,contact_offset=contact_error,heading_error=error,command=action['move_by_speed'],
                         actual_body_velocity=body_velocity.tolist(),safe_contact_pose=bool(ready),pause_until=contact_pause_until,
