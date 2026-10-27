@@ -7,6 +7,7 @@ from pathlib import Path
 from .config import REPO, check_motion_configuration, check_task_inputs
 from .tasks import Tasks
 from deploy.recording.recorder import Recorder
+from deploy.robot.observation import ExperimentFrame
 from deploy.robot.safety import check_observation, checked_velocity
 
 
@@ -21,7 +22,7 @@ def check(config):
     except ValueError as error:
         motion = str(error)
     print(json.dumps({'check': 'offline_only', 'dependencies': status, 'motion': motion,
-                      'planning_frame': config['robot']['map_frame'],
+                      'planning_frame': ExperimentFrame.name, 'source_frame': config['robot']['map_frame'],
                       'camera_mode': config['robot']['camera_mode'],
                       'geometry_calibrated': config['robot']['ground_z'] is not None and
                                              config['robot']['lidar_origin_offset_base_m'] is not None,
@@ -95,6 +96,7 @@ def run_live(args, config):
         check_motion_configuration(config)
     robot, nav, runtime = config['robot'], config['navigation'], config['runtime']
     control = runtime['control']
+    reference = ExperimentFrame(0. if args.demo else robot['ground_z'])
     session = Session(config, REPO, port=args.session_port, demo=args.demo,
                       mode='synthetic_demo' if args.demo else ('live_motion_enabled' if args.allow_motion else 'live_observe_only'))
     print(f'本轮会话：{session.info["session_id"]}；数据服务：{session.url}', flush=True)
@@ -139,7 +141,7 @@ def run_live(args, config):
         perception_started = None
         last_perception_delivery = None
         print(('合成演示：未连接机器人。' if args.demo else 'MCF 保持运行。默认观察；') + ('运动需按任务键启动。' if motion else '本次会话禁止运动。'), flush=True)
-        print(f"规划坐标系={'demo_odom' if args.demo else robot['map_frame']}（不代表全局定位）；相机={robot['camera_mode']}", flush=True)
+        print(f"来源坐标系={'demo_odom' if args.demo else robot['map_frame']}；等待有效观测初始化 experiment；相机={robot['camera_mode']}", flush=True)
         if not args.demo and (robot['ground_z'] is None or robot['lidar_origin_offset_base_m'] is None):
             print('地面/雷达原点未标定：本次可记录观测，导航地图暂不生成。', flush=True)
         while not quitting:
@@ -162,6 +164,17 @@ def run_live(args, config):
             # Compare against time AFTER acquiring the observation.
             now = time.monotonic()
             observation_error = None
+            if snapshot is not None:
+                try:
+                    initializing = reference.metadata is None
+                    snapshot = reference.apply(snapshot, now, robot['max_data_age_s'])
+                    if initializing and reference.metadata is not None:
+                        session.event('coordinate_frame_initialized', **reference.metadata)
+                        print('实验坐标系已固定：起点 XY=(0,0)，X=初始前方，Y=初始左侧，Z=距地面高度。', flush=True)
+                        print('点导航输入本轮 experiment 坐标；暂停、换任务不重设原点。', flush=True)
+                        print(json.dumps(reference.metadata, ensure_ascii=False), flush=True)
+                except ValueError as exc:
+                    observation_error, snapshot = str(exc), None
             if operation:
                 key, value = operation
                 session.event('operator', key=key, value=value)
@@ -274,7 +287,8 @@ def run_live(args, config):
                     session.event('cleanup_error', reason=error)
         session.close({'reason': reason, 'error': error, 'task_result': tasks.result if tasks else None,
                         'completed': error is None, 'hardware_validated': False,
-                        'planning_frame': snapshot.planning_frame if snapshot else robot['map_frame'], 'global_localization_verified': False,
+                        'planning_frame': reference.name if reference.metadata else robot['map_frame'],
+                        'coordinate_transform': reference.metadata, 'global_localization_verified': False,
                         'map_created': bool(tasks and tasks.map_ready), 'demo': args.demo,
                         'last_autonomous_stop_confirmed': stop_confirmed})
         for signum, handler in handlers.items():

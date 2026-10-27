@@ -57,8 +57,9 @@
 
 ```text
 run.py → app/runtime.py
-           ├─ robot/sensors.py → localization.py → observation.py
-           ├─ app/keyboard.py → app/tasks.py → 原有导航算法 / 唯一地图
+           ├─ robot/sensors.py → observation.normalize → ExperimentFrame
+           │       → safety.check_observation → app/tasks.py → 原有导航算法 / 唯一地图
+           ├─ app/keyboard.py → 任务切换 / experiment 坐标目标
            ├─ perception/client.py → GPU 上的 serve_models.py
            ├─ robot/motion.py（独立进程）→ safety.py → SportClient
            ├─ visualization/sources.py → 独立 SDK 取图进程（仅预览 RGB）
@@ -71,16 +72,24 @@ serve_models.py → perception/server.py → 原有模型实现
 ```
 
 观测采用米、秒、弧度；机器人四元数为 **wxyz**，速度为机身前/左/上轴对应的 `[vx, vy, wz]`。
-配置中的 `map_frame` 表示规划坐标系，当前为 **odom**；仅其他坐标系的点云才按采集时刻查询 TF 转换。相机反投影使用光学坐标系（右、下、前），
+配置中的 `map_frame` 表示上游传感器对齐坐标系，当前为 **odom**；仅其他坐标系的点云才按采集时刻查询 TF 转换。相机反投影使用光学坐标系（右、下、前），
 视觉覆盖模块的相机朝向则转换为前、左、上，不能混用这两个约定。
-`ground_z` 是平地在规划坐标系中的 Z；适配器减去它，使原有算法的高度检查相对地面。
+`ground_z` 是平地在上游坐标系（默认 odom）中的 Z；适配器减去它，使原有算法的高度检查相对地面。
 不能把里程计初始 Z=0 解释为机器人趴地，也不能直接猜一个高度填入。
 `lidar_origin_offset_base_m` 是雷达测距原点相对 base_link 的实测 `[x,y,z]`。
 射线起点采用点云采集时刻的机身位姿和雷达安装位置；用时间邻近位姿插值，超出误差限制便等待新数据。
 世界坐标点云的 frame 原点不是雷达原点，不能从固定的 `[0,0,0]` 清除自由空间。
 
 两项标定默认都是 `null`：此时可接收、记录原始坐标观测，但不会生成导航地图或开放运动。
-每次启动建立新地图，不跨次复用 odom 地图；长时间里程计漂移仍可能使地图失准，当前未实现全局重定位。
+`run.py` 在收到首组已标定、时间匹配且新鲜的观测后，固定本轮 `experiment` 坐标系：
+- XY 原点为此时机身位置，X 指向初始前方的水平投影，Y 指向初始左侧；Z=0 为标定地面，保留机身实际离地高度。
+- `robot/observation.py::ExperimentFrame` 在任务与边界检查前，统一转换机身、雷达原点、点云，以及 RGB-D 三维点和相机位姿。机身速度、RGB 像素和深度值保持原定义。
+- 地图默认 X/Y 各为 `[-10, 10]` 米，围绕本轮起点；输入目标 `2,1` 指初始前方 2 米、初始左侧 1 米的固定位置，并非相对当前朝向。
+- 暂停、换任务、开关 view/record 不重设坐标。未标定时仍只显示/记录上游观测，不初始化实验原点。上游定位跳变仍触发既有停止保护。
+- `record.py` 的每帧观测包含 `coordinate_transform`，其中 `origin_source_m` 和 `yaw_source_rad` 可还原原坐标；初始化事件及运行总结也保留该参数，晚启动记录仍可从观测获取。
+- 回放直接使用记录中的坐标，不再做初始化或重复变换。旧记录缺少该字段时保持原坐标；回放目标须采用该记录对应的坐标系。
+
+每次启动 run 建立新地图，不跨次复用实验坐标；长时间里程计漂移仍可能使地图失准，当前未实现全局重定位。
 
 ## 1. 开发机同步代码
 

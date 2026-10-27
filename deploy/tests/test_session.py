@@ -197,6 +197,7 @@ def test_real_run_view_record_entrypoints_and_replay(tmp_path):
         data = wait_until(frame, 15)
         assert data['demo'] and data['map']['ready'] and data['rgb']['jpeg']
         assert data['cloud']['kind'] == '累计建图点云'
+        assert data['cloud']['frame'] == data['map']['frame'] == 'experiment'
         wait_until(lambda: list((tmp_path/'recordings').glob('*/observations/*.npz')))
         # Closing the viewer is independent of navigation and recording.
         viewer.send_signal(signal.SIGINT)
@@ -213,7 +214,10 @@ def test_real_run_view_record_entrypoints_and_replay(tmp_path):
         assert summary['run_final_received'] and summary['session_id'] == data['session_id']
         assert summary['missing_frames'] == summary['missing_events'] == 0
         assert list(directory.glob('frames/*.jpg')) and list(directory.glob('frames/*.png'))
-        assert len(list(snapshots(directory))) > 0
+        recorded = list(snapshots(directory))
+        assert recorded and all(s.planning_frame == 'experiment' for s in recorded)
+        assert recorded[0].coordinate_transform['source_frame'] == 'demo_odom'
+        assert summary['run_summary']['coordinate_transform'] == recorded[0].coordinate_transform
         replay = subprocess.run([sys.executable, str(REPO/'deploy/run.py'), '--replay', str(directory),
                                  '--output', str(tmp_path/'replay')], capture_output=True, text=True, timeout=15)
         assert replay.returncode == 0, replay.stdout+replay.stderr

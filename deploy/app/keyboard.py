@@ -49,7 +49,7 @@ class Keyboard:
             return None
         if key in ('n', 'e'):
             self.editing = 'navigate' if key == 'n' else 'explore'
-            print('\n先停止当前任务。输入地图 x,y：' if key == 'n' else
+            print('\n先停止当前任务。输入本轮 experiment 坐标 x,y：' if key == 'n' else
                   '\n先停止当前任务。输入英文目标名（下划线表示空格）：', end='', flush=True)
             return ('prepare', None)
         if key in ('o', 'p', 'r', 'm', 'q'):
