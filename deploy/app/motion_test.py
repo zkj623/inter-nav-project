@@ -5,10 +5,11 @@ import time
 from .config import REPO, check_control_configuration
 from .keyboard import Keyboard
 from .session import Session
-from deploy.robot.motion import MotionProcess
+from deploy.robot.motion import MotionProcess, TEST_MAX_DURATION_S, TEST_SPEED_LIMITS
 
 MENU = '\n[a]准备一次测试 [f]前行 [j]左转 [t]命令超时测试 [空格]停止 [q]退出\n'
-VELOCITIES = {'f': (.05, 0., 0.), 'j': (0., 0., .15), 't': (.05, 0., 0.)}
+VELOCITIES = {'f': (TEST_SPEED_LIMITS[0], 0., 0.),
+              'j': (0., 0., TEST_SPEED_LIMITS[2]), 't': (.05, 0., 0.)}
 
 
 class MotionTrial:
@@ -52,7 +53,7 @@ class MotionTrial:
             self.ready_until = None
             raise ValueError('每次动作前先按 a；按住动作键不会连续执行')
         self.ready_until = None
-        armed = self.motion.arm(duration_s=1.)
+        armed = self.motion.arm(duration_s=TEST_MAX_DURATION_S)
         # Finish the previous trial's events before assigning a new trial.
         # The correlated arm reply and any immediate fault are preserved too.
         self.events(self.motion.events())
@@ -62,9 +63,9 @@ class MotionTrial:
         self.started, self.key = time.monotonic(), key
         self.last_stop_confirmed = False
         self.session.event('trial_started', trial=self.number, key=key,
-                           velocity=VELOCITIES[key], max_duration_s=1.,
+                           velocity=VELOCITIES[key], max_duration_s=TEST_MAX_DURATION_S,
                            watchdog_test=key == 't', hardware_validated=False)
-        print(f'测试 {self.number} 开始；worker 在 1 秒截止时请求停止，空格或配置接管键可提前停止。', flush=True)
+        print(f'测试 {self.number} 开始；worker 在 {TEST_MAX_DURATION_S:g} 秒截止时请求停止，空格或配置接管键可提前停止。', flush=True)
 
     def events(self, events):
         for event in events:
@@ -116,6 +117,8 @@ def run(args, config):
         print(f'单项运动验收，会话={session.info["session_id"]}；数据服务={session.url}', flush=True)
         print('另开终端 python record.py 保存事件。此模式不采集点云、不建图、不做避障。', flush=True)
         print('在平整空地、现场有人操作遥控器时测试。MCF 保持运行，启动不动。', flush=True)
+        print(f'f 前行上限 {TEST_SPEED_LIMITS[0]:g} m/s；j 左转上限 {TEST_SPEED_LIMITS[2]:g} rad/s；'
+              f'每次最多 {TEST_MAX_DURATION_S:g} 秒，较低的设备限速仍生效。', flush=True)
         print(f'接管 mask={config["robot"]["takeover_button_mask"]}；为 0 时只读按键和状态，拒绝动作。', flush=True)
         last_status = float('-inf')
         while not quitting:

@@ -651,7 +651,10 @@ class OccupancyGridMap:
             return
         if value < 0 and self.log_odds[cell] >= self.config.sticky_occupied_threshold:
             value *= self.config.sticky_free_scale
-        self.log_odds[cell] = np.clip(self.log_odds[cell] + value, -4.0, 4.0)
+        # This is one scalar per cell, often thousands of calls per scan.
+        # Avoid NumPy's array-dispatch overhead without changing the evidence.
+        updated = self.log_odds[cell] + value
+        self.log_odds[cell] = -4.0 if updated < -4.0 else 4.0 if updated > 4.0 else updated
         self.observed[cell] = True
 
 

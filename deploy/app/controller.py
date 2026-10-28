@@ -1,4 +1,6 @@
 """One place for operator intent, task state, and navigation-to-motion decisions."""
+import time
+
 from .config import check_task_inputs
 from deploy.robot.safety import check_observation
 
@@ -15,6 +17,7 @@ class NavigationController:
         self.last_perception_delivery = None
         self.stop_confirmed = None
         self.motion_error = None
+        self.motion_detail = ''
 
     @property
     def motion_state(self):
@@ -24,6 +27,11 @@ class NavigationController:
         for event in events:
             self.session.event('motion_state', **event)
             state = event['state']
+            self.motion_detail = event.get('detail', '')
+            if state in ('stopping', 'stopped', 'rejected', 'stop_error'):
+                print(f"运动状态={state} 原因={self.motion_detail or '未提供'}", flush=True)
+                if state == 'rejected' and event.get('telemetry'):
+                    print(f"拒绝时反馈={event['telemetry']}", flush=True)
             if state == 'active':
                 self.stop_confirmed = False
             elif state == 'stopped':
@@ -79,10 +87,11 @@ class NavigationController:
             # Wait in a non-running task state. arm() may receive the previous
             # stop's events while waiting for this request's acknowledgement.
             self.tasks.pause()
+            self.motion_detail = ''
             armed = self.motion.arm()
             self.motion_events(self.motion.events())
             if not armed or self.motion.state != 'active':
-                raise ValueError(f'运动未启用：{self.motion.state}；检查机器人状态和遥控接管键')
+                raise ValueError(f'运动未启用：{self.motion.state}；原因={self.motion_detail or "未收到具体原因"}')
             self.tasks.resume(now)
             self.stop_confirmed = False
             if exploring:
@@ -112,7 +121,9 @@ class NavigationController:
                 if now-last_success > self.perception_timeout:
                     raise ValueError(f'Perception unavailable: {self.perception.last_error}')
             previous_state = self.tasks.state
+            decision_started = time.monotonic()
             velocity = self.tasks.update(snapshot, now)
+            decision_duration = time.monotonic() - decision_started
             if self.perception:
                 delivery = self.perception.last_delivery
                 if delivery is not None and delivery is not self.last_perception_delivery:
@@ -126,7 +137,8 @@ class NavigationController:
                     expires = min(expires, snapshot.camera_at+self.robot['max_data_age_s'])
                 self.motion.submit(velocity, now, expires)
                 self.session.event('command_requested', generated_at=now, expires_at=expires,
-                                   velocity=velocity, delivery='queued_not_execution_ack')
+                                   velocity=velocity, decision_duration_s=decision_duration,
+                                   delivery='queued_not_execution_ack')
             if previous_state == 'active' and self.tasks.state == 'completed':
                 if self.motion:
                     self.motion.stop('task_completed')

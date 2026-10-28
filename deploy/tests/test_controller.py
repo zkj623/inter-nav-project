@@ -123,6 +123,20 @@ def test_command_expires_with_oldest_required_observation(control):
     assert expires == pytest.approx(snapshot.lidar_at+controller.robot['max_data_age_s'])
 
 
+def test_decision_timing_does_not_extend_command_or_sensor_expiry(control, monkeypatch):
+    from deploy.app import controller as module
+    controller, snapshot, events = control
+    controller.operate('navigate', '1,0', snapshot, snapshot.captured_at)
+    ticks = iter([snapshot.captured_at, snapshot.captured_at + .25])
+    monkeypatch.setattr(module.time, 'monotonic', lambda: next(ticks))
+    controller.step(snapshot, snapshot.captured_at)
+    command = next(e for e in events.items if e['event'] == 'command_requested')
+    assert command['decision_duration_s'] == pytest.approx(.25)
+    assert command['generated_at'] == snapshot.captured_at
+    assert command['expires_at'] <= snapshot.captured_at + controller.control['command_ttl_s']
+    assert command['expires_at'] <= snapshot.lidar_at + controller.robot['max_data_age_s']
+
+
 def test_cancel_exploration_discards_pending_perception_and_old_target():
     resets = []
     perception = SimpleNamespace(reset=lambda: resets.append(True))
@@ -153,6 +167,8 @@ def test_mapping_failure_does_not_report_ready(control, monkeypatch):
 
 def test_sdk_configuration_and_full_navigation_acceptance_are_distinct():
     config = load()
+    config['robot']['deskew_and_self_filter_verified'] = False
+    config['robot']['takeover_button_mask'] = 0
     check_control_configuration(config, require_takeover=False)
     with pytest.raises(ValueError, match='takeover_button_mask'):
         check_control_configuration(config)
@@ -160,6 +176,31 @@ def test_sdk_configuration_and_full_navigation_acceptance_are_distinct():
     check_control_configuration(config)
     with pytest.raises(ValueError, match='deskew_and_self_filter_verified'):
         check_motion_configuration(config)
+
+
+def test_worker_stop_reason_is_visible_in_console(control, capsys):
+    controller, _, events = control
+    controller.motion_events([{'state': 'stopping', 'detail': 'command_timeout'},
+                              {'state': 'stopped', 'detail': 'command_timeout'}])
+    output = capsys.readouterr().out
+    assert '运动状态=stopping 原因=command_timeout' in output
+    assert '运动状态=stopped 原因=command_timeout' in output
+    assert events.items[-1]['detail'] == 'command_timeout'
+
+
+def test_arm_rejection_includes_worker_reason(control, capsys):
+    controller, snapshot, events = control
+    def reject():
+        controller.motion.state = 'rejected'
+        controller.motion.pending.append({'state': 'rejected',
+                                         'detail': 'Need fresh telemetry and a stationary robot'})
+        return False
+    controller.motion.arm = reject
+    controller.operate('navigate', '1,0', snapshot, snapshot.captured_at)
+    assert controller.tasks.state == 'paused'
+    assert not controller.motion.commands
+    assert '原因=Need fresh telemetry and a stationary robot' in capsys.readouterr().out
+    assert 'Need fresh telemetry' in events.items[-1]['reason']
 
 
 def test_live_cleanup_restores_other_resources_even_if_motion_close_raises(monkeypatch):

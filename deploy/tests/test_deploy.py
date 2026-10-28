@@ -22,9 +22,11 @@ from deploy.robot.motion import _worker
 from deploy.tests.make_fixture import make_fixture
 
 
-def test_default_configuration_cannot_enable_motion():
+def test_unverified_geometry_cannot_enable_motion():
+    config = load()
+    config['robot']['deskew_and_self_filter_verified'] = False
     with pytest.raises(ValueError, match='deskew_and_self_filter_verified'):
-        check_motion_configuration(load())
+        check_motion_configuration(config)
 
 
 def test_timeout_latches_and_late_packets_cannot_restart():

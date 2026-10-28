@@ -243,7 +243,7 @@ def test_receipt_does_not_bypass_communication_acceptance():
     config = load()
     robot = config['robot']
     robot.update(calibration_verified=True, deskew_and_self_filter_verified=True,
-                 remote_arbitration_verified=True, ground_z=-.3,
+                 communication_verified=False, remote_arbitration_verified=True, ground_z=-.3,
                  lidar_origin_offset_base_m=[.1, 0, .1], takeover_button_mask=1)
     with pytest.raises(ValueError, match='communication_verified'):
         check_motion_configuration(config)

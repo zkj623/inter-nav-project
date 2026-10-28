@@ -29,11 +29,18 @@ max_orientation_jump_rad: 0.7
 # Acceptance basis: measured ground + user-accepted URDF frame correspondence.
 # This is not an independent physical survey or motion acceptance.
 calibration_verified: true
-deskew_and_self_filter_verified: false
-communication_verified: false
-remote_arbitration_verified: false
+# 2026-10-28: operator explicitly requested true for supervised point-nav trials.
+# Test override only: dynamic deskew/self-filter acceptance remains incomplete.
+deskew_and_self_filter_verified: true
+# 2026-10-28: sensor recordings + motion-test 20261028T142816_831350Z;
+# operator accepted physical response; includes command_timeout -> stopped.
+# This does not certify physical network-loss or computer-failure protection.
+communication_verified: true
+# Same recording: 3 takeover stops; release stays latched until explicit re-arm.
+# Operator also confirmed native joystick control still works after takeover.
+remote_arbitration_verified: true
 # Button bit mask in wireless_remote bytes 2:4; choose after inspecting remote.
-takeover_button_mask: 0
+takeover_button_mask: 4096
 sport_state_topic: rt/sportmodestate
 # 2026-10-27: operator confirmed 100 permits motion on this Go2 (Agile state).
 # SportModeState.error_code is not the SportClient RPC return code.

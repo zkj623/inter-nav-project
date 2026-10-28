@@ -6,6 +6,10 @@ import os
 import time
 from .safety import CommandGuard
 
+# Shared trial envelope; the worker enforces it even if the console misbehaves.
+TEST_MAX_DURATION_S = 3.
+TEST_SPEED_LIMITS = (.10, .03, .25)  # vx, vy, wz; lower device limits still apply
+
 
 class UnitreeSport:
     def __init__(self, robot, control):
@@ -109,7 +113,7 @@ def _worker(pipe, robot, control, sdk_factory=UnitreeSport, test_mode=False):
     """One SDK writer; a test deadline and command TTL are enforced here."""
     control = dict(control)
     if test_mode:
-        for key, limit in (('max_vx', .05), ('max_vy', .03), ('max_wz', .15)):
+        for key, limit in zip(('max_vx', 'max_vy', 'max_wz'), TEST_SPEED_LIMITS):
             control[key] = min(control[key], limit)
     lock = open(f'/tmp/inter-nav-motion-{os.getuid()}.lock', 'a')
     guard = CommandGuard(control)
@@ -130,7 +134,7 @@ def _worker(pipe, robot, control, sdk_factory=UnitreeSport, test_mode=False):
             pass
 
     def report(state, detail='', **facts):
-        send(dict(state=state, detail=detail, **facts))
+        send(dict(state=state, detail=detail, worker_at=time.monotonic(), **facts))
 
     def evidence(now):
         return dict(telemetry=_telemetry(sdk, now), peak_speed=peak_speed,
@@ -169,7 +173,8 @@ def _worker(pipe, robot, control, sdk_factory=UnitreeSport, test_mode=False):
                     elif test_mode and not 0 < int(robot.get('takeover_button_mask', 0)) <= 65535:
                         report('rejected', 'Read remote keys and configure takeover_button_mask before testing motion', **reply)
                     elif not sdk.stopped(now):
-                        report('rejected', 'Need fresh telemetry and a stationary robot', **reply)
+                        report('rejected', 'Need fresh telemetry and a stationary robot',
+                               telemetry=_telemetry(sdk, now), **reply)
                     elif getattr(sdk, 'takeover_held', False):
                         report('rejected', 'Release the takeover button before arming', **reply)
                     elif sdk.takeover:
@@ -177,7 +182,9 @@ def _worker(pipe, robot, control, sdk_factory=UnitreeSport, test_mode=False):
                         sdk.takeover = False
                         report('rejected', 'Takeover latch cleared; press the action key again to arm', **reply)
                     else:
-                        duration = min(1., 1. if duration is None else duration) if test_mode else None
+                        duration = (min(TEST_MAX_DURATION_S,
+                                        TEST_MAX_DURATION_S if duration is None else duration)
+                                    if test_mode else None)
                         guard.arm(now, duration)
                         was_armed = True
                         move_reported = stop_reported = False

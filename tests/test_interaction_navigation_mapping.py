@@ -137,6 +137,7 @@ class InteractionNavigationMappingTest(unittest.TestCase):
                 for _ in range(60):
                     occupancy.update_lidar(origin, points, max_range=8)
                 self.assertEqual(bool(occupancy.occupied_mask()[cell]), height > 0)
+                self.assertEqual(float(occupancy.log_odds[cell]), 4.0 if height > 0 else -4.0)
 
 
     def test_same_frame_semantic_sources_are_deduplicated(self):

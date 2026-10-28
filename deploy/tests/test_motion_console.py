@@ -64,8 +64,10 @@ def test_every_action_needs_fresh_prepare_and_cannot_extend_trial(console, key):
     trial.operate('a', 100.)
     trial.operate(key, 100.)
     trial.tick(100.)
-    assert motion.arms == [{'duration_s': 1.}]
+    assert motion.arms == [{'duration_s': 3.}]
     assert len(motion.commands) == 1
+    assert motion.commands[0][0] == {'f': (.10, 0., 0.), 'j': (0., 0., .25),
+                                    't': (.05, 0., 0.)}[key]
     with pytest.raises(ValueError):
         trial.operate(key, 100.1)
     assert len(motion.arms) == 1

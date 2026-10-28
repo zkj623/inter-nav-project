@@ -147,9 +147,14 @@ def test_nonrenewable_deadline_survives_fresh_commands():
     assert not guard.submit([.1,0,0], 10.5, 10.8, 10.5)
 
 
-@pytest.mark.parametrize('duration,expected_duration', [(.18,.18), (8.,1.)])
-def test_test_worker_enforces_duration_and_speed_even_with_fresh_commands(duration, expected_duration):
-    motion = fake_motion()
+@pytest.mark.parametrize('duration,expected_duration,lower_limits', [
+    (.18, .18, False), (8., 3., False), (None, 3., False), (.8, .8, True)])
+def test_test_worker_enforces_duration_and_speed_even_with_fresh_commands(duration, expected_duration, lower_limits):
+    control = dict(load()['runtime']['control'])
+    caps = (.04, .02, .08) if lower_limits else (.10, .03, .25)
+    if lower_limits:
+        control.update(zip(('max_vx', 'max_vy', 'max_wz'), caps))
+    motion = fake_motion(control=control)
     try:
         assert motion.arm(duration_s=duration)
         events = motion.events()
@@ -157,7 +162,7 @@ def test_test_worker_enforces_duration_and_speed_even_with_fresh_commands(durati
         start = time.monotonic()
         while time.monotonic()-start < expected_duration+1.:
             now = time.monotonic()
-            motion.submit([1.,1.,1.], now, now+.3)
+            motion.submit([10*cap for cap in caps], now, now+.3)
             events.extend(motion.events())
             if any(e['state']=='stopped' for e in events):
                 break
@@ -166,11 +171,14 @@ def test_test_worker_enforces_duration_and_speed_even_with_fresh_commands(durati
         assert stopped['detail'] == 'test_duration_elapsed'
         assert stopped['telemetry']['stationary']
         assert stopped['peak_speed'] > 0
-        assert stopped['peak_speed'] <= (.05**2+.03**2)**.5+1e-6
-        assert stopped['peak_yaw_speed'] <= .15+1e-6
+        assert stopped['peak_speed'] <= (caps[0]**2+caps[1]**2)**.5+1e-6
+        assert stopped['peak_yaw_speed'] <= caps[2]+1e-6
+        if expected_duration >= .8:
+            assert stopped['peak_speed'] == pytest.approx((caps[0]**2+caps[1]**2)**.5, abs=1e-6)
+            assert stopped['peak_yaw_speed'] == pytest.approx(caps[2], abs=1e-6)
         accepted = [e for e in events if e.get('event')=='move_accepted']
         assert len(accepted) == 1
-        assert all(abs(v)<=limit+1e-6 for v,limit in zip(accepted[0]['velocity'], (.05,.03,.15)))
+        assert all(abs(v)<=limit+1e-6 for v,limit in zip(accepted[0]['velocity'], caps))
         assert len([e for e in events if e.get('event')=='stop_requested']) == 1
         now = time.monotonic()
         motion.submit([1.,0.,0.], now, now+.3)
