@@ -124,3 +124,27 @@ def test_horizontal_route_length_accepts_mixed_xy_xyz_waypoints():
     assert BoxPushPlanner.length((0.,0.,9.),[(3.,4.),(6.,8.,-1.)])==10.
     assert BoxPushPlanner.length((2.,3.),[(2.,3.)])==0.
     assert math.isinf(BoxPushPlanner.length((2.,3.),[]))
+
+
+def test_actual_safe_contact_pose_ends_alignment_without_millimetre_chasing():
+    from grutopia_extension.interactive_navigation.box_push_navigation import BoxState
+    from grutopia_extension.interactive_navigation.side_push_navigation import SidePushPlanner
+    box=BoxState('B1',(1.,0.),(1.,1.,1.))
+    planner=SidePushPlanner(np.ones((160,160),bool),[[-4,4],[-4,4]],resolution=.05)
+    skill=make_skill();skill.state='align_lateral';skill.state_since=0.;skill.started=0.
+    skill.initial_box=np.array(box.xy);skill.anchor=np.array([-.18,0.])
+    ctx=context(box,1.);ctx.position=np.array([-.18,-.045,.4]);ctx.heading=.03
+    ctx.planner=planner;ctx.boxes=[box]
+    command=skill.step(ctx)
+    assert command.state=='settle_contact' and command.velocity==(0.,0.,0.)
+    assert command.events[-1]['reason']=='actual_contact_pose_ready'
+
+
+def test_contact_reach_accounts_for_front_feet_not_just_the_nose():
+    skill=make_skill();skill.state='engage';skill.started=0.;skill.state_since=0.
+    box=NS(id='B1',xy=(1.01,0.),dimensions=(1.,1.,1.))
+    skill.initial_box=np.array(box.xy);skill.engage_box_position=np.array(box.xy)
+    ctx=context(box,1.);ctx.planner=NS(clearance=lambda box:{'side_parked':False})
+    ctx.limiter=NS(preview=lambda command,now:command)
+    command=skill.step(ctx)
+    assert command.state=='push' and command.velocity[0]<=.30

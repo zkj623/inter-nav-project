@@ -22,6 +22,7 @@ def wrap(value):return (value+math.pi)%(2*math.pi)-math.pi
 @dataclass(frozen=True)
 class PushAsideConfig:
     front_gap:float=.35
+    front_contact_reach:float=.17  # 0.50 m front-foot envelope minus 0.33 m nose offset
     lateral_speed:float=.35
     forward_speed:float=.25
     reverse_speed:float=.35
@@ -201,6 +202,12 @@ class PushAsideSkill:
         if self.state in ['align_longitudinal','align_lateral','settle_contact']:
             if abs(yaw_error)>.18:return self._retry(ctx,'heading_drift_during_alignment')
             if ctx.now-self.state_since>self.config.max_alignment_seconds:return self._retry(ctx,'alignment_timeout')
+            actual_ready=contact_pose_ready(ctx.position,ctx.heading,ctx.box.xy,ctx.box.dimensions,self.direction,
+                self.config.front_gap+.05,self.config.yaw_tolerance)
+            if (self.state!='settle_contact' and actual_ready and body_motion_clear(
+                    ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.)):
+                self._transition('settle_contact',ctx,'actual_contact_pose_ready')
+                return self._output()
             if self.state=='align_longitudinal':
                 target=self.anchor+self.tangent*float(np.dot(np.asarray(ctx.position[:2])-self.anchor,self.tangent))
                 error=float(np.dot(target-np.asarray(ctx.position[:2]),self.direction))
@@ -227,7 +234,7 @@ class PushAsideSkill:
         if self.state in ['engage','push']:
             if ctx.tilt_degrees>18:return self._retry(ctx,'contact_attitude')
             if abs(yaw_error)>.18 or abs(lateral)>.075:return self._retry(ctx,'contact_alignment_drift')
-            if self.state=='engage' and (gap<.06 or float(np.dot(np.asarray(ctx.box.xy)-self.engage_box_position,self.direction))>.015):
+            if self.state=='engage' and (gap<=self.config.front_contact_reach+.02 or float(np.dot(np.asarray(ctx.box.xy)-self.engage_box_position,self.direction))>.015):
                 self._transition('push',ctx);self.push_progress=along;self.push_progress_time=ctx.now
             clearance=ctx.planner.clearance(ctx.box)
             done=push_completion_state(None,clearance,along,True)
