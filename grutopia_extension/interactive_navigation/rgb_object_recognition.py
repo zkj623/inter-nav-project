@@ -10,7 +10,7 @@ from grutopia_extension.interactive_navigation.open_vocabulary_perception import
     AgentVLMBackend,OpenVocabularyPerceptionConfig,OpenVocabularyPerception)
 
 
-CLASS_LABELS=('cardboard box','plastic storage box','wooden crate','chair','cabinet',
+CLASS_LABELS=('box','cardboard box','plastic storage box','wooden crate','chair','cabinet',
               'table','person','bag','door','unknown')
 PROPOSAL_QUERY='cardboard box . carton . box . chair . cabinet . table . person . bag .'
 

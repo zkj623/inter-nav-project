@@ -37,7 +37,7 @@ def audit(folder):
             debug=event['details']
             for detection in debug.get('detections',[]):
                 if (detection.get('status')=='classified' and detection.get('object_id')==object_id
-                    and detection.get('category') in ['cardboard box','plastic storage box','wooden crate']
+                    and detection.get('category') in ['box','cardboard box','plastic storage box','wooden crate']
                     and detection.get('detector_score',0)>=.30 and detection.get('classifier_model')
                     and debug.get('semantic_source')=='rgb_dino_qwen_vl'):
                     crop=folder/'recognition'/Path(detection['crop_path']).name

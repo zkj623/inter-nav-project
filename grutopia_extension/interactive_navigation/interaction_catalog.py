@@ -82,7 +82,7 @@ class InteractionCatalog:
         context=('chair','cabinet','table','person','bag','door','unknown')
         labels=[];terms=[];self.label_aliases=dict(BOX_ALIASES)
         for category in self.categories:
-            defaults=('cardboard box','plastic storage box','wooden crate') if category=='box' else (category,)
+            defaults=('box','cardboard box','plastic storage box','wooden crate') if category=='box' else (category,)
             names=metadata.get(category,{}).get('recognition_labels',defaults)
             if 'unknown' in names:raise ValueError('Unknown cannot be an interaction label alias')
             labels.extend(names);self.label_aliases.update({str(name).casefold():category for name in names})

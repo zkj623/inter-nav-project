@@ -37,3 +37,9 @@ def test_stale_or_conflicting_evidence_does_not_authorize_new_skill():
     assert catalog.permission('B06','push_aside',store,7.) is None
     store.observe(evidence('cabinet','f3'))
     assert catalog.permission('B06','push_aside',store,2.) is None
+
+
+def test_generic_box_is_a_visual_label_not_a_simulator_default():
+    catalog=InteractionCatalog()
+    assert 'box' in catalog.classification_labels
+    assert catalog.permission('B1','push_aside',RecognitionStore(),0.) is None
