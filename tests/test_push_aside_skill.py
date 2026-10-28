@@ -101,3 +101,26 @@ def test_precontact_turn_recovers_before_hard_health_limit():
     command=skill.step(ctx)
     assert command.state=='brake_for_recovery' and skill.release_reason=='preparation_attitude'
     assert command.velocity==(0.,0.,0.) and skill.retries==1
+
+
+def test_current_pose_can_be_reselected_as_a_preparation_stage():
+    from contextlib import contextmanager
+    from grutopia_extension.interactive_navigation.box_push_navigation import BoxState
+    from grutopia_extension.interactive_navigation.side_push_navigation import SidePushPlanner
+    box=BoxState('B1',(1.,0.),(1.,1.,1.))
+    planner=SidePushPlanner(np.ones((80,80),bool),[[-2,2],[-2,2]],resolution=.05,
+                           passages={'B1':{'axis':[0.,1.],'center':[1.,0.]}})
+    @contextmanager
+    def global_planning():yield [box]
+    ctx=context(box);ctx.position=np.array([-.3,-.5,.4]);ctx.planner=planner;ctx.boxes=[box]
+    ctx.layers=NS(global_planning=global_planning)
+    skill=make_skill()
+    assert skill._select_stage(ctx)
+    np.testing.assert_allclose(skill.stage,ctx.position[:2])
+
+
+def test_horizontal_route_length_accepts_mixed_xy_xyz_waypoints():
+    from grutopia_extension.interactive_navigation.box_push_navigation import BoxPushPlanner
+    assert BoxPushPlanner.length((0.,0.,9.),[(3.,4.),(6.,8.,-1.)])==10.
+    assert BoxPushPlanner.length((2.,3.),[(2.,3.)])==0.
+    assert math.isinf(BoxPushPlanner.length((2.,3.),[]))

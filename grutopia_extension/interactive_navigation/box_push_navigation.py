@@ -120,8 +120,10 @@ class BoxPushPlanner:
 
     @staticmethod
     def length(start,path):
-        points=np.array([(*start,0.0),*path])
-        return float(np.linalg.norm(np.diff(points[:,:2],axis=0),axis=1).sum()) if path else math.inf
+        """Horizontal route length for XY and XYZ waypoints, including no-op stages."""
+        if path is None or len(path)==0:return math.inf
+        points=np.asarray([tuple(start[:2]),*(tuple(point[:2]) for point in path)],dtype=float)
+        return float(np.linalg.norm(np.diff(points,axis=0),axis=1).sum())
 
     def route_intersects(self, start, path, box, xy=None):
         mask=self.box_mask(box,xy=xy,padding=self.radius+.08)
