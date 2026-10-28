@@ -167,7 +167,14 @@ class SmoothExplorationTracker(ExplorationPathTracker):
                 corner_heading=future_heading;target_heading=heading+future_error
                 state['blocked_corner_heading_rad']=float(future_heading)
         stage_error=(target_heading-heading+math.pi)%(2*math.pi)-math.pi
-        sharp_turn=not state.get('recovering_buffer') and abs(stage_error)>.85 and distance>.10
+        # A slow, blended turn near an endpoint can leave the rough policy
+        # leaning without a full stride (T05 v77). Finish this turn from a
+        # measured stop using the existing checked staging maneuver instead
+        # of continuing ever smaller simultaneous vx/vy/yaw requests.
+        endpoint_turn=(remaining<self.final_goal_slow_radius and abs(stage_error)>.30
+                       and .05<float(np.linalg.norm(desired[:2]))<.42)
+        sharp_turn=not state.get('recovering_buffer') and (abs(stage_error)>.85 or endpoint_turn) and distance>.10
+        if endpoint_turn:state['endpoint_turn_braking']=True
         if not self.staging_active and sharp_turn:
             # A world-directed shortcut can request reverse/strafe and large
             # yaw together when a frontier or corner moves behind the dog.

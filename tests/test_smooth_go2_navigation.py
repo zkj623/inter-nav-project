@@ -22,6 +22,19 @@ class SmoothControlTests(unittest.TestCase):
         self.assertLess(action['move_by_speed'][0],.4)
         self.assertEqual(action['move_by_speed'][1:],[0.,0.])
 
+    def test_slow_endpoint_turn_brakes_before_the_recorded_creep_failure(self):
+        p=SidePushPlanner(np.ones((160,160),bool),[[-4,4],[-4,4]],resolution=.05)
+        p.navigation_half_width=.22;p.full_navigation_footprint=True;p.control_time=.01
+        limiter=VelocitySlewLimiter();limiter.accept([.35,-.13,-.5],0)
+        limiter.measured=np.array([.37,-.11,-.49])
+        tracker=SmoothExplorationTracker([0,0],[[.55,-.30]],limiter)
+        action,state=tracker.action(np.zeros(2),0,p,[])
+        self.assertTrue(state['endpoint_turn_braking'])
+        self.assertEqual(state['staging_phase'],'staging_brake')
+        np.testing.assert_array_equal(state['desired_command'],[0.,0.,0.])
+        self.assertLess(np.linalg.norm(action['move_by_speed'][:2]),np.linalg.norm([.35,-.13]))
+        self.assertAlmostEqual(limiter.staging.goal_heading,np.arctan2(-.30,.55))
+
     def test_sharp_turn_keeps_heading_until_settled_instead_of_chasing_new_carrot(self):
         p=SidePushPlanner(np.ones((160,160),bool),[[-4,4],[-4,4]],resolution=.05)
         p.navigation_half_width=.22;p.control_time=.01
