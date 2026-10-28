@@ -89,6 +89,7 @@ class FollowingRobotCamera:
         enable_depth=False,
         enable_semantics=False,
         enable_bounding_boxes=True,
+        enable_point_cloud_image=False,
         prim_path='/World/FollowingRobotCamera',
     ):
         from omni.isaac.sensor import Camera
@@ -101,6 +102,9 @@ class FollowingRobotCamera:
         self.enable_depth = bool(enable_depth)
         self.enable_semantics = bool(enable_semantics)
         self.enable_bounding_boxes = bool(enable_bounding_boxes)
+        self.enable_point_cloud_image = bool(enable_point_cloud_image)
+        if self.enable_point_cloud_image and not self.enable_depth:
+            raise ValueError('A point image requires depth capture')
         self._capture_id = 0
         self.camera = Camera(
             prim_path=prim_path,
@@ -157,7 +161,7 @@ class FollowingRobotCamera:
         usd_camera = UsdGeom.Camera(self.camera.prim)
         usd_camera.GetClippingRangeAttr().Set(Gf.Vec2f(near_distance, far_distance))
 
-    def get_data(self):
+    def get_data(self, include_geometry=True):
         # Read the RGB image and its metadata from the same completed render
         # event. Calling get_rgba() separately can observe the next in-flight
         # render product while the camera is moving, leaving torn bands at the
@@ -171,20 +175,22 @@ class FollowingRobotCamera:
             'position': np.asarray(position, dtype=np.float32),
             'orientation': np.asarray(orientation, dtype=np.float32),
             'capture_id': self._capture_id,
+            'rendering_frame': frame.get('rendering_frame'),
+            'rendering_time': frame.get('rendering_time'),
         }
         if self.enable_semantics:
             data['semantic_segmentation'] = frame.get('semantic_segmentation')
-        if self.enable_depth:
+        if self.enable_depth and include_geometry:
             depth = frame.get('distance_to_image_plane')
             data['depth'] = depth
             if depth is None:
                 data['pointcloud'] = None
-                if self.enable_semantics:
+                if self.enable_semantics or self.enable_point_cloud_image:
                     data['pointcloud_image'] = None
             else:
                 depth_array = np.asarray(depth)
                 world_points = np.asarray(self.camera.get_pointcloud()).reshape((*depth_array.shape, 3))
-                if self.enable_semantics:
+                if self.enable_semantics or self.enable_point_cloud_image:
                     data['pointcloud_image'] = world_points
                 valid = np.isfinite(depth_array) & (depth_array > 0.01) & (depth_array < 10000.0)
                 data['pointcloud'] = world_points[valid]

@@ -133,7 +133,7 @@ class BoxPushPlanner:
                 if not self.valid_cell(cell) or mask[cell]:return True
         return False
 
-    def push_candidates(self,start,goal,boxes,box,optimistic):
+    def push_candidates(self,start,goal,boxes,box,optimistic,immovable=()):
         other=np.zeros_like(self.free)
         for candidate in boxes:
             if candidate.id!=box.id:other|=self.box_mask(candidate,padding=.06)
@@ -166,7 +166,7 @@ class BoxPushPlanner:
                 after=[moved if x.id==box.id else x for x in boxes]
                 end_robot=destination-direction*(extent+self.contact_offset+.18)
                 route=self.path(end_robot,goal,after)
-                remaining_optimistic=self.path(end_robot,goal,[])
+                remaining_optimistic=self.path(end_robot,goal,immovable)
                 if not remaining_optimistic or self.route_intersects(end_robot,remaining_optimistic,box,destination):continue
                 score=self.length(start,approach_path)+distance*2.5
                 if route:score+=self.length(end_robot,route)
@@ -177,7 +177,9 @@ class BoxPushPlanner:
 
     def decide(self,start,goal,boxes,excluded=()):
         direct=self.path(start,goal,boxes)
-        optimistic=self.path(start,goal,[])
+        eligible=getattr(self,'interactable_ids',None)
+        immovable=[box for box in boxes if eligible is not None and box.id not in eligible]
+        optimistic=self.path(start,goal,immovable)
         finite=lambda value:float(value) if math.isfinite(value) else None
         details={'start':list(map(float,start)),'goal':list(map(float,goal)),
             'before_path':direct,'without_boxes_path':optimistic,
@@ -193,8 +195,8 @@ class BoxPushPlanner:
             return decision('navigate','ordinary_path_available',direct)
         candidates=[]
         for box in boxes:
-            if box.id in excluded or not self.route_intersects(start,optimistic,box):continue
-            candidates.extend(self.push_candidates(start,goal,boxes,box,optimistic))
+            if box.id in excluded or (eligible is not None and box.id not in eligible) or not self.route_intersects(start,optimistic,box):continue
+            candidates.extend(self.push_candidates(start,goal,boxes,box,optimistic,immovable=immovable))
         if not candidates:
             if direct:return decision('navigate','no_feasible_push_use_detour',direct)
             return decision('failed','no_safe_contact_push_or_parking_pose')

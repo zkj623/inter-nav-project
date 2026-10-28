@@ -599,5 +599,5 @@ def body_rotation_clear(planner,boxes,position,first_heading,last_heading,margin
 
 def update_task_cameras(first_camera,third_camera,position,orientation):
     """Same actual-yaw update as the pure exploration recording session."""
-    first_camera.update_pose(position,orientation)
-    third_camera.update_pose(position,orientation)
+    if first_camera is not None:first_camera.update_pose(position,orientation)
+    if third_camera is not None:third_camera.update_pose(position,orientation)
