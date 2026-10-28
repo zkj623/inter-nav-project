@@ -17,6 +17,7 @@ a text target such as `refrigerator` and walks up to the scanned object.
 全局层 1 Hz 更新，局部层 10 Hz 更新，箱子移开后的空间需要新射线确认才会通行。
 在线模式默认使用固定 200 Hz 物理步长的 DC 电机控制、50 Hz 原 Go2 policy 和 25 fps 录像。
 当前五组统一物理验收尚未完成；各版本成功及失败结果见下方在线导航说明。
+当前候选修复了 Go2 全关节物理设置的作用范围、辅助地面接触参数的初始化时机，并采用可启动步态的接触速度和基于实测速度的提前制动。原始 T04/T05 仍须整场复跑验收；局部推箱对照不计为任务完成。
 
 在实验分支 `codex/go2-online-smooth-20261027` 的仓库根目录执行：
 
@@ -28,13 +29,13 @@ go2_inputs=/data20t/embodied/zkj/inter-nav-results/go2-voronoi-heading-up-202610
 go2_out="/data20t/embodied/zkj/inter-nav-results/go2-online-$(date +%Y%m%d-%H%M%S)"
 "$ISAAC_PYTHON" -u grutopia/demo/go2_online_interactive_navigation.py \
   --benchmark-dir "$go2_inputs" --output "$go2_out" \
-  --task-ids T01,T02,T03,T04,T05 --gpu 1 --max-steps 30000 \
+  --task-ids T01,T02,T03,T04,T05 --gpu 1 --max-steps 40000 \
   --floor-top .01 --map-source online --interaction-source ground_truth --path-controller continuous --navigation-attitude-recovery \
   --route-planner voronoi --navigation-heading path \
   --roadmap-shape circle --route-clearance .30 --navigation-half-width .22 \
   --voronoi-clearance-weight .30 \
   --global-map-hz 1 --local-map-hz 10 --local-map-radius 3 \
-  --push-max-speed .95 --turn-speed 1.0 --contact-centering-speed .25 --contact-lateral-speed .35 \
+  --push-start-speed .60 --push-max-speed .95 --turn-speed 1.0 --contact-centering-speed .25 --contact-lateral-speed .35 \
   --contact-yaw-tolerance .10 --contact-front-gap .40 \
   --record-video --material-mode preview \
   --third-person-height 1.35 --third-person-forward .25 --third-person-fov 100
@@ -85,7 +86,7 @@ set -o pipefail
   --voronoi-clearance-weight 0.30 --navigation-half-width 0.22 \
   --global-map-hz 1 --local-map-hz 10 --local-map-radius 3 \
   --third-person-height 1.35 --third-person-forward 0.25 --third-person-fov 100 \
-  --push-max-speed 0.95 --turn-speed 1.0 \
+  --push-start-speed 0.60 --push-max-speed 0.95 --turn-speed 1.0 \
   --contact-centering-speed 0.25 --contact-yaw-tolerance 0.10 --contact-front-gap 0.40 \
   --output "$go2_out" 2>&1 | tee "${go2_out}.log"
 ```

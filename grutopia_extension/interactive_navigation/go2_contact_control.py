@@ -240,3 +240,15 @@ class ContactAlignmentGate:
             elif lateral>.055:self.axis='lateral'
             elif yaw>yaw_tolerance:self.axis='yaw'
         return self.axis
+
+
+def push_braking_distance(forward_velocity, horizon=.55, margin=.015):
+    """Calibrated coast allowance from FILTERED measured push-axis speed.
+
+    Instantaneous gait velocity peaks stop the push too early. The caller
+    uses VelocitySlewLimiter.measured (0.15 s filter), then checks the actual
+    settled displacement before releasing the box or continuing a shortfall.
+    """
+    if not np.isfinite(forward_velocity):
+        raise ValueError('Push braking requires finite measured velocity')
+    return margin + horizon * max(0., float(forward_velocity))

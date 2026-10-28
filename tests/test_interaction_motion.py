@@ -106,3 +106,25 @@ def test_recovery_handoff_discards_old_turn_without_resetting_velocity_history()
     assert limiter.last_time==1. and limiter.measurement_time==1.
     np.testing.assert_allclose(limiter.progress_position,[2.,3.])
     assert limiter.progress_time==1.5
+
+
+def test_push_braking_only_allows_contact_with_the_selected_push_target(monkeypatch):
+    from types import SimpleNamespace as NS
+    from grutopia_extension.interactive_navigation.go2_interaction_motion import checked_skill_brake
+    import grutopia_extension.interactive_navigation.go2_contact_turn as contact_turn
+    seen=[]
+    def checked(request,position,heading,planner,boxes,limiter,now):
+        seen.append([box.id for box in boxes]);return np.array([.2,0.,0.]),{}
+    monkeypatch.setattr(contact_turn,'checked_contact_turn_command',checked)
+    target=NS(id='target');other=NS(id='other')
+    ctx=NS(healthy=True,tilt_degrees=0.,box=target,boxes=[target,other],
+           position=np.zeros(3),heading=0.,planner=object(),limiter=object(),now=0.)
+    command=NS(status='running',velocity=(0.,0.,0.),navigation_goal=None,state='settle_push_progress')
+    np.testing.assert_allclose(checked_skill_brake(command,ctx),[.2,0.,0.])
+    assert seen[-1]==['other']
+    command.state='brake_for_recovery'
+    checked_skill_brake(command,ctx)
+    assert seen[-1]==['target','other']
+    command.state='settle_push_progress';ctx.tilt_degrees=18.
+    np.testing.assert_array_equal(checked_skill_brake(command,ctx),np.zeros(3))
+    assert len(seen)==2

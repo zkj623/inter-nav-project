@@ -55,7 +55,7 @@ go2_out="/data20t/embodied/zkj/inter-nav-results/go2-visual-skill-$(date +%Y%m%d
   --roadmap-shape circle --route-clearance .30 --navigation-half-width .22 --voronoi-clearance-weight .30 \
   --global-map-hz 1 --local-map-hz 10 --local-map-radius 3 \
   --interaction-catalog grutopia/demo/profiles/interactive_object_catalog.json \
-  --push-max-speed .95 --turn-speed 1.0 --contact-centering-speed .25 --contact-lateral-speed .35 \
+  --push-start-speed .60 --push-max-speed .95 --turn-speed 1.0 --contact-centering-speed .25 --contact-lateral-speed .35 \
   --contact-yaw-tolerance .10 --contact-front-gap .35 \
   --record-video --material-mode simple \
   --third-person-height 1.35 --third-person-forward .25 --third-person-fov 100
@@ -76,14 +76,14 @@ go2_out="/data20t/embodied/zkj/inter-nav-results/go2-visual-skill-$(date +%Y%m%d
 视觉模式仍运行第一视角 RGB-D 识别；真值模式跳过识别，录像相机仅用于展示。墙体、家具、箱子的碰撞几何不变。纯色材质模式保留物理材质绑定，箱子的质量、摩擦和纯色外观保持原配置。
 
 ```bash
-# 无纹理测试：在上方完整命令中使用这组开关，并去掉 --record-video
---material-mode simple
+# 无纹理真值测试：保留五路完整录像
+--material-mode simple --record-video
 
 # 测试通过后，正式录像重新使用
 --material-mode preview --record-video
 ```
 
-无纹理开发测试不能替代开启纹理后的视觉识别和完整视频验收。内存峰值需要实际运行测量；不能把启动时的空闲内存门槛当作进程实际占用。
+真值模式允许无纹理场景与五路完整录像一起验收。若启用视觉识别，则还需用实际材质图像验证分类；真值模式的结果不能证明视觉识别通过。内存峰值需要实际运行测量；不能把启动时的空闲内存门槛当作进程实际占用。
 
 ## 扩展类别
 
@@ -91,7 +91,23 @@ go2_out="/data20t/embodied/zkj/inter-nav-results/go2-visual-skill-$(date +%Y%m%d
 
 新增类别还必须提供支持该类别的技能；仅加白名单不会让 `PushAsideSkill` 自动支持未知物体。
 
-## 当前候选：通路入口停稳与接触姿态驱动的精调
+## 当前候选：物理初始化、有效起步速度与推后制动
+
+物理接口按原 Go2 USD 和同一 policy 校正：保留髋/大腿 30.1 rad/s、小腿 15.7 rad/s 的原生仿真关节限制；显式 DC 输出仍受 23.5 N m 和训练时 30 rad/s 电机曲线约束。原生驱动力上限设置为非限制值，避免重复截断；没有增大实际电机力矩。
+
+Isaac Core 初始化后会把机器人路径解析到 `/base`。现在保留资产根路径，在首次物理初始化前为躯干和所有腿部刚体应用设置，避免只修改躯干。1 cm 辅助地面的静/动摩擦 1.0 和零扭转接触半径，也在创建碰撞体时设置；原来初始化后才绑定的设置不能等同于正确的初始接触状态。矩形地面的尺寸、厚度和场景资产保持原配置。
+
+局部自由行走对照中，提前配置地面后，0.6 m/s 请求可走到测试边界，峰值倾角约 10.6°；0.3 m/s 请求仍有起步前倾。因此接触起步请求改为 `--push-start-speed .60`，再按原加速度限制增加到 `--push-max-speed .95`。这不是机器人实际运动速度的保证，实测速度、姿态和箱子位移仍闭环检查。
+
+五组局部物理偏差对照（0、±0.05 rad、±0.03 m）在未提前制动时推动 6 kg 箱子约 1.12–1.15 m，峰值均低于 15.3°，其中一组末段触发横向对准保护。目标推动 0.85 m 时，使用过滤后的实测速度提前制动，五组停在 0.841–0.904 m，峰值均低于 19°。这些只是平地接触诊断，不包含在线导航、通路证书或原任务到点，不能计为 T04/T05 成功。
+
+技能增加 `settle_push_progress`：预测制动后必须实测停稳，再检查原侧向停放位移和通路余量；不足则补推，不能把预测当作成功。受控推箱的减速阶段允许继续接触当前已授权箱子，避免避障检查将平滑制动改成骤停；箱子真实物理碰撞保留，静态墙体和其他物体继续参与运动检查。18° 接触保护、30° 硬健康上限和 0.25 m 最终到点标准不变。
+
+可运行 `tools/diagnose_go2_contact_control.py --suite skill_contact --gpu 2 --output <新目录>` 复测真实技能的接触、制动与停稳。该工具从接触前开始，明确标记 `diagnostic_only`，不是导航任务。诊断箱子复用正式场景的 `author_box`，在物理初始化前设置质量与碰撞体，避免运行时只改质量却沿用旧惯量。完整任务源码快照包含固定地面构造代码及配置。
+
+直接调用生产 `PushAsideSkill` 的 `skill-contact-v76` 五组接触试验均到达 `parked_settled`：实际位移分别为 0.845、0.904、0.842、0.882、0.866 m，最大倾角 18.77°。这里只确认了接触、制动、停稳和允许退开；未执行整场导航、在线通路确认和最终到点。对应代码回归为 **494 passed、1 deselected**（既有 G1 相机测试未运行）。本候选下一步运行原始 T04/T05，每组最多 40,000 步并保存五路完整视频。
+
+## 上一候选：通路入口停稳与接触姿态驱动的精调
 
 v50 T05 已侧推 B07 0.877816 m 并获得新扫描通路证书，但驶向入口时失稳：17,624 步，最大倾角 39.623°，最终误差 2.287 m。入口当时仍用普通终点的 0.75 m 减速半径，约 0.20 m 外速度请求已降至 0.134 m/s。新入口流程使用短目标减速配置，并按实测速度预测制动；必须完成实测停稳后才能把引导切到通路另一端。停在入口容差外仍重新规划，最终任务目标与 0.25 m 标准不变。
 

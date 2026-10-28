@@ -69,7 +69,7 @@ def test_reengagement_does_not_mistake_previous_push_for_current_contact():
     ctx.planner=NS(clearance=lambda box:{'side_parked':False})
     ctx.limiter=NS(preview=lambda command,now:command)
     command=skill.step(ctx)
-    assert command.state=='engage' and command.velocity[0]<=.30
+    assert command.state=='engage' and command.velocity[0]<=skill.config.push_start_speed
 
 
 def test_progress_watchdog_detects_stalling_after_partial_movement():
@@ -148,7 +148,7 @@ def test_contact_reach_accounts_for_front_feet_not_just_the_nose():
     ctx=context(box,1.);ctx.planner=NS(clearance=lambda box:{'side_parked':False})
     ctx.limiter=NS(preview=lambda command,now:command)
     command=skill.step(ctx)
-    assert command.state=='push' and command.velocity[0]<=.30
+    assert command.state=='push' and command.velocity[0]<=skill.config.push_start_speed
 
 
 def alignment_context(state,gap=.46,lateral=.12,heading=0.):
@@ -347,3 +347,35 @@ def test_final_contact_still_requires_heading_tolerance_and_uses_checked_trim():
     command=skill.step(ctx)
     assert command.state=='refine_heading' and command.velocity==(0.,0.,0.)
     assert command.events[-1]['reason']=='contact_heading_outside_tolerance'
+
+
+def test_predicted_push_stop_must_settle_and_complete_measured_shortfall():
+    skill=make_skill();skill.state='push';skill.started=0.;skill.state_since=0.
+    skill.initial_box=np.array([0.,0.]);skill.push_progress=.8;skill.push_progress_time=1.
+    box=NS(id='B1',xy=(.83,0.),dimensions=(1.,1.,1.))
+    ctx=context(box,1.)
+    ctx.planner=NS(clearance=lambda box:{'side_parked':False})
+    ctx.limiter=NS(preview=lambda command,now:command,measured=np.array([.4,0.,0.]),command=np.array([.8,0.,0.]))
+    ctx.body_velocity=np.array([.4,0.,0.])
+    result=skill.step(ctx)
+    assert result.state=='settle_push_progress' and result.velocity==(0.,0.,0.)
+    assert skill.push_brakes==1 and skill.status=='running'
+    ctx.now=1.2
+    assert skill.step(ctx).state=='settle_push_progress'
+    ctx.body_velocity=np.zeros(3);ctx.limiter.command=np.zeros(3)
+    ctx.now=1.3;skill.step(ctx)
+    ctx.now=1.8
+    assert skill.step(ctx).state=='engage'
+    assert skill.release_reason!='side_parked'
+
+
+def test_measured_park_after_predictive_braking_releases_without_another_push():
+    skill=make_skill();skill.state='settle_push_progress';skill.started=0.;skill.state_since=0.
+    skill.initial_box=np.array([0.,0.])
+    ctx=context(NS(id='B1',xy=(.99,0.),dimensions=(1.,1.,1.)),3.1)
+    ctx.planner=NS(clearance=lambda box:{'side_parked':True,'passage_clearance_margin_m':.05})
+    ctx.limiter=NS(command=np.zeros(3))
+    assert skill.step(ctx).state=='settle_push_progress'
+    ctx.now=3.6
+    assert skill.step(ctx).state=='retreat'
+    assert skill.release_reason=='side_parked'

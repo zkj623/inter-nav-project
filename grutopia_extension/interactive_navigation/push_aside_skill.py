@@ -9,7 +9,7 @@ import numpy as np
 from grutopia_extension.interactive_navigation.interaction_skill import SkillSpec,SkillCommand
 from grutopia_extension.interactive_navigation.go2_contact_control import (
     ContactYawServo,contact_heading_hold,contact_pose_ready,observed_contact_retreat,
-    push_centerline_velocity,push_completion_state)
+    push_centerline_velocity,push_completion_state,push_braking_distance)
 from grutopia_extension.interactive_navigation.go2_contact_turn import ContactTurnControl,checked_contact_turn_command
 from grutopia_extension.interactive_navigation.go2_voronoi_navigation import (
     body_rotation_clear,body_translation_recovery_clear,body_motion_clear,
@@ -30,9 +30,10 @@ class PushAsideConfig:
     lateral_speed:float=.35
     forward_speed:float=.25
     reverse_speed:float=.35
-    push_start_speed:float=.30
+    push_start_speed:float=.60
     push_max_speed:float=.95
     push_acceleration:float=.15
+    max_push_braking_seconds:float=6.
     yaw_tolerance:float=.10
     lateral_tolerance:float=.055
     alignment_tolerance:float=.035
@@ -76,7 +77,7 @@ class PushAsideSkill:
         self.release_origin=None;self.release_reason=None;self.certificate=None
         self.last_verify=-1e9;self.observation_moves=0;self.used_stages=[]
         self.progress_mark=None;self.progress_since=None;self.max_tilt=0.
-        self.reason='';self.status='running';self.box_velocity=0.;self.last_box_time=None
+        self.reason='';self.status='running';self.box_velocity=0.;self.last_box_time=None;self.push_brakes=0
         self.preparation_recoveries=0;self.recovery_tracker=None;self.recovery_target=None;self.next_stage_probe=-1e9;self.heading_trim=None
 
     def _transition(self,state,ctx,reason=''):
@@ -378,6 +379,23 @@ class PushAsideSkill:
             if abs(lateral)>self.config.lateral_tolerance:self._transition('align_lateral',ctx)
             elif gap>self.config.front_gap+.125 or gap<.20:self._transition('align_longitudinal',ctx)
             return self._output()
+        if self.state in ['engage','push','settle_push_progress','brake_after_push'] and along>self.plan.push_distance+.25:
+            return self._fail(ctx,'safe_push_distance_exceeded')
+        if self.state=='settle_push_progress':
+            if self._quiet(ctx,.4,max_tilt=18.):
+                clearance=ctx.planner.clearance(ctx.box)
+                if push_completion_state(None,clearance,along,True) and along>=self.plan.push_distance-.035:
+                    self.release_origin=np.asarray(ctx.position[:2]).copy();self.release_reason='side_parked'
+                    self._transition('retreat',ctx,'side_parked_after_measured_braking')
+                else:
+                    # A predicted stop is not a clearance certificate. Keep
+                    # the original required displacement and finish shortfalls.
+                    self.engage_box_position=np.asarray(ctx.box.xy).copy()
+                    self._transition('engage',ctx,'shortfall_after_measured_braking')
+                return self._output()
+            if ctx.now-self.state_since>self.config.max_push_braking_seconds:
+                return self._retry(ctx,'push_braking_not_settled')
+            return self._output()
         if self.state in ['engage','push']:
             if ctx.tilt_degrees>18:return self._retry(ctx,'contact_attitude')
             if abs(yaw_error)>.18 or abs(lateral)>.075:return self._retry(ctx,'contact_alignment_drift')
@@ -388,13 +406,19 @@ class PushAsideSkill:
             if done and along>=self.plan.push_distance-.035:
                 self.release_origin=np.asarray(ctx.position[:2]).copy();self.release_reason='side_parked'
                 self._transition('brake_after_push',ctx,done);return self._output()
-            if along>self.plan.push_distance+.25:return self._fail(ctx,'safe_push_distance_exceeded')
+            c,s=math.cos(ctx.heading),math.sin(ctx.heading);rot=np.array([[c,-s],[s,c]])
+            measured=np.asarray(getattr(ctx.limiter,'measured',ctx.body_velocity),float)
+            push_velocity=float(np.dot(rot@measured[:2],self.direction))
+            if self.state=='push' and along>.10 and self.plan.push_distance-along<=push_braking_distance(push_velocity):
+                self.push_brakes+=1
+                self._transition('settle_push_progress',ctx,'predicted_push_coast')
+                return self._output()
             elapsed=ctx.now-self.state_since
             if self.state=='engage' and elapsed>12:return self._retry(ctx,'contact_not_established')
             if self.state=='push':
                 if along-self.push_progress>.015:self.push_progress=along;self.push_progress_time=ctx.now
                 if ctx.now-self.push_progress_time>6:return self._retry(ctx,'box_motion_stalled')
-            speed=self.config.push_start_speed if self.state=='engage' else min(self.config.push_max_speed,self.config.push_start_speed+self.config.push_acceleration*elapsed)
+            speed=min(self.config.push_start_speed,self.config.push_max_speed) if self.state=='engage' else min(self.config.push_max_speed,self.config.push_start_speed+self.config.push_acceleration*elapsed)
             c,s=math.cos(ctx.heading),math.sin(ctx.heading);rot=np.array([[c,-s],[s,c]])
             world_v=rot@np.asarray(ctx.body_velocity[:2])
             velocity=push_centerline_velocity(self.direction,speed,lateral,float(np.dot(world_v,self.tangent)))
@@ -472,6 +496,8 @@ class PushAsideSkill:
                 'body_velocity_mps':list(map(float,ctx.body_velocity[:2])),
                 'measured_yaw_rate_rad_s':float(ctx.yaw_rate),'tilt_degrees':float(ctx.tilt_degrees),
                 'body_angular_velocity_rad_s':None if getattr(ctx,'body_angular_velocity',None) is None else list(map(float,ctx.body_angular_velocity)),
+                'push_braking_cycles':self.push_brakes,'measured_box_speed_mps':float(self.box_velocity),
+                'remaining_push_m':None if self.initial_box is None else float(self.plan.push_distance-np.dot(np.asarray(ctx.box.xy)-self.initial_box,self.direction)),
                 'stage_xy':None if self.stage is None else self.stage.tolist(),
                 'preparation_recovery_target':None if self.recovery_target is None else self.recovery_target.tolist(),
                 'heading_trim':None if self.heading_trim is None else self.heading_trim.last_detail,
@@ -484,5 +510,5 @@ class PushAsideSkill:
             'interaction_source':self.permission.source,'source_reference':self.permission.source_reference,
             'source_digest':self.permission.source_digest,
             'recognition_frames':list(self.permission.evidence_frames),'classifier_models':list(self.permission.classifier_models),
-            'retries':self.retries,'preparation_recoveries':self.preparation_recoveries,'actual_push_distance_m':moved,'maximum_tilt_degrees':self.max_tilt,
+            'push_braking_cycles':self.push_brakes,'retries':self.retries,'preparation_recoveries':self.preparation_recoveries,'actual_push_distance_m':moved,'maximum_tilt_degrees':self.max_tilt,
             'passage_certificate':self.certificate,'object_pose_feedback':'selected permitted simulator rigid body'}

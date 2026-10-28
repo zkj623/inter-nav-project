@@ -62,6 +62,13 @@ def checked_skill_brake(command,context):
     if (command.navigation_goal is not None or np.any(np.abs(velocity)>1e-9) or context.limiter is None):
         return velocity
     from grutopia_extension.interactive_navigation.go2_contact_turn import checked_contact_turn_command
+    boxes=context.boxes
+    if command.state in {'settle_push_progress','brake_after_push'} and context.box is not None:
+        # Controlled deceleration is still part of the permitted push. The
+        # target remains a physical collider, but rejecting that SAME contact
+        # here changes a slew-limited stop into a hard zero at every brake.
+        # Keep the static map and all other objects in the momentum check.
+        boxes=[box for box in boxes if box.id!=context.box.id]
     safe,_=checked_contact_turn_command([0.,0.,0.],context.position,context.heading,
-        context.planner,context.boxes,context.limiter,context.now)
+        context.planner,boxes,context.limiter,context.now)
     return safe

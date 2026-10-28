@@ -43,6 +43,8 @@ def main():
     parser.add_argument('--roadmap-shape',choices=['circle','footprint'],default='circle')
     parser.add_argument('--navigation-half-width',type=float,default=.22)
     parser.add_argument('--voronoi-clearance-weight',type=float,default=.30)
+    parser.add_argument('--push-start-speed',type=float,default=.60,
+                        help='Forward policy request that initiates a contact stride (m/s)')
     parser.add_argument('--push-max-speed',type=float,default=.85,
                         help='Maximum forward policy request during box contact (m/s)')
     parser.add_argument('--turn-speed',type=float,default=.50,
@@ -83,6 +85,8 @@ def main():
         raise ValueError('Yaw calibration records every render; enable --record-video')
     if not .30 <= args.push_max_speed <= 1.0:
         raise ValueError('push-max-speed must be within 0.30-1.00 m/s')
+    if not .30<=args.push_start_speed<=args.push_max_speed:
+        raise ValueError('push-start-speed must be between 0.30 and push-max-speed')
     if not .25 <= args.turn_speed <= 1.0:
         raise ValueError('turn-speed must be within 0.25-1.00 rad/s')
     if not .02<=args.contact_yaw_tolerance<=.10 or not .20<=args.contact_centering_speed<=.50:
@@ -237,6 +241,7 @@ def main():
         'grutopia_extension/interactive_navigation/mapping_runtime.py',
         'grutopia_extension/interactive_navigation/go2_navigation_runner.py',
         'grutopia_extension/interactive_navigation/visualization.py',
+        'grutopia_extension/configs/objects/__init__.py','grutopia_extension/objects/fixed_cube.py',
         'grutopia_extension/configs/robots/go2.py','grutopia_extension/robots/go2.py']:
         target=args.output/'source'/rel;target.parent.mkdir(parents=True,exist_ok=True)
         shutil.copy2(repo/rel,target);manifest[rel]=hashlib.sha256((repo/rel).read_bytes()).hexdigest()
@@ -324,7 +329,7 @@ def main():
                 'spawn_base_height':spawn_height,
                 'lidar_max_range':config.lidar_max_range,
                 'lidar_resolution_degrees':list(config.lidar_resolution),
-                'push_max_speed':args.push_max_speed,
+                'push_max_speed':args.push_max_speed,'push_start_speed':args.push_start_speed,
                 'turn_speed':args.turn_speed,
                 'contact_yaw_tolerance':args.contact_yaw_tolerance,
                 'contact_centering_speed':args.contact_centering_speed,
@@ -815,7 +820,7 @@ def main():
                             event('interaction_permission_denied',step=step,object_id=plan.box_id)
                             obs=tick(stop);last_action=stop;continue
                         skill=registry.create(permission,plan=plan,task_start=task['start'],task_goal=task['goal'],
-                            config=PushAsideConfig(front_gap=max(.30,args.contact_front_gap),push_max_speed=args.push_max_speed,
+                            config=PushAsideConfig(front_gap=max(.30,args.contact_front_gap),push_max_speed=args.push_max_speed,push_start_speed=args.push_start_speed,
                                 lateral_speed=args.contact_lateral_speed,forward_speed=args.contact_centering_speed,
                                  yaw_tolerance=args.contact_yaw_tolerance))
                         phase='skill';push_count+=1;subtracker=None;subtarget=None;sub_reached=False
