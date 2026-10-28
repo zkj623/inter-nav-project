@@ -9,6 +9,14 @@ def restore_carton_materials(stage, scene_root, box_ids):
         material_prim=stage.GetPrimAtPath(f'{scene_root}/BoxMaterials/{box_id}_Cardboard')
         if not material_prim:raise ValueError(f'Missing authored material for {box_id}')
         material_prim.SetActive(True)
+        # Simple scene shading leaves physical materials active but disables
+        # their visual graphs. Cartons use authored constant-color shaders.
+        def restore_graph(prim):
+            if prim.IsA(UsdShade.Shader) or prim.IsA(UsdShade.NodeGraph):
+                prim.SetActive(True)
+            for child in prim.GetAllChildren():
+                restore_graph(child)
+        restore_graph(material_prim)
         material=UsdShade.Material(material_prim)
         physics=UsdPhysics.MaterialAPI(material_prim)
         root=stage.GetPrimAtPath(f'{scene_root}/InteractiveBoxes/{box_id}')

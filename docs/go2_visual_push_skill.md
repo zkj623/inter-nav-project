@@ -60,6 +60,21 @@ go2_out="/data20t/embodied/zkj/inter-nav-results/go2-visual-skill-$(date +%Y%m%d
 
 地图中未识别对象为灰色，已识别且允许交互的箱子为金色。面板显示类别、技能阶段、重试次数和路径收益。
 
+## 关闭纹理做开发测试
+
+先在完整原尺寸 MV7 场景中测试控制、交互和在线地图，可使用上方命令并将 `--material-mode preview` 改为 `--material-mode simple`，去掉 `--record-video`。
+第一视角 RGB-D 相机和视觉识别继续运行；墙体、家具、箱子的碰撞几何不变。纯色材质模式保留物理材质绑定，箱子的质量、摩擦和纯色外观保持原配置。
+
+```bash
+# 无纹理测试：在上方完整命令中使用这组开关，并去掉 --record-video
+--material-mode simple
+
+# 测试通过后，正式录像重新使用
+--material-mode preview --record-video
+```
+
+无纹理开发测试不能替代开启纹理后的视觉识别和完整视频验收。内存峰值需要实际运行测量；不能把启动时的空闲内存门槛当作进程实际占用。
+
 ## 扩展类别
 
 编辑 `grutopia/demo/profiles/interactive_object_catalog.json` 中的 `recognition_labels`、`detection_terms`、`enabled` 和 `skills`。标签会传给视觉分类器。通用 `box` 与细分类共同参与识别，避免无法判断材质时拒绝明确的箱体形状。纸箱、塑料收纳箱、木箱归一为 `box`；柜子不归为箱子。
@@ -68,6 +83,6 @@ go2_out="/data20t/embodied/zkj/inter-nav-results/go2-visual-skill-$(date +%Y%m%d
 
 ## 验收状态（2026-10-28）
 
-新流程的 434 项回归检查通过。在独立的小型 Isaac Sim 场景中，5 个真实渲染帧经过 DINO、SAM、RGB-D 关联和 Qwen3-VL 后被识别为 `box`；系统在第二个独立帧确认后才授予权限。未知类别未被默认放行。此检查仅验证识别接口，不是原始 T04/T05 的导航或推箱验收。
+新流程的 437 项回归检查通过。在独立的小型 Isaac Sim 场景中，5 个真实渲染帧经过 DINO、SAM、RGB-D 关联和 Qwen3-VL 后被识别为 `box`；系统在第二个独立帧确认后才授予权限。未知类别未被默认放行。此检查仅验证识别接口，不是原始 T04/T05 的导航或推箱验收。
 
 原尺寸 MV7 的 T04/T05 完整复跑正在等待服务器内存资源，尚未验收通过。旧的无识别或已知地图成功视频不能作为本版本的验收证据。

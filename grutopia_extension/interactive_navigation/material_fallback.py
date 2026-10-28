@@ -29,17 +29,35 @@ def apply_simple_scene_material(stage, root_path) -> dict:
     This removes texture appearance; use for geometry tests, not visual-model
     quality evaluation. Robot, sensors, physics and semantic labels are kept.
     """
-    from pxr import Gf, Sdf, UsdGeom, UsdShade
+    from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics, UsdShade
 
     material_path = Sdf.Path(root_path).AppendChild('NavigationSimpleMaterial')
+    scene_prims = list(_scene_prims(stage, root_path))
+    physical_bindings = []
+    for prim in scene_prims:
+        if not (prim.IsA(UsdGeom.Gprim) or prim.IsA(UsdGeom.Subset)):
+            continue
+        material, _ = UsdShade.MaterialBindingAPI(prim).ComputeBoundMaterial(materialPurpose='physics')
+        if material and material.GetPrim().HasAPI(UsdPhysics.MaterialAPI):
+            physical_bindings.append((prim, material))
     materials = [
-        prim for prim in _scene_prims(stage, root_path)
+        prim for prim in scene_prims
         if prim.IsA(UsdShade.Material) and prim.GetPath() != material_path
     ]
     # Disable original shader networks as well as their bindings so Hydra does
     # not discover and compile their MDL/texture assets on the first update.
+    disabled_materials = 0
     for prim in materials:
-        prim.SetActive(False)
+        if prim.HasAPI(UsdPhysics.MaterialAPI):
+            # A material can carry both a visual graph and contact properties.
+            # Keep the physical prim alive; only its visual graph is disabled.
+            graphs = [child for child in Usd.PrimRange(prim)
+                      if child.IsA(UsdShade.Shader) or (child.IsA(UsdShade.NodeGraph) and not child.IsA(UsdShade.Material))]
+            for child in sorted(graphs, key=lambda node: node.GetPath().pathElementCount, reverse=True):
+                child.SetActive(False)
+        else:
+            prim.SetActive(False)
+            disabled_materials += 1
     material = UsdShade.Material.Define(stage, material_path)
     shader = UsdShade.Shader.Define(stage, material.GetPath().AppendChild('Shader'))
     shader.CreateIdAttr('UsdPreviewSurface')
@@ -54,7 +72,18 @@ def apply_simple_scene_material(stage, root_path) -> dict:
             binding.UnbindAllBindings()
             binding.Bind(material, bindingStrength=UsdShade.Tokens.strongerThanDescendants)
             geometries += 1
-    return {'disabled_materials': len(materials), 'geometries': geometries}
+    # Preserve the effective physics material, including bindings that were
+    # inherited or supplied through allPurpose before the visual override.
+    for prim, physical_material in physical_bindings:
+        UsdShade.MaterialBindingAPI.Apply(prim).Bind(
+            physical_material, materialPurpose='physics',
+            bindingStrength=UsdShade.Tokens.weakerThanDescendants)
+    for prim, physical_material in physical_bindings:
+        current, _ = UsdShade.MaterialBindingAPI(prim).ComputeBoundMaterial(materialPurpose='physics')
+        if not current or current.GetPath() != physical_material.GetPath():
+            raise RuntimeError(f'Visual simplification changed physics material at {prim.GetPath()}')
+    return {'disabled_materials': disabled_materials, 'geometries': geometries,
+            'preserved_physics_bindings': len(physical_bindings)}
 
 
 def apply_koostruct_material_fallbacks(stage, root_path=None) -> dict:

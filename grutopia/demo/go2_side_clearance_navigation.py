@@ -197,6 +197,7 @@ def main():
         'grutopia_extension/interactive_navigation/box_push_navigation.py','grutopia_extension/controllers/isaac_go2_ctrl.py',
         'grutopia_extension/interactive_navigation/go2_path_tracking.py','grutopia_extension/interactive_navigation/task_video_recording.py',
         'grutopia_extension/interactive_navigation/carton_materials.py',
+        'grutopia_extension/interactive_navigation/material_fallback.py',
         'grutopia_extension/interactive_navigation/go2_exploration_tracking.py',
         'grutopia_extension/interactive_navigation/go2_contact_control.py',
         'grutopia_extension/interactive_navigation/go2_contact_turn.py',
