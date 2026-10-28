@@ -31,6 +31,8 @@ class PushAsideConfig:
     push_acceleration:float=.15
     yaw_tolerance:float=.10
     lateral_tolerance:float=.055
+    alignment_tolerance:float=.035
+    alignment_yaw_tolerance:float=.05
     max_retries:int=4
     max_skill_seconds:float=180.
     max_turn_seconds:float=40.
@@ -86,9 +88,15 @@ class PushAsideSkill:
         return self._output()
 
     def _quiet(self,ctx,seconds=.30,max_tilt=15.):
-        quiet=(np.linalg.norm(ctx.body_velocity[:2])<.08 and abs(ctx.yaw_rate)<.10 and ctx.tilt_degrees<max_tilt)
+        commanded=np.asarray(getattr(ctx.limiter,'command',(0.,0.,0.)),float)
+        quiet=(np.linalg.norm(ctx.body_velocity[:2])<.08 and abs(ctx.yaw_rate)<.10 and ctx.tilt_degrees<max_tilt
+               and np.linalg.norm(commanded[:2])<.03 and abs(commanded[2])<.06)
         if not quiet:self.settled_since=None;return False
-        if self.settled_since is None:self.settled_since=ctx.now
+        if self.settled_since is not None and (np.linalg.norm(np.asarray(ctx.position[:2])-self.settled_position[:2])>=.025
+                or abs(float(ctx.position[2])-self.settled_position[2])>=.015
+                or abs(ctx.tilt_degrees-self.settled_tilt)>=1.5):self.settled_since=None
+        if self.settled_since is None:
+            self.settled_since=ctx.now;self.settled_position=np.asarray(ctx.position).copy();self.settled_tilt=ctx.tilt_degrees
         return ctx.now-self.settled_since>=seconds
 
     def _box_frame(self,ctx):
@@ -162,7 +170,7 @@ class PushAsideSkill:
             self.started=ctx.now;self.state_since=ctx.now;self.initial_box=np.asarray(ctx.box.xy).copy()
         self.max_tilt=max(self.max_tilt,float(ctx.tilt_degrees))
         if not ctx.healthy or ctx.tilt_degrees>=30:return self._fail(ctx,'robot_unstable')
-        if self.state in ['settle_at_stage','turn_at_stage','align_longitudinal','align_lateral','settle_contact'] and ctx.tilt_degrees>=18.:
+        if self.state in ['settle_at_stage','turn_at_stage','refine_heading','align_longitudinal','align_lateral','settle_contact'] and ctx.tilt_degrees>=18.:
             self.used_stages.append(np.asarray(ctx.position[:2]).copy())
             return self._retry(ctx,'preparation_attitude')
         if ctx.now-self.started>self.config.max_skill_seconds:return self._fail(ctx,'skill_timeout')
@@ -196,19 +204,35 @@ class PushAsideSkill:
                 self.used_stages.append(np.asarray(ctx.position[:2]).copy())
                 return self._retry(ctx,'turn_preparation_failed')
             if result is None:
-                self.yaw_servo=ContactYawServo(self.config.yaw_tolerance)
-                self._transition('align_longitudinal',ctx);return self._output()
+                self.yaw_servo=ContactYawServo(min(self.config.alignment_yaw_tolerance,self.config.yaw_tolerance))
+                self._transition('refine_heading',ctx);return self._output()
             return self._output(result[0])
+        if self.state=='refine_heading':
+            if ctx.now-self.state_since>self.config.max_alignment_seconds:return self._retry(ctx,'heading_refinement_timeout')
+            tolerance=min(self.config.alignment_yaw_tolerance,self.config.yaw_tolerance)
+            if abs(yaw_error)<tolerance:
+                if self._quiet(ctx):self._transition('align_longitudinal',ctx)
+                return self._output()
+            self.settled_since=None
+            rate=self.yaw_servo.update(yaw_error,ctx.yaw_rate,ctx.now)
+            command,_=checked_contact_turn_command([0.,0.,rate],ctx.position,ctx.heading,ctx.planner,ctx.boxes,ctx.limiter,ctx.now)
+            return self._output(command)
         if self.state in ['align_longitudinal','align_lateral','settle_contact']:
             if abs(yaw_error)>.18:return self._retry(ctx,'heading_drift_during_alignment')
             if ctx.now-self.state_since>self.config.max_alignment_seconds:return self._retry(ctx,'alignment_timeout')
             actual_ready=contact_pose_ready(ctx.position,ctx.heading,ctx.box.xy,ctx.box.dimensions,self.direction,
                 self.config.front_gap+.05,self.config.yaw_tolerance)
-            if (self.state!='settle_contact' and actual_ready and body_motion_clear(
+            if (self.state!='settle_contact' and actual_ready and abs(lateral)<self.config.alignment_tolerance and body_motion_clear(
                     ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.)):
                 self._transition('settle_contact',ctx,'actual_contact_pose_ready')
                 return self._output()
             if self.state=='align_longitudinal':
+                # Use the same measured nose standoff interval as final contact
+                # validation. Do not chase a nominal anchor inside a safe band.
+                if .20<=gap<=self.config.front_gap+.125 and body_motion_clear(
+                        ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.):
+                    if self._quiet(ctx):self._transition('align_lateral',ctx,'safe_standoff_reached')
+                    return self._output()
                 target=self.anchor+self.tangent*float(np.dot(np.asarray(ctx.position[:2])-self.anchor,self.tangent))
                 error=float(np.dot(target-np.asarray(ctx.position[:2]),self.direction))
                 command,done=self._translation(ctx,target,self.direction,
@@ -216,7 +240,8 @@ class PushAsideSkill:
                 if done:self._transition('align_lateral',ctx)
                 return self._output(command)
             if self.state=='align_lateral':
-                command,done=self._translation(ctx,self.anchor,self.tangent,self.config.lateral_speed,.035)
+                nose_target=np.asarray(ctx.position[:2])+self.tangent*lateral
+                command,done=self._translation(ctx,nose_target,self.tangent,self.config.lateral_speed,self.config.alignment_tolerance)
                 if done:self._transition('settle_contact',ctx)
                 return self._output(command)
             ready=contact_pose_ready(ctx.position,ctx.heading,ctx.box.xy,ctx.box.dimensions,self.direction,
@@ -229,7 +254,7 @@ class PushAsideSkill:
                 command,_=checked_contact_turn_command([0,0,rate],ctx.position,ctx.heading,ctx.planner,ctx.boxes,ctx.limiter,ctx.now)
                 return self._output(command)
             if abs(lateral)>self.config.lateral_tolerance:self._transition('align_lateral',ctx)
-            elif gap>.475 or gap<.20:self._transition('align_longitudinal',ctx)
+            elif gap>self.config.front_gap+.125 or gap<.20:self._transition('align_longitudinal',ctx)
             return self._output()
         if self.state in ['engage','push']:
             if ctx.tilt_degrees>18:return self._retry(ctx,'contact_attitude')
@@ -317,6 +342,15 @@ class PushAsideSkill:
             ctx.layers.refresh_global(reason='skill_reobservation_pose')
             self._transition('verify_passage',ctx);return self._output()
         return self._fail(ctx,'unknown_skill_state')
+
+    def feedback(self,ctx):
+        if ctx.box is None:return {}
+        gap,lateral,yaw_error=self._box_frame(ctx)
+        return {'nose_gap_m':gap,'nose_lateral_error_m':lateral,'heading_error_rad':yaw_error,
+                'body_velocity_mps':list(map(float,ctx.body_velocity[:2])),
+                'measured_yaw_rate_rad_s':float(ctx.yaw_rate),'tilt_degrees':float(ctx.tilt_degrees),
+                'stage_xy':None if self.stage is None else self.stage.tolist(),
+                'anchor_xy':None if self.anchor is None else self.anchor.tolist()}
 
     def report(self):
         moved=0. if self.initial_box is None or self.last_box is None else float(np.dot(self.last_box-self.initial_box,self.direction))

@@ -94,8 +94,9 @@ def test_nominal_clearance_does_not_stop_before_the_planned_parking_position():
     assert command.state=='push' and command.velocity[0]>0.
 
 
-def test_precontact_turn_recovers_before_hard_health_limit():
-    skill=make_skill();skill.state='turn_at_stage'
+@pytest.mark.parametrize('state',['turn_at_stage','refine_heading','align_lateral'])
+def test_precontact_turn_recovers_before_hard_health_limit(state):
+    skill=make_skill();skill.state=state
     ctx=context(NS(id='B1',xy=(1.,0.)))
     ctx.tilt_degrees=20.
     command=skill.step(ctx)
@@ -133,7 +134,7 @@ def test_actual_safe_contact_pose_ends_alignment_without_millimetre_chasing():
     planner=SidePushPlanner(np.ones((160,160),bool),[[-4,4],[-4,4]],resolution=.05)
     skill=make_skill();skill.state='align_lateral';skill.state_since=0.;skill.started=0.
     skill.initial_box=np.array(box.xy);skill.anchor=np.array([-.18,0.])
-    ctx=context(box,1.);ctx.position=np.array([-.18,-.045,.4]);ctx.heading=.03
+    ctx=context(box,1.);ctx.position=np.array([-.18,-.040,.4]);ctx.heading=.03
     ctx.planner=planner;ctx.boxes=[box]
     command=skill.step(ctx)
     assert command.state=='settle_contact' and command.velocity==(0.,0.,0.)
@@ -148,3 +149,57 @@ def test_contact_reach_accounts_for_front_feet_not_just_the_nose():
     ctx.limiter=NS(preview=lambda command,now:command)
     command=skill.step(ctx)
     assert command.state=='push' and command.velocity[0]<=.30
+
+
+def alignment_context(state,gap=.46,lateral=.12,heading=0.):
+    from grutopia_extension.interactive_navigation.box_push_navigation import BoxState
+    from grutopia_extension.interactive_navigation.side_push_navigation import SidePushPlanner
+    from grutopia_extension.interactive_navigation.smooth_go2_navigation import VelocitySlewLimiter
+    box=BoxState('B1',(1.,0.),(1.,1.,1.))
+    ctx=context(box,1.);ctx.heading=heading
+    ctx.position=np.array([1.-.5-gap-.33*math.cos(heading),-lateral-.33*math.sin(heading),.4])
+    ctx.planner=SidePushPlanner(np.ones((160,160),bool),[[-4,4],[-4,4]],resolution=.05)
+    ctx.boxes=[box];ctx.limiter=VelocitySlewLimiter();ctx.limiter.accept([0.,0.,0.],.99)
+    skill=make_skill();skill.state=state;skill.state_since=0.;skill.started=0.
+    skill.initial_box=np.array(box.xy);skill.anchor=np.array([-.18,0.])
+    return skill,ctx
+
+
+def test_safe_standoff_stops_longitudinal_chasing_before_lateral_alignment():
+    skill,ctx=alignment_context('align_longitudinal')
+    command=skill.step(ctx)
+    assert command.velocity==(0.,0.,0.) and command.state=='align_longitudinal'
+    ctx.now+=.31
+    command=skill.step(ctx)
+    assert command.state=='align_lateral' and command.velocity==(0.,0.,0.)
+    assert command.events[-1]['reason']=='safe_standoff_reached'
+    assert abs(skill._box_frame(ctx)[1])>.055  # still needs lateral work
+
+
+def test_standoff_outside_safe_interval_still_requires_longitudinal_motion():
+    skill,ctx=alignment_context('align_longitudinal',gap=.55)
+    command=skill.step(ctx)
+    assert command.state=='align_longitudinal' and command.velocity[0]>0.
+
+
+def test_fine_heading_brakes_and_waits_for_measured_settling_before_translation():
+    skill,ctx=alignment_context('refine_heading',heading=-.097)
+    command=skill.step(ctx)
+    assert command.velocity[0]==command.velocity[1]==0. and command.velocity[2]>0.
+    ctx.heading=-.03;ctx.yaw_rate=.12;ctx.now+=.5
+    assert skill.step(ctx).state=='refine_heading'
+    ctx.yaw_rate=0.;ctx.now+=.5
+    assert skill.step(ctx).state=='refine_heading'
+    ctx.now+=.31
+    assert skill.step(ctx).state=='align_longitudinal'
+
+
+def test_settling_restarts_on_body_motion_even_when_measured_speed_is_low():
+    skill,ctx=alignment_context('settle_contact',lateral=0.)
+    assert not skill._quiet(ctx)
+    ctx.now+=.31;ctx.position[0]+=.03
+    assert not skill._quiet(ctx)
+    ctx.now+=.31
+    assert skill._quiet(ctx)
+    ctx.limiter.command=np.array([.10,0.,0.])
+    assert not skill._quiet(ctx)

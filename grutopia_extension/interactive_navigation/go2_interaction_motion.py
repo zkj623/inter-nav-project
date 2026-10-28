@@ -47,3 +47,15 @@ class ObservedSubgoalArrival:
         else:
             self.reset();detail.update(subgoal_braking=False,replan=True)
         return detail
+
+
+def checked_skill_brake(command,context):
+    """Slew a requested stop through the same body/momentum safety check."""
+    velocity=np.asarray(command.velocity,float)
+    if command.status!='running' or not context.healthy or getattr(context,'tilt_degrees',0.)>=18.:return np.zeros(3)
+    if (command.navigation_goal is not None or np.any(np.abs(velocity)>1e-9) or context.limiter is None):
+        return velocity
+    from grutopia_extension.interactive_navigation.go2_contact_turn import checked_contact_turn_command
+    safe,_=checked_contact_turn_command([0.,0.,0.],context.position,context.heading,
+        context.planner,context.boxes,context.limiter,context.now)
+    return safe

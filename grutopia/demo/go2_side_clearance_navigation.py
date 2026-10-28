@@ -123,7 +123,7 @@ def main():
     from grutopia_extension.interactive_navigation.online_navigation_map import OnlineNavigationMap
     from grutopia_extension.interactive_navigation.online_navigation_decision import OnlineGoalSelector
     from grutopia_extension.interactive_navigation.smooth_go2_navigation import SmoothExplorationTracker,VelocitySlewLimiter,smooth_recovery_action
-    from grutopia_extension.interactive_navigation.go2_interaction_motion import navigation_recovery_enabled,MeasuredStopGate,ObservedSubgoalArrival
+    from grutopia_extension.interactive_navigation.go2_interaction_motion import navigation_recovery_enabled,MeasuredStopGate,ObservedSubgoalArrival,checked_skill_brake
     from grutopia_extension.interactive_navigation.go2_attitude_recovery import NavigationAttitudeRecovery
     from grutopia_extension.interactive_navigation.local_path_guidance import local_guidance_path
     from scipy.ndimage import distance_transform_edt
@@ -177,9 +177,9 @@ def main():
             else:layers.global_path=path;layers.local_path=();layers.guidance_revision=layers.global_revision
         routes.last_plan['map_scope']='local_dynamic' if local else 'global_guidance'
         return path
-    def ordinary_tracker(start,path,fixed_heading):
+    def ordinary_tracker(start,path,fixed_heading,short_goal=False):
         if args.path_controller=='continuous':
-            return SmoothExplorationTracker(start,path,smooth_limiter)
+            return SmoothExplorationTracker(start,path,smooth_limiter,final_goal_slow_radius=.30 if short_goal else .75)
         return (ForwardExplorationPathTracker(start,path,guard_motion=args.path_controller=='guarded') if args.navigation_heading=='path'
             else Go2VelocityPathTracker(start,path,fixed_heading=fixed_heading))
     tasks=[t for t in json.loads((args.benchmark_dir/'tasks_preflight.json').read_text())['tasks']
@@ -599,11 +599,11 @@ def main():
                             layers.guidance_revision=layers.global_revision
                     if not route:route=ordinary_path(position[:2],target,boxes)
                     if not route:return stop,False,{'needs_replan':True}
-                    subtracker=ordinary_tracker(position[:2],route,heading)
+                    subtracker=ordinary_tracker(position[:2],route,heading,short_goal=True)
                 action,detail=subtracker.action(position[:2],heading,planner,boxes)
                 if detail.get('needs_replan') and step%100==0:
                     route=ordinary_path(position[:2],target,boxes,local=True)
-                    if route:subtracker=ordinary_tracker(position[:2],route,heading)
+                    if route:subtracker=ordinary_tracker(position[:2],route,heading,short_goal=True)
                 component.mapping._planned_path=subtracker._planned_path[subtracker._waypoint_index:]
                 return action,False,detail
 
@@ -682,7 +682,10 @@ def main():
                     # Checking before an extra tail can report success even when
                     # the gait drifts outside the final goal tolerance afterwards.
                     record_phase='goal_settling'
-                    for _ in range(260 if args.record_video else 200):obs=tick(stop)
+                    for _ in range(260 if args.record_video else 200):
+                        braking=observation_brake(np.asarray(obs['position']),yaw(obs['orientation']),planning_boxes(),
+                            float(robot._go2_locomotion_control._simulation_time() or planner.control_time))
+                        obs=tick(braking)
                     if not task_health.healthy:reason='robot_unstable';break
                     crossed=completed_box is None or crossed_passage(np.array(obs['position']),np.array(obs['orientation']),completed_box)
                     settled_error=float(np.linalg.norm(np.array(obs['position'][:2])-task['goal']))
@@ -788,7 +791,8 @@ def main():
                             obs=tick(stop);last_action=stop;continue
                         skill=registry.create(permission,plan=plan,task_start=task['start'],task_goal=task['goal'],
                             config=PushAsideConfig(front_gap=max(.30,args.contact_front_gap),push_max_speed=args.push_max_speed,
-                                lateral_speed=args.contact_lateral_speed,forward_speed=args.contact_centering_speed))
+                                lateral_speed=args.contact_lateral_speed,forward_speed=args.contact_centering_speed,
+                                 yaw_tolerance=args.contact_yaw_tolerance))
                         phase='skill';push_count+=1;subtracker=None;subtarget=None;sub_reached=False
                         event('skill_start',step=step,time_s=planner.control_time,permission=vars(permission),plan=vars(plan))
                         obs=tick(stop);last_action=stop;continue
@@ -926,13 +930,14 @@ def main():
                         'skill_retry':skill.retries,'recognized_category':skill.permission.category,
                         'interaction_allowed':True,'interaction_source':skill.permission.source,'execution_state':command.state}
                     record_phase='skill_'+command.state
-                    action={'move_by_speed':list(command.velocity)};sub_reached=False
+                    action={'move_by_speed':checked_skill_brake(command,ctx).tolist()};sub_reached=False
                     if command.navigation_goal is not None:
                         action,sub_reached,iteration_tracking=subnavigation(command.navigation_goal,p,heading,current,planner.control_time)
                         if iteration_tracking.get('failed'):
                             skill._fail(ctx,iteration_tracking['failed'])
                     if step%200==0:event('skill_feedback',step=step,state=command.state,position=p.tolist(),
-                        box=list(by_id[plan.box_id].xy) if plan.box_id in by_id else None,command=action['move_by_speed'],retry=skill.retries)
+                        box=list(by_id[plan.box_id].xy) if plan.box_id in by_id else None,command=action['move_by_speed'],
+                        requested_command=list(command.velocity),retry=skill.retries,**skill.feedback(ctx))
                     if command.status!='running':
                         report=skill.report();skill_reports.append(report);event('skill_end',step=step,time_s=planner.control_time,**report)
                         if command.status!='succeeded':reason='push_aside:'+command.reason;break

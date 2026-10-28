@@ -39,9 +39,10 @@ class VelocitySlewLimiter:
 
 
 class SmoothExplorationTracker(ExplorationPathTracker):
-    def __init__(self,start,path,limiter,*,max_forward=.50,max_lateral=.18):
+    def __init__(self,start,path,limiter,*,max_forward=.50,max_lateral=.18,final_goal_slow_radius=.75):
         super().__init__(start,path,lookahead=.55,max_forward_speed=max_forward,max_lateral_speed=max_lateral)
         self.limiter=limiter;self.max_forward=max_forward;self.max_lateral=max_lateral
+        self.final_goal_slow_radius=float(final_goal_slow_radius)
         self._last_plan_time=-1e9;self._desired=np.zeros(3)
         self._blocked_ticks=0;self._last_safe=np.zeros(3)
         self._observation_started=None
