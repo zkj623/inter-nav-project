@@ -18,3 +18,24 @@ def test_finite_side_step_checks_goal_and_actual_braking_not_motion_past_goal():
     command,safe=checked_contact_turn_command([0,.35,0],[0,0],0,p,[],limiter,.01,target_position=[0,.15])
     assert not safe  # Actual momentum must not be clipped to the intended goal.
     np.testing.assert_allclose(command,[0,0,0])
+
+
+def test_small_heading_hold_does_not_block_a_safe_finite_side_step():
+    p=SidePushPlanner(np.ones((120,120),bool),[[-3,3],[-3,3]],resolution=.05)
+    p.navigation_half_width=.22;p.free[p.cell([0,.45])[0]:,:]=False
+    limiter=VelocitySlewLimiter();limiter.accept([0,.35,.075],0)
+    command,safe=checked_contact_turn_command([0,.35,.075],[0,0],0,p,[],limiter,.01,target_position=[0,.15])
+    assert safe
+    np.testing.assert_allclose(command,[0,.35,.075])
+    limiter.measured=np.array([0,.4,.075])
+    command,safe=checked_contact_turn_command([0,.35,.075],[0,0],0,p,[],limiter,.01,target_position=[0,.15])
+    assert not safe
+    np.testing.assert_allclose(command,[0,0,0])
+
+
+def test_large_curved_motion_cannot_use_the_short_heading_hold_horizon():
+    p=SidePushPlanner(np.ones((120,120),bool),[[-3,3],[-3,3]],resolution=.05)
+    p.navigation_half_width=.22;p.free[p.cell([0,.45])[0]:,:]=False
+    limiter=VelocitySlewLimiter();limiter.accept([0,.35,1.],0)
+    _,safe=checked_contact_turn_command([0,.35,1.],[0,0],0,p,[],limiter,.01,target_position=[0,.15])
+    assert not safe

@@ -19,14 +19,22 @@ def checked_contact_turn_command(request, position, heading, planner, boxes, lim
     horizon = .60 + max(np.linalg.norm(command[:2]), np.linalg.norm(measured[:2])) / (2 * limiter.linear_acceleration)
     c, s = math.cos(heading), math.sin(heading)
     rotation = np.array([[c, -s], [s, c]])
-    if target_position is not None and abs(command[2])<1e-8:
+    if target_position is not None:
         delta=np.asarray(target_position[:2])-np.asarray(position[:2])
         world=rotation@command[:2];speed=np.linalg.norm(world);distance=np.linalg.norm(delta)
-        if speed>1e-8 and distance>1e-8 and float(np.dot(world,delta))/(speed*distance)>.95:
-            # Staging is a finite translation followed by a brake/turn.
-            # Do not reject it for continuing the same request beyond its
-            # goal. Measured stopping motion is checked independently below.
-            horizon=min(horizon,(distance+.025)/speed)
+        if speed>1e-8 and distance>1e-8:
+            alignment=float(np.clip(np.dot(world,delta)/(speed*distance),-1.,1.))
+            if abs(command[2])<1e-8 and alignment>.95:
+                horizon=min(horizon,(distance+.025)/speed)
+            elif alignment>.995:
+                # Heading hold adds a small yaw to a finite sidestep. Check
+                # its complete arc to the goal, not indefinite motion past it.
+                # The conservative projected speed covers up to 0.1 rad of
+                # turning; larger turns retain the original full horizon.
+                cosine=math.cos(math.acos(alignment)+.10)
+                finite=(distance+.025)/(speed*cosine)
+                if abs(command[2])*finite<=.10:horizon=min(horizon,finite)
+            # Actual stopping motion remains independently checked below.
     safe = body_motion_clear(planner, boxes, position, heading,
         command[0], command[2], horizon=horizon, lateral=command[1])
     # Staging may start in a mild existing overlap; allow only withdrawal.
