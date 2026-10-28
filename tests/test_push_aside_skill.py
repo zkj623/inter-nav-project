@@ -274,3 +274,43 @@ def test_near_stage_is_not_accepted_when_full_turn_intersects_obstacle():
     ctx.planner.free[:,ctx.planner.cell([.40,0.])[1]:]=False
     command=skill.step(ctx)
     assert command.state=='navigate_to_stage' and command.navigation_goal is not None
+
+
+def test_missing_stage_attempts_bounded_observed_recovery_before_failing():
+    skill,ctx=alignment_context('prepare',heading=math.pi)
+    skill._select_stage=lambda context:False
+    command=skill.step(ctx)
+    assert command.state=='recover_preparation' and command.status=='running'
+    ctx.now+=13.
+    assert skill.step(ctx).reason=='no_observed_preparation_after_recovery'
+
+
+def test_observed_T04_preparation_overlap_gets_a_checked_escape_command():
+    from pathlib import Path
+    from grutopia_extension.interactive_navigation.side_push_navigation import SidePushPlanner
+    from grutopia_extension.interactive_navigation.smooth_go2_navigation import VelocitySlewLimiter
+    with np.load(Path(__file__).parent/'fixtures/t04_preparation_buffer_v49.npz') as fixture:
+        p=SidePushPlanner(fixture['free'].copy(),fixture['limits'],resolution=.05)
+        p.planning_observed=fixture['observed'].copy()
+        ctx=context(NS(id='B1',xy=fixture['box_xy'].copy(),dimensions=fixture['box_dimensions'].copy()),1.)
+        ctx.position=fixture['position'].copy();ctx.heading=float(fixture['heading'])
+    p.navigation_half_width=.22;p.layered_local_control=True;p.full_navigation_footprint=True;p.control_time=1.
+    ctx.planner=p;ctx.boxes=[];ctx.limiter=VelocitySlewLimiter();ctx.limiter.accept([0.,0.,0.],.99)
+    skill=make_skill();skill.direction=np.array([-1.,0.]);skill.tangent=np.array([0.,-1.]);skill.push_heading=math.pi
+    skill._select_stage=lambda context:False
+    command=skill.step(ctx)
+    assert command.state=='recover_preparation'
+    ctx.now+=.01;p.control_time=ctx.now
+    before=p.free.copy();command=skill.step(ctx)
+    assert command.state=='recover_preparation' and command.status=='running'
+    assert command.velocity[0]<0. and command.velocity[2]==0.
+    assert skill.recovery_target is not None
+    np.testing.assert_array_equal(p.free,before)
+
+
+def test_small_heading_recovery_still_requires_full_observed_turn_and_contact_alignment():
+    skill,ctx=alignment_context('prepare',gap=.60,lateral=.12,heading=.30)
+    assert skill._reuse_alignment_pose(ctx)
+    assert abs(skill._box_frame(ctx)[2])>skill.config.yaw_tolerance
+    command=skill.step(ctx)
+    assert command.state=='settle_alignment'  # no permission to push yet

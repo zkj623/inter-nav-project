@@ -42,7 +42,7 @@ def _body_safe_global_buffer_exit(position,heading,planner,boxes,goal,*,local_fr
     and keep a valid selected target until the global buffer has been left.
     """
     from grutopia_extension.interactive_navigation.go2_voronoi_navigation import (
-        body_motion_clear,body_translation_recovery_clear)
+        body_motion_clear,body_translation_recovery_clear,calibrated_buffer_translation)
     position=np.asarray(position[:2],float);goal_key=tuple(map(float,goal[:2]))
     cell=planner.cell(position);global_free=planner.free
     raw=global_free.copy()
@@ -64,18 +64,11 @@ def _body_safe_global_buffer_exit(position,heading,planner,boxes,goal,*,local_fr
         distance=float(np.linalg.norm(delta));rc=planner.cell(target)
         if (distance<1e-6 or distance>1.05 or not planner.valid_cell(rc) or
                 clearance[rc]<planner.resolution-1e-9):return None
-        world=.25*delta/distance
-        command=[float(c*world[0]+s*world[1]),float(-s*world[0]+c*world[1]),0.]
         saved=planner.free;planner.free=motion_free
         try:
-            if not body_translation_recovery_clear(planner,motion_boxes,position,heading,target):return None
-            # The full target must clear the body, but the first short
-            # command is allowed to reduce pre-existing modeled overlap.
-            # A strict sweep at t=0 would reject every such recovery.
-            if not body_translation_recovery_clear(planner,motion_boxes,position,heading,
-                    position+world*.5,require_clear_end=False):return None
+            command=calibrated_buffer_translation(planner,motion_boxes,position,heading,target)
         finally:planner.free=saved
-        return command
+        return None if command is None else command.tolist()
 
     cached=getattr(planner,'_global_buffer_exit',None)
     if cached is not None and cached['goal']==goal_key and cached.get('require_goal_connection',True)==require_goal_connection:

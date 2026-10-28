@@ -12,8 +12,11 @@ from grutopia_extension.interactive_navigation.go2_contact_control import (
     push_centerline_velocity,push_completion_state)
 from grutopia_extension.interactive_navigation.go2_contact_turn import ContactTurnControl,checked_contact_turn_command
 from grutopia_extension.interactive_navigation.go2_voronoi_navigation import (
-    body_rotation_clear,body_translation_recovery_clear,body_motion_clear)
+    body_rotation_clear,body_translation_recovery_clear,body_motion_clear,
+    ForwardExplorationPathTracker,navigation_body_blocked)
 from grutopia_extension.interactive_navigation.go2_passage_confirmation import observed_passage_routes
+from grutopia_extension.interactive_navigation.go2_exploration_tracking import decision_buffer_recovery
+from grutopia_extension.interactive_navigation.smooth_go2_navigation import smooth_recovery_action
 
 
 def wrap(value):return (value+math.pi)%(2*math.pi)-math.pi
@@ -34,6 +37,8 @@ class PushAsideConfig:
     alignment_tolerance:float=.035
     alignment_yaw_tolerance:float=.05
     stage_handoff_radius:float=.30
+    preparation_heading_tolerance:float=.45
+    max_preparation_recovery_seconds:float=12.
     max_retries:int=4
     max_skill_seconds:float=180.
     max_turn_seconds:float=40.
@@ -71,6 +76,7 @@ class PushAsideSkill:
         self.last_verify=-1e9;self.observation_moves=0;self.used_stages=[]
         self.progress_mark=None;self.progress_since=None;self.max_tilt=0.
         self.reason='';self.status='running';self.box_velocity=0.;self.last_box_time=None
+        self.preparation_recoveries=0;self.recovery_tracker=None;self.recovery_target=None;self.next_stage_probe=-1e9
 
     def _transition(self,state,ctx,reason=''):
         self.events.append({'skill':self.spec.name,'object_id':self.plan.box_id,'from':self.state,
@@ -112,7 +118,7 @@ class PushAsideSkill:
     def _reuse_alignment_pose(self,ctx):
         """Keep a nearby, observed and already oriented retreat pose."""
         gap,lateral,yaw_error=self._box_frame(ctx)
-        if abs(yaw_error)>.15 or not .20<=gap<=.85 or abs(lateral)>.80:return False
+        if abs(yaw_error)>self.config.preparation_heading_tolerance or not .20<=gap<=.85 or abs(lateral)>.80:return False
         if not body_motion_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.):return False
         extent=float(np.dot(np.abs(self.direction),np.asarray(ctx.box.dimensions[:2]))/2)
         anchor=np.asarray(ctx.box.xy)-self.direction*(extent+.33+self.config.front_gap)
@@ -208,7 +214,7 @@ class PushAsideSkill:
             self.started=ctx.now;self.state_since=ctx.now;self.initial_box=np.asarray(ctx.box.xy).copy()
         self.max_tilt=max(self.max_tilt,float(ctx.tilt_degrees))
         if not ctx.healthy or ctx.tilt_degrees>=30:return self._fail(ctx,'robot_unstable')
-        if self.state in ['settle_at_stage','turn_at_stage','refine_heading','settle_alignment','align_longitudinal','align_lateral','settle_contact'] and ctx.tilt_degrees>=18.:
+        if self.state in ['settle_at_stage','turn_at_stage','refine_heading','settle_alignment','recover_preparation','settle_recovered_preparation','align_longitudinal','align_lateral','settle_contact'] and ctx.tilt_degrees>=18.:
             self.used_stages.append(np.asarray(ctx.position[:2]).copy())
             return self._retry(ctx,'preparation_attitude')
         if ctx.now-self.started>self.config.max_skill_seconds:return self._fail(ctx,'skill_timeout')
@@ -225,9 +231,51 @@ class PushAsideSkill:
             if self._reuse_alignment_pose(ctx):
                 self._transition('settle_alignment',ctx,'reuse_observed_aligned_pose')
                 return self._output()
-            if not self._select_stage(ctx):return self._fail(ctx,'no_observed_preparation_pose')
+            if not self._select_stage(ctx):
+                if self.preparation_recoveries>=self.config.max_retries:return self._fail(ctx,'no_observed_preparation_pose')
+                self.preparation_recoveries+=1
+                extent=float(np.dot(np.abs(self.direction),np.asarray(ctx.box.dimensions[:2]))/2)
+                self.recovery_waypoint=np.asarray(ctx.box.xy)-self.direction*(extent+.33+self.config.front_gap)
+                self.recovery_tracker=ForwardExplorationPathTracker(ctx.position[:2],
+                    [tuple(self.recovery_waypoint)],guard_motion=False)
+                self.next_stage_probe=ctx.now+.5
+                self._transition('recover_preparation',ctx,'leave_observed_body_or_global_buffer')
+                return self._output()
             self.navigation_goal=self.stage;self._transition('navigate_to_stage',ctx)
             return self._output(navigation_goal=self.stage)
+        if self.state=='recover_preparation':
+            if ctx.now-self.state_since>self.config.max_preparation_recovery_seconds:
+                return self._fail(ctx,'no_observed_preparation_after_recovery')
+            if ctx.now>=self.next_stage_probe:
+                self.next_stage_probe=ctx.now+.5
+                if self._reuse_alignment_pose(ctx) or self._select_stage(ctx):
+                    self._transition('settle_recovered_preparation',ctx,'observed_preparation_access_restored')
+                    return self._output()
+            recovery=None
+            blocked=navigation_body_blocked(ctx.planner,ctx.boxes,ctx.heading)
+            cell=ctx.planner.cell(ctx.position)
+            if ctx.planner.valid_cell(cell) and blocked[cell]:
+                recovery=self.recovery_tracker.action(ctx.position[:2],ctx.heading,ctx.planner,ctx.boxes)
+                if recovery[1].get('needs_replan') or not recovery[1].get('recovering_buffer'):recovery=None
+            if recovery is None:
+                local_free=ctx.planner.free.copy()
+                with ctx.layers.global_planning() as global_boxes:
+                    recovery=decision_buffer_recovery(ctx.position[:2],ctx.heading,ctx.planner,
+                        global_boxes,self.recovery_waypoint,ctx.heading,local_free=local_free,
+                        local_boxes=ctx.boxes,require_goal_connection=False)
+            if recovery is None:return self._output()
+            action,tracking=recovery;self.recovery_target=np.asarray(tracking['target'][:2])
+            if ctx.limiter is not None:
+                action=smooth_recovery_action(action,ctx.position[:2],ctx.heading,ctx.planner,
+                    ctx.boxes,ctx.limiter,ctx.now)
+            return self._output(action['move_by_speed'])
+        if self.state=='settle_recovered_preparation':
+            if self._quiet(ctx):
+                if ctx.limiter is not None:ctx.limiter.clear_guidance(ctx.position,ctx.now)
+                ctx.layers.refresh_global(reason='preparation_buffer_recovered')
+                self.recovery_tracker=None;self.recovery_target=None
+                self._transition('prepare',ctx,'replan_from_settled_recovery_pose')
+            return self._output()
         if self.state=='navigate_to_stage':
             if not ctx.navigation_reached:
                 # A stage is a safe turning region, not the final task goal.
@@ -414,6 +462,7 @@ class PushAsideSkill:
                 'measured_yaw_rate_rad_s':float(ctx.yaw_rate),'tilt_degrees':float(ctx.tilt_degrees),
                 'body_angular_velocity_rad_s':None if getattr(ctx,'body_angular_velocity',None) is None else list(map(float,ctx.body_angular_velocity)),
                 'stage_xy':None if self.stage is None else self.stage.tolist(),
+                'preparation_recovery_target':None if self.recovery_target is None else self.recovery_target.tolist(),
                 'anchor_xy':None if self.anchor is None else self.anchor.tolist()}
 
     def report(self):
@@ -423,5 +472,5 @@ class PushAsideSkill:
             'interaction_source':self.permission.source,'source_reference':self.permission.source_reference,
             'source_digest':self.permission.source_digest,
             'recognition_frames':list(self.permission.evidence_frames),'classifier_models':list(self.permission.classifier_models),
-            'retries':self.retries,'actual_push_distance_m':moved,'maximum_tilt_degrees':self.max_tilt,
+            'retries':self.retries,'preparation_recoveries':self.preparation_recoveries,'actual_push_distance_m':moved,'maximum_tilt_degrees':self.max_tilt,
             'passage_certificate':self.certificate,'object_pose_feedback':'selected permitted simulator rigid body'}
