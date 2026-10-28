@@ -12,6 +12,8 @@ class FloorConfigurationTests(unittest.TestCase):
         self.assertAlmostEqual(floor.position[2]+floor.scale[2]/2,.01)
         self.assertAlmostEqual(floor.position[2]-floor.scale[2]/2,0.)
         self.assertFalse(floor.visible)
+        self.assertEqual((floor.static_friction, floor.dynamic_friction), (1., 1.))
+        self.assertEqual((floor.torsional_patch_radius, floor.min_torsional_patch_radius), (0., 0.))
         np.testing.assert_allclose(floor.scale[:2],[17.8,12.4])
 
     def test_legacy_default_retains_fifteen_cm_reproduction(self):

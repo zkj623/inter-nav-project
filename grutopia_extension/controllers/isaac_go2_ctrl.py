@@ -1,28 +1,11 @@
-"""Control contract ported from Zhefan-Xu/isaac-go2-ros2.
+"""Go2 RSL-RL observation and motor interface for InternUtopia.
 
-That repository does not ship a standalone PD class. Walking is:
-
-    actions = policy(obs)
-    obs, _, _, _ = env.step(actions)
-
-where ``obs`` is ``Go2RSLEnvCfg.ObservationsCfg.PolicyCfg`` and ``env.step``
-runs Isaac Lab ``JointPositionAction`` (scale 0.25) plus the Go2 DCMotor.
-
-This module keeps that observation order, command buffer, action scale, and
-actuator model so InternUtopia can drive the same ``rough_model_7850.pt``.
-
-Timing contract: Isaac Lab recomputes the actuator torque at every 200 Hz
-physics substep and runs the policy exactly every 4 substeps. InternUtopia's
-per-``env.step`` effort control could not honor that: whenever Isaac renders,
-a full rendering_dt (4 substeps, 20 ms) of physics advances with frozen joint
-efforts, which opened the PD loop rhythmically and made Go2 walk with a limp.
-The controller therefore emits joint POSITION targets against PhysX implicit
-drives configured with the same gains (25 / 0.5, 23.5 N*m clamp): PhysX then
-recomputes the PD torque inside every substep, render windows included, and
-policy inference is aligned to the simulation clock so it fires every 20 ms
-even though env.step durations alternate between 5 and 20 ms. Reading state
-or applying efforts from a physics callback instead is not possible on the
-CPU pipeline (PhysX rejects copyInternalStateToCache during stepping).
+The actor uses the original checkpoint, 235 ordered observations, action
+scale 0.25 and a 50 Hz policy clock. ``explicit_dc`` recalculates the trained
+25/0.5 PD motor and its 23.5 N m torque-speed envelope before EVERY 5 ms
+physics step; it rejects batched physics advances. ``implicit_pd`` uses
+native PhysX position drives and is retained for legacy reproductions.
+Native per-joint speed constraints remain those authored in the Go2 USD.
 """
 
 from __future__ import annotations

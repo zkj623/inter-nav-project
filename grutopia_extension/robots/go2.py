@@ -82,7 +82,11 @@ class Go2(IsaacRobot):
             usd_path,
             generate_fallback=generate_fallback_asset,
         )
+        # Isaac Core resolves ``prim_path`` to the articulation's /base after
+        # initialization. Keep the asset root so sibling leg links are included.
+        self._go2_asset_root_path = prim_path
         add_reference_to_stage(prim_path=prim_path, usd_path=resolved_usd_path)
+        apply_isaaclab_go2_physics(self._go2_asset_root_path)
         super().__init__(
             prim_path=prim_path,
             name=name,
@@ -117,10 +121,9 @@ class Go2(IsaacRobot):
             values=backend.expand_dims(np.full(12, SATURATION_EFFORT), 0),
             joint_indices=joint_indices,
         )
-        self._articulation_view.set_max_joint_velocities(
-            values=backend.expand_dims(np.full(12, 30.0), 0),
-            joint_indices=joint_indices,
-        )
+        # Preserve authored per-joint simulation limits. Isaac Lab's explicit
+        # DC actuator uses a 30 rad/s motor curve but keeps the USD limits,
+        # including the Go2 calf joints' 15.7 rad/s limit.
         self._articulation_view.set_solver_position_iteration_counts(
             backend.expand_dims(4, 0)
         )
@@ -134,11 +137,15 @@ class Go2(IsaacRobot):
             values=backend.expand_dims(np.zeros(12), 0),
             joint_indices=joint_indices,
         )
-        apply_isaaclab_go2_physics(self.prim_path)
+        apply_isaaclab_go2_physics(self._go2_asset_root_path)
         if actuator_mode=='explicit_dc':
             articulation_controller.switch_control_mode('effort')
             self._articulation_view.set_gains(kps=backend.expand_dims(np.zeros(12),0),
                 kds=backend.expand_dims(np.zeros(12),0),save_to_usd=False,joint_indices=joint_indices)
+            # The explicit motor has already clipped the commanded torque
+            # to 23.5 N m. Match Isaac Lab's non-limiting native drive layer.
+            self._articulation_view.set_max_efforts(
+                values=backend.expand_dims(np.full(12,1.0e9),0),joint_indices=joint_indices)
         elif actuator_mode!='implicit_pd':raise ValueError('Invalid Go2 actuator mode')
 
 

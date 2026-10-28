@@ -174,6 +174,10 @@ def build_grscene_floor(profile, floor_top=GRSCENE_FLOOR_TOP):
             color=(0.42, 0.42, 0.44),
             semantic_label='floor',
             visible=False,
+            static_friction=1.0,
+            dynamic_friction=1.0,
+            torsional_patch_radius=0.0,
+            min_torsional_patch_radius=0.0,
         )
     ]
 
