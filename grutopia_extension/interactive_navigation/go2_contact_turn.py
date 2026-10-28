@@ -8,7 +8,7 @@ from grutopia_extension.interactive_navigation.go2_voronoi_navigation import (
 )
 
 
-def checked_contact_turn_command(request, position, heading, planner, boxes, limiter, now):
+def checked_contact_turn_command(request, position, heading, planner, boxes, limiter, now, target_position=None):
     """Check both acceleration-limited requests and measured stopping motion.
 
     All boxes remain obstacles here: deliberate contact starts only after
@@ -17,10 +17,18 @@ def checked_contact_turn_command(request, position, heading, planner, boxes, lim
     command = limiter.preview(request, now)
     measured = limiter.measured
     horizon = .60 + max(np.linalg.norm(command[:2]), np.linalg.norm(measured[:2])) / (2 * limiter.linear_acceleration)
-    safe = body_motion_clear(planner, boxes, position, heading,
-        command[0], command[2], horizon=horizon, lateral=command[1])
     c, s = math.cos(heading), math.sin(heading)
     rotation = np.array([[c, -s], [s, c]])
+    if target_position is not None and abs(command[2])<1e-8:
+        delta=np.asarray(target_position[:2])-np.asarray(position[:2])
+        world=rotation@command[:2];speed=np.linalg.norm(world);distance=np.linalg.norm(delta)
+        if speed>1e-8 and distance>1e-8 and float(np.dot(world,delta))/(speed*distance)>.95:
+            # Staging is a finite translation followed by a brake/turn.
+            # Do not reject it for continuing the same request beyond its
+            # goal. Measured stopping motion is checked independently below.
+            horizon=min(horizon,(distance+.025)/speed)
+    safe = body_motion_clear(planner, boxes, position, heading,
+        command[0], command[2], horizon=horizon, lateral=command[1])
     # Staging may start in a mild existing overlap; allow only withdrawal.
     if not safe and abs(command[2]) < 1e-8:
         target = np.asarray(position[:2]) + rotation @ command[:2] * horizon
@@ -48,7 +56,8 @@ class ContactTurnControl:
         if result is None:
             return None
         request, state = result
-        command, safe = checked_contact_turn_command(request, position, heading, planner, boxes, limiter, now)
+        target=state['target'] if state['staging_phase']=='staging_move' else None
+        command, safe = checked_contact_turn_command(request, position, heading, planner, boxes, limiter, now,target_position=target)
         return command, {**state, 'controller': 'observed_contact_turn',
             'contact_turn_motion_safe': safe, 'requested_command': request.tolist(),
             'applied_command': command.tolist()}

@@ -214,6 +214,12 @@ class SmoothExplorationTracker(ExplorationPathTracker):
         smoothed=self.limiter.preview(desired,now)
         if state.get('recovering_buffer') and not state.get('local_staging'):smoothed[2]=0.
         horizon=.60+max(float(np.linalg.norm(smoothed[:2])),float(np.linalg.norm(self.limiter.measured[:2])))/(2*self.limiter.linear_acceleration)
+        if state.get('staging_phase')=='staging_move' and abs(smoothed[2])<1e-8:
+            target_delta=np.asarray(state['target'])-np.asarray(position[:2])
+            world=np.array([c*smoothed[0]-s*smoothed[1],s*smoothed[0]+c*smoothed[1]])
+            speed=np.linalg.norm(world);remaining=np.linalg.norm(target_delta)
+            if speed>1e-8 and remaining>1e-8 and np.dot(world,target_delta)/(speed*remaining)>.95:
+                horizon=min(horizon,(remaining+.025)/speed)
         clear=body_motion_clear(planner,boxes,position,heading,smoothed[0],smoothed[2],horizon=horizon,lateral=smoothed[1])
         if not clear and state.get('recovering_buffer'):
             world=np.array([c*smoothed[0]-s*smoothed[1],s*smoothed[0]+c*smoothed[1]])

@@ -53,9 +53,13 @@ class LocalStagingControl:
                 # short of the safe turn region. Keep a stepping request,
                 # then brake using measured travel, rather than asymptotically
                 # requesting an ineffective tiny translation near its edge.
-                stopping_distance=max(0.,toward)*.30+.015
+                body_direction=np.array([c*direction[0]+s*direction[1],-s*direction[0]+c*direction[1]])
+                sideways=abs(body_direction[1])>abs(body_direction[0])
+                minimum=.35 if sideways else .20
+                maximum=.35 if sideways else .30
+                stopping_distance=max(0.,toward)*(.65 if sideways else .30)+.015
                 speed=(0. if toward>.06 and distance<stopping_distance else
-                       float(np.clip(1.5*distance-.6*toward,.20,.30)))
+                       float(np.clip(1.5*distance-.6*toward,minimum,maximum)))
                 world=direction*speed
                 command=np.array([c*world[0]+s*world[1],-s*world[0]+c*world[1],0.])
                 return command,{**state,'target':self.target.tolist(),'staging_phase':self.phase}
