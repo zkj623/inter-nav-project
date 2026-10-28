@@ -41,7 +41,11 @@ class TaskVideoRecorder(InteractionVideoRecorder):
         grid[(layers.now-layers.vacated_time<3.) & ~layers.static_occupied]=(167,239,188)
         grid[layers.global_tracked & ~layers.tracked_occupied]=(216,221,230)
         grid[layers.local_dynamic]=(55,65,223)
-        grid[layers.tracked_occupied]=(70,181,245)
+        grid[layers.tracked_occupied]=(170,165,155)
+        eligible=getattr(layers,'interactable_ids',set())
+        recognized=getattr(layers,'recognized_objects',{})
+        for obj in layers.current_boxes:
+            if obj.id in eligible:grid[p.box_mask(obj) & layers.tracked_occupied]=(70,181,245)
         if hasattr(layers,'observed'):
             grid[~layers.observed]=(164,168,175)
         height,width=grid.shape[:2];plot_width=775
@@ -77,7 +81,9 @@ class TaskVideoRecorder(InteractionVideoRecorder):
             xy=np.asarray(box.xy);half=np.asarray(box.dimensions[:2])/2
             a=pixel(xy-half);b=pixel(xy+half)
             cv2.rectangle(frame,(a[0],b[1]),(b[0],a[1]),(20,110,165),1)
-            cv2.putText(frame,box.id,(a[0],b[1]-4),cv2.FONT_HERSHEY_SIMPLEX,.40,(25,65,110),1,cv2.LINE_AA)
+            info=recognized.get(box.id,{})
+            category=info.get('category','unknown') if info.get('confirmed') else 'unknown'
+            cv2.putText(frame,f'{box.id}:{category}',(a[0],b[1]-4),cv2.FONT_HERSHEY_SIMPLEX,.34,(25,65,110),1,cv2.LINE_AA)
         center=pixel(layers.robot_xy)
         yaw=layers.robot_yaw
         ahead=layers.robot_xy+.45*np.array([math.cos(yaw),math.sin(yaw)])
@@ -107,6 +113,11 @@ class TaskVideoRecorder(InteractionVideoRecorder):
             'no_feasible_push_use_detour':'No safe parking: use detour'}
         line(reasons.get(details.get('reason'),'Evaluating route and parking'),scale=.45)
         execution=details.get('execution_state')
+        if details.get('kind')=='inspect':line('RGB inspection; interaction not yet allowed',scale=.42)
+        if details.get('skill'):
+            line(f"RGB: {details.get('recognized_category')} | allowlisted",(35,150,45),.43)
+            line(f"Skill: {details['skill']} | retry {details.get('skill_retry',0)}",scale=.43)
+            line(details.get('skill_state',''),scale=.44)
         if execution=='side_parked_pending_observation':line('Parked: corridor observation pending',scale=.44)
         elif execution=='confirming_after_release':line('Released: confirming the observed corridor',scale=.42)
         elif execution=='observed_corridor_clear':line('Observed full-body corridor confirmed',(35,160,45),.43)
@@ -125,7 +136,7 @@ class TaskVideoRecorder(InteractionVideoRecorder):
         line(f'Revisions G{layers.global_revision} / L{layers.local_revision}',scale=.44)
         if hasattr(layers,'observed'):
             line(f'Online map: {100*layers.observed.mean():.1f}% observed | grey: unknown',scale=.43)
-        line('Gold: box   Red: live local obstacle',scale=.42)
+        line('Gold: recognized box | grey: unclassified',scale=.42)
         line('Green: vacated   Blue: current route',scale=.42)
         # The inset uses the exact high-frequency collision layer, not a
         # separately accumulated visualization map.

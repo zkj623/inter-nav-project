@@ -19,6 +19,7 @@ class NavigationAttitudeRecovery:
         self.trigger_degrees=trigger_degrees;self.release_degrees=release_degrees
         self.minimum_hold_ticks=minimum_hold_ticks;self.maximum_hold_ticks=maximum_hold_ticks
         self.poses=deque(maxlen=stable_ticks)
+        self.plateau=deque(maxlen=stable_ticks*2)
         self.active=False;self.failed=False;self.hold_ticks=0
         self.episodes=0;self.total_hold_ticks=0
 
@@ -31,7 +32,7 @@ class NavigationAttitudeRecovery:
         yaw=math.atan2(2*(q[0]*q[3]+q[1]*q[2]),1-2*(q[2]**2+q[3]**2))
         started=False
         if not self.active and enabled and tilt>=self.trigger_degrees:
-            self.active=True;self.hold_ticks=0;self.poses.clear()
+            self.active=True;self.hold_ticks=0;self.poses.clear();self.plateau.clear()
             self.episodes+=1;started=True
         detail={'tilt_degrees':tilt,'started':started,'episode':self.episodes}
         if self.failed:return {'state':'failed',**detail}
@@ -45,9 +46,19 @@ class NavigationAttitudeRecovery:
             travel=max(float(np.linalg.norm(x-origin)) for x,_ in self.poses)
             rotation=max(abs((theta-heading+math.pi)%(2*math.pi)-math.pi) for _,theta in self.poses)
             stable=travel<.025 and rotation<.05
-        detail.update(hold_ticks=self.hold_ticks,settled=stable)
+        if tilt>15.:self.plateau.clear()
+        else:self.plateau.append((p.copy(),yaw,tilt))
+        plateau_stable=False
+        if len(self.plateau)==self.plateau.maxlen:
+            origin,heading,_=self.plateau[0]
+            plateau_stable=(max(float(np.linalg.norm(x[:2]-origin[:2])) for x,_,_ in self.plateau)<.02
+                and np.ptp([x[2] for x,_,_ in self.plateau])<.015
+                and max(abs((theta-heading+math.pi)%(2*math.pi)-math.pi) for _,theta,_ in self.plateau)<.04
+                and np.ptp([a for _,_,a in self.plateau])<1.5)
+        stable=stable or plateau_stable
+        detail.update(hold_ticks=self.hold_ticks,settled=stable,stable_attitude_plateau=bool(plateau_stable))
         if self.hold_ticks>=self.minimum_hold_ticks and stable:
-            self.active=False;self.poses.clear()
+            self.active=False;self.poses.clear();self.plateau.clear()
             return {'state':'released',**detail}
         if self.hold_ticks>=self.maximum_hold_ticks:
             self.failed=True
@@ -58,6 +69,7 @@ class NavigationAttitudeRecovery:
         return {'episodes':self.episodes,'total_hold_ticks':self.total_hold_ticks,
                 'failed':self.failed,'trigger_degrees':self.trigger_degrees,
                 'release_degrees':self.release_degrees,
+                'stable_plateau_max_degrees':15.,
                 'minimum_hold_ticks':self.minimum_hold_ticks,
                 'stable_window_ticks':self.poses.maxlen,
                 'maximum_hold_ticks':self.maximum_hold_ticks}

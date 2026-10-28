@@ -59,6 +59,7 @@ def main():
     parser.add_argument('--material-mode',choices=['simple','preview'],default='preview',
                         help='Simple materials avoid compiling thousands of scene MDL instances')
     parser.add_argument('--start-override',type=float,nargs=2,help='Isolated contact calibration; use with one task ID')
+    parser.add_argument('--interaction-catalog',type=Path,default=Path('grutopia/demo/profiles/interactive_object_catalog.json'))
     args=parser.parse_args()
     if args.actuator_mode is None:args.actuator_mode='explicit_dc' if args.map_source=='online' else 'implicit_pd'
     if not np.isfinite(args.floor_top) or not 0 < args.floor_top <= .30:
@@ -88,6 +89,17 @@ def main():
     if not .35<=args.contact_lateral_speed<=.50:raise ValueError('contact-lateral-speed must be within 0.35-0.50 m/s')
     args.output.mkdir(parents=True,exist_ok=True)
     if (args.output/'summary.json').exists():raise ValueError('Use a new output directory')
+    from grutopia_extension.interactive_navigation.interaction_catalog import InteractionCatalog
+    from grutopia_extension.interactive_navigation.rgb_object_recognition import RGBObjectRecognizer,ObjectGeometry
+    from grutopia_extension.interactive_navigation.interaction_recognition_runtime import InteractionRecognitionRuntime
+    from grutopia_extension.interactive_navigation.interaction_skill import SkillRegistry,SkillContext
+    from grutopia_extension.interactive_navigation.push_aside_skill import PushAsideSkill,PushAsideConfig
+    from grutopia_extension.interactive_navigation.object_inspection import ObjectInspectionPlanner
+    catalog=InteractionCatalog.load(args.interaction_catalog)
+    recognizer=RGBObjectRecognizer(labels=catalog.classification_labels,proposal_query=catalog.proposal_query)
+    recognizer.check_ready()
+    recognition=InteractionRecognitionRuntime(recognizer,catalog,args.output)
+    registry=SkillRegistry();registry.register(PushAsideSkill)
     from grutopia_extension.interactive_navigation.go2_contact_turn import ContactTurnControl,checked_contact_turn_command
     from grutopia_extension.interactive_navigation.go2_passage_guidance import PassageEntryGuide
     from grutopia_extension.interactive_navigation.go2_contact_control import damped_contact_centering_velocity,contact_heading_hold,ContactYawServo
@@ -131,6 +143,7 @@ def main():
         planner=SidePushPlanner(grid['free'],[profile.mapping.x_limits,profile.mapping.y_limits],
             passages=json.loads((args.benchmark_dir/'passages.json').read_text()))
         if 'box_free' in grid:planner.box_free=grid['box_free']
+    planner.interactable_ids=frozenset()
     planner.navigation_route_radius=args.route_clearance
     planner.navigation_half_width=args.navigation_half_width
     planner.voronoi_clearance_weight=args.voronoi_clearance_weight
@@ -172,7 +185,14 @@ def main():
     if args.preflight_only:return 0
     repo=Path(__file__).resolve().parents[2]
     manifest={}
-    for rel in ['grutopia/demo/go2_side_clearance_navigation.py','grutopia_extension/interactive_navigation/side_push_navigation.py',
+    shutil.copy2(args.interaction_catalog,args.output/'interaction_catalog.json')
+    for rel in ['grutopia_extension/interactive_navigation/interaction_catalog.py',
+        'grutopia_extension/interactive_navigation/rgb_object_recognition.py',
+        'grutopia_extension/interactive_navigation/interaction_recognition_runtime.py',
+        'grutopia_extension/interactive_navigation/interaction_skill.py',
+        'grutopia_extension/interactive_navigation/push_aside_skill.py',
+        'grutopia_extension/interactive_navigation/object_inspection.py',
+        'grutopia/demo/go2_side_clearance_navigation.py','grutopia_extension/interactive_navigation/side_push_navigation.py',
         'grutopia/demo/go2_online_interactive_navigation.py',
         'grutopia_extension/interactive_navigation/box_push_navigation.py','grutopia_extension/controllers/isaac_go2_ctrl.py',
         'grutopia_extension/interactive_navigation/go2_path_tracking.py','grutopia_extension/interactive_navigation/task_video_recording.py',
@@ -262,7 +282,7 @@ def main():
                 bodies[prim.GetName()]=body
         assert set(bodies)=={o['id'] for o in layout}
         first_camera=third_camera=None;recording_enabled=False;recording_tick=0;record_phase='start';record_component=None;task_health=None
-        if args.record_video:
+        if True:  # Recognition camera is required even without video recording.
             from grutopia_extension.interactive_navigation.visualization import FollowingRobotCamera
             from grutopia_extension.interactive_navigation.go2_navigation_runner import GO2_FIRST_PERSON_OFFSET,GO2_FIRST_PERSON_PITCH_DEGREES
             from grutopia_extension.interactive_navigation.task_video_recording import TaskVideoRecorder
@@ -273,12 +293,14 @@ def main():
             light=UsdLux.DomeLight.Define(stage,'/World/Go2NavigationVideoDome');light.CreateIntensityAttr(900)
             print(json.dumps({'event':'video_camera_initialization','material_mode':args.material_mode}),flush=True)
             first_camera=FollowingRobotCamera(resolution=(1280,736),offset=GO2_FIRST_PERSON_OFFSET,pitch_degrees=GO2_FIRST_PERSON_PITCH_DEGREES,
+                enable_depth=True,enable_point_cloud_image=True,enable_semantics=False,
                 enable_bounding_boxes=False,prim_path='/World/Go2TaskFirstCamera')
             third_camera=FollowingRobotCamera(resolution=(1280,736),offset=(args.third_person_forward,0.,args.third_person_height),pitch_degrees=90,
-                horizontal_fov_degrees=args.third_person_fov,enable_bounding_boxes=False,prim_path='/World/Go2TaskThirdCamera')
+                horizontal_fov_degrees=args.third_person_fov,enable_bounding_boxes=False,prim_path='/World/Go2TaskThirdCamera') if args.record_video else None
             print(json.dumps({'event':'video_cameras_ready'}),flush=True)
             (args.output/'recording_config.json').write_text(json.dumps({
-                'full_task_recording':True,'capture':'every rendered observation','fps':25,
+                'recognition_required':True,'interaction_skill':'push_aside/1.0',
+                'full_task_recording':bool(args.record_video),'capture':'every rendered observation','fps':25,
                 'physics_dt':.005,'rendering_dt':float(simulation_config.simulator.rendering_dt),
                 'rendering_interval':simulation_config.simulator.rendering_interval,
                 'effective_env_ticks_per_render':5,'scene_scale':list(profile.scene_scale),
@@ -386,9 +408,25 @@ def main():
                     'policy_inferences':diagnostic['policy_inferences'],
                     'actuator_mode':args.actuator_mode,'physics_substeps':microsteps,'physical_commands':physical_commands,
                     'observed_cells':int(layers.observed.sum()) if hasattr(layers,'observed') else None})+'\n')
+            if layers is not None:
+                recognized=recognition.poll()
+                planner.interactable_ids=recognition.eligible_ids(now)
+                layers.recognized_objects=recognition.store.snapshot(now)
+                layers.interactable_ids=planner.interactable_ids
+                if recognized is not None:
+                    event('visual_recognition',time_s=now,details=recognized,eligible_ids=sorted(planner.interactable_ids))
+            if observation.get('render',False) and layers is not None:
+                geometry=[]
+                for tracked in layers.current_boxes:
+                    center,_=bodies[tracked.id].get_world_pose()
+                    geometry.append(ObjectGeometry(tracked.id,(*tracked.xy,float(center[2])),tracked.dimensions))
+                wants=recognition.wants_frame(now,geometry)
+                packet=first_camera.get_data(include_geometry=wants)
+                observation.setdefault('sensors',{})['recording_camera']=packet
+                if wants and packet.get('rendering_frame') is not None:
+                    recognition.submit(packet,geometry,packet['rendering_frame'],now)
             if recording_enabled and recorder:
                 if observation.get('render',False):
-                    observation.setdefault('sensors',{})['recording_camera']=first_camera.get_data()
                     observation['sensors']['overview_camera']=third_camera.get_data()
                     from types import SimpleNamespace
                     recorder.capture(recording_tick,f"{recorder.task['id']} {record_phase}",observation,
@@ -442,8 +480,12 @@ def main():
             planner.static_clear=distance_transform_edt(planner.free)*planner.resolution>planner.radius
             routes=ExplorationVoronoiRoutes(planner)
             if first_camera:
-                for camera in [first_camera,third_camera]:camera._smoothed_position=None;camera._smoothed_yaw=None
+                for camera in [first_camera,third_camera]:
+                    if camera is not None:camera._smoothed_position=None;camera._smoothed_yaw=None
             folder=args.output/task['id'];folder.mkdir(exist_ok=True)
+            recognition.reset(task['id']);planner.interactable_ids=frozenset()
+            inspection_planner=ObjectInspectionPlanner();inspection=None;inspection_turn=None
+            skill=None;skill_reports=[];subtracker=None;subtarget=None;sub_started=None;sub_reached=False
             control_log=(folder/'control_trace.jsonl').open('w',buffering=1)
             smooth_limiter=VelocitySlewLimiter() if args.path_controller=='continuous' else None
             online_selector=OnlineGoalSelector();goal_kind='task';online_wait_start=None;online_next_decision_time=0.
@@ -511,6 +553,26 @@ def main():
             retreat_wait_since=None;contact_turn=None;contact_yaw_servo=ContactYawServo(args.contact_yaw_tolerance)
             contact_alignment=ContactAlignmentGate()
             attitude_recovery=NavigationAttitudeRecovery()
+            def subnavigation(target,position,heading,boxes,now):
+                nonlocal subtracker,subtarget,sub_started
+                target=np.asarray(target,float)
+                if subtarget is None or np.linalg.norm(target-subtarget)>.02:
+                    subtracker=None;subtarget=target.copy();sub_started=now
+                if np.linalg.norm(position[:2]-target)<.16:
+                    return stop,True,{'subgoal_reached':True}
+                if now-sub_started>80:return stop,False,{'failed':'subnavigation_timeout'}
+                planner.robot_heading=heading
+                if subtracker is None:
+                    route=ordinary_path(position[:2],target,boxes)
+                    if not route:return stop,False,{'needs_replan':True}
+                    subtracker=ordinary_tracker(position[:2],route,heading)
+                action,detail=subtracker.action(position[:2],heading,planner,boxes)
+                if detail.get('needs_replan') and step%100==0:
+                    route=ordinary_path(position[:2],target,boxes,local=True)
+                    if route:subtracker=ordinary_tracker(position[:2],route,heading)
+                component.mapping._planned_path=subtracker._planned_path[subtracker._waypoint_index:]
+                return action,False,detail
+
             for step in range(args.max_steps):
                 iteration_tracking=None
                 if (args.output/'STOP').exists():reason='stop_requested';break
@@ -568,7 +630,8 @@ def main():
                         event('navigation_attitude_recovery_end',step=step,position=p.tolist(),**recovery)
                         # Gait settling can drift. Replan on the latest maps
                         # instead of continuing a stale local turning target.
-                        phase='decide';phase_start=step;tracker=None
+                        if phase not in ['skill','inspect_navigate','inspect_turn','inspect_wait']:phase='decide'
+                        phase_start=step;tracker=None;subtracker=None
                         decision_recovery_tracker=None;decision_recovery_start=None
                         obs=tick(stop);last_action=stop;last_tracking=recovery;continue
                 planner.robot_heading=None
@@ -651,6 +714,13 @@ def main():
                               exit=passage_guide.exit.tolist(),entry_reached=passage_guide.entry_reached)
                         obs=tick(action);last_action=action;last_tracking=tracking;continue
                     layers.refresh_global(current,reason='decision')
+                    inspection=inspection_planner.propose(layers,p[:2],heading,task['goal'],recognition.store,planner.control_time)
+                    if inspection is not None:
+                        phase='inspect_navigate';phase_start=step;subtracker=None;subtarget=None
+                        layers.decision={'kind':'inspect','reason':inspection.reason,'object_id':inspection.object_id,
+                            'recognized_category':'unknown','interaction_allowed':False,'execution_state':'move_to_rgb_view'}
+                        event('inspection_begin',step=step,time_s=planner.control_time,**vars(inspection))
+                        obs=tick(stop);last_action=stop;continue
                     if args.map_source=='online':
                         decision,online_endpoint=online_selector.decide(layers,p[:2],task['goal'])
                         if decision.kind=='wait':
@@ -672,7 +742,18 @@ def main():
                     if decision.kind=='failed':reason=decision.reason;break
                     if decision.kind in ['navigate','explore']:
                         path=decision.path;phase='navigate';goal_kind='frontier' if decision.kind=='explore' else 'task'
-                    else:plan=decision.push;path=plan.approach_path;phase='approach'
+                    else:
+                        plan=decision.push
+                        permission=catalog.permission(plan.box_id,'push_aside',recognition.store,planner.control_time)
+                        if permission is None:
+                            event('interaction_permission_denied',step=step,object_id=plan.box_id)
+                            obs=tick(stop);last_action=stop;continue
+                        skill=registry.create(permission,plan=plan,task_start=task['start'],task_goal=task['goal'],
+                            config=PushAsideConfig(front_gap=max(.30,args.contact_front_gap),push_max_speed=args.push_max_speed,
+                                lateral_speed=args.contact_lateral_speed,forward_speed=args.contact_centering_speed))
+                        phase='skill';push_count+=1;subtracker=None;subtarget=None;sub_reached=False
+                        event('skill_start',step=step,time_s=planner.control_time,permission=vars(permission),plan=vars(plan))
+                        obs=tick(stop);last_action=stop;continue
                     planner.robot_heading=heading if args.navigation_heading=='path' else nav_heading
                     endpoint=(online_endpoint if args.map_source=='online' else task['goal']) if phase=='navigate' else plan.approach_xy
                     path=ordinary_path(p[:2],endpoint,current)
@@ -754,311 +835,60 @@ def main():
                             component.mapping._planned_path=(tuple(tracking['target']),)
                         if step%400==0:event('path_tracking',step=step,**tracking)
                     if step-phase_start>16000:reason='navigation_timeout';break
-                elif phase=='push':
-                    box=by_id[plan.box_id];direction=np.array(plan.direction)
-                    c,s=math.cos(heading),math.sin(heading)
-                    body_v=robot._go2_locomotion_control.body_lin_vel[:2]
-                    measured_world_v=np.array([c*body_v[0]-s*body_v[1],s*body_v[0]+c*body_v[1]])
-                    tangent=np.array([-direction[1],direction[0]])
-                    push_lateral_velocity=.92*push_lateral_velocity+.08*float(np.dot(measured_world_v,tangent))
-                    moved=np.array(box.xy)-plan.initial_xy;along=float(np.dot(moved,direction))
-                    side_error=float(np.cross(direction,moved));clearance=planner.clearance(box)
-                    if abs(side_error)>.15:reason='box_left_safe_push_line';break
-                    release=p[:2]-.45*direction
-                    certificate=None
-                    if step%20==0 and along>.25:
-                        with layers.global_planning():
-                            full_route=planner.path(task['start'],task['goal'],current)
-                            release_route=planner.path(release,task['goal'],current) if full_route else ()
-                        if release_route:
-                            certificate=planner.certify_cleared_passage(box,full_route,task['start'],current)
-                    completion=push_completion_state(certificate,clearance,along,args.map_source=='online')
-                    if completion:
-                        layers.refresh_global(current,reason='side_push_cleared_passage' if certificate else 'side_push_parked_pending_observation')
-                        phase='release';phase_start=step;release_start=p[:2].copy();action=stop
-                        passage_certificate=certificate
-                        layers.decision={**(layers.decision or {}),'execution_state':completion}
-                        event('side_push_end',step=step,box_id=box.id,position=list(box.xy),
-                              clearance=certificate or {**clearance,'completion_rule':completion,'corridor_confirmed':False},
-                              completion_state=completion,nominal_center_clearance=clearance,actual_push_distance_m=along)
-                    else:
-                        desired_heading=math.atan2(direction[1],direction[0]);error=angle(desired_heading-heading)
-                        tangent=np.array([-direction[1],direction[0]])
-                        nose=p[:2]+.33*np.array([math.cos(heading),math.sin(heading)])
-                        cross_error=float(np.dot(np.array(box.xy)-nose,tangent))
-                        if abs(error)>.18 or abs(cross_error)>.06:
-                            extent=float(np.dot(np.abs(direction),np.array(box.dimensions[:2]))/2)
-                            front_gap=float(np.dot(np.array(box.xy)-nose,direction)-extent)
-                            # Already separated from the box: center directly.
-                            # An unnecessary retreat can enter furniture behind us.
-                            # Front paws extend ~0.17 m beyond the nose. Any
-                            # lateral/yaw correction needs their clearance too.
-                            phase='contact_brake';contact_stable_ticks=0
-                            phase_start=step;realign_origin=p[:2].copy()
-                            realign_count+=1;action=stop
-                            event('contact_realign_begin',step=step,heading_error=error,contact_offset=cross_error,
-                                  front_gap=front_gap,retraction_required=front_gap<=.26)
-                        else:
-                            force_speed=min(args.push_max_speed,.30+.00045*(step-phase_start))
-                            v=push_centerline_velocity(direction,force_speed,cross_error,push_lateral_velocity)
-                            c,s=math.cos(heading),math.sin(heading)
-                            action={'move_by_speed':[float(c*v[0]+s*v[1]),float(-s*v[0]+c*v[1]),float(np.clip(1.8*error,-.45,.45))]}
-                        if along>plan.push_distance+.25:reason='safe_push_distance_exceeded';break
-                        if step-phase_start>2000 and along<.025:reason='no_box_motion';break
-                        if step-phase_start>8000:reason='push_timeout';break
-                        if step%200==0:event('push_progress',step=step,position=p.tolist(),box=list(box.xy),clearance=clearance,
-                            command=action['move_by_speed'],actual_body_velocity=robot._go2_locomotion_control.body_lin_vel.tolist())
-                elif phase=='contact_brake':
-                    # The rough gait continues moving after a zero request.
-                    # Settle before changing from a forward push to lateral/yaw
-                    # correction; otherwise that switch can drag a paw sideways
-                    # into the carton or the wall behind the approach lane.
-                    action=stop
-                    speed=float(np.linalg.norm(robot._go2_locomotion_control.body_lin_vel[:2]))
-                    contact_stable_ticks=contact_stable_ticks+1 if speed<.08 else 0
-                    if contact_stable_ticks>=40:
-                        box=by_id[plan.box_id];direction=np.asarray(plan.direction)
-                        nose=p[:2]+.33*np.array([math.cos(heading),math.sin(heading)])
-                        extent=float(np.dot(np.abs(direction),np.asarray(box.dimensions[:2]))/2)
-                        front_gap=float(np.dot(np.asarray(box.xy)-nose,direction)-extent)
-                        phase='push_retract' if front_gap<.30 else 'push_center'
-                        phase_start=step;realign_origin=p[:2].copy()
-                        event('contact_direction_switch_settled',step=step,front_gap=front_gap,next_phase=phase)
-                    if step-phase_start>600:reason='contact_braking_timeout';break
-                elif phase=='push_retract':
-                    direction=np.array(plan.direction)
-                    backed=float(np.dot(realign_origin-p[:2],direction))
-                    box=by_id[plan.box_id]
-                    extent=float(np.dot(np.abs(direction),np.array(box.dimensions[:2]))/2)
-                    nose=p[:2]+.33*np.array([math.cos(heading),math.sin(heading)])
-                    front_gap=float(np.dot(np.array(box.xy)-nose,direction)-extent)
-                    if front_gap>=max(.30,args.contact_front_gap):
-                        phase='push_center';phase_start=step;action=stop;retreat_wait_since=None
-                    else:
-                        others=[b for b in current if b.id!=plan.box_id]
-                        retreat=safe_contact_retreat(planner,others,p[:2],heading,direction,max(.30,args.contact_front_gap)-front_gap)
-                        if retreat is None:
-                            partial=(observed_contact_retreat(planner,current,p[:2],heading,direction,smooth_limiter,planner.control_time)
-                                     if args.map_source=='online' else None)
-                            if partial is not None:
-                                command,retreat_target=partial;action={'move_by_speed':command.tolist()}
-                                retreat_wait_since=None;record_phase='push_retract_observe'
-                                if step%50==0:event('contact_retreat_observation_step',step=step,front_gap=front_gap,
-                                    target=retreat_target.tolist(),command=command.tolist(),map_source='observed_local_map')
-                            else:
-                                action=stop;record_phase='contact_retreat_observation_wait'
-                                if retreat_wait_since is None:retreat_wait_since=planner.control_time
-                                if args.map_source!='online' or planner.control_time-retreat_wait_since>3.:
-                                    reason='contact_retreat_blocked_by_other_geometry';break
-                        else:
-                            retreat_wait_since=None
-                            v,retreat_target=retreat;c,s=math.cos(heading),math.sin(heading)
-                            command=[float(c*v[0]+s*v[1]),float(-s*v[0]+c*v[1]),0.]
-                            if step%100==0:event('contact_retreat_target',step=step,front_gap=front_gap,target=retreat_target.tolist())
-                            action={'move_by_speed':command}
-                    if backed>.70:reason='contact_retreat_distance_exceeded';break
-                    if step-phase_start>1800:reason='contact_retraction_timeout';break
-                elif phase=='push_center':
-                    box=by_id[plan.box_id];direction=np.array(plan.direction)
-                    extent=float(np.dot(np.abs(direction),np.array(box.dimensions[:2]))/2)
-                    center_target=nose_aligned_body_target(box.xy,box.dimensions,direction,heading,front_gap=args.contact_front_gap)
-                    desired_heading=math.atan2(direction[1],direction[0]);error=angle(desired_heading-heading)
-                    delta=center_target-p[:2];centering_error=float(np.linalg.norm(delta))
-                    c,s=math.cos(heading),math.sin(heading)
-                    body_velocity=robot._go2_locomotion_control.body_lin_vel[:2]
-                    world_velocity=np.array([c*body_velocity[0]-s*body_velocity[1],s*body_velocity[0]+c*body_velocity[1]])
-                    tangent=np.array([-direction[1],direction[0]])
-                    nose=p[:2]+.33*np.array([math.cos(heading),math.sin(heading)])
-                    contact_error=abs(float(np.dot(np.array(box.xy)-nose,tangent)))
-                    front_gap=float(np.dot(np.array(box.xy)-nose,direction)-extent)
-                    if smooth_limiter is not None and (abs(error)>.18 or contact_turn is not None):
-                        if contact_turn is None:
-                            contact_turn=ContactTurnControl(p[:2],heading,desired_heading,planner,current,planner.control_time)
-                            event('contact_turn_staging_begin',step=step,position=p.tolist(),heading_error=error)
-                        result=contact_turn.update(p[:2],heading,planner,current,smooth_limiter,planner.control_time)
-                        if contact_turn.failed:
-                            reason='no_observed_safe_contact_turn';break
-                        if result is None:
-                            contact_turn=None;contact_alignment=ContactAlignmentGate();phase_start=step
-                            contact_yaw_servo=ContactYawServo(args.contact_yaw_tolerance)
-                            action=stop;record_phase='contact_turn_settled'
-                            event('contact_turn_staging_end',step=step,position=p.tolist(),heading_error=error)
-                        else:
-                            command,detail=result;action={'move_by_speed':command.tolist()}
-                            record_phase='contact_'+detail['staging_phase']
-                            component.mapping._planned_path=(tuple(detail['target']),)
-                            last_tracking=detail
-                            if step%100==0:event('contact_turn_staging',step=step,position=p.tolist(),**detail)
-                        obs=tick(action);last_action=action;continue
-                    alignment_axis=contact_alignment.select(contact_error,error,args.contact_yaw_tolerance)
-                    ready=alignment_axis is None and contact_pose_ready(p,heading,box.xy,box.dimensions,direction,args.contact_front_gap,args.contact_yaw_tolerance)
-                    motion_mode='hold' if ready else (alignment_axis or 'longitudinal')
-                    filtered_speed=(float(np.linalg.norm(smooth_limiter.measured[:2])) if smooth_limiter is not None else None)
-                    mode_settling=contact_alignment.settling_required(motion_mode,step,measured_speed=filtered_speed)
-                    centering_velocity=(np.array([c*smooth_limiter.measured[0]-s*smooth_limiter.measured[1],
-                                                   s*smooth_limiter.measured[0]+c*smooth_limiter.measured[1]])
-                                        if smooth_limiter is not None else world_velocity)
-                    brake=(contact_braking_required(contact_axis_delta(delta,direction,motion_mode),centering_velocity,
-                                                   horizon=.65 if smooth_limiter is not None and motion_mode=='lateral' else CONTACT_BRAKING_HORIZON_S)
-                           if motion_mode in ['lateral','longitudinal'] else False)
-                    # A turning gait has oscillating COM linear velocity.
-                    # Braking on every such sample repeatedly cancelled yaw.
-                    # Settle on transitions, then finish the same yaw action;
-                    # retain predictive braking for translation toward a pose.
-                    slowing=brake and alignment_axis!='yaw'
-                    if front_gap<.26 and (contact_error>.035 or abs(error)>args.contact_yaw_tolerance):
-                        phase='contact_brake';phase_start=step;contact_stable_ticks=0;action=stop
-                        event('paw_clearance_before_alignment',step=step,front_gap=front_gap,contact_offset=contact_error)
-                    elif ready or slowing or mode_settling or step<contact_pause_until:
-                        if contact_pause_until<step and slowing:contact_pause_until=step+100
-                        action=stop
-                        contact_stable_ticks=contact_stable_ticks+1 if ready and np.linalg.norm(body_velocity)<.08 else 0
-                        if contact_stable_ticks>=40 and not mode_settling:
-                            phase='push';phase_start=step
-                            event('contact_realign_end',step=step,position=p.tolist(),contact_offset=contact_error)
-                    elif alignment_axis=='yaw':
-                        contact_stable_ticks=0
-                        if smooth_limiter is None:
-                            action={'move_by_speed':[0.,0.,math.copysign(args.turn_speed,error)]}
-                        else:
-                            request=[0.,0.,contact_yaw_servo.update(error,float(smooth_limiter.measured[2]),planner.control_time)]
-                            command,_=checked_contact_turn_command(request,p[:2],heading,planner,current,smooth_limiter,planner.control_time)
-                            action={'move_by_speed':command.tolist()}
-                    else:
-                        contact_stable_ticks=0
-                        if smooth_limiter is None:
-                            v=contact_centering_velocity(delta,direction,args.contact_centering_speed,lateral_speed=args.contact_lateral_speed,axis=motion_mode)
-                            action={'move_by_speed':[float(c*v[0]+s*v[1]),float(-s*v[0]+c*v[1]),0.]}
-                        else:
-                            v=damped_contact_centering_velocity(delta,direction,centering_velocity,args.contact_centering_speed,motion_mode,
-                                                               lateral_speed=args.contact_lateral_speed)
-                            request=[float(c*v[0]+s*v[1]),float(-s*v[0]+c*v[1]),
-                                     contact_heading_hold(error,float(smooth_limiter.measured[2]))]
-                            command,safe=checked_contact_turn_command(request,p[:2],heading,planner,current,smooth_limiter,planner.control_time)
-                            action={'move_by_speed':command.tolist()}
-                            if not safe:record_phase='contact_centering_safety_brake'
-                    if step%200==0:event('contact_center_tracking',step=step,position=p.tolist(),target=center_target.tolist(),
-                        position_error=centering_error,contact_offset=contact_error,heading_error=error,command=action['move_by_speed'],
-                        actual_body_velocity=body_velocity.tolist(),safe_contact_pose=bool(ready),pause_until=contact_pause_until,
-                        alignment_axis=alignment_axis,motion_mode=motion_mode,mode_settling=bool(mode_settling))
-                    if step-phase_start>2500:reason='contact_centering_timeout';break
-                elif phase=='release':
-                    direction=np.array(plan.direction);backed=float(np.dot(release_start-p[:2],direction))
-                    if backed>=.45:
-                        for _ in range(120):obs=tick(stop)
-                        record_phase='verify_cleared_passage'
-                        layers.decision={**(layers.decision or {}),'execution_state':'confirming_after_release'}
-                        confirmation_deadline=float(robot._go2_locomotion_control._simulation_time())+3.
-                        layers.refresh_global(reason='released_box_revalidation')
-                        confirmation_attempt=0
-                        while True:
-                            current=planning_boxes();box=next(b for b in current if b.id==plan.box_id)
-                            clear,route,full=observed_passage_routes(layers,box,task['start'],task['goal'],
-                                np.array(obs['position'][:2]),current)
-                            event('passage_check',step=step,clearance=clear,route_available=bool(route),full_route_available=bool(full),
-                                  observation_attempt=confirmation_attempt,global_map_revision=layers.global_revision,local_map_revision=layers.local_revision)
-                            if (clear and route and full) or not task_health.healthy:break
-                            if float(robot._go2_locomotion_control._simulation_time())>=confirmation_deadline:break
-                            for _ in range(25):obs=tick(stop)
-                            confirmation_attempt+=1
-                        if not task_health.healthy:reason='robot_unstable';break
-                        if not clear or not route or not full:reason='side_passage_not_clear';break
-                        passage_certificate=clear
-                        layers.decision={**(layers.decision or {}),'execution_state':'observed_corridor_clear'}
-                        completed_box=box.id
-                        if args.path_controller=='continuous':
-                            layers.refresh_global(reason='released_box_replan')
-                            passage_guide=PassageEntryGuide(clear,task['goal'])
-                            phase='decide';phase_start=step;tracker=None;obs=tick(stop);last_action=stop;continue
-                        nav_heading=math.atan2(plan.direction[1],plan.direction[0])
-                        turn_point,path,turn_blocked=planner.turning_staging(np.array(obs['position'][:2]),box.id,current,nav_heading,
-                            passage_center=clear['center'])
-                        if not path:reason='no_safe_turning_staging_path';break
-                        # Withdraw along the passage axis before moving toward
-                        # its centerline, keeping the body away from the carton.
-                        axis=np.array(planner.passages[box.id]['axis'])
-                        origin=np.array(obs['position'][:2])
-                        side_point=origin+np.dot(turn_point-origin,axis)*axis
-                        first_leg=planner.path(origin,side_point,current)
-                        second_leg=planner.path(side_point,turn_point,current)
-                        if first_leg and second_leg:path=[*first_leg,*second_leg]
-                        tracker=Go2VelocityPathTracker(obs['position'][:2],path,fixed_heading=nav_heading)
-                        phase='turn_staging';phase_start=step;action=stop
-                        event('turn_staging_selected',step=step,position=turn_point.tolist(),path=path)
-                    else:
-                        v=-.18*direction;c,s=math.cos(heading),math.sin(heading)
-                        desired_heading=math.atan2(direction[1],direction[0])
-                        action={'move_by_speed':[float(c*v[0]+s*v[1]),float(-s*v[0]+c*v[1]),float(np.clip(angle(desired_heading-heading)*.6,-.25,.25))]}
-                    if step-phase_start>3000:reason='release_timeout';break
-                elif phase=='turn_staging':
-                    planner.robot_heading=nav_heading
-                    if np.linalg.norm(p[:2]-turn_point)<.20 and not turn_blocked[planner.cell(p[:2])]:
-                        turn_point=p[:2].copy()
-                        for _ in range(120):obs=tick(stop)
-                        phase='turn_to_passage';phase_start=step;action=stop
-                    else:
-                        action,tracking=tracker.action(p[:2],heading,planner,current)
-                        command=action['move_by_speed']
-                        error=angle(nav_heading-heading)
-                        if tracking['recovering_buffer']:
-                            # Recover translation first; an in-place correction
-                            # must never cancel the command to leave an obstacle.
-                            command[2]=0.
-                        elif abs(error)>.10:
-                            action={'move_by_speed':[0.,0.,math.copysign(args.turn_speed,error)]}
-                        else:
-                            # The policy stalls below ~0.16 m/s in lateral motion;
-                            # mixed high lateral/yaw commands after contact are unstable.
-                            limit=.20+.10*min((step-phase_start)/300,1.)
-                            command[1]=float(np.clip(command[1],-limit,limit))
-                            if abs(command[1])>.06:command[1]=math.copysign(limit,command[1])
-                            if abs(command[0])<.03:command[0]=0.
-                        if step%200==0:event('staging_tracking',step=step,position=p.tolist(),**tracking,command=action['move_by_speed'])
-                    if step-phase_start>4000:reason='turn_staging_timeout';break
-                elif phase=='turn_to_passage':
-                    axis=np.array(planner.passages[completed_box]['axis'])
-                    desired_heading=math.atan2(axis[1],axis[0]);error=angle(desired_heading-heading)
-                    v=np.zeros(2);c,s=math.cos(heading),math.sin(heading)
-                    rotation=math.copysign(args.turn_speed,error) if abs(error)>=.08 else 0.
-                    action={'move_by_speed':[float(c*v[0]+s*v[1]),float(-s*v[0]+c*v[1]),rotation]}
-                    if abs(error)<.08:
-                        for _ in range(120):obs=tick(stop)
-                        # Use a fresh collision-checked route through the opened
-                        # doorway; blind lateral centering ignored nearby furniture.
-                        nav_heading=desired_heading;phase='decide';phase_start=step;action=stop
-                        if args.roadmap_shape=='footprint':planner.navigation_pose_heading=desired_heading
-                        layers.refresh_global(box_states(),reason='replan_through_cleared_passage')
-                        event('aligned_to_cleared_passage',step=step,position=p.tolist())
-                    if step-phase_start>4000:reason='passage_alignment_timeout';break
-                elif phase=='cross_passage':
-                    passage=planner.passages[completed_box]
-                    axis=np.array(passage['axis']);normal=np.array([-axis[1],axis[0]])
-                    center=np.array(passage['center'])
-                    lateral_error=float(np.dot(center-p[:2],normal))
-                    heading_error=angle(nav_heading-heading)
-                    if crossed:
+                elif phase=='inspect_navigate':
+                    action,arrived,iteration_tracking=subnavigation(inspection.position,p,heading,current,planner.control_time)
+                    if iteration_tracking.get('failed'):
+                        event('inspection_view_unreachable',step=step,reason=iteration_tracking['failed'])
                         phase='decide';action=stop
-                        event('full_body_passage_crossed',step=step,position=p.tolist())
+                    elif arrived:
+                        phase='inspect_turn';phase_start=step;inspection_turn=None;action=stop
+                elif phase=='inspect_turn':
+                    if step-phase_start<70:action=stop
                     else:
-                        # Center the body before advancing through the doorway.
-                        # A small proportional sidestep is below the gait policy's
-                        # effective speed and cannot correct lateral drift.
-                        if abs(lateral_error)>.045:
-                            v=.30*np.sign(lateral_error)*normal;rotation=0.
-                        elif abs(heading_error)>.08:
-                            v=np.zeros(2);rotation=math.copysign(args.turn_speed,heading_error)
-                        else:
-                            v=.24*axis;rotation=float(np.clip(heading_error*.7,-.12,.12))
-                        planner.robot_heading=heading
-                        blocked=planner.blocked(current)
-                        target=p[:2]+v*.4
-                        from grutopia_extension.interactive_navigation.mapping import AStarMapPlanner
-                        if not blocked[planner.cell(p[:2])] and not AStarMapPlanner.segment_clear(planner.cell(p[:2]),planner.cell(target),blocked):
-                            reason='cleared_passage_tracking_blocked';break
-                        c,s=math.cos(heading),math.sin(heading)
-                        action={'move_by_speed':[float(c*v[0]+s*v[1]),float(-s*v[0]+c*v[1]),rotation]}
-                        if step%200==0:event('passage_tracking',step=step,position=p.tolist(),lateral_error=lateral_error,command=action['move_by_speed'])
-                    if step-phase_start>5000:reason='passage_traversal_timeout';break
+                        if inspection_turn is None:
+                            inspection_turn=ContactTurnControl(p,heading,inspection.heading,planner,current,planner.control_time)
+                        answer=inspection_turn.update(p,heading,planner,current,smooth_limiter,planner.control_time)
+                        action=stop if answer is None else {'move_by_speed':answer[0].tolist()}
+                        if abs(angle(inspection.heading-heading))<.10:
+                            phase='inspect_wait';phase_start=step;inspection_wait_frames=recognition.last_frame;action=stop
+                        elif inspection_turn.failed:
+                            phase='decide';action=stop
+                            event('inspection_turn_retry',step=step,object_id=inspection.object_id)
+                    if step-phase_start>6000:phase='decide';action=stop
+                elif phase=='inspect_wait':
+                    action=stop;layers.decision['execution_state']='RGB_DINO_SAM_Qwen_confirm_two_frames'
+                    recognized=recognition.store.confirmed(inspection.object_id,planner.control_time)
+                    if recognized is not None:
+                        event('inspection_classified',step=step,time_s=planner.control_time,object_id=inspection.object_id,
+                            category=recognized.category,allowed=inspection.object_id in planner.interactable_ids)
+                        phase='decide'
+                    elif step-phase_start>3500:
+                        event('inspection_unknown_new_view',step=step,object_id=inspection.object_id)
+                        phase='decide'
+                elif phase=='skill':
+                    ctx=SkillContext(planner.control_time,p,heading,robot._go2_locomotion_control.body_lin_vel,
+                        float(robot._go2_locomotion_control.body_ang_vel[2]),tilt,task_health.healthy,
+                        by_id.get(plan.box_id),current,planner,layers,smooth_limiter,sub_reached)
+                    command=skill.step(ctx)
+                    for transition in command.events:event('skill_transition',step=step,**transition)
+                    layers.decision={**(layers.decision or {}),'skill':'push_aside','skill_state':command.state,
+                        'skill_retry':skill.retries,'recognized_category':skill.permission.category,
+                        'interaction_allowed':True,'execution_state':command.state}
+                    record_phase='skill_'+command.state
+                    action={'move_by_speed':list(command.velocity)};sub_reached=False
+                    if command.navigation_goal is not None:
+                        action,sub_reached,iteration_tracking=subnavigation(command.navigation_goal,p,heading,current,planner.control_time)
+                        if iteration_tracking.get('failed'):
+                            skill._fail(ctx,iteration_tracking['failed'])
+                    if step%200==0:event('skill_feedback',step=step,state=command.state,position=p.tolist(),
+                        box=list(by_id[plan.box_id].xy),command=action['move_by_speed'],retry=skill.retries)
+                    if command.status!='running':
+                        report=skill.report();skill_reports.append(report);event('skill_end',step=step,time_s=planner.control_time,**report)
+                        if command.status!='succeeded':reason='push_aside:'+command.reason;break
+                        completed_box=plan.box_id;passage_certificate=command.certificate
+                        passage_guide=PassageEntryGuide(passage_certificate,task['goal'])
+                        layers.refresh_global(reason='skill_success_replan_through_passage')
+                        phase='decide';phase_start=step;tracker=None;action=stop
                 obs=tick(action);last_action=action;last_tracking=iteration_tracking
                 if step%800==0:event('progress',step=step,phase=phase,position=list(map(float,obs['position'])),distance=distance)
             if not task_health.healthy:success=False;reason='robot_unstable'
@@ -1091,6 +921,9 @@ def main():
             layers.save(folder)
             result['layered_mapping']=layers.statistics()
             result['passage_certificate']=passage_certificate
+            result['recognition']=recognition.save(planner.control_time)
+            result['interaction_skills']=skill_reports
+            if skill is not None and not skill_reports:result['interaction_skills']=[skill.report()]
             result['map_source']=args.map_source
             result['goal_source']='requested_coordinates'
             if control_log is not None:control_log.close();control_log=None
@@ -1105,6 +938,7 @@ def main():
     except Exception as error:
         traceback.print_exc();(args.output/'error.json').write_text(json.dumps({'error':str(error),'traceback':traceback.format_exc()},indent=2));raise
     finally:
+        recognition.close()
         if camera_trace:camera_trace.close()
         if recorder:recorder.close()
         if env is not None:env.close()
