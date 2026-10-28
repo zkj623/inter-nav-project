@@ -493,8 +493,8 @@ def main():
             events=[];samples=[];phase='decide';phase_start=0;plan=None;path=();push_count=0
             success=False;reason='global_step_limit';maximum_tilt=0.;start_time=time.time();initial_positions={}
             eventfile=(folder/'events.jsonl').open('w')
-            def event(name,**values):
-                row={'event':name,'task':task['id'],**values};events.append(row)
+            def event(event_type,**values):
+                row={'event':event_type,'task':task['id'],**values};events.append(row)
                 eventfile.write(json.dumps(row)+'\n');eventfile.flush();print(json.dumps(row),flush=True)
             initial_heading={'T01':0.,'T02':math.pi,'T03':math.pi/2,'T04':0.,'T05':math.pi}[task['id']]
             planner.navigation_pose_heading=initial_heading if args.roadmap_shape=='footprint' else None
