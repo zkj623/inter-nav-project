@@ -563,7 +563,15 @@ def main():
                 if now-sub_started>80:return stop,False,{'failed':'subnavigation_timeout'}
                 planner.robot_heading=heading
                 if subtracker is None:
-                    route=ordinary_path(position[:2],target,boxes)
+                    route=()
+                    separation=float(np.linalg.norm(position[:2]-target))
+                    if separation<=2.:
+                        with layers.global_planning() as view_boxes:
+                            connection=planner.path(position[:2],target,view_boxes)
+                        if connection and planner.length(position[:2],connection)<=1.25*separation+.10:
+                            route=connection;layers.global_path=route;layers.local_path=()
+                            layers.guidance_revision=layers.global_revision
+                    if not route:route=ordinary_path(position[:2],target,boxes)
                     if not route:return stop,False,{'needs_replan':True}
                     subtracker=ordinary_tracker(position[:2],route,heading)
                 action,detail=subtracker.action(position[:2],heading,planner,boxes)
@@ -921,7 +929,7 @@ def main():
             layers.save(folder)
             result['layered_mapping']=layers.statistics()
             result['passage_certificate']=passage_certificate
-            result['recognition']=recognition.save(planner.control_time)
+            result['recognition']=recognition.save(float(robot._go2_locomotion_control._simulation_time() or planner.control_time))
             result['interaction_skills']=skill_reports
             if skill is not None and not skill_reports:result['interaction_skills']=[skill.report()]
             result['map_source']=args.map_source

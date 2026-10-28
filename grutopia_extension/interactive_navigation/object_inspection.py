@@ -29,10 +29,23 @@ class ObjectInspectionPlanner:
                 candidate=p.decide(start,goal,boxes)
             finally:
                 p.interactable_ids=saved;p.active_passages=passages;p.robot_heading=saved_heading
-            if candidate.kind!='push':return None
-            box=next(b for b in boxes if b.id==candidate.push.box_id)
-            if recognitions.confirmed(box.id,now) is not None:return None
-            if self.attempts.get(box.id,0)>=4:return None
+            if candidate.kind=='push':
+                candidates=[b for b in boxes if b.id==candidate.push.box_id]
+            else:
+                # Looking at a nearby obstruction does not require knowing
+                # the room beyond it, and never authorizes moving that object.
+                start_xy=np.asarray(start[:2]);goal_delta=np.asarray(goal[:2])-start_xy
+                length=np.linalg.norm(goal_delta)
+                if length<.1:return None
+                forward=goal_delta/length;candidates=[]
+                for obj in boxes:
+                    delta=np.asarray(obj.xy)-start_xy;along=float(np.dot(delta,forward))
+                    lateral=float(np.linalg.norm(delta-along*forward))
+                    if 0.<along<length+.3 and np.linalg.norm(delta)<=3.5 and lateral<1.2:candidates.append(obj)
+                candidates.sort(key=lambda obj:np.linalg.norm(np.asarray(obj.xy)-start_xy))
+            box=next((obj for obj in candidates if recognitions.confirmed(obj.id,now) is None
+                      and self.attempts.get(obj.id,0)<4),None)
+            if box is None:return None
             center=np.asarray(box.xy);position=np.asarray(start[:2]);toward=position-center
             theta=math.atan2(toward[1],toward[0]);choices=[]
             p.robot_heading=None
@@ -54,4 +67,4 @@ class ObjectInspectionPlanner:
             self.used_views.setdefault(box.id,[]).append(point.copy())
             self.attempts[box.id]=self.attempts.get(box.id,0)+1
             return InspectionPlan(box.id,tuple(map(float,point)),float(view_heading),
-                                  'unclassified_obstacle_blocks_observed_goal_route')
+                                  'unclassified_obstacle_requires_rgb_view')
