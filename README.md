@@ -51,7 +51,8 @@ go2_out="/data20t/embodied/zkj/inter-nav-results/go2-online-$(date +%Y%m%d-%H%M%
 
 在线模式仅从输入目录读取仿真场景配置、箱子布局和任务坐标，不把 `navigation_grid.npz`、
 `original_metadata.json` 或 `passages.json` 交给规划器。箱子身份/尺寸/位姿仍是仿真检测接口，
-只有当前 LiDAR 命中后才加入规划；这部分尚未替换为真实视觉识别。定位沿用仿真位姿。
+只有当前 LiDAR 命中后才加入规划；类别已通过实际 RGB-D 关联及 Qwen3-VL 视觉分类确认；至少两个独立帧确认后才授予 `box → push_aside` 权限。定位及几何跟踪仍沿用仿真接口。
+视觉识别、白名单、技能接口与运行命令见 [视觉推箱 skill](docs/go2_visual_push_skill.md)。
 设计、证据和验证状态见 [在线导航说明](docs/go2_online_navigation.md)。
 
 ## 历史结果：使用已知全局地图的箱子导航
