@@ -6,7 +6,7 @@
 
 1. LiDAR 命中后，几何跟踪器提供待识别对象的位置和尺寸；类别为 `unknown`，不可交互。
 2. 第一视角 RGB 经 GroundingDINO 提出候选框，MobileSAM 得到掩膜；掩膜内 RGB-D 点与几何跟踪对象关联。
-3. 候选裁剪交给 Qwen3-VL 分类。DINO 查询词、仿真对象名和布局标签不能授予交互权限。
+3. 保留 SAM 前景的原始像素、弱化背景干扰后，将候选裁剪交给 Qwen3-VL 分类；同时保存未弱化背景的裁剪供复核。DINO 查询词、仿真对象名和布局标签不能授予交互权限。
 4. 至少两个不同渲染帧得到一致类别，检测分数不低于 0.30，才查询白名单。目前仅 `box` 支持 `push_aside`。
 5. 目标方向上出现附近的未识别障碍时，即使目标区域尚未观测，也先到约 1.5–2.8 m 的可达观察点，朝向物体取得识别证据。未确认仍视为障碍。
 6. 比较绕行代价与侧推代价：`接近路径长度 + 2.5 × 推动距离 + 推后剩余路径长度`。地图显示恢复连通或预计路径缩短的收益。
@@ -40,7 +40,7 @@ go2_inputs=/data20t/embodied/zkj/inter-nav-results/go2-voronoi-heading-up-202610
 go2_out="/data20t/embodied/zkj/inter-nav-results/go2-visual-skill-$(date +%Y%m%d-%H%M%S)"
 "$ISAAC_PYTHON" -u grutopia/demo/go2_online_interactive_navigation.py \
   --benchmark-dir "$go2_inputs" --output "$go2_out" --task-ids T04,T05 --gpu 3 --max-steps 40000 \
-  --floor-top .01 --map-source online --actuator-mode implicit_pd --path-controller continuous \
+  --floor-top .01 --map-source online --actuator-mode explicit_dc --path-controller continuous \
   --navigation-attitude-recovery --route-planner voronoi --navigation-heading path \
   --roadmap-shape circle --route-clearance .30 --navigation-half-width .22 --voronoi-clearance-weight .30 \
   --global-map-hz 1 --local-map-hz 10 --local-map-radius 3 \
@@ -83,6 +83,10 @@ go2_out="/data20t/embodied/zkj/inter-nav-results/go2-visual-skill-$(date +%Y%m%d
 
 ## 验收状态（2026-10-28）
 
-新流程的 437 项回归检查通过。在独立的小型 Isaac Sim 场景中，5 个真实渲染帧经过 DINO、SAM、RGB-D 关联和 Qwen3-VL 后被识别为 `box`；系统在第二个独立帧确认后才授予权限。未知类别未被默认放行。此检查仅验证识别接口，不是原始 T04/T05 的导航或推箱验收。
+新流程的 444 项回归检查通过。在独立的小型 Isaac Sim 场景中，5 个真实渲染帧经过 DINO、SAM、RGB-D 关联和 Qwen3-VL 后被识别为 `box`；系统在第二个独立帧确认后才授予权限。未知类别未被默认放行。此检查仅验证识别接口，不是原始 T04/T05 的导航或推箱验收。
 
-原尺寸 MV7 的 T04/T05 完整复跑正在等待服务器内存资源，尚未验收通过。旧的无识别或已知地图成功视频不能作为本版本的验收证据。
+完整原尺寸 MV7 的无纹理录像已完成一次（`recognition-skill-v42-notexture-video-try1`）：采样进程 RSS 峰值18.88 GiB，T04/T05 的五路视频均25 fps并通过逐帧解码及时序检查，但两组均在观察子导航/转向阶段失稳，尚未启动推箱技能。T04最大倾角35.03°、T05为46.82°，均未通过任务验收。
+
+已补齐观察子导航的姿态恢复保护，并用实测线速度、角速度、位置和倾角稳定窗口控制到点/转向切换。识别现在使用前景强调的裁剪；主动观察必须取得新视点的两帧证据，未知结果会换视点，非白名单判断需复核两个主动视点。回归检查444项通过。
+
+下轮继续保存无纹理完整录像，使用固定200 Hz的既有DC执行器接口及原50 Hz Go2 policy，检查原PD接口中出现的转向失稳问题。policy权重、30°硬健康阈值、0.25 m最终到点误差、场景尺寸和原任务坐标不变。此复测尚未验收通过；旧成功视频不能替代新流程的T04/T05验收。

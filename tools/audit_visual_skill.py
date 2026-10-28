@@ -53,12 +53,14 @@ def audit(folder):
         details.append({'object_id':object_id,'visual_frames_before_skill':sorted(valid_frames),'valid':bool(okay)})
     checks['vision_permission_effect_chain']=bool(details) and all(d['valid'] for d in details)
     checks['full_body_passage']=result.get('full_body_passage_crossed') is True
-    checks['video_decoding']=json.loads((folder/'video_qa.json').read_text())['valid']
+    video_qa=json.loads((folder/'video_qa.json').read_text())
+    checks['video_decoding']=bool(video_qa.get('videos')) and all(v.get('valid',False) for v in video_qa['videos'].values())
     manifest=json.loads((root/'source_manifest.json').read_text())
     checks['source_snapshot']=all(hashlib.sha256((root/'source'/name).read_bytes()).hexdigest()==digest for name,digest in manifest.items())
     required=['interaction_catalog.py','rgb_object_recognition.py','interaction_recognition_runtime.py','interaction_skill.py','push_aside_skill.py','object_inspection.py']
     checks['new_source_present']=all(any(Path(name).name==needed for name in manifest) for needed in required)
-    report={'task':folder.name,'valid':all(checks.values()),'checks':checks,'skills':details}
+    report={'task':folder.name,'valid':all(checks.values()),'checks':checks,'skills':details,
+            'audit_tool_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
     (folder/'visual_skill_qa.json').write_text(json.dumps(report,indent=2))
     return report
 
