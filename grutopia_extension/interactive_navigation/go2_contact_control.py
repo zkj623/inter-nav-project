@@ -56,12 +56,12 @@ def contact_axis_delta(delta,direction,axis):
     return unit*float(np.dot(np.asarray(delta,float),unit))
 
 
-def damped_contact_centering_velocity(delta, direction, velocity, max_speed, axis):
-    """Use the requested speed limit on either contact correction axis.
+def damped_contact_centering_velocity(delta, direction, velocity, max_speed, axis, *, lateral_speed=None):
+    """Use longitudinal feedback and an optional calibrated lateral stride.
 
-    Maintain a stepping request until the separate predictive brake activates;
-    reduce that request as measured motion catches up. This avoids repeatedly
-    launching a fixed 0.35 m/s sidestep at a few-centimetre residual error.
+    Longitudinal requests decay with measured progress. A calibrated lateral
+    stride remains above the policy's measured no-step region and ends using
+    the caller's predictive brake and settling gate.
     """
     if not np.isfinite(max_speed) or not .20 <= max_speed <= .50:
         raise ValueError('Contact centering speed must be within 0.20-0.50 m/s')
@@ -69,6 +69,13 @@ def damped_contact_centering_velocity(delta, direction, velocity, max_speed, axi
     distance=float(np.linalg.norm(correction))
     if distance<1e-9:return np.zeros(2)
     unit=correction/distance
+    if axis=='lateral' and lateral_speed is not None:
+        if not np.isfinite(lateral_speed) or not .35<=lateral_speed<=.50:
+            raise ValueError('Calibrated lateral stepping request must be within 0.35-0.50 m/s')
+        # The cold rough policy leans without stepping at 0.25 m/s sideways.
+        # Use a measured effective stride request; the caller brakes on
+        # actual travel rather than decaying into that inactive range.
+        return float(lateral_speed)*unit
     toward=float(np.dot(np.asarray(velocity,float)[:2],unit))
     speed=float(np.clip(1.5*distance-.6*toward,.20,max_speed))
     return speed*unit

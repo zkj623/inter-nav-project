@@ -51,6 +51,8 @@ def main():
                         help='Optional live JSON overrides for push_max_speed and turn_speed')
     parser.add_argument('--contact-yaw-tolerance',type=float,default=.04)
     parser.add_argument('--contact-centering-speed',type=float,default=.30)
+    parser.add_argument('--contact-lateral-speed',type=float,default=.35,
+                        help='Calibrated sideways stepping request during contact preparation (m/s)')
     parser.add_argument('--contact-front-gap',type=float,default=.26)
     parser.add_argument('--calibrate-turn-before-task',action='store_true',
                         help='Run independent physical yaw trials, then reset and start the actual task')
@@ -83,6 +85,7 @@ def main():
     if not .02<=args.contact_yaw_tolerance<=.10 or not .20<=args.contact_centering_speed<=.50:
         raise ValueError('Contact alignment parameters exceed calibrated bounds')
     if not .10<=args.contact_front_gap<=.45:raise ValueError('contact-front-gap must be within 0.10-0.45 m')
+    if not .35<=args.contact_lateral_speed<=.50:raise ValueError('contact-lateral-speed must be within 0.35-0.50 m/s')
     args.output.mkdir(parents=True,exist_ok=True)
     if (args.output/'summary.json').exists():raise ValueError('Use a new output directory')
     from grutopia_extension.interactive_navigation.go2_contact_turn import ContactTurnControl,checked_contact_turn_command
@@ -288,6 +291,8 @@ def main():
                 'turn_speed':args.turn_speed,
                 'contact_yaw_tolerance':args.contact_yaw_tolerance,
                 'contact_centering_speed':args.contact_centering_speed,
+                'contact_lateral_speed':args.contact_lateral_speed,
+                'contact_lateral_brake_horizon_s':.65 if args.path_controller=='continuous' else CONTACT_BRAKING_HORIZON_S,
                 'contact_front_gap_m':args.contact_front_gap,'contact_braking_horizon_s':CONTACT_BRAKING_HORIZON_S,
                 'contact_centering_axes':'lateral correction before longitudinal approach',
                 'live_control_config':str(args.control_config) if args.control_config else None,
@@ -867,7 +872,7 @@ def main():
                                                    s*smooth_limiter.measured[0]+c*smooth_limiter.measured[1]])
                                         if smooth_limiter is not None else world_velocity)
                     brake=(contact_braking_required(contact_axis_delta(delta,direction,motion_mode),centering_velocity,
-                                                   horizon=CONTACT_BRAKING_HORIZON_S)
+                                                   horizon=.65 if smooth_limiter is not None and motion_mode=='lateral' else CONTACT_BRAKING_HORIZON_S)
                            if motion_mode in ['lateral','longitudinal'] else False)
                     # A turning gait has oscillating COM linear velocity.
                     # Braking on every such sample repeatedly cancelled yaw.
@@ -895,10 +900,11 @@ def main():
                     else:
                         contact_stable_ticks=0
                         if smooth_limiter is None:
-                            v=contact_centering_velocity(delta,direction,args.contact_centering_speed,axis=motion_mode)
+                            v=contact_centering_velocity(delta,direction,args.contact_centering_speed,lateral_speed=args.contact_lateral_speed,axis=motion_mode)
                             action={'move_by_speed':[float(c*v[0]+s*v[1]),float(-s*v[0]+c*v[1]),0.]}
                         else:
-                            v=damped_contact_centering_velocity(delta,direction,centering_velocity,args.contact_centering_speed,motion_mode)
+                            v=damped_contact_centering_velocity(delta,direction,centering_velocity,args.contact_centering_speed,motion_mode,
+                                                               lateral_speed=args.contact_lateral_speed)
                             request=[float(c*v[0]+s*v[1]),float(-s*v[0]+c*v[1]),
                                      contact_heading_hold(error,float(smooth_limiter.measured[2]))]
                             command,safe=checked_contact_turn_command(request,p[:2],heading,planner,current,smooth_limiter,planner.control_time)
