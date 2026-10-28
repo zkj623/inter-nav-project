@@ -156,6 +156,26 @@ class ExplorationVoronoiRoutes:
             'map_source':'known_collision_prior_and_simulator_box_poses'}
 
 
+def calibrated_buffer_translation(planner,boxes,position,heading,target):
+    """A reachable free pose must also admit an effective, stoppable stride."""
+    delta=np.asarray(target[:2],float)-np.asarray(position[:2],float)
+    distance=float(np.linalg.norm(delta))
+    if distance<.02 or not body_translation_recovery_clear(planner,boxes,position,heading,target):return None
+    c,s=math.cos(heading),math.sin(heading)
+    body=np.array([c*delta[0]+s*delta[1],-s*delta[0]+c*delta[1]])/distance
+    if abs(body[1])>abs(body[0]):speed=.35/max(abs(body[1]),1e-9)
+    elif body[0]<0:speed=.35/max(abs(body[0]),1e-9)
+    else:speed=.25/max(abs(body[0]),1e-9)
+    speed=min(.40,speed)
+    # Reserve gait response plus slew-limited braking beyond a short target.
+    # Do not force the policy into a no-step command just because this ray is
+    # too short; the caller will select another observed escape direction.
+    travel=max(distance,.60*speed+speed*speed/(2*.65))
+    endpoint=np.asarray(position[:2])+delta/distance*travel
+    if not body_translation_recovery_clear(planner,boxes,position,heading,endpoint,require_clear_end=False):return None
+    return np.array([*(speed*body),0.])
+
+
 class ForwardExplorationPathTracker(ExplorationPathTracker):
     """Use the exploration carrot/yaw law, facing the path before walking."""
     def __init__(self,start,path,lookahead=.55,guard_motion=True):
@@ -238,25 +258,31 @@ class ForwardExplorationPathTracker(ExplorationPathTracker):
                     'controller':'calibrated_navigation_buffer_exit'}
             raw=planner.free.copy()
             for box in boxes:raw &= ~planner.box_mask(box)
-            safe=distance_transform_edt(~combined)*planner.resolution>.12
+            # The actual footprint already defines clearance. A further
+            # 12 cm free-pose halo excluded short, valid contact withdrawals.
+            safe=(~combined if getattr(planner,'layered_local_control',False)
+                  else distance_transform_edt(~combined)*planner.resolution>.12)
             if not safe.any():safe=~combined
             _,nearest=distance_transform_edt(~safe,return_indices=True)
             row,col=nearest[:,cell[0],cell[1]]
             candidate=np.array([planner.limits[0][0]+(col+.5)*planner.resolution,
                 planner.limits[1][0]+(row+.5)*planner.resolution])
             if self._buffer_target is None or combined[planner.cell(self._buffer_target)]:self._buffer_target=candidate
-            if getattr(planner,'layered_local_control',False) and not body_translation_recovery_clear(planner,boxes,position,heading,self._buffer_target):
+            if getattr(planner,'layered_local_control',False) and calibrated_buffer_translation(planner,boxes,position,heading,self._buffer_target) is None:
                 # The old recovery checked only the centre ray and could drag
                 # a paw through furniture on its way to a free destination.
                 r,c=cell;span=int(1./planner.resolution)
                 candidates=[candidate]
-                for rr in range(max(0,r-span),min(safe.shape[0],r+span+1),4):
-                    for cc in range(max(0,c-span),min(safe.shape[1],c+span+1),4):
+                for offset in [0.,math.pi/2,math.pi,3*math.pi/2]:
+                    unit=np.array([math.cos(heading+offset),math.sin(heading+offset)])
+                    candidates.extend(np.asarray(position[:2])+length*unit for length in [.10,.15,.20,.30,.40])
+                for rr in range(max(0,r-span),min(safe.shape[0],r+span+1),2):
+                    for cc in range(max(0,c-span),min(safe.shape[1],c+span+1),2):
                         if safe[rr,cc]:candidates.append(np.array([planner.limits[0][0]+(cc+.5)*planner.resolution,
                             planner.limits[1][0]+(rr+.5)*planner.resolution]))
                 candidates.sort(key=lambda point:np.linalg.norm(point-np.asarray(position[:2])))
-                target=next((point for point in candidates[:50] if body_translation_recovery_clear(
-                    planner,boxes,position,heading,point)),None)
+                target=next((point for point in candidates[:100] if calibrated_buffer_translation(
+                    planner,boxes,position,heading,point) is not None),None)
                 if target is None:
                     goal=np.asarray(self._planned_path[-1][:2])
                     desired=math.atan2(goal[1]-position[1],goal[0]-position[0])
@@ -289,18 +315,11 @@ class ForwardExplorationPathTracker(ExplorationPathTracker):
             c,s=math.cos(heading),math.sin(heading)
             command=[float(c*world[0]+s*world[1]),float(-s*world[0]+c*world[1]),0.]
             if getattr(planner,'layered_local_control',False):
-                vx,vy,_=command
-                if vx<-.05 and abs(vx)>=abs(vy):factor=.35/abs(vx)
-                elif abs(vy)>abs(vx) and abs(vy)>.05:factor=.30/abs(vy)
-                elif vx>.05:factor=.25/vx
-                else:factor=1.
-                factor=max(1.,min(factor,.40/max(np.linalg.norm(command[:2]),1e-9)))
-                if factor>1.:
-                    distance=max(np.linalg.norm(delta),np.linalg.norm(world)*factor*.5)
-                    braking_target=np.asarray(position[:2])+delta/max(np.linalg.norm(delta),1e-9)*distance
-                    if body_translation_recovery_clear(planner,boxes,position,heading,braking_target):
-                        command[0]*=factor;command[1]*=factor
-                        state['calibrated_buffer_motion']=True
+                calibrated=calibrated_buffer_translation(planner,boxes,position,heading,target)
+                if calibrated is None:
+                    self._buffer_active=False;self._buffer_target=None
+                    return {'move_by_speed':[0.,0.,0.]},{**state,'needs_replan':True}
+                command=calibrated.tolist();state['calibrated_buffer_motion']=True
             return {'move_by_speed':command},state
         action,state=super().action(position,heading,planner,boxes)
         state['controller']='exploration_carrot_and_path_heading'
