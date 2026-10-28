@@ -44,3 +44,20 @@ class PassageConfirmationTests(unittest.TestCase):
         self.assertIsNone(proof)
 
 if __name__=='__main__':unittest.main()
+
+
+def test_updated_route_can_correct_an_oblique_initial_passage_axis():
+    r,c=np.indices((160,160));x=-4+(c+.5)*.05;y=-4+(r+.5)*.05
+    free=(np.abs(x)<.38)|(np.abs(y)>1.)
+    p=SidePushPlanner(free,[[-4,4],[-4,4]],resolution=.05)
+    p.navigation_half_width=.22;p.navigation_route_radius=.30
+    p.planning_scope='local';p.planning_observed=np.ones_like(free)
+    p.passages={'box':{'center':[0.,0.],'axis':[.38,float(np.sqrt(1-.38**2))]}}
+    box=BoxState('box',(1.2,1.4),(.4,.4,.7));layers=Layers(p,[box])
+    before=p.free.copy()
+    assert p.certify_cleared_passage(box,[(0.,2.5)],(0.,-2.5),[box]) is None
+    proof,route,full=observed_passage_routes(layers,box,(0.,-2.5),(0.,2.5),(-.1,-1.3),[box])
+    assert proof and route and full
+    assert proof['axis_source']=='observed_route_tangent'
+    assert abs(proof['axis'][0])<.05 and proof['body_margin_m']==.04
+    np.testing.assert_array_equal(before,p.free)

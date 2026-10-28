@@ -81,3 +81,14 @@ def test_progress_watchdog_detects_stalling_after_partial_movement():
     command=skill.step(ctx)
     assert command.state=='brake_for_recovery' and skill.release_reason=='box_motion_stalled'
     assert command.velocity==(0.,0.,0.)
+
+
+def test_nominal_clearance_does_not_stop_before_the_planned_parking_position():
+    skill=make_skill();skill.state='push';skill.started=0.;skill.state_since=0.
+    skill.initial_box=np.array([.8,0.]);skill.push_progress=.63;skill.push_progress_time=.9
+    ctx=context(NS(id='B1',xy=(1.43,0.),dimensions=(1.,1.,1.)),1.)
+    ctx.position=np.array([.6,0.,.4])
+    ctx.planner=NS(clearance=lambda box:{'side_parked':True,'passage_clearance_margin_m':.04})
+    ctx.limiter=NS(preview=lambda command,now:command)
+    command=skill.step(ctx)
+    assert command.state=='push' and command.velocity[0]>0.

@@ -220,7 +220,7 @@ class PushAsideSkill:
                 self._transition('push',ctx);self.push_progress=along;self.push_progress_time=ctx.now
             clearance=ctx.planner.clearance(ctx.box)
             done=push_completion_state(None,clearance,along,True)
-            if done:
+            if done and along>=self.plan.push_distance-.035:
                 self.release_origin=np.asarray(ctx.position[:2]).copy();self.release_reason='side_parked'
                 self._transition('brake_after_push',ctx,done);return self._output()
             if along>self.plan.push_distance+.25:return self._fail(ctx,'safe_push_distance_exceeded')
@@ -271,11 +271,25 @@ class PushAsideSkill:
                         self._transition('succeeded',ctx,self.reason);return self._output()
             if ctx.now-self.state_since>self.config.max_verify_seconds:
                 if self.observation_moves>=2:return self._fail(ctx,'passage_not_confirmed_after_new_views')
-                target=np.asarray(ctx.position[:2])-.30*self.direction
-                if not body_translation_recovery_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,target):
-                    target=np.asarray(ctx.position[:2])-.30*self.axis
-                if not body_translation_recovery_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,target):
-                    return self._fail(ctx,'no_safe_reobservation_pose')
+                hint=getattr(ctx.layers,'passage_observation_hint',None)
+                if hint and hint.get('object_id')!=self.plan.box_id:hint=None
+                passage=hint or ctx.planner.passages.get(self.plan.box_id)
+                options=[]
+                if passage:
+                    center=np.asarray(passage['center']);axis=np.asarray(passage['axis'])
+                    options.extend(center-axis*distance for distance in [.8,1.,.6])
+                options.extend([np.asarray(ctx.position[:2])-.30*self.direction,
+                                np.asarray(ctx.position[:2])-.30*self.axis])
+                target=None
+                with ctx.layers.global_planning() as boxes:
+                    saved_heading=ctx.planner.robot_heading;ctx.planner.robot_heading=None
+                    try:
+                        for candidate in options:
+                            if np.linalg.norm(candidate-np.asarray(ctx.position[:2]))<.20:continue
+                            if not body_rotation_clear(ctx.planner,boxes,candidate,ctx.heading,ctx.heading,margin=.04):continue
+                            if ctx.planner.path(ctx.position[:2],candidate,boxes):target=candidate;break
+                    finally:ctx.planner.robot_heading=saved_heading
+                if target is None:return self._fail(ctx,'no_safe_reobservation_pose')
                 self.navigation_goal=target;self.observation_moves+=1
                 self._transition('reobserve',ctx,'change_view_after_box_motion')
                 return self._output(navigation_goal=target)
