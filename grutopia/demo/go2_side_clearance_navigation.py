@@ -89,6 +89,7 @@ def main():
     args.output.mkdir(parents=True,exist_ok=True)
     if (args.output/'summary.json').exists():raise ValueError('Use a new output directory')
     from grutopia_extension.interactive_navigation.go2_contact_turn import ContactTurnControl,checked_contact_turn_command
+    from grutopia_extension.interactive_navigation.go2_passage_guidance import PassageEntryGuide
     from grutopia_extension.interactive_navigation.go2_contact_control import damped_contact_centering_velocity,contact_heading_hold,ContactYawServo
     from grutopia_extension.interactive_navigation.box_push_navigation import BoxState
     from grutopia_extension.interactive_navigation.side_push_navigation import SidePushPlanner
@@ -191,6 +192,7 @@ def main():
         'grutopia_extension/interactive_navigation/local_staging_control.py',
         'grutopia_extension/interactive_navigation/go2_turn_response.py',
         'grutopia_extension/interactive_navigation/go2_passage_confirmation.py',
+        'grutopia_extension/interactive_navigation/go2_passage_guidance.py',
         'grutopia_extension/interactive_navigation/go2_actuation.py',
         'grutopia_extension/controllers/go2_move_by_speed_controller.py',
         'grutopia_extension/configs/controllers/go2_move_by_speed_controller.py',
@@ -454,7 +456,7 @@ def main():
                 eventfile.write(json.dumps(row)+'\n');eventfile.flush();print(json.dumps(row),flush=True)
             initial_heading={'T01':0.,'T02':math.pi,'T03':math.pi/2,'T04':0.,'T05':math.pi}[task['id']]
             planner.navigation_pose_heading=initial_heading if args.roadmap_shape=='footprint' else None
-            nav_heading=initial_heading;turn_point=None;completed_box=None;passage_certificate=None
+            nav_heading=initial_heading;turn_point=None;completed_box=None;passage_certificate=None;passage_guide=None
             art=robot.isaac_robot;root_p,_=art.get_world_pose();base_p,_=robot.get_world_pose()
             desired=np.array((*task['start'],spawn_height))
             art.set_world_pose(position=root_p+desired-base_p,
@@ -571,6 +573,11 @@ def main():
                         obs=tick(stop);last_action=stop;last_tracking=recovery;continue
                 planner.robot_heading=None
                 crossed=completed_box is None or crossed_passage(p,q,completed_box)
+                if passage_guide is not None and crossed:passage_guide=None
+                if passage_guide is not None and phase in ['navigate','decide'] and passage_guide.advance(p[:2]):
+                    event('cleared_passage_entry_reached',step=step,position=p.tolist(),entry=passage_guide.entry.tolist())
+                    phase='decide';tracker=None;obs=tick(stop);last_action=stop;continue
+                navigation_goal=passage_guide.target if passage_guide is not None else task['goal']
                 if distance<.20 and crossed and phase in ['navigate','decide','cross_passage'] and not planner.blocked(current)[planner.cell(task['goal'])]:
                     # Validate the pose after ALL stationary recording frames.
                     # Checking before an extra tail can report success even when
@@ -594,14 +601,14 @@ def main():
                     recovery=None
                     if navigation_body_blocked(planner,current,heading)[planner.cell(p[:2])]:
                         if decision_recovery_tracker is None:
-                            decision_recovery_tracker=ForwardExplorationPathTracker(p[:2],[(*task['goal'],0.)],guard_motion=False)
+                            decision_recovery_tracker=ForwardExplorationPathTracker(p[:2],[(*navigation_goal,0.)],guard_motion=False)
                         recovery=decision_recovery_tracker.action(p[:2],heading,planner,current)
                     else:decision_recovery_tracker=None
                     if recovery is not None and recovery[1].get('needs_replan'):recovery=None
                     if recovery is None and args.roadmap_shape=='circle':
                         local_motion_free=planner.free.copy()
                         with layers.global_planning() as global_boxes:
-                            attachment=decision_buffer_recovery(p[:2],heading,planner,global_boxes,task['goal'],heading,
+                            attachment=decision_buffer_recovery(p[:2],heading,planner,global_boxes,navigation_goal,heading,
                                 local_free=local_motion_free,local_boxes=current,
                                 require_goal_connection=args.map_source!='online')
                         if attachment is not None:
@@ -623,6 +630,26 @@ def main():
                         record_phase='navigation_recovery_settle'
                         obs=tick(stop);last_action=stop;continue
                     planner.robot_heading=heading if args.navigation_heading=='path' else nav_heading
+                    if passage_guide is not None:
+                        with layers.global_planning() as global_boxes:
+                            saved_heading=planner.robot_heading
+                            try:
+                                planner.robot_heading=None
+                                path=passage_guide.path(planner,p[:2],global_boxes)
+                            finally:planner.robot_heading=saved_heading
+                        if not path:reason='verified_passage_connection_lost';break
+                        endpoint=passage_guide.target;goal_kind='task' if passage_guide.entry_reached else 'passage_entry'
+                        phase='navigate';phase_start=step;planned_positions={b.id:np.asarray(b.xy) for b in current}
+                        layers.global_path=path;layers.guidance_revision=layers.global_revision
+                        layers.decision={**(layers.decision or {}),'kind':'navigate',
+                            'execution_state':'follow_cleared_corridor' if passage_guide.entry_reached else 'approach_cleared_corridor_entry',
+                            'navigation_subgoal':endpoint.tolist(),'requested_goal':task['goal']}
+                        tracker=ordinary_tracker(p[:2],path,nav_heading)
+                        action,tracking=tracker.action(p[:2],heading,planner,current)
+                        component.mapping._planned_path=tracker._planned_path[tracker._waypoint_index:]
+                        event('verified_passage_route',step=step,path=path,entry=passage_guide.entry.tolist(),
+                              exit=passage_guide.exit.tolist(),entry_reached=passage_guide.entry_reached)
+                        obs=tick(action);last_action=action;last_tracking=tracking;continue
                     layers.refresh_global(current,reason='decision')
                     if args.map_source=='online':
                         decision,online_endpoint=online_selector.decide(layers,p[:2],task['goal'])
@@ -941,6 +968,7 @@ def main():
                         completed_box=box.id
                         if args.path_controller=='continuous':
                             layers.refresh_global(reason='released_box_replan')
+                            passage_guide=PassageEntryGuide(clear,task['goal'])
                             phase='decide';phase_start=step;tracker=None;obs=tick(stop);last_action=stop;continue
                         nav_heading=math.atan2(plan.direction[1],plan.direction[0])
                         turn_point,path,turn_blocked=planner.turning_staging(np.array(obs['position'][:2]),box.id,current,nav_heading,
