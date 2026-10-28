@@ -30,3 +30,19 @@ def test_detector_box_word_does_not_override_visual_classifier(tmp_path):
 def test_depth_association_rejects_foreground_pixels_outside_proposal():
     object_id,_=associate_points(np.ones((50,3))*3,[ObjectGeometry('B06',(0,0,0),(1,1,1))])
     assert object_id is None
+
+
+def test_foreground_emphasis_keeps_object_pixels_and_original_capture():
+    from grutopia_extension.interactive_navigation.rgb_object_recognition import emphasize_instance
+    image=np.array([[[0,40,255],[10,30,50]],[[255,255,255],[3,4,5]]],np.uint8)
+    original=image.copy();mask=np.array([[True,False],[False,True]])
+    result=emphasize_instance(image,mask)
+    np.testing.assert_array_equal(result[mask],image[mask])
+    np.testing.assert_array_equal(image,original)
+    assert np.max(np.abs(result[~mask].astype(float)-192))<np.max(np.abs(image[~mask].astype(float)-192))
+
+
+def test_foreground_emphasis_rejects_misaligned_mask():
+    import pytest
+    from grutopia_extension.interactive_navigation.rgb_object_recognition import emphasize_instance
+    with pytest.raises(ValueError):emphasize_instance(np.zeros((8,8,3),np.uint8),np.ones((4,4),bool))

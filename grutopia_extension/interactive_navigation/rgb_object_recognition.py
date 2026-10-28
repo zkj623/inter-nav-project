@@ -35,6 +35,17 @@ def associate_points(points,objects,margin=.08,min_fraction=.55):
     return object_id,fraction
 
 
+
+def emphasize_instance(image,mask):
+    """Keep observed foreground RGB intact and reduce surrounding clutter."""
+    image=np.asarray(image);mask=np.asarray(mask,bool)
+    if image.ndim!=3 or image.shape[2]!=3 or image.dtype!=np.uint8 or mask.shape!=image.shape[:2]:
+        raise ValueError('Foreground emphasis requires matching uint8 RGB/BGR image and mask')
+    muted=(image.astype(np.float32)*.15+192.*.85).astype(np.uint8)
+    muted[mask]=image[mask]
+    return muted
+
+
 def context_crop(image,bbox,side=384):
     x1,y1,x2,y2=map(float,bbox);h,w=image.shape[:2]
     dx=.15*(x2-x1);dy=.15*(y2-y1)
@@ -91,8 +102,11 @@ class RGBObjectRecognizer:
             if object_id is None:item['status']='unassociated_geometry';continue
             if object_id in claimed:item['status']='duplicate_object_this_frame';continue
             claimed.add(object_id)
-            crop=context_crop(image,bbox);crop_path=output/f'{safe_id}_crop{len(evidence)}.jpg'
-            cv2.imwrite(str(crop_path),crop)
+            context=context_crop(image,bbox)
+            context_path=output/f'{safe_id}_context{len(evidence)}.jpg';cv2.imwrite(str(context_path),context)
+            crop=context_crop(emphasize_instance(image,mask),bbox)
+            crop_path=output/f'{safe_id}_crop{len(evidence)}.jpg';cv2.imwrite(str(crop_path),crop)
+            item.update(classification_input='sam_foreground_with_muted_context',context_crop_path=str(context_path))
             classified=self.backend.classify(crop,self.labels)
             category=classified.get('label');model=classified.get('model')
             if category not in self.labels or not isinstance(model,str) or not model:

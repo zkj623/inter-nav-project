@@ -118,6 +118,7 @@ def main():
     from grutopia_extension.interactive_navigation.online_navigation_map import OnlineNavigationMap
     from grutopia_extension.interactive_navigation.online_navigation_decision import OnlineGoalSelector
     from grutopia_extension.interactive_navigation.smooth_go2_navigation import SmoothExplorationTracker,VelocitySlewLimiter,smooth_recovery_action
+    from grutopia_extension.interactive_navigation.go2_interaction_motion import navigation_recovery_enabled,MeasuredStopGate,ObservedSubgoalArrival
     from grutopia_extension.interactive_navigation.go2_attitude_recovery import NavigationAttitudeRecovery
     from grutopia_extension.interactive_navigation.local_path_guidance import local_guidance_path
     from scipy.ndimage import distance_transform_edt
@@ -205,6 +206,7 @@ def main():
         'grutopia_extension/interactive_navigation/layered_navigation_map.py',
         'grutopia_extension/interactive_navigation/go2_rollout_health.py',
         'grutopia_extension/interactive_navigation/go2_attitude_recovery.py',
+        'grutopia_extension/interactive_navigation/go2_interaction_motion.py',
         'grutopia_extension/interactive_navigation/online_navigation_map.py',
         'grutopia_extension/interactive_navigation/online_lidar_evidence.py',
         'grutopia_extension/interactive_navigation/online_navigation_decision.py',
@@ -554,14 +556,25 @@ def main():
             retreat_wait_since=None;contact_turn=None;contact_yaw_servo=ContactYawServo(args.contact_yaw_tolerance)
             contact_alignment=ContactAlignmentGate()
             attitude_recovery=NavigationAttitudeRecovery()
+            sub_arrival=ObservedSubgoalArrival();inspection_settle=MeasuredStopGate()
+            def observation_brake(position,heading,boxes,now):
+                if smooth_limiter is None:return stop
+                command,_=checked_contact_turn_command([0.,0.,0.],position,heading,planner,boxes,smooth_limiter,now)
+                return {'move_by_speed':command.tolist()}
+            def inspection_stopped(position,tilt,now):
+                ctrl=robot._go2_locomotion_control
+                return inspection_settle.update(position,ctrl.body_lin_vel,ctrl.body_ang_vel,tilt,now)
             def subnavigation(target,position,heading,boxes,now):
                 nonlocal subtracker,subtarget,sub_started
                 target=np.asarray(target,float)
                 if subtarget is None or np.linalg.norm(target-subtarget)>.02:
-                    subtracker=None;subtarget=target.copy();sub_started=now
-                if np.linalg.norm(position[:2]-target)<.16:
-                    return stop,True,{'subgoal_reached':True}
+                    subtracker=None;subtarget=target.copy();sub_started=now;sub_arrival.reset()
                 if now-sub_started>80:return stop,False,{'failed':'subnavigation_timeout'}
+                ctrl=robot._go2_locomotion_control
+                arrival=sub_arrival.update(target,position,ctrl.body_lin_vel,ctrl.body_ang_vel,tilt,now)
+                if arrival['replan']:subtracker=None
+                if arrival['subgoal_braking']:
+                    return observation_brake(position,heading,boxes,now),arrival['subgoal_reached'],arrival
                 planner.robot_heading=heading
                 if subtracker is None:
                     route=()
@@ -625,7 +638,7 @@ def main():
                 if p[2]<floor_top+.20 or tilt>30 or not task_health.healthy:reason='robot_unstable';break
                 if args.navigation_attitude_recovery:
                     recovery=attitude_recovery.update(p,q,
-                        enabled=phase in ['navigate','approach','decide','cross_passage'])
+                        enabled=navigation_recovery_enabled(phase,getattr(skill,'state',None)))
                     if recovery['started']:
                         event('navigation_attitude_recovery_begin',step=step,phase=phase,
                               position=p.tolist(),**recovery)
@@ -640,7 +653,9 @@ def main():
                         # Gait settling can drift. Replan on the latest maps
                         # instead of continuing a stale local turning target.
                         if phase not in ['skill','inspect_navigate','inspect_turn','inspect_wait']:phase='decide'
-                        phase_start=step;tracker=None;subtracker=None
+                        phase_start=step;tracker=None;subtracker=None;sub_reached=False
+                        sub_arrival.reset();inspection_settle.reset();inspection_turn=None
+                        if phase=='inspect_wait':inspection_wait_frames=set();inspection_view_started=planner.control_time
                         decision_recovery_tracker=None;decision_recovery_start=None
                         obs=tick(stop);last_action=stop;last_tracking=recovery;continue
                 planner.robot_heading=None
@@ -726,6 +741,7 @@ def main():
                     inspection=inspection_planner.propose(layers,p[:2],heading,task['goal'],recognition.store,planner.control_time)
                     if inspection is not None:
                         phase='inspect_navigate';phase_start=step;subtracker=None;subtarget=None
+                        sub_arrival.reset();inspection_settle.reset()
                         layers.decision={'kind':'inspect','reason':inspection.reason,'object_id':inspection.object_id,
                             'recognized_category':'unknown','interaction_allowed':False,'execution_state':'move_to_rgb_view'}
                         event('inspection_begin',step=step,time_s=planner.control_time,**vars(inspection))
@@ -846,32 +862,45 @@ def main():
                     if step-phase_start>16000:reason='navigation_timeout';break
                 elif phase=='inspect_navigate':
                     action,arrived,iteration_tracking=subnavigation(inspection.position,p,heading,current,planner.control_time)
+                    if step%200==0:event('inspection_navigation_tracking',step=step,position=p.tolist(),tracking=iteration_tracking)
                     if iteration_tracking.get('failed'):
                         event('inspection_view_unreachable',step=step,reason=iteration_tracking['failed'])
                         phase='decide';action=stop
                     elif arrived:
-                        phase='inspect_turn';phase_start=step;inspection_turn=None;action=stop
+                        phase='inspect_turn';phase_start=step;inspection_turn=None;inspection_settle.reset();action=stop
                 elif phase=='inspect_turn':
-                    if step-phase_start<70:action=stop
+                    if inspection_turn is None and not inspection_stopped(p,tilt,planner.control_time):
+                        action=observation_brake(p,heading,current,planner.control_time)
                     else:
                         if inspection_turn is None:
                             inspection_turn=ContactTurnControl(p,heading,inspection.heading,planner,current,planner.control_time)
                         answer=inspection_turn.update(p,heading,planner,current,smooth_limiter,planner.control_time)
                         action=stop if answer is None else {'move_by_speed':answer[0].tolist()}
                         if abs(angle(inspection.heading-heading))<.10:
-                            phase='inspect_wait';phase_start=step;inspection_wait_frames=recognition.last_frame;action=stop
+                            phase='inspect_wait';phase_start=step;inspection_wait_frames=set();inspection_view_started=planner.control_time
+                            inspection_settle.reset();action=observation_brake(p,heading,current,planner.control_time)
                         elif inspection_turn.failed:
                             phase='decide';action=stop
                             event('inspection_turn_retry',step=step,object_id=inspection.object_id)
                     if step-phase_start>6000:phase='decide';action=stop
                 elif phase=='inspect_wait':
-                    action=stop;layers.decision['execution_state']='RGB_DINO_SAM_Qwen_confirm_two_frames'
+                    action=observation_brake(p,heading,current,planner.control_time)
+                    layers.decision['execution_state']='RGB_DINO_SAM_Qwen_confirm_two_frames'
                     recognized=recognition.store.confirmed(inspection.object_id,planner.control_time)
-                    if recognized is not None:
+                    debug=recognition.last_debug or {}
+                    if debug.get('observed_at',-1.)>=inspection_view_started and any(
+                            d.get('object_id')==inspection.object_id and d.get('status')=='classified'
+                            for d in debug.get('detections',[])):
+                        inspection_wait_frames.add(debug['frame_id'])
+                    fresh=[] if recognized is None else [e for e in recognized.evidence if e.observed_at>=inspection_view_started]
+                    settled=inspection_stopped(p,tilt,planner.control_time)
+                    if recognized is not None and len(fresh)>=2 and settled:
+                        inspection_planner.review(inspection.object_id,recognized.category,planner.control_time)
                         event('inspection_classified',step=step,time_s=planner.control_time,object_id=inspection.object_id,
-                            category=recognized.category,allowed=inspection.object_id in planner.interactable_ids)
+                            category=recognized.category,allowed=inspection.object_id in planner.interactable_ids,
+                            fresh_view_frames=[e.frame_id for e in fresh])
                         phase='decide'
-                    elif step-phase_start>3500:
+                    elif (len(inspection_wait_frames)>=3 and settled) or step-phase_start>3500:
                         event('inspection_unknown_new_view',step=step,object_id=inspection.object_id)
                         phase='decide'
                 elif phase=='skill':

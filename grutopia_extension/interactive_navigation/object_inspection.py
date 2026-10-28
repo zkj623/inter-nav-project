@@ -15,7 +15,19 @@ class InspectionPlan:
 
 class ObjectInspectionPlanner:
     def __init__(self):
-        self.used_views={};self.attempts={}
+        self.used_views={};self.attempts={};self.reviews={}
+
+    def review(self,object_id,category,now):
+        self.reviews.setdefault(object_id,[]).append((str(category),float(now)))
+
+    def needs_inspection(self,object_id,recognitions,eligible_ids,now):
+        if object_id in eligible_ids:return False
+        item=recognitions.confirmed(object_id,now)
+        if item is None:return True
+        # An unsupported passive classification is checked from two active
+        # views before it prevents further observation. This never grants a skill.
+        reviews=self.reviews.get(object_id,[])
+        return sum(category==item.category and now-observed<=60. for category,observed in reviews)<2
 
     def propose(self,layers,start,heading,goal,recognitions,now):
         p=layers.planner
@@ -43,7 +55,7 @@ class ObjectInspectionPlanner:
                     lateral=float(np.linalg.norm(delta-along*forward))
                     if 0.<along<length+.3 and np.linalg.norm(delta)<=3.5 and lateral<1.2:candidates.append(obj)
                 candidates.sort(key=lambda obj:np.linalg.norm(np.asarray(obj.xy)-start_xy))
-            box=next((obj for obj in candidates if recognitions.confirmed(obj.id,now) is None
+            box=next((obj for obj in candidates if self.needs_inspection(obj.id,recognitions,p.interactable_ids,now)
                       and self.attempts.get(obj.id,0)<4),None)
             if box is None:return None
             center=np.asarray(box.xy);position=np.asarray(start[:2]);toward=position-center

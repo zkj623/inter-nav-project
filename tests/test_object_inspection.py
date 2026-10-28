@@ -21,3 +21,15 @@ def test_unknown_goal_can_trigger_observation_without_authorizing_interaction():
     assert planner.interactable_ids==frozenset()
     assert planner.decide((-2.5,0.),(2.5,0.),[box]).kind=='failed'
     np.testing.assert_array_equal(planner.free,free)
+
+
+def test_negative_passive_classification_needs_two_active_views_but_never_grants_permission():
+    from types import SimpleNamespace
+    planner=ObjectInspectionPlanner();store=SimpleNamespace(confirmed=lambda key,now:SimpleNamespace(category='cabinet'))
+    assert planner.needs_inspection('B1',store,set(),1.)
+    planner.review('B1','cabinet',2.)
+    assert planner.needs_inspection('B1',store,set(),3.)
+    planner.review('B1','cabinet',4.)
+    assert not planner.needs_inspection('B1',store,set(),5.)
+    assert planner.needs_inspection('B1',store,set(),70.)
+    assert not planner.needs_inspection('B1',store,{'B1'},70.)
