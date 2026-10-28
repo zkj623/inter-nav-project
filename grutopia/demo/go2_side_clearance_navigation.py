@@ -590,9 +590,7 @@ def main():
                     if arrival['subgoal_reached'] and smooth_limiter is not None:
                         # Arrival is measured and settled: an old route's turn
                         # maneuver must not survive into the next skill/route.
-                        smooth_limiter.staging=None
-                        smooth_limiter.progress_position=np.asarray(position[:2]).copy()
-                        smooth_limiter.progress_time=now
+                        smooth_limiter.clear_guidance(position,now)
                     return observation_brake(position,heading,boxes,now),arrival['subgoal_reached'],arrival
                 planner.robot_heading=heading
                 if subtracker is None:
@@ -676,6 +674,7 @@ def main():
                         sub_arrival.reset();inspection_settle.reset();inspection_turn=None
                         if phase=='inspect_wait':inspection_wait_frames=set();inspection_view_started=planner.control_time
                         decision_recovery_tracker=None;decision_recovery_start=None
+                        if smooth_limiter is not None:smooth_limiter.clear_guidance(p,planner.control_time)
                         obs=tick(stop);last_action=stop;last_tracking=recovery;continue
                 planner.robot_heading=None
                 crossed=completed_box is None or crossed_passage(p,q,completed_box)
@@ -734,10 +733,11 @@ def main():
                         if step-decision_recovery_start>2500:reason='decision_buffer_recovery_timeout';break
                         obs=tick(action);last_action=action;last_tracking=tracking;continue
                     decision_recovery_start=None
-                    if (smooth_limiter is not None and last_tracking and last_tracking.get('recovering_buffer')
-                            and not smooth_limiter.recovery_gate.leave_recovery(smooth_limiter.measured,planner.control_time)):
-                        record_phase='navigation_recovery_settle'
-                        obs=tick(stop);last_action=stop;continue
+                    if smooth_limiter is not None and last_tracking and last_tracking.get('recovering_buffer'):
+                        if not smooth_limiter.recovery_gate.leave_recovery(smooth_limiter.measured,planner.control_time):
+                            record_phase='navigation_recovery_settle'
+                            obs=tick(stop);last_action=stop;continue
+                        smooth_limiter.clear_guidance(p,planner.control_time)
                     planner.robot_heading=heading if args.navigation_heading=='path' else nav_heading
                     if passage_guide is not None:
                         with layers.global_planning() as global_boxes:

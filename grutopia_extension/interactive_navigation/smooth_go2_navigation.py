@@ -20,6 +20,15 @@ class VelocitySlewLimiter:
         self.measured=np.zeros(3);self.measurement_time=None
         self.staging=None;self.progress_position=None;self.progress_time=None
         self.recovery_gate=RecoveryMotionGate()
+    def clear_guidance(self,position,now):
+        """Discard old route maneuvers after a measured recovery handoff.
+
+        Keep command/measurement history so the next route still accelerates
+        from the actual controller state instead of resetting its velocity.
+        """
+        self.staging=None;self.recovery_gate=RecoveryMotionGate()
+        self.progress_position=np.asarray(position[:2],float).copy();self.progress_time=float(now)
+
     def observe(self,velocity,now):
         velocity=np.asarray(velocity,float)
         if self.measurement_time is None:self.measured=velocity.copy()

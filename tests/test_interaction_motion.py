@@ -92,3 +92,17 @@ def test_subgoal_brakes_for_measured_forward_travel_but_still_requires_final_tol
     gate=ObservedSubgoalArrival()
     away=gate.update([.30,0.],[0.,0.,.4],[-.4,0.,0.],[0.,0.,0.],0.,0.,heading=0.,command=[-.5,0.,0.])
     assert not away['subgoal_braking']
+
+
+def test_recovery_handoff_discards_old_turn_without_resetting_velocity_history():
+    from grutopia_extension.interactive_navigation.smooth_go2_navigation import VelocitySlewLimiter
+    limiter=VelocitySlewLimiter();limiter.accept([.1,.02,.03],1.)
+    limiter.observe([.06,.01,.02],1.);limiter.staging=object()
+    old_gate=limiter.recovery_gate
+    limiter.clear_guidance([2.,3.,.4],1.5)
+    assert limiter.staging is None and limiter.recovery_gate is not old_gate
+    np.testing.assert_allclose(limiter.command,[.1,.02,.03])
+    np.testing.assert_allclose(limiter.measured,[.06,.01,.02])
+    assert limiter.last_time==1. and limiter.measurement_time==1.
+    np.testing.assert_allclose(limiter.progress_position,[2.,3.])
+    assert limiter.progress_time==1.5
