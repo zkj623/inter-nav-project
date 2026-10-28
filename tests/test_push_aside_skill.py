@@ -59,3 +59,25 @@ def test_stable_moderate_tilt_can_resume_but_sliding_cannot():
         recovery.update([0,0,.4],quaternion(20.))
         for i in range(6):answer=recovery.update([i*.03 if sliding else 0,0,.4],quaternion(12.))
         assert answer['state']==('hold' if sliding else 'released')
+
+
+def test_reengagement_does_not_mistake_previous_push_for_current_contact():
+    skill=make_skill();skill.state='engage';skill.started=0.;skill.state_since=0.
+    box=NS(id='B1',xy=(1.18,0.),dimensions=(1.,1.,1.))
+    skill.initial_box=np.array([.98,0.]);skill.engage_box_position=np.array(box.xy)
+    ctx=context(box,1.)
+    ctx.planner=NS(clearance=lambda box:{'side_parked':False})
+    ctx.limiter=NS(preview=lambda command,now:command)
+    command=skill.step(ctx)
+    assert command.state=='engage' and command.velocity[0]<=.30
+
+
+def test_progress_watchdog_detects_stalling_after_partial_movement():
+    skill=make_skill();skill.state='push';skill.started=0.;skill.state_since=0.
+    skill.initial_box=np.array([.8,0.]);skill.push_progress=.20;skill.push_progress_time=0.
+    ctx=context(NS(id='B1',xy=(1.,0.),dimensions=(1.,1.,1.)),7.)
+    ctx.planner=NS(clearance=lambda box:{'side_parked':False})
+    ctx.limiter=NS(preview=lambda command,now:command)
+    command=skill.step(ctx)
+    assert command.state=='brake_for_recovery' and skill.release_reason=='box_motion_stalled'
+    assert command.velocity==(0.,0.,0.)

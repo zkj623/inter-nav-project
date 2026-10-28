@@ -37,8 +37,8 @@ class ObjectInspectionPlanner:
             theta=math.atan2(toward[1],toward[0]);choices=[]
             p.robot_heading=None
             try:
-                for radius in [2.,2.4,1.7,2.8]:
-                    for offset in [0.,-.25,.25,-.5,.5,-.8,.8]:
+                for radius in [2.,2.4,1.7,2.8,1.5]:
+                    for offset in [0.,-.25,.25,-.5,.5,-.8,.8,-1.05,1.05,-1.3,1.3,-1.6,1.6,-1.9,1.9,-2.2,2.2,-2.6,2.6,math.pi]:
                         point=center+radius*np.array([math.cos(theta+offset),math.sin(theta+offset)])
                         if any(np.linalg.norm(point-old)<.30 for old in self.used_views.get(box.id,[])):continue
                         view_heading=math.atan2(center[1]-point[1],center[0]-point[0])

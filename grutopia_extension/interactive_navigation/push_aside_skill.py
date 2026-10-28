@@ -204,6 +204,7 @@ class PushAsideSkill:
             ready=contact_pose_ready(ctx.position,ctx.heading,ctx.box.xy,ctx.box.dimensions,self.direction,
                 self.config.front_gap+.05,self.config.yaw_tolerance)
             if ready and self._quiet(ctx,.4):
+                self.engage_box_position=np.asarray(ctx.box.xy).copy()
                 self._transition('engage',ctx);return self._output()
             if abs(yaw_error)>self.config.yaw_tolerance:
                 rate=self.yaw_servo.update(yaw_error,ctx.yaw_rate,ctx.now)
@@ -215,7 +216,7 @@ class PushAsideSkill:
         if self.state in ['engage','push']:
             if ctx.tilt_degrees>18:return self._retry(ctx,'contact_attitude')
             if abs(yaw_error)>.18 or abs(lateral)>.075:return self._retry(ctx,'contact_alignment_drift')
-            if self.state=='engage' and (gap<.06 or along>.015):
+            if self.state=='engage' and (gap<.06 or float(np.dot(np.asarray(ctx.box.xy)-self.engage_box_position,self.direction))>.015):
                 self._transition('push',ctx);self.push_progress=along;self.push_progress_time=ctx.now
             clearance=ctx.planner.clearance(ctx.box)
             done=push_completion_state(None,clearance,along,True)

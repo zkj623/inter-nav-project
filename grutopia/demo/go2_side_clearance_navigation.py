@@ -881,7 +881,7 @@ def main():
                         if iteration_tracking.get('failed'):
                             skill._fail(ctx,iteration_tracking['failed'])
                     if step%200==0:event('skill_feedback',step=step,state=command.state,position=p.tolist(),
-                        box=list(by_id[plan.box_id].xy),command=action['move_by_speed'],retry=skill.retries)
+                        box=list(by_id[plan.box_id].xy) if plan.box_id in by_id else None,command=action['move_by_speed'],retry=skill.retries)
                     if command.status!='running':
                         report=skill.report();skill_reports.append(report);event('skill_end',step=step,time_s=planner.control_time,**report)
                         if command.status!='succeeded':reason='push_aside:'+command.reason;break
