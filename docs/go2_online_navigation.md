@@ -81,9 +81,12 @@ PD 增益及力矩随转速饱和的约束。关闭隐式驱动并读取实际�
 候选位移必须位于已观测空闲区，接触前包括目标箱子在内的所有箱子都参与碰撞检查。
 箱前对准的制动距离按当前实际纠偏轴计算：横向对准只看横向剩余距离，前后对准只看前后距离。
 模式切换先等待实测速度降低，避免前后误差掩盖侧向制动距离、造成来回越过中心线。
-连续控制模式的箱前平移按剩余误差和滤波后的实测速度减速，侧向也遵守
-`--contact-centering-speed` 上限，并检查限制加速度后的动作和实测制动空间。
-此前默认 0.35 m/s 的横移在剩余几厘米时会多次越过中心线。
+连续控制模式的箱前平移区分前后和侧向：前后使用剩余误差与实测速度反馈，侧向使用
+`--contact-lateral-speed .35` 的有效步态请求，再按实测速度以 0.65 秒预测时间提前制动。
+把侧移也降到 0.25 m/s 的候选在独立物理试验中只产生倾斜，没有有效迈步，因此没有保留该参数。
+侧移时加入限幅航向反馈；小角度对准根据实测角速度制动，停稳后才允许反向。
+全部请求仍检查加速度限制后的动作和实测制动空间。恢复转向、后退之间切换，以及从恢复返回
+普通导航时，也先检查实测运动是否稳定，避免机身还在向一侧运动就开始反向追踪。
 
 导航恢复转向现在保持已选中的目标朝向，不因下一帧突然出现后退候选就取消。
 每帧仍检查已有碰撞重叠只能减小；新障碍使转向失效时先制动观察，再重新选择。
@@ -117,7 +120,7 @@ T05 失败轨迹最后 10 秒曾有 97 次转向/平移切换、位移仅约 1 m
 
 ## 验证状态
 
-代码检查点 `cb91e07`，403 项自动测试通过，1 项依赖缺失的人形测试未运行。
+代码检查点 `f8ce43a`，412 项自动测试通过，1 项依赖缺失的人形测试未运行。
 五组统一物理与录像验收尚未完成。
 
 | 在线批次 | 已确认结果 | 尚未解决或等待验证 |
@@ -129,12 +132,18 @@ T05 失败轨迹最后 10 秒曾有 97 次转向/平移切换、位移仅约 1 m
 | `online-v22-T04` | 箱前转向完成 | 后续横向对准超时，箱子未移动 |
 | `full-online-v22` / `dd1f211` | T01 完整录像验收通过，误差 0.201 m、峰值倾角 14.77° | T03 局部绕行中失稳，峰值 45.73° |
 | `online-v23-T05` / `78eeaf7` | 实际侧推 0.648 m，新扫描确认两端连通的完整机身通路 | 随后恢复动作切换导致超时，距目标 0.981 m |
-| `online-v24-T04` / `e3973a8` | 箱前平移改进正在原始任务中复测 | 未完成 |
-| `full-online-v25` / `cb91e07` | 已启动 T03、T02、T05 完整材质录像 | 未完成 |
+| `online-v24-T04` / `e3973a8` | 完成初次对准并实际推动 B06 | 后续小角度航向振荡，停止诊断，未到点 |
+| `full-online-v25` / `cb91e07` | T02 完整录像通过，误差 0.212 m、峰值倾角 29.70°，有 3 次姿态恢复 | T03 恢复停稳超时；T05 启动前后停止，交互控制更新后重跑 |
+| `contact-v27-T04` / `55f0ae4` | 较近起点的诊断 | 在进入接触前导航失稳，不能评价细调控制是否成功 |
+| `full-online-v29-contact` / `f8ce43a` | 原始 T04/T05 完整材质录像已启动 | 等待端到端结果 |
 
-已验证的新 DC 录像索引：本机 `E:\inter-nav-results\go2-online-smooth-20261027\ONLINE_VIDEO_STATUS.md`。
-当前只有 T01：`full-online-v22/T01/video/combined.mp4`，五路各 727 帧、25 fps、29.08 秒，
-逐帧解码、仿真时长、黑帧及移动时重复帧检查通过；源码 36 文件哈希及本地下载哈希一致。
+在线录像索引：本机 `E:\inter-nav-results\go2-online-smooth-20261027\ONLINE_VIDEO_STATUS.md`。
+目前选入 T01 的 `full-online-v22` DC 结果，以及 T02/T03 的 `full-online-v19` 原 PD 结果。
+三组都从 0 已观测栅格开始建图，均到达原目标，完整视频逐帧检查与源码哈希核验通过。
+T02/T03 原 PD 结果峰值倾角分别为 17.21°、20.59°，比本轮替换 DC 的候选更稳定，因此保留。
+每行单独注明源码与控制方式，不把个体通过当作统一配置的五组成功率。
+T01 五路各 727 帧 / 25 fps / 29.08 秒；T02 原 PD 五路各 872 帧 / 34.88 秒；
+T03 原 PD 五路各 624 帧 / 24.96 秒。T02 的新 DC 录像也完整保留作为对照。
 侧向足迹从 0.22 m 增至 0.26 m 的 T02 候选在窄弯停滞，已作为失败诊断终止，没有采用为默认。
 
 T03 失败速度序列在空地的两种固定 5 ms 控制回放均未超过 30°，峰值分别约 20.32°（DC）
@@ -151,3 +160,51 @@ T02/T04 诊断显式开启 `--navigation-attitude-recovery`，在 18° 倾角时
 30° 失败阈值保持不变。是否适合作为默认配置需依据此次完整轨迹，不能靠增加停顿宣称步态变顺。
 产物根目录：`/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027`。
 较早使用已知地图的成功视频不能替代当前版本的在线录像验收。
+
+## 独立侧移控制验证
+
+使用原 Go2 模型、1 cm 平地、固定箱子和限制侧向超调的墙体，直接测试箱前对准控制。
+该固定几何仅用于控制器物理测试，不是导航任务，也不计入五组成绩。
+
+| 侧移请求 | 结果 | 最终横向误差 | 最高倾角 |
+| --- | --- | --- | --- |
+| 0.25 m/s | 稳定倾斜，未有效迈步 | 约 1.09 m | 9.71° |
+| 0.35 m/s + 0.65 s 制动预测 + 航向反馈 | 完成对准并持续保持有效接触准备姿态 | 2.69 cm | 8.46° |
+
+0.35 m/s 试验共 7,000 个真实物理步，最终航向误差 0.70°、箱前间距 0.347 m，末 2 秒姿态均满足
+接触准备条件。结束写 JSON 时出现 NumPy 布尔值序列化错误；完整物理轨迹已保存，统计由独立审计重建，
+报告为 `alignment-stride035/alignment_audit.json`，没有把报告异常伪装成仿真正常退出。
+补充的 0.30 m/s 试验也能起步并完成对准，峰值倾角 11.09°；当前采用 0.35 m/s 配置。
+这些是局部控制试验，不能替代 T04/T05 的完整在线导航、侧推和到点验证。
+
+## 对应版本复现
+
+复现选定的 T02/T03 原 PD 在线结果时，可在服务器当前仓库根目录创建独立工作树。
+运行前三组前缀，保持这两组之前的任务顺序；源版本是 `7801c1c`，不是预先已知地图分支。
+新目录需不存在，GPU 号应选择当前空闲设备。
+
+```bash
+go2_assets="$(readlink -f grutopia/assets)"
+git worktree add ../go2-online-baseline-7801c1c 7801c1c
+cd ../go2-online-baseline-7801c1c
+ln -s "$go2_assets" grutopia/assets
+source /data20t/embodied/share/inter-nav/env.sh
+export PYTHONPATH="$PWD:$PYTHONPATH"
+export MALLOC_ARENA_MAX=2
+go2_inputs=/data20t/embodied/zkj/inter-nav-results/go2-voronoi-heading-up-20261025/collision-corrected-inputs
+go2_out="/data20t/embodied/zkj/inter-nav-results/go2-online-pd-$(date +%Y%m%d-%H%M%S)"
+"$ISAAC_PYTHON" -u grutopia/demo/go2_online_interactive_navigation.py \
+  --benchmark-dir "$go2_inputs" --output "$go2_out" --task-ids T01,T02,T03 \
+  --gpu 7 --max-steps 30000 --floor-top .01 --map-source online --path-controller continuous \
+  --record-video --material-mode preview \
+  --third-person-height 1.35 --third-person-forward .25 --third-person-fov 100 \
+  --route-planner voronoi --navigation-heading path --roadmap-shape circle \
+  --route-clearance .30 --navigation-half-width .22 --voronoi-clearance-weight .30 \
+  --push-max-speed .95 --turn-speed 1.0 --contact-centering-speed .25 \
+  --contact-yaw-tolerance .10 --contact-front-gap .40
+```
+
+选定的 T01 DC 录像使用 `dd1f211`、仅运行 `--task-ids T01`，其余参数同上并加
+`--navigation-attitude-recovery`；该版本在线模式默认 DC。当前交互控制的完整命令见 README，
+增加了分开的 `--contact-lateral-speed .35`，正在以原始 T04/T05 验证。
+任务 ID 参数在这些版本中按任务表顺序筛选，不是按逗号列表顺序重新排序。
