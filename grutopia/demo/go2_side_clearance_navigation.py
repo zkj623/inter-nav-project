@@ -583,9 +583,16 @@ def main():
                     subtracker=None;subtarget=target.copy();sub_started=now;sub_arrival.reset()
                 if now-sub_started>80:return stop,False,{'failed':'subnavigation_timeout'}
                 ctrl=robot._go2_locomotion_control
-                arrival=sub_arrival.update(target,position,ctrl.body_lin_vel,ctrl.body_ang_vel,tilt,now)
+                arrival=sub_arrival.update(target,position,ctrl.body_lin_vel,ctrl.body_ang_vel,tilt,now,
+                    heading=heading,command=None if smooth_limiter is None else smooth_limiter.command)
                 if arrival['replan']:subtracker=None
                 if arrival['subgoal_braking']:
+                    if arrival['subgoal_reached'] and smooth_limiter is not None:
+                        # Arrival is measured and settled: an old route's turn
+                        # maneuver must not survive into the next skill/route.
+                        smooth_limiter.staging=None
+                        smooth_limiter.progress_position=np.asarray(position[:2]).copy()
+                        smooth_limiter.progress_time=now
                     return observation_brake(position,heading,boxes,now),arrival['subgoal_reached'],arrival
                 planner.robot_heading=heading
                 if subtracker is None:
@@ -923,7 +930,8 @@ def main():
                 elif phase=='skill':
                     ctx=SkillContext(planner.control_time,p,heading,robot._go2_locomotion_control.body_lin_vel,
                         float(robot._go2_locomotion_control.body_ang_vel[2]),tilt,task_health.healthy,
-                        by_id.get(plan.box_id),current,planner,layers,smooth_limiter,sub_reached)
+                        by_id.get(plan.box_id),current,planner,layers,smooth_limiter,sub_reached,
+                        body_angular_velocity=robot._go2_locomotion_control.body_ang_vel)
                     command=skill.step(ctx)
                     for transition in command.events:event('skill_transition',step=step,**transition)
                     layers.decision={**(layers.decision or {}),'skill':'push_aside','skill_state':command.state,

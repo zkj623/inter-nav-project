@@ -37,6 +37,7 @@ class SkillContext:
     layers:Any
     limiter:Any
     navigation_reached:bool=False
+    body_angular_velocity:Any=None
 
 
 class SkillRegistry:

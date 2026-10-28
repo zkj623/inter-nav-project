@@ -104,7 +104,7 @@ def test_precontact_turn_recovers_before_hard_health_limit(state):
     assert command.velocity==(0.,0.,0.) and skill.retries==1
 
 
-def test_current_pose_can_be_reselected_as_a_preparation_stage():
+def test_current_aligned_pose_can_be_reused_without_navigation():
     from contextlib import contextmanager
     from grutopia_extension.interactive_navigation.box_push_navigation import BoxState
     from grutopia_extension.interactive_navigation.side_push_navigation import SidePushPlanner
@@ -116,7 +116,7 @@ def test_current_pose_can_be_reselected_as_a_preparation_stage():
     ctx=context(box);ctx.position=np.array([-.3,-.5,.4]);ctx.planner=planner;ctx.boxes=[box]
     ctx.layers=NS(global_planning=global_planning)
     skill=make_skill()
-    assert skill._select_stage(ctx)
+    assert skill._reuse_alignment_pose(ctx)
     np.testing.assert_allclose(skill.stage,ctx.position[:2])
 
 
@@ -220,3 +220,38 @@ def test_predictive_braking_finishes_before_requesting_another_alignment_stride(
     ctx.now+=.01
     command,done=skill._translation(ctx,target,skill.tangent,.35,.035)
     assert not done and command[1]>0.
+
+
+def test_recovery_reuses_observed_aligned_pose_and_settles_before_correcting():
+    skill,ctx=alignment_context('prepare',gap=.46,lateral=.12,heading=.03)
+    command=skill.step(ctx)
+    assert command.state=='settle_alignment' and command.navigation_goal is None
+    assert command.events[-1]['reason']=='reuse_observed_aligned_pose'
+    np.testing.assert_allclose(skill.stage,ctx.position[:2])
+
+
+def test_reuse_rejects_unobserved_alignment_corridor():
+    skill,ctx=alignment_context('prepare',gap=.70,lateral=.12)
+    row,col=ctx.planner.cell([-.18,0.]);ctx.planner.free[row-2:row+3,col-2:col+3]=False
+    assert not skill._reuse_alignment_pose(ctx)
+
+
+def test_longitudinal_drift_brakes_before_switching_from_sidestep():
+    skill,ctx=alignment_context('align_lateral',gap=.65,lateral=.12)
+    ctx.body_velocity=np.array([0.,.3,0.]);ctx.limiter.command=np.array([0.,.35,0.])
+    command=skill.step(ctx)
+    assert command.state=='settle_alignment' and command.velocity==(0.,0.,0.)
+    ctx.now+=1.
+    assert skill.step(ctx).state=='settle_alignment'
+
+
+def test_settling_rejects_roll_pitch_motion_and_vertical_bounce():
+    skill,ctx=alignment_context('settle_contact',lateral=0.)
+    ctx.body_angular_velocity=np.array([.2,0.,0.])
+    assert not skill._quiet(ctx)
+    ctx.now+=.5;ctx.body_angular_velocity=np.zeros(3);ctx.body_velocity[2]=.1
+    assert not skill._quiet(ctx)
+    ctx.now+=.5;ctx.body_velocity=np.zeros(3)
+    assert not skill._quiet(ctx)
+    ctx.now+=.31
+    assert skill._quiet(ctx)

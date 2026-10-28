@@ -79,3 +79,16 @@ def test_short_subgoal_keeps_an_effective_forward_request_until_arrival_gate():
     action,state=tracker.action([0.,0.],0.,p,[])
     assert state['desired_command'][0]>=.25
     assert state['body_motion_safe'] and action['move_by_speed'][0]>0.
+
+
+def test_subgoal_brakes_for_measured_forward_travel_but_still_requires_final_tolerance():
+    gate=ObservedSubgoalArrival()
+    moving=gate.update([.30,0.],[0.,0.,.4],[.4,0.,0.],[0.,0.,0.],0.,0.,heading=0.,command=[.5,0.,0.])
+    assert moving['subgoal_braking'] and not moving['subgoal_reached']
+    # The robot stopped too early: prediction is not permission to accept it.
+    gate.update([.30,0.],[.10,0.,.4],[0.,0.,0.],[0.,0.,0.],0.,1.,heading=0.,command=[0.,0.,0.])
+    settled=gate.update([.30,0.],[.10,0.,.4],[0.,0.,0.],[0.,0.,0.],0.,1.5,heading=0.,command=[0.,0.,0.])
+    assert settled['replan'] and not settled['subgoal_reached']
+    gate=ObservedSubgoalArrival()
+    away=gate.update([.30,0.],[0.,0.,.4],[-.4,0.,0.],[0.,0.,0.],0.,0.,heading=0.,command=[-.5,0.,0.])
+    assert not away['subgoal_braking']

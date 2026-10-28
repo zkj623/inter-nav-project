@@ -89,7 +89,10 @@ class PushAsideSkill:
 
     def _quiet(self,ctx,seconds=.30,max_tilt=15.):
         commanded=np.asarray(getattr(ctx.limiter,'command',(0.,0.,0.)),float)
-        quiet=(np.linalg.norm(ctx.body_velocity[:2])<.08 and abs(ctx.yaw_rate)<.10 and ctx.tilt_degrees<max_tilt
+        angular=getattr(ctx,'body_angular_velocity',None)
+        angular=np.asarray((0.,0.,ctx.yaw_rate) if angular is None else angular,float)
+        quiet=(np.linalg.norm(ctx.body_velocity[:2])<.08 and abs(ctx.body_velocity[2])<.05
+               and np.max(np.abs(angular))<.10 and ctx.tilt_degrees<max_tilt
                and np.linalg.norm(commanded[:2])<.03 and abs(commanded[2])<.06)
         if not quiet:self.settled_since=None;return False
         if self.settled_since is not None and (np.linalg.norm(np.asarray(ctx.position[:2])-self.settled_position[:2])>=.025
@@ -105,6 +108,25 @@ class PushAsideSkill:
         delta=np.asarray(ctx.box.xy)-nose
         return float(np.dot(delta,self.direction)-extent),float(np.dot(delta,self.tangent)),wrap(self.push_heading-ctx.heading)
 
+    def _reuse_alignment_pose(self,ctx):
+        """Keep a nearby, observed and already oriented retreat pose."""
+        gap,lateral,yaw_error=self._box_frame(ctx)
+        if abs(yaw_error)>.15 or not .20<=gap<=.85 or abs(lateral)>.80:return False
+        if not body_motion_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.):return False
+        extent=float(np.dot(np.abs(self.direction),np.asarray(ctx.box.dimensions[:2]))/2)
+        anchor=np.asarray(ctx.box.xy)-self.direction*(extent+.33+self.config.front_gap)
+        longitudinal=anchor+self.tangent*float(np.dot(np.asarray(ctx.position[:2])-anchor,self.tangent))
+        if not body_rotation_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,self.push_heading,margin=.025):return False
+        if not body_translation_recovery_clear(ctx.planner,ctx.boxes,ctx.position,self.push_heading,longitudinal):return False
+        if not body_translation_recovery_clear(ctx.planner,ctx.boxes,longitudinal,self.push_heading,anchor):return False
+        self.stage=np.asarray(ctx.position[:2]).copy();self.anchor=anchor
+        passage=ctx.planner.active_passages.get(ctx.box.id,ctx.planner.passages.get(ctx.box.id))
+        self.axis=np.asarray(passage['axis'] if passage else self.tangent,float)
+        if np.dot(self.task_goal-np.asarray(ctx.box.xy),self.axis)<0:self.axis=-self.axis
+        self.axis/=np.linalg.norm(self.axis)
+        self.yaw_servo=ContactYawServo(min(self.config.alignment_yaw_tolerance,self.config.yaw_tolerance))
+        return True
+
     def _select_stage(self,ctx):
         p=ctx.planner;position=np.asarray(ctx.position[:2])
         passage=p.active_passages.get(ctx.box.id,p.passages.get(ctx.box.id))
@@ -119,7 +141,7 @@ class PushAsideSkill:
                 for gap in [self.config.front_gap,.40,.30]:
                     anchor=np.asarray(ctx.box.xy)-self.direction*(extent+.33+gap)
                     if not body_rotation_clear(p,boxes,anchor,self.push_heading,self.push_heading,margin=.025):continue
-                    points=[position]
+                    points=[position,anchor,anchor-.25*self.direction,anchor-.45*self.direction]
                     points.extend(anchor-self.axis*back+self.direction*along
                                   for back in [.5,.7,.9,1.1] for along in [0.,.2,-.2,.4,-.4])
                     for point in points:
@@ -132,7 +154,9 @@ class PushAsideSkill:
                         longitudinal=anchor+self.tangent*float(np.dot(point-anchor,self.tangent))
                         if not body_translation_recovery_clear(p,boxes,point,self.push_heading,longitudinal):continue
                         if not body_translation_recovery_clear(p,boxes,longitudinal,self.push_heading,anchor):continue
-                        score=p.length(position,path)+.3*np.linalg.norm(point-anchor)
+                        lateral_travel=abs(float(np.dot(point-anchor,self.tangent)))
+                        turn=abs(wrap(self.push_heading-arrival))
+                        score=p.length(position,path)+.6*np.linalg.norm(point-anchor)+.6*lateral_travel+.25*turn
                         candidates.append((score,point.copy(),anchor.copy()))
                 if not candidates:return False
                 _,self.stage,self.anchor=min(candidates,key=lambda value:value[0])
@@ -183,7 +207,7 @@ class PushAsideSkill:
             self.started=ctx.now;self.state_since=ctx.now;self.initial_box=np.asarray(ctx.box.xy).copy()
         self.max_tilt=max(self.max_tilt,float(ctx.tilt_degrees))
         if not ctx.healthy or ctx.tilt_degrees>=30:return self._fail(ctx,'robot_unstable')
-        if self.state in ['settle_at_stage','turn_at_stage','refine_heading','align_longitudinal','align_lateral','settle_contact'] and ctx.tilt_degrees>=18.:
+        if self.state in ['settle_at_stage','turn_at_stage','refine_heading','settle_alignment','align_longitudinal','align_lateral','settle_contact'] and ctx.tilt_degrees>=18.:
             self.used_stages.append(np.asarray(ctx.position[:2]).copy())
             return self._retry(ctx,'preparation_attitude')
         if ctx.now-self.started>self.config.max_skill_seconds:return self._fail(ctx,'skill_timeout')
@@ -197,6 +221,9 @@ class PushAsideSkill:
         gap,lateral,yaw_error=self._box_frame(ctx)
 
         if self.state=='prepare':
+            if self._reuse_alignment_pose(ctx):
+                self._transition('settle_alignment',ctx,'reuse_observed_aligned_pose')
+                return self._output()
             if not self._select_stage(ctx):return self._fail(ctx,'no_observed_preparation_pose')
             self.navigation_goal=self.stage;self._transition('navigate_to_stage',ctx)
             return self._output(navigation_goal=self.stage)
@@ -220,6 +247,12 @@ class PushAsideSkill:
                 self.yaw_servo=ContactYawServo(min(self.config.alignment_yaw_tolerance,self.config.yaw_tolerance))
                 self._transition('refine_heading',ctx);return self._output()
             return self._output(result[0])
+        if self.state=='settle_alignment':
+            if ctx.now-self.state_since>self.config.max_alignment_seconds:return self._retry(ctx,'alignment_settling_timeout')
+            if self._quiet(ctx):
+                self.yaw_servo=ContactYawServo(min(self.config.alignment_yaw_tolerance,self.config.yaw_tolerance))
+                self._transition('refine_heading',ctx)
+            return self._output()
         if self.state=='refine_heading':
             if ctx.now-self.state_since>self.config.max_alignment_seconds:return self._retry(ctx,'heading_refinement_timeout')
             tolerance=min(self.config.alignment_yaw_tolerance,self.config.yaw_tolerance)
@@ -253,6 +286,11 @@ class PushAsideSkill:
                 if done:self._transition('align_lateral',ctx)
                 return self._output(command)
             if self.state=='align_lateral':
+                # A long sidestep may drift longitudinally. Brake and correct
+                # the standoff before resuming lateral work outside its band.
+                if gap<.20 or gap>self.config.front_gap+.175:
+                    self._transition('settle_alignment',ctx,'standoff_drift_during_sidestep')
+                    return self._output()
                 nose_target=np.asarray(ctx.position[:2])+self.tangent*lateral
                 command,done=self._translation(ctx,nose_target,self.tangent,self.config.lateral_speed,self.config.alignment_tolerance)
                 if done:self._transition('settle_contact',ctx)
@@ -362,6 +400,7 @@ class PushAsideSkill:
         return {'nose_gap_m':gap,'nose_lateral_error_m':lateral,'heading_error_rad':yaw_error,
                 'body_velocity_mps':list(map(float,ctx.body_velocity[:2])),
                 'measured_yaw_rate_rad_s':float(ctx.yaw_rate),'tilt_degrees':float(ctx.tilt_degrees),
+                'body_angular_velocity_rad_s':None if getattr(ctx,'body_angular_velocity',None) is None else list(map(float,ctx.body_angular_velocity)),
                 'stage_xy':None if self.stage is None else self.stage.tolist(),
                 'anchor_xy':None if self.anchor is None else self.anchor.tolist()}
 

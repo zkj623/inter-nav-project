@@ -36,11 +36,17 @@ class ObservedSubgoalArrival:
 
     def reset(self):self.braking=False;self.stop.reset()
 
-    def update(self,target,position,linear_velocity,angular_velocity,tilt_degrees,now):
-        error=float(np.linalg.norm(np.asarray(position[:2])-np.asarray(target[:2])))
-        if error<self.tolerance and not self.braking:
+    def update(self,target,position,linear_velocity,angular_velocity,tilt_degrees,now,*,heading=None,command=None,acceleration=.65):
+        delta=np.asarray(target[:2])-np.asarray(position[:2]);error=float(np.linalg.norm(delta))
+        brake_radius=self.tolerance
+        if heading is not None and error>1e-9:
+            c,s=np.cos(heading),np.sin(heading);rot=np.array([[c,-s],[s,c]])
+            toward=max(0.,float(np.dot(rot@np.asarray(linear_velocity[:2]),delta/error)))
+            commanded=0. if command is None else max(0.,float(np.dot(rot@np.asarray(command[:2]),delta/error)))
+            brake_radius=max(brake_radius,.025+.5*toward+commanded**2/(2*acceleration))
+        if error<brake_radius and not self.braking:
             self.braking=True;self.stop.reset()
-        detail={'subgoal_error_m':error,'subgoal_braking':self.braking,'subgoal_reached':False,'replan':False}
+        detail={'subgoal_error_m':error,'subgoal_brake_radius_m':brake_radius,'subgoal_braking':self.braking,'subgoal_reached':False,'replan':False}
         if not self.braking:return detail
         if not self.stop.update(position,linear_velocity,angular_velocity,tilt_degrees,now):return detail
         if error<self.tolerance:detail['subgoal_reached']=True
