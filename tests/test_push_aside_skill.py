@@ -92,3 +92,12 @@ def test_nominal_clearance_does_not_stop_before_the_planned_parking_position():
     ctx.limiter=NS(preview=lambda command,now:command)
     command=skill.step(ctx)
     assert command.state=='push' and command.velocity[0]>0.
+
+
+def test_precontact_turn_recovers_before_hard_health_limit():
+    skill=make_skill();skill.state='turn_at_stage'
+    ctx=context(NS(id='B1',xy=(1.,0.)))
+    ctx.tilt_degrees=20.
+    command=skill.step(ctx)
+    assert command.state=='brake_for_recovery' and skill.release_reason=='preparation_attitude'
+    assert command.velocity==(0.,0.,0.) and skill.retries==1

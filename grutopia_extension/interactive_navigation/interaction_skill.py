@@ -45,7 +45,7 @@ class SkillRegistry:
         if skill_class.spec.name in self.skills:raise ValueError('Duplicate skill name')
         self.skills[skill_class.spec.name]=skill_class
     def create(self,permission,**kwargs):
-        if permission is None:raise ValueError('A vision-backed interaction permission is required')
+        if permission is None:raise ValueError('An explicit interaction permission is required')
         skill=self.skills.get(permission.skill_name)
         if skill is None or permission.category not in skill.spec.categories:
             raise ValueError('No registered skill supports this recognized category')

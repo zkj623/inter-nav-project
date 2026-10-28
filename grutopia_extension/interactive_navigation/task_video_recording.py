@@ -115,7 +115,8 @@ class TaskVideoRecorder(InteractionVideoRecorder):
         execution=details.get('execution_state')
         if details.get('kind')=='inspect':line('RGB inspection; interaction not yet allowed',scale=.42)
         if details.get('skill'):
-            line(f"RGB: {details.get('recognized_category')} | allowlisted",(35,150,45),.43)
+            origin='GT' if details.get('interaction_source')=='ground_truth_layout' else 'RGB'
+            line(f"{origin}: {details.get('recognized_category')} | allowlisted",(35,150,45),.43)
             line(f"Skill: {details['skill']} | retry {details.get('skill_retry',0)}",scale=.43)
             line(details.get('skill_state',''),scale=.44)
         if execution=='side_parked_pending_observation':line('Parked: corridor observation pending',scale=.44)
@@ -136,7 +137,9 @@ class TaskVideoRecorder(InteractionVideoRecorder):
         line(f'Revisions G{layers.global_revision} / L{layers.local_revision}',scale=.44)
         if hasattr(layers,'observed'):
             line(f'Online map: {100*layers.observed.mean():.1f}% observed | grey: unknown',scale=.43)
-        line('Gold: recognized box | grey: unclassified',scale=.42)
+        truth=getattr(layers,'interaction_source',None)=='ground_truth_layout'
+        line('Eligibility: layout ground truth' if truth else 'Eligibility: RGB classification',scale=.42)
+        line('Gold: interactable box | grey: other/unknown',scale=.42)
         line('Green: vacated   Blue: current route',scale=.42)
         # The inset uses the exact high-frequency collision layer, not a
         # separately accumulated visualization map.

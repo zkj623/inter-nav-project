@@ -42,9 +42,17 @@ class PushAsideSkill:
     spec=SkillSpec('push_aside','1.0',('box',),'physically side-park a box and confirm an observed free passage')
 
     def __init__(self,permission,plan,task_start,task_goal,config=None):
-        if (permission is None or permission.skill_name!=self.spec.name or permission.category!='box'
-                or len(set(permission.evidence_frames))<2 or not permission.classifier_models):
-            raise ValueError('PushAsideSkill requires a visually recognized, allowlisted box')
+        if permission is None or permission.skill_name!=self.spec.name or permission.category!='box':
+            raise ValueError('PushAsideSkill requires an allowlisted box')
+        if permission.source=='rgb_dino_qwen_vl':
+            if len(set(permission.evidence_frames))<2 or not permission.classifier_models:
+                raise ValueError('Vision mode requires two independent recognized frames')
+        elif permission.source=='ground_truth_layout':
+            if (not permission.source_reference or len(permission.source_digest)!=64
+                    or any(c not in '0123456789abcdef' for c in permission.source_digest)
+                    or permission.evidence_frames or permission.classifier_models):
+                raise ValueError('Ground-truth mode requires explicit provenance without fake visual evidence')
+        else:raise ValueError('Unsupported interaction permission source')
         if permission.object_id!=plan.box_id:raise ValueError('Permission does not match push target')
         self.permission=permission;self.plan=plan;self.config=config or PushAsideConfig()
         self.task_start=np.asarray(task_start,float);self.task_goal=np.asarray(task_goal,float)
@@ -153,6 +161,9 @@ class PushAsideSkill:
             self.started=ctx.now;self.state_since=ctx.now;self.initial_box=np.asarray(ctx.box.xy).copy()
         self.max_tilt=max(self.max_tilt,float(ctx.tilt_degrees))
         if not ctx.healthy or ctx.tilt_degrees>=30:return self._fail(ctx,'robot_unstable')
+        if self.state in ['settle_at_stage','turn_at_stage','align_longitudinal','align_lateral','settle_contact'] and ctx.tilt_degrees>=18.:
+            self.used_stages.append(np.asarray(ctx.position[:2]).copy())
+            return self._retry(ctx,'preparation_attitude')
         if ctx.now-self.started>self.config.max_skill_seconds:return self._fail(ctx,'skill_timeout')
         moved=np.asarray(ctx.box.xy)-self.initial_box;along=float(np.dot(moved,self.direction))
         cross=float(np.dot(moved,self.tangent))
@@ -304,6 +315,8 @@ class PushAsideSkill:
         moved=0. if self.initial_box is None or self.last_box is None else float(np.dot(self.last_box-self.initial_box,self.direction))
         return {'name':self.spec.name,'version':self.spec.version,'status':self.status,'reason':self.reason,
             'object_id':self.plan.box_id,'recognized_category':self.permission.category,
+            'interaction_source':self.permission.source,'source_reference':self.permission.source_reference,
+            'source_digest':self.permission.source_digest,
             'recognition_frames':list(self.permission.evidence_frames),'classifier_models':list(self.permission.classifier_models),
             'retries':self.retries,'actual_push_distance_m':moved,'maximum_tilt_degrees':self.max_tilt,
-            'passage_certificate':self.certificate,'object_pose_feedback':'selected recognized simulator rigid body'}
+            'passage_certificate':self.certificate,'object_pose_feedback':'selected permitted simulator rigid body'}

@@ -71,6 +71,9 @@ class InteractionPermission:
     evidence_frames:tuple
     classifier_models:tuple
     issued_at:float
+    source:str='rgb_dino_qwen_vl'
+    source_reference:str=''
+    source_digest:str=''
 
 
 class InteractionCatalog:

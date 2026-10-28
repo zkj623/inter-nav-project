@@ -51,6 +51,13 @@ class InteractionRecognitionRuntime:
         with (self.directory/'recognition_events.jsonl').open('a') as stream:stream.write(json.dumps(debug)+'\n')
         return debug
 
+    source='rgb_dino_qwen_vl'
+
+    def permission(self,object_id,skill_name,now):
+        return self.catalog.permission(object_id,skill_name,self.store,now)
+
+    def snapshot(self,now):return self.store.snapshot(now)
+
     def eligible_ids(self,now):return self.catalog.eligible_ids('push_aside',self.store,now)
 
     def save(self,now):

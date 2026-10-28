@@ -11,6 +11,7 @@ a text target such as `refrigerator` and walks up to the scanned object.
 ## Go2 在线建图、规划与交互导航
 
 未知地图版本的入口是 `grutopia/demo/go2_online_interactive_navigation.py`。
+当前开发测试默认使用 `--interaction-source ground_truth`，从布局提前获知哪些箱子支持推；空间占据地图仍在线建立。需要恢复视觉识别时显式使用 `--interaction-source vision`。
 它保留原尺寸 Go2 / MV7、1 cm 地面、原始起终点和物理侧推；每个任务从空占据地图开始。
 墙体地图由在线 LiDAR 建立，目标尚不可达时沿 Voronoi 路线探索可达边界。
 全局层 1 Hz 更新，局部层 10 Hz 更新，箱子移开后的空间需要新射线确认才会通行。
@@ -28,7 +29,7 @@ go2_out="/data20t/embodied/zkj/inter-nav-results/go2-online-$(date +%Y%m%d-%H%M%
 "$ISAAC_PYTHON" -u grutopia/demo/go2_online_interactive_navigation.py \
   --benchmark-dir "$go2_inputs" --output "$go2_out" \
   --task-ids T01,T02,T03,T04,T05 --gpu 1 --max-steps 30000 \
-  --floor-top .01 --map-source online --path-controller continuous --navigation-attitude-recovery \
+  --floor-top .01 --map-source online --interaction-source ground_truth --path-controller continuous --navigation-attitude-recovery \
   --route-planner voronoi --navigation-heading path \
   --roadmap-shape circle --route-clearance .30 --navigation-half-width .22 \
   --voronoi-clearance-weight .30 \
@@ -51,7 +52,7 @@ go2_out="/data20t/embodied/zkj/inter-nav-results/go2-online-$(date +%Y%m%d-%H%M%
 
 在线模式仅从输入目录读取仿真场景配置、箱子布局和任务坐标，不把 `navigation_grid.npz`、
 `original_metadata.json` 或 `passages.json` 交给规划器。箱子身份/尺寸/位姿仍是仿真检测接口，
-只有当前 LiDAR 命中后才加入规划；类别已通过实际 RGB-D 关联及 Qwen3-VL 视觉分类确认；至少两个独立帧确认后才授予 `box → push_aside` 权限。定位及几何跟踪仍沿用仿真接口。
+只有当前 LiDAR 命中后才加入几何规划。当前交互资格使用布局真值；视觉模式则要求实际 RGB-D 关联及 Qwen3-VL 两帧确认。定位及几何跟踪仍沿用仿真接口。
 视觉识别、白名单、技能接口与运行命令见 [视觉推箱 skill](docs/go2_visual_push_skill.md)。
 设计、证据和验证状态见 [在线导航说明](docs/go2_online_navigation.md)。
 

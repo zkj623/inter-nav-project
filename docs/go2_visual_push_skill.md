@@ -1,8 +1,18 @@
-# Go2 视觉识别与 PushAsideSkill
+# Go2 交互资格来源与 PushAsideSkill
 
 使用原尺寸 Go2、原尺寸 MV7、1 cm 辅助地面和原始任务起终点。占据图从空地图开始，经 LiDAR 在线构建，全局 1 Hz、局部 10 Hz。
 
-## 识别与交互决策
+## 当前开发模式：交互资格使用真值
+
+按当前测试要求，默认 `--interaction-source ground_truth`：从场景 `layout.json` 读取已知箱子的交互能力，只有声明 `interactions` 包含 `push`、未被禁用且类别在白名单中的对象才能调用 `push_aside`。当前原始场景 B01–B07 都声明支持推。
+
+真值模式跳过视觉分类和主动观察绕行，不需要 DINO/SAM/Qwen 服务。箱子的类别与交互资格已知，空间地图仍从空地图在线构建；规划只使用已被 LiDAR 观测到的几何对象。初始化不会把整屋地图或所有箱子位置预填给规划器。
+
+运行输出 `interaction_ground_truth.json` 和每组 `interaction/known_objects.json`，记录真值来源、布局哈希和允许的技能。技能许可明确标记 `ground_truth_layout`，视觉帧与分类器记录为空，不伪造视觉识别证据。
+
+需要恢复视觉识别时使用 `--interaction-source vision`，流程如下。
+
+## 视觉模式：识别与交互决策
 
 1. LiDAR 命中后，几何跟踪器提供待识别对象的位置和尺寸；类别为 `unknown`，不可交互。
 2. 第一视角 RGB 经 GroundingDINO 提出候选框，MobileSAM 得到掩膜；掩膜内 RGB-D 点与几何跟踪对象关联。
@@ -19,7 +29,7 @@
 
 `interaction_skill.py` 定义技能注册、上下文和速度/导航命令接口。`push_aside_skill.py` 实现 `push_aside/1.0`：
 
-- 前置条件：目标 ID 有至少两帧视觉证据，类别及技能在白名单中，存在侧向停放方案。
+- 前置条件：目标 ID 有明确许可来源（真值清单，或至少两帧视觉证据），类别及技能在白名单中，存在侧向停放方案。
 - 准备：到允许完整机身转向的位置，停稳后转向，再分轴对准前后距离和横向位置。
 - 接触与推动：先低速接触，再逐渐增加速度请求；反馈包括实际速度、航向、横向误差和箱子位移。
 - 恢复：对准偏差、姿态异常或箱子停滞时制动、退开、重新准备；有次数和总时限约束。
@@ -30,7 +40,7 @@
 
 ## 运行 T04、T05
 
-需要已启动的 DINO / SAM / Qwen 服务（端口 12181 / 12183 / 12185）。在仓库根目录运行；GPU 按可用资源选择。完整材质场景预留至少 92 GiB 内存及 14 GiB 显存。
+真值模式不依赖视觉模型服务；视觉模式需要 DINO / SAM / Qwen 服务（端口 12181 / 12183 / 12185）。在仓库根目录运行；GPU 按可用资源选择。完整材质场景预留至少 92 GiB 内存及 14 GiB 显存。
 
 ```bash
 source /data20t/embodied/share/inter-nav/env.sh
@@ -40,30 +50,30 @@ go2_inputs=/data20t/embodied/zkj/inter-nav-results/go2-voronoi-heading-up-202610
 go2_out="/data20t/embodied/zkj/inter-nav-results/go2-visual-skill-$(date +%Y%m%d-%H%M%S)"
 "$ISAAC_PYTHON" -u grutopia/demo/go2_online_interactive_navigation.py \
   --benchmark-dir "$go2_inputs" --output "$go2_out" --task-ids T04,T05 --gpu 3 --max-steps 40000 \
-  --floor-top .01 --map-source online --actuator-mode explicit_dc --path-controller continuous \
+  --floor-top .01 --map-source online --interaction-source ground_truth --actuator-mode explicit_dc --path-controller continuous \
   --navigation-attitude-recovery --route-planner voronoi --navigation-heading path \
   --roadmap-shape circle --route-clearance .30 --navigation-half-width .22 --voronoi-clearance-weight .30 \
   --global-map-hz 1 --local-map-hz 10 --local-map-radius 3 \
   --interaction-catalog grutopia/demo/profiles/interactive_object_catalog.json \
   --push-max-speed .95 --turn-speed 1.0 --contact-centering-speed .25 --contact-lateral-speed .35 \
   --contact-yaw-tolerance .10 --contact-front-gap .35 \
-  --record-video --material-mode preview \
+  --record-video --material-mode simple \
   --third-person-height 1.35 --third-person-forward .25 --third-person-fov 100
 ```
 
 每组输出：
 
-- `recognition/`：原始 RGB、分类裁剪、逐帧模型输出、`recognition_events.jsonl`、`recognized_objects.json`。
+- 视觉模式的 `recognition/`：原始 RGB、分类裁剪、逐帧模型输出、`recognition_events.jsonl`、`recognized_objects.json`。
 - `events.jsonl`：观察、识别、技能开始/阶段切换/结束及任务事件。
 - `result.json`：识别来源、技能报告、实际位移、通路证书、最终误差和全程健康。
 - `video/combined.mp4`：完整组合视频；同目录还有第一视角、第三视角和两种地图视频，25 fps。
 
-地图中未识别对象为灰色，已识别且允许交互的箱子为金色。面板显示类别、技能阶段、重试次数和路径收益。
+地图中可交互箱子为金色，其余对象为灰色。面板注明交互资格来源（GT 或 RGB）、类别、技能阶段、重试次数和路径收益。
 
 ## 关闭纹理做开发测试
 
-先在完整原尺寸 MV7 场景中测试控制、交互和在线地图，可使用上方命令并将 `--material-mode preview` 改为 `--material-mode simple`，去掉 `--record-video`。
-第一视角 RGB-D 相机和视觉识别继续运行；墙体、家具、箱子的碰撞几何不变。纯色材质模式保留物理材质绑定，箱子的质量、摩擦和纯色外观保持原配置。
+上方命令默认在完整原尺寸 MV7 中使用 `--material-mode simple --record-video`，录制无纹理的完整测试视频。需要节省录像开销时可去掉 `--record-video`；正式贴图录像改用 `--material-mode preview --record-video`。
+视觉模式仍运行第一视角 RGB-D 识别；真值模式跳过识别，录像相机仅用于展示。墙体、家具、箱子的碰撞几何不变。纯色材质模式保留物理材质绑定，箱子的质量、摩擦和纯色外观保持原配置。
 
 ```bash
 # 无纹理测试：在上方完整命令中使用这组开关，并去掉 --record-video
@@ -83,10 +93,12 @@ go2_out="/data20t/embodied/zkj/inter-nav-results/go2-visual-skill-$(date +%Y%m%d
 
 ## 验收状态（2026-10-28）
 
-新流程的 444 项回归检查通过。在独立的小型 Isaac Sim 场景中，5 个真实渲染帧经过 DINO、SAM、RGB-D 关联和 Qwen3-VL 后被识别为 `box`；系统在第二个独立帧确认后才授予权限。未知类别未被默认放行。此检查仅验证识别接口，不是原始 T04/T05 的导航或推箱验收。
+最新安排：暂用真值交互资格，保留原 policy、DC 控制、无纹理完整录像，重点验证导航稳定性与推箱执行。导航失稳问题已做代码修复，但原始 T04/T05 尚未验收通过。
+
+新流程的 448 项回归检查通过。在独立的小型 Isaac Sim 场景中，5 个真实渲染帧经过 DINO、SAM、RGB-D 关联和 Qwen3-VL 后被识别为 `box`；系统在第二个独立帧确认后才授予权限。未知类别未被默认放行。此检查仅验证识别接口，不是原始 T04/T05 的导航或推箱验收。
 
 完整原尺寸 MV7 的无纹理录像已完成一次（`recognition-skill-v42-notexture-video-try1`）：采样进程 RSS 峰值18.88 GiB，T04/T05 的五路视频均25 fps并通过逐帧解码及时序检查，但两组均在观察子导航/转向阶段失稳，尚未启动推箱技能。T04最大倾角35.03°、T05为46.82°，均未通过任务验收。
 
-已补齐观察子导航的姿态恢复保护，并用实测线速度、角速度、位置和倾角稳定窗口控制到点/转向切换。识别现在使用前景强调的裁剪；主动观察必须取得新视点的两帧证据，未知结果会换视点，非白名单判断需复核两个主动视点。回归检查444项通过。
+已补齐观察子导航的姿态恢复保护，并用实测线速度、角速度、位置和倾角稳定窗口控制到点/转向切换。识别现在使用前景强调的裁剪；主动观察必须取得新视点的两帧证据，未知结果会换视点，非白名单判断需复核两个主动视点。回归检查448项通过。
 
 下轮继续保存无纹理完整录像，使用固定200 Hz的既有DC执行器接口及原50 Hz Go2 policy，检查原PD接口中出现的转向失稳问题。policy权重、30°硬健康阈值、0.25 m最终到点误差、场景尺寸和原任务坐标不变。此复测尚未验收通过；旧成功视频不能替代新流程的T04/T05验收。

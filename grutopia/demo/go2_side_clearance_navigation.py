@@ -60,6 +60,8 @@ def main():
                         help='Simple materials avoid compiling thousands of scene MDL instances')
     parser.add_argument('--start-override',type=float,nargs=2,help='Isolated contact calibration; use with one task ID')
     parser.add_argument('--interaction-catalog',type=Path,default=Path('grutopia/demo/profiles/interactive_object_catalog.json'))
+    parser.add_argument('--interaction-source',choices=['ground_truth','vision'],default='ground_truth',
+                        help='Use known box eligibility from the layout, or require live visual classification')
     args=parser.parse_args()
     if args.actuator_mode is None:args.actuator_mode='explicit_dc' if args.map_source=='online' else 'implicit_pd'
     if not np.isfinite(args.floor_top) or not 0 < args.floor_top <= .30:
@@ -92,13 +94,16 @@ def main():
     from grutopia_extension.interactive_navigation.interaction_catalog import InteractionCatalog
     from grutopia_extension.interactive_navigation.rgb_object_recognition import RGBObjectRecognizer,ObjectGeometry
     from grutopia_extension.interactive_navigation.interaction_recognition_runtime import InteractionRecognitionRuntime
+    from grutopia_extension.interactive_navigation.ground_truth_interaction import GroundTruthInteractionRuntime
     from grutopia_extension.interactive_navigation.interaction_skill import SkillRegistry,SkillContext
     from grutopia_extension.interactive_navigation.push_aside_skill import PushAsideSkill,PushAsideConfig
     from grutopia_extension.interactive_navigation.object_inspection import ObjectInspectionPlanner
     catalog=InteractionCatalog.load(args.interaction_catalog)
-    recognizer=RGBObjectRecognizer(labels=catalog.classification_labels,proposal_query=catalog.proposal_query)
-    recognizer.check_ready()
-    recognition=InteractionRecognitionRuntime(recognizer,catalog,args.output)
+    recognition=None
+    if args.interaction_source=='vision':
+        recognizer=RGBObjectRecognizer(labels=catalog.classification_labels,proposal_query=catalog.proposal_query)
+        recognizer.check_ready()
+        recognition=InteractionRecognitionRuntime(recognizer,catalog,args.output)
     registry=SkillRegistry();registry.register(PushAsideSkill)
     from grutopia_extension.interactive_navigation.go2_contact_turn import ContactTurnControl,checked_contact_turn_command
     from grutopia_extension.interactive_navigation.go2_passage_guidance import PassageEntryGuide
@@ -128,6 +133,8 @@ def main():
     from grutopia_extension.interactive_navigation.go2_navigation_runner import build_go2_navigation_config,Go2NavigationRunConfig
     profile=load_point_navigation_profile(str(args.benchmark_dir/'scene_profile.json'))
     layout=json.loads((args.benchmark_dir/'layout.json').read_text())['objects']
+    if args.interaction_source=='ground_truth':
+        recognition=GroundTruthInteractionRuntime(catalog,args.benchmark_dir/'layout.json',args.output)
     if args.map_source=='online':
         # Bounds and requested S/G are known; architectural geometry is not.
         # The simulator asset/layout below is only the physical environment.
@@ -144,7 +151,7 @@ def main():
         planner=SidePushPlanner(grid['free'],[profile.mapping.x_limits,profile.mapping.y_limits],
             passages=json.loads((args.benchmark_dir/'passages.json').read_text()))
         if 'box_free' in grid:planner.box_free=grid['box_free']
-    planner.interactable_ids=frozenset()
+    planner.interactable_ids=recognition.eligible_ids(0.)
     planner.navigation_route_radius=args.route_clearance
     planner.navigation_half_width=args.navigation_half_width
     planner.voronoi_clearance_weight=args.voronoi_clearance_weight
@@ -190,6 +197,7 @@ def main():
     for rel in ['grutopia_extension/interactive_navigation/interaction_catalog.py',
         'grutopia_extension/interactive_navigation/rgb_object_recognition.py',
         'grutopia_extension/interactive_navigation/interaction_recognition_runtime.py',
+        'grutopia_extension/interactive_navigation/ground_truth_interaction.py',
         'grutopia_extension/interactive_navigation/interaction_skill.py',
         'grutopia_extension/interactive_navigation/push_aside_skill.py',
         'grutopia_extension/interactive_navigation/object_inspection.py',
@@ -285,7 +293,7 @@ def main():
                 bodies[prim.GetName()]=body
         assert set(bodies)=={o['id'] for o in layout}
         first_camera=third_camera=None;recording_enabled=False;recording_tick=0;record_phase='start';record_component=None;task_health=None
-        if True:  # Recognition camera is required even without video recording.
+        if args.record_video or args.interaction_source=='vision':
             from grutopia_extension.interactive_navigation.visualization import FollowingRobotCamera
             from grutopia_extension.interactive_navigation.go2_navigation_runner import GO2_FIRST_PERSON_OFFSET,GO2_FIRST_PERSON_PITCH_DEGREES
             from grutopia_extension.interactive_navigation.task_video_recording import TaskVideoRecorder
@@ -296,13 +304,14 @@ def main():
             light=UsdLux.DomeLight.Define(stage,'/World/Go2NavigationVideoDome');light.CreateIntensityAttr(900)
             print(json.dumps({'event':'video_camera_initialization','material_mode':args.material_mode}),flush=True)
             first_camera=FollowingRobotCamera(resolution=(1280,736),offset=GO2_FIRST_PERSON_OFFSET,pitch_degrees=GO2_FIRST_PERSON_PITCH_DEGREES,
-                enable_depth=True,enable_point_cloud_image=True,enable_semantics=False,
+                enable_depth=args.interaction_source=='vision',enable_point_cloud_image=args.interaction_source=='vision',enable_semantics=False,
                 enable_bounding_boxes=False,prim_path='/World/Go2TaskFirstCamera')
             third_camera=FollowingRobotCamera(resolution=(1280,736),offset=(args.third_person_forward,0.,args.third_person_height),pitch_degrees=90,
                 horizontal_fov_degrees=args.third_person_fov,enable_bounding_boxes=False,prim_path='/World/Go2TaskThirdCamera') if args.record_video else None
             print(json.dumps({'event':'video_cameras_ready'}),flush=True)
             (args.output/'recording_config.json').write_text(json.dumps({
-                'recognition_required':True,'interaction_skill':'push_aside/1.0',
+                'recognition_required':args.interaction_source=='vision','interaction_source':args.interaction_source,
+                'interaction_skill':'push_aside/1.0',
                 'full_task_recording':bool(args.record_video),'capture':'every rendered observation','fps':25,
                 'physics_dt':.005,'rendering_dt':float(simulation_config.simulator.rendering_dt),
                 'rendering_interval':simulation_config.simulator.rendering_interval,
@@ -414,15 +423,17 @@ def main():
             if layers is not None:
                 recognized=recognition.poll()
                 planner.interactable_ids=recognition.eligible_ids(now)
-                layers.recognized_objects=recognition.store.snapshot(now)
+                layers.recognized_objects=recognition.snapshot(now)
+                layers.interaction_source=recognition.source
                 layers.interactable_ids=planner.interactable_ids
                 if recognized is not None:
                     event('visual_recognition',time_s=now,details=recognized,eligible_ids=sorted(planner.interactable_ids))
-            if observation.get('render',False) and layers is not None:
+            if observation.get('render',False) and layers is not None and first_camera is not None:
                 geometry=[]
-                for tracked in layers.current_boxes:
-                    center,_=bodies[tracked.id].get_world_pose()
-                    geometry.append(ObjectGeometry(tracked.id,(*tracked.xy,float(center[2])),tracked.dimensions))
+                if args.interaction_source=='vision':
+                    for tracked in layers.current_boxes:
+                        center,_=bodies[tracked.id].get_world_pose()
+                        geometry.append(ObjectGeometry(tracked.id,(*tracked.xy,float(center[2])),tracked.dimensions))
                 wants=recognition.wants_frame(now,geometry)
                 packet=first_camera.get_data(include_geometry=wants)
                 observation.setdefault('sensors',{})['recording_camera']=packet
@@ -486,7 +497,7 @@ def main():
                 for camera in [first_camera,third_camera]:
                     if camera is not None:camera._smoothed_position=None;camera._smoothed_yaw=None
             folder=args.output/task['id'];folder.mkdir(exist_ok=True)
-            recognition.reset(task['id']);planner.interactable_ids=frozenset()
+            recognition.reset(task['id']);planner.interactable_ids=recognition.eligible_ids(0.)
             inspection_planner=ObjectInspectionPlanner();inspection=None;inspection_turn=None
             skill=None;skill_reports=[];subtracker=None;subtarget=None;sub_started=None;sub_reached=False
             control_log=(folder/'control_trace.jsonl').open('w',buffering=1)
@@ -499,6 +510,7 @@ def main():
             def event(event_type,**values):
                 row={'event':event_type,'task':task['id'],**values};events.append(row)
                 eventfile.write(json.dumps(row)+'\n');eventfile.flush();print(json.dumps(row),flush=True)
+            event('interaction_eligibility_source',source=recognition.source,known_interactable_ids=sorted(planner.interactable_ids))
             initial_heading={'T01':0.,'T02':math.pi,'T03':math.pi/2,'T04':0.,'T05':math.pi}[task['id']]
             planner.navigation_pose_heading=initial_heading if args.roadmap_shape=='footprint' else None
             nav_heading=initial_heading;turn_point=None;completed_box=None;passage_certificate=None;passage_guide=None
@@ -738,7 +750,8 @@ def main():
                               exit=passage_guide.exit.tolist(),entry_reached=passage_guide.entry_reached)
                         obs=tick(action);last_action=action;last_tracking=tracking;continue
                     layers.refresh_global(current,reason='decision')
-                    inspection=inspection_planner.propose(layers,p[:2],heading,task['goal'],recognition.store,planner.control_time)
+                    inspection=(inspection_planner.propose(layers,p[:2],heading,task['goal'],recognition.store,planner.control_time)
+                                if args.interaction_source=='vision' else None)
                     if inspection is not None:
                         phase='inspect_navigate';phase_start=step;subtracker=None;subtarget=None
                         sub_arrival.reset();inspection_settle.reset()
@@ -769,7 +782,7 @@ def main():
                         path=decision.path;phase='navigate';goal_kind='frontier' if decision.kind=='explore' else 'task'
                     else:
                         plan=decision.push
-                        permission=catalog.permission(plan.box_id,'push_aside',recognition.store,planner.control_time)
+                        permission=recognition.permission(plan.box_id,'push_aside',planner.control_time)
                         if permission is None:
                             event('interaction_permission_denied',step=step,object_id=plan.box_id)
                             obs=tick(stop);last_action=stop;continue
@@ -911,7 +924,7 @@ def main():
                     for transition in command.events:event('skill_transition',step=step,**transition)
                     layers.decision={**(layers.decision or {}),'skill':'push_aside','skill_state':command.state,
                         'skill_retry':skill.retries,'recognized_category':skill.permission.category,
-                        'interaction_allowed':True,'execution_state':command.state}
+                        'interaction_allowed':True,'interaction_source':skill.permission.source,'execution_state':command.state}
                     record_phase='skill_'+command.state
                     action={'move_by_speed':list(command.velocity)};sub_reached=False
                     if command.navigation_goal is not None:
@@ -959,6 +972,7 @@ def main():
             layers.save(folder)
             result['layered_mapping']=layers.statistics()
             result['passage_certificate']=passage_certificate
+            result['interaction_source']=args.interaction_source
             result['recognition']=recognition.save(float(robot._go2_locomotion_control._simulation_time() or planner.control_time))
             result['interaction_skills']=skill_reports
             if skill is not None and not skill_reports:result['interaction_skills']=[skill.report()]
