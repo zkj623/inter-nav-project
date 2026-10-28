@@ -16,6 +16,7 @@ class UnitreeSport:
         self.state = None
         self.state_at = self.remote_at = 0.
         self.takeover = False
+        self.remote_keys = 0
         ChannelFactoryInitialize(0, robot['network_interface'])
         self.client = SportClient()
         self.client.SetTimeout(.15)
@@ -33,8 +34,27 @@ class UnitreeSport:
         data = bytes(state.wireless_remote)
         if len(data) >= 4:
             self.remote_at = time.monotonic()
-            if int.from_bytes(data[2:4], 'little') & int(self.robot['takeover_button_mask']):
+            self.remote_keys = int.from_bytes(data[2:4], 'little')
+            if self.takeover_held:
                 self.takeover = True
+
+    @property
+    def takeover_held(self):
+        return bool(getattr(self, 'remote_keys', 0) & int(self.robot['takeover_button_mask']))
+
+    def telemetry(self, now):
+        state = self.state
+        return {
+            'keys': getattr(self, 'remote_keys', 0),
+            'state_code': None if state is None else int(state.error_code),
+            'state_age_s': None if not self.state_at else max(0., now-self.state_at),
+            'remote_age_s': None if not self.remote_at else max(0., now-self.remote_at),
+            'state_at': self.state_at, 'remote_at': self.remote_at, 'received_at': now,
+            'velocity': None if state is None else [_finite(v) for v in state.velocity],
+            'yaw_speed': None if state is None else _finite(state.yaw_speed),
+            'healthy': self.healthy(now), 'stationary': self.stopped(now),
+            'takeover': bool(getattr(self, 'takeover', False)), 'takeover_held': self.takeover_held,
+        }
 
     def healthy(self, now):
         if self.state is None or now-self.state_at > .5 or now-self.remote_at > .5:
@@ -69,8 +89,28 @@ class UnitreeSport:
             raise RuntimeError(f'SportClient.StopMove failed: {code}')
 
 
-def _worker(pipe, robot, control, sdk_factory=UnitreeSport):
-    """Owns the SDK and a host lock. Parent death also reaches the watchdog."""
+def _finite(value):
+    value = float(value)
+    return value if math.isfinite(value) else None
+
+
+def _telemetry(sdk, now):
+    # Offline fake SDKs need only the original motion contract.
+    if hasattr(sdk, 'telemetry'):
+        return sdk.telemetry(now)
+    return {'healthy': sdk.healthy(now), 'stationary': sdk.stopped(now),
+            'keys': getattr(sdk, 'remote_keys', 0), 'state_code': None,
+            'state_age_s': None, 'remote_age_s': None, 'velocity': None, 'yaw_speed': None,
+            'takeover': bool(sdk.takeover), 'takeover_held': bool(getattr(sdk, 'takeover_held', False)),
+            'received_at': now}
+
+
+def _worker(pipe, robot, control, sdk_factory=UnitreeSport, test_mode=False):
+    """One SDK writer; a test deadline and command TTL are enforced here."""
+    control = dict(control)
+    if test_mode:
+        for key, limit in (('max_vx', .05), ('max_vy', .03), ('max_wz', .15)):
+            control[key] = min(control[key], limit)
     lock = open(f'/tmp/inter-nav-motion-{os.getuid()}.lock', 'a')
     guard = CommandGuard(control)
     sdk = None
@@ -80,11 +120,21 @@ def _worker(pipe, robot, control, sdk_factory=UnitreeSport):
     stop_fault_reported = False
     stationary_since = None
     last_stop_error = None
-    def report(state, detail=''):
+    move_reported = stop_reported = False
+    peak_speed = peak_yaw_speed = None
+
+    def send(event):
         try:
-            pipe.send({'state': state, 'detail': detail})
+            pipe.send(event)
         except (BrokenPipeError, EOFError, OSError):
             pass
+
+    def report(state, detail='', **facts):
+        send(dict(state=state, detail=detail, **facts))
+
+    def evidence(now):
+        return dict(telemetry=_telemetry(sdk, now), peak_speed=peak_speed,
+                    peak_yaw_speed=peak_yaw_speed) if test_mode else {}
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         sdk = sdk_factory(robot, control)
@@ -92,52 +142,96 @@ def _worker(pipe, robot, control, sdk_factory=UnitreeSport):
         while True:
             now = time.monotonic()
             was_armed = guard.armed
-            while pipe.poll():
+            # Bound draining so command floods cannot postpone watchdog checks.
+            for _ in range(32):
+                if not pipe.poll():
+                    break
                 try:
                     packet = pipe.recv()
                 except EOFError:
                     quit_requested = True
                     guard.stop('parent_disconnected')
                     break
+                now = time.monotonic()
                 operation = packet['op']
-                if operation == 'arm':
-                    if stopping is not None or not sdk.stopped(now):
-                        report('rejected', 'Need fresh telemetry and a stationary robot')
+                if operation == 'status':
+                    send({'kind': 'reply', 'request_id': packet.get('request_id'),
+                          'telemetry': _telemetry(sdk, now)})
+                elif operation == 'arm':
+                    reply = {'request_id': packet.get('request_id'), 'accepted': False}
+                    duration = packet.get('duration_s')
+                    invalid_duration = duration is not None and (
+                        type(duration) not in (int, float) or not math.isfinite(duration) or duration <= 0)
+                    if guard.armed or stopping is not None:
+                        report('rejected', 'Motion is active or still stopping', **reply)
+                    elif invalid_duration:
+                        report('rejected', 'duration_s must be finite and positive', **reply)
+                    elif test_mode and not 0 < int(robot.get('takeover_button_mask', 0)) <= 65535:
+                        report('rejected', 'Read remote keys and configure takeover_button_mask before testing motion', **reply)
+                    elif not sdk.stopped(now):
+                        report('rejected', 'Need fresh telemetry and a stationary robot', **reply)
+                    elif getattr(sdk, 'takeover_held', False):
+                        report('rejected', 'Release the takeover button before arming', **reply)
                     elif sdk.takeover:
-                        # Clear latch only on an explicit arm, but require another action.
+                        # Acknowledgement after release requires another action to move.
                         sdk.takeover = False
-                        report('rejected', 'Takeover latch cleared; verify remote released before retry')
+                        report('rejected', 'Takeover latch cleared; press the action key again to arm', **reply)
                     else:
-                        guard.arm(now)
+                        duration = min(1., 1. if duration is None else duration) if test_mode else None
+                        guard.arm(now, duration)
                         was_armed = True
-                        report('active')
+                        move_reported = stop_reported = False
+                        peak_speed = peak_yaw_speed = None
+                        reply['accepted'] = True
+                        report('active', duration_s=duration, **reply)
                 elif operation == 'velocity':
                     guard.submit(packet['velocity'], packet['generated_at'], packet['expires_at'], now)
                 elif operation in ('stop', 'close'):
                     guard.stop(packet.get('reason', operation))
-                    quit_requested = operation == 'close'
+                    quit_requested = quit_requested or operation == 'close'
+                    # Act on stop before accepting any later command.
+                    break
+            now = time.monotonic()
             if guard.armed and (sdk.takeover or not sdk.healthy(now)):
                 guard.stop('remote_takeover' if sdk.takeover else 'robot_state_stale_or_unsafe')
+            if test_mode and (guard.armed or stopping is not None):
+                sample = _telemetry(sdk, now)
+                measured = sample.get('velocity')
+                if measured and all(v is not None for v in measured):
+                    speed = sum(v*v for v in measured)**.5
+                    peak_speed = max(peak_speed or 0., speed)
+                if sample.get('yaw_speed') is not None:
+                    peak_yaw_speed = max(peak_yaw_speed or 0., abs(sample['yaw_speed']))
             velocity = guard.tick(now)
             if velocity is not None:
                 try:
                     sdk.move(velocity)
+                    if test_mode and not move_reported and any(abs(v) > 1e-6 for v in velocity):
+                        move_reported = True
+                        report('active', 'SportClient.Move returned successfully', event='move_accepted',
+                               velocity=velocity.tolist(), **evidence(time.monotonic()))
                 except Exception as error:
                     guard.stop(str(error))
             if was_armed and not guard.armed:
-                stopping = now
+                stopping = time.monotonic()
                 stop_fault_reported = False
                 stationary_since = None
-                report('stopping', guard.reason)
+                last_stop_error = None
+                report('stopping', guard.reason, **evidence(stopping))
             if stopping is not None:
+                now = time.monotonic()
                 if now-last_stop >= .1:
                     try:
                         sdk.stop()
+                        if test_mode and not stop_reported:
+                            stop_reported = True
+                            report('stopping', guard.reason, event='stop_requested', **evidence(time.monotonic()))
                     except Exception as error:
                         if str(error) != last_stop_error:
                             report('stop_error', str(error))
                             last_stop_error = str(error)
                     last_stop = now
+                now = time.monotonic()
                 feedback_at = sdk.stationary_feedback_time(now)
                 if feedback_at is None or feedback_at <= stopping:
                     stationary_since = None
@@ -145,10 +239,10 @@ def _worker(pipe, robot, control, sdk_factory=UnitreeSport):
                     stationary_since = feedback_at
                 if stationary_since is not None and feedback_at-stationary_since >= control['stop_settle_s']:
                     stopping = None
-                    report('stopped', guard.reason)
+                    report('stopped', guard.reason, **evidence(now))
                 elif now-stopping > control['stop_timeout_s']:
                     if not stop_fault_reported:
-                        report('fault', 'Stop not confirmed; use verified robot-side intervention')
+                        report('fault', 'Stop not confirmed; use verified robot-side intervention', **evidence(now))
                         stop_fault_reported = True
                     # Do not claim handoff. Bounded exit cannot guarantee stop after network loss.
                     if quit_requested:
@@ -169,44 +263,81 @@ def _worker(pipe, robot, control, sdk_factory=UnitreeSport):
 
 
 class MotionProcess:
-    def __init__(self, robot, control):
+    def __init__(self, robot, control, *, test_mode=False):
         context = mp.get_context('spawn')
         self.pipe, child = context.Pipe()
-        self.process = context.Process(target=_worker, args=(child, robot, control), daemon=False)
+        self.process = context.Process(target=_worker, args=(child, robot, control),
+                                       kwargs={'test_mode': test_mode}, daemon=False)
         self.state = 'starting'
         self.closing = False
+        self._pending = []
+        self._responses = {}
+        self._request_id = 0
         self.process.start()
         child.close()
         if not self.pipe.poll(10):
             self.close()
             raise RuntimeError('Motion worker did not initialize')
-        events = self.events()
+        self._receive()
         if self.state == 'fault':
-            self.close()
+            events = self.close()
             raise RuntimeError(str(events))
 
-    def events(self):
-        events = []
-        while self.pipe.poll():
+    def _receive(self):
+        # Requests are serialized by the console; bound late replies too.
+        for _ in range(64):
+            if not self.pipe.poll():
+                break
             try:
                 event = self.pipe.recv()
             except EOFError:
                 break
-            self.state = event['state']
-            events.append(event)
+            request_id = event.get('request_id')
+            if request_id is not None:
+                self._responses[request_id] = event
+                if len(self._responses) > 16:
+                    del self._responses[next(iter(self._responses))]
+            if event.get('kind') != 'reply':
+                self.state = event['state']
+                self._pending.append(event)
         if not self.closing and not self.process.is_alive() and self.state != 'fault':
             self.state = 'fault'
-            events.append({'state': 'fault', 'detail': 'Motion worker exited'})
+            self._pending.append({'state': 'fault', 'detail': 'Motion worker exited'})
+
+    def events(self):
+        self._receive()
+        events, self._pending = self._pending, []
         return events
 
-    def arm(self):
-        self.pipe.send({'op': 'arm'})
-        deadline = time.monotonic()+1
+    def _request(self, operation, timeout, **values):
+        self._request_id += 1
+        request_id = self._request_id
+        try:
+            self.pipe.send(dict(op=operation, request_id=request_id, **values))
+        except (BrokenPipeError, EOFError, OSError) as error:
+            raise RuntimeError('Motion worker disconnected') from error
+        deadline = time.monotonic()+timeout
         while time.monotonic() < deadline:
-            if self.pipe.poll(.05):
-                self.events()
-                return self.state == 'active'
-        return False
+            self._receive()
+            if request_id in self._responses:
+                return self._responses.pop(request_id)
+            if not self.process.is_alive():
+                break
+            self.pipe.poll(min(.02, max(0., deadline-time.monotonic())))
+        raise RuntimeError(f'Motion worker {operation} acknowledgement timed out')
+
+    def telemetry(self, *, timeout_s=.25):
+        """Request one snapshot; never enables output or consumes state events."""
+        if not math.isfinite(timeout_s) or not 0 < timeout_s <= .3:
+            raise ValueError('telemetry timeout_s must be in (0, .3]')
+        return self._request('status', timeout_s)['telemetry']
+
+    def arm(self, *, duration_s=None):
+        try:
+            return bool(self._request('arm', 1., duration_s=duration_s)['accepted'])
+        except RuntimeError:
+            self.stop('arm_ack_timeout')
+            return False
 
     def submit(self, velocity, generated_at, expires_at):
         self.pipe.send({'op': 'velocity', 'velocity': list(velocity),
@@ -214,7 +345,10 @@ class MotionProcess:
 
     def stop(self, reason):
         if self.process.is_alive():
-            self.pipe.send({'op': 'stop', 'reason': reason})
+            try:
+                self.pipe.send({'op': 'stop', 'reason': reason})
+            except (BrokenPipeError, EOFError, OSError):
+                pass
 
     def close(self):
         self.closing = True

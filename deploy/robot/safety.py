@@ -33,11 +33,13 @@ class CommandGuard:
         self.output = np.zeros(3)
         self.reason = 'manual'
         self.last_time = None
+        self.deadline = None
 
-    def arm(self, now):
+    def arm(self, now, duration_s=None):
         self.armed = True
         self.reason = 'active'
         self.expires = now + self.config['command_ttl_s']
+        self.deadline = None if duration_s is None else now + duration_s
         self.velocity.fill(0)
         self.output.fill(0)
         self.last_time = now
@@ -66,6 +68,9 @@ class CommandGuard:
 
     def tick(self, now):
         if not self.armed:
+            return None
+        if self.deadline is not None and now >= self.deadline:
+            self.stop('test_duration_elapsed')
             return None
         if now >= self.expires:
             self.stop('command_timeout')

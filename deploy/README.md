@@ -42,7 +42,7 @@
 | 其他输入 | `/utlidar/cloud`、`cloud_base`、`imu`、`robot_pose` 实际收到；默认导航不重复融合这些输入 |
 | 视频 | `/frontvideostream` 的 `unitree_go/msg/Go2FrontVideoData` 实际收到；不是 RGB-D；导航不解码该自定义话题，独立可视化通过 SDK 获取 RGB |
 | 全局定位 | `/uslam/frontend/odom`、`/uslam/localization/odom`、`/lio_sam_ros2/mapping/odometry` 检查时均无发布者 |
-| 未确定 | 本体固件、雷达 L1/L2 型号、相机型号、雷达外参、地面高度、自回波过滤和遥控仲裁 |
+| 未确定 | 本体固件、雷达 L1/L2 型号、相机型号、自回波过滤和遥控仲裁；地面/雷达原点的本机依据见下文 |
 | DDS | 检查时出现 `invalid data size`，尚未证明消息定义/中间件兼容，运动验收标记保持 false |
 
 存在 MID360 配置不代表连接了 MID360；未检测到 RealSense，也未发现标准 RGB-D 话题。
@@ -56,10 +56,11 @@
 ## 目录与调用关系
 
 ```text
-run.py → app/runtime.py
+run.py → app/runtime.py（资源创建、逐帧采集、退出清理）
            ├─ robot/sensors.py → observation.normalize → ExperimentFrame
-           │       → safety.check_observation → app/tasks.py → 原有导航算法 / 唯一地图
-           ├─ app/keyboard.py → 任务切换 / experiment 坐标目标
+           │       → app/controller.py → safety.check_observation
+           │       → app/tasks.py → 原有导航算法 / 唯一地图
+           ├─ app/keyboard.py → app/controller.py（任务切换、运动请求、反馈处理）
            ├─ perception/client.py → GPU 上的 serve_models.py
            ├─ robot/motion.py（独立进程）→ safety.py → SportClient
            ├─ visualization/sources.py → 独立 SDK 取图进程（仅预览 RGB）
@@ -67,9 +68,14 @@ run.py → app/runtime.py
                    ├─ view.py → visualization/server.py → 浏览器三图界面
                    └─ record.py → recording/capture.py → 本轮实验目录
 
+run.py --motion-test → app/motion_test.py → 同一个 robot/motion.py（短时验收，无导航）
 run.py --diagnose → robot/diagnostics.py（只读订阅）
 serve_models.py → perception/server.py → 原有模型实现
 ```
+
+运行职责：`runtime` 管资源和采集顺序；`controller` 把操作、观测与运动反馈转成明确状态变更；
+`tasks` 只适配原有算法、保留本轮地图。任务取消会回到 observe 并清掉旧目标；暂停保留任务，必须显式恢复。
+运动进程仍是唯一 SDK 发令者；session 只发布数据，view / record 不能发运动请求。
 
 观测采用米、秒、弧度；机器人四元数为 **wxyz**，速度为机身前/左/上轴对应的 `[vx, vy, wz]`。
 配置中的 `map_frame` 表示上游传感器对齐坐标系，当前为 **odom**；仅其他坐标系的点云才按采集时刻查询 TF 转换。相机反投影使用光学坐标系（右、下、前），
@@ -87,7 +93,7 @@ serve_models.py → perception/server.py → 原有模型实现
 URDF 的 `rpy=[0, 2.8782, 0]` 不再应用到已处于 odom 的点云；适配器只按采集时刻机身位姿转换雷达原点。
 此前 raw/base 点云配准得到的 `[0.28216, 0, 0]` 是发布流的有效变换，与上述物理安装参数不同，保留为历史证据。
 去畸变/自身过滤、通信、遥控仲裁三项验收标记仍为 `false`；本次修改不代表运动验收通过。
-这些值不适用于未经核对的其他机器人。若任一标定值设为 `null`，可接收、记录原始坐标观测，但不会生成导航地图或开放运动。
+这些值不适用于未经核对的其他机器人。若任一标定值设为 `null`，可接收、记录原始坐标观测，但不会生成导航地图或开放完整自主导航。
 `run.py` 在收到首组已标定、时间匹配且新鲜的观测后，固定本轮 `experiment` 坐标系：
 - XY 原点为此时机身位置，X 指向初始前方的水平投影，Y 指向初始左侧；Z=0 为标定地面，保留机身实际离地高度。
 - `robot/observation.py::ExperimentFrame` 在任务与边界检查前，统一转换机身、雷达原点、点云，以及 RGB-D 三维点和相机位姿。机身速度、RGB 像素和深度值保持原定义。
@@ -242,6 +248,11 @@ python serve_models.py qwen-vl --host 0.0.0.0 --device cuda:0 --qwen-vl-model /�
 
 是否能共享同一 GPU 取决于显存；按机器配置分配 device。默认端口依次为 12181、12183、12185。
 将 Go2 的 `runtime.yaml` 中地址改成 GPU 机器的可达 IP。`127.0.0.1` 只表示调用端本机。
+机器人端使用捕获时刻计算整帧感知预算（当前 8 秒），DINO / SAM / Qwen 的后续请求共用剩余时间。
+切换或取消目标时清掉排队工作；当前 HTTP 请求返回后，旧任务不会继续处理候选或覆盖新任务结果。
+这是请求之间的协作式取消，不强杀请求或撤销远端 GPU 推理，也不保证严格的墙钟截止时间。
+具体网络异常会保留在诊断中；服务超时不能当成“没有找到目标”。
+
 服务沿用现有 HTTP 接口，没有额外认证层，应放在受控网络内，不直接暴露到公网。
 
 可选的 Qwen3 拓扑评分（与 Qwen-VL 分类是两个模型）也复用已有实现：
@@ -279,7 +290,51 @@ python run.py --camera ros --rgb-topic /实际彩色图像话题
 配置 RGB-D 后优先显示同一份导航相机观测，不再额外启动 SDK 相机。
 旧版 view 的 `--camera` / `--rgb-topic` 移到 run；不会再由可视化进程采集第二路数据。
 
-运动前必须实际完成：外参/坐标/时间核对，点云去畸变和自身回波核对，遥控与 SDK 指令仲裁核对。
+### 受控单项验收
+
+先结束其他 run，另开终端 `python record.py` 等待记录，然后运行：
+
+```bash
+python run.py --motion-test
+```
+
+这个模式只建立 SDK 状态/遥控订阅和同一个受保护的运动进程，不启动 ROS、建图、相机或模型。
+启动不发速度；`record.py` 保存状态、按键、运动调用与停稳反馈事件，本模式没有三幅图或导航观测帧。
+它允许三个运动验收标记尚未完成，也不依赖几何标定；完整 `--allow-motion` 仍要求全部验收。
+
+1. **先看反馈。** 终端持续显示 `keys`、设备状态值、健康/静止判断、实测速度。
+   `takeover_button_mask: 0` 时只能看，任何动作均拒绝。用已知可安全操作的遥控按钮核对位值，
+   填写 `robot.yaml` 的 mask，退出后重启本模式。程序不猜按钮、不自动修改配置。
+2. **准备。** 按 `a`，检查反馈新鲜健康、机器人静止、接管键已释放；准备有效期 5 秒，此时仍不发运动。
+3. **一次动作。** 按 `f` 前行（上限 0.05 m/s），或按 `j` 左转（上限 0.15 rad/s）。
+   worker 独立执行不可续期的 1 秒指令窗口，并保留加速度限制与较低的设备配置速度上限。
+   每次结束后重新按 `a`；按住动作键不会连续执行。这个模式不提供避障，使用平整空地和现场遥控监护。
+4. **停止与接管。** 动作期间按空格或已配置遥控接管键。查看 `stopping` 原因，等待 `stopped`。
+   后者必须由停止请求之后的新状态反馈连续满足静止阈值确认；没有有效反馈会报告故障，不宣称停稳。
+   遥控触发后，要先松开按键；第一次启用请求只清锁存，需再按 `a` 与动作键才可重新测试。
+5. **命令超时。** 按 `a` 再按 `t`：短暂发送前行请求后停止喂指令，保持 SDK/DDS 通信。
+   预期出现 `command_timeout` 再到 `stopped`。这是主程序不再产生命令的测试，不是物理断网测试。
+6. **退出。** 按 `q` 或 Ctrl+C，先停止运动进程，再发布结果供 record 收尾。
+
+1 秒是软件的发令窗口；同步 SDK 调用和停止反馈都有耗时，不表示真机恰好在 1 秒内物理静止。
+控制台喂命令目标 20 Hz，运动 worker 目标 50 Hz；实际频率受同步 RPC（单次超时 0.15 秒）和系统负载影响。
+同用户控制锁只防止本部署重复发令，不是机器人全局控制权仲裁；MCF 和遥控优先级没有被切换。
+
+记录区分 `command_requested`（导航请求排队）、`move_accepted`（SDK 调用成功返回）、
+`stop_requested`、`stopped`（新反馈确认），测试停止事件还保存速度峰值与状态年龄。
+SDK 返回成功不证明机器实际移动；低速死区也可能导致没有动作，需结合现场观察和速度反馈判断。
+纯事件记录完整同样不代表运动验收通过，程序不会自动设置任何 verified 字段。
+主循环已经收到的运动 fault 会保留到最终汇总，不会因 close 阶段未重复上报而丢失。
+
+| 标记 | 对应验收证据 |
+|---|---|
+| `deskew_and_self_filter_verified` | 默认观察模式下遥控走停/转身，查看并记录墙体重影、机身附近伪障碍；不能靠 SDK 测试判定 |
+| `communication_verified` | 核对传感器连续接收、控制/停止反馈与命令超时测试；物理断网/机器人计算机故障的保护另行实测 |
+| `remote_arbitration_verified` | 多次动作中接管、松键后不自动恢复，再核对原生遥控操作；不能仅凭 mask 非零判定 |
+
+通过这些单项实验后，再进行短距离点导航和完整场景验收。
+
+完整自主导航前必须实际完成：外参/坐标/时间核对，点云去畸变和自身回波核对，遥控与 SDK 指令仲裁核对。
 还须完成 DDS 消息兼容与接收稳定性排查。然后设置 `calibration_verified`、`deskew_and_self_filter_verified`、
 `communication_verified`、`remote_arbitration_verified`，
 填写网卡与经过验证的遥控接管按键 mask，才允许：
@@ -376,14 +431,18 @@ run_summary.json           # 记录结果、丢帧计数、是否收到 run 的�
 离线回放仍可重新生成原有 `final_map.json/.npz`。几何标定不足时不能用原始观测直接做导航回放。
 三幅图以带元数据的逐帧图片保存，本版不额外编码 MP4。NPZ 禁用 pickle。
 
-默认发布/记录上限 2 Hz，与导航 10 Hz 和运动进程配置 50 Hz 独立。
+默认显示/记录采样目标 5 Hz，与导航 10 Hz 和运动进程配置 50 Hz 独立。
+这些是循环目标频率；算法耗时、同步 SDK 调用和设备负载都会影响实际频率。
 RGB 和点云来自各自采集时刻，记录接收年龄；不冒充严格同步 RGB-D。
 run 只保留有界内存缓存（4 包、4096 个事件），后台编码队列容量 1；客户端和慢磁盘不反压导航。
+同一帧供多个 record 读取时只压缩一次，压缩不占用显示发布锁。
 编码队列满、迟加入或网络/写盘落后会产生缺失，分别在 `producer_dropped`、`missing_frames`、
 `missing_events` 中计数。它是实验采样记录，不是传感器原频率 rosbag。
 
 停止顺序：先在 run 按 q，使运动停止流程完成；run 发布结束结果并留 2 秒给 record 排空，
 record 收到同会话结束标记后自动退出。再关闭 view。
+结束结果固定 `final_frame_id` / `final_event_id`；record 核对是否读到这两个位置。
+编码线程未能按时排空时，会记录丢帧并设置 `telemetry_complete=false`，迟到帧不会越过结束边界。
 单独对 record 按 Ctrl+C，只停止记录，run 继续；此时 `run_final_received=false`。
 断网、主程序异常消失或会话编号变化时记录会结束并说明原因，不混合两轮实验。
 若未收到最终结果，不能把该记录当作完整的正常结束。

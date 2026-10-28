@@ -43,6 +43,7 @@ def record(url, output=None, wait=30.):
     handlers = {sig: signal.signal(sig, lambda *_: stop.set()) for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
     writer = None
     session_id = None
+    session_mode = None
     frame_id = event_id = frame_gap = event_gap = 0
     producer_dropped = 0
     final = None
@@ -61,7 +62,7 @@ def record(url, output=None, wait=30.):
                 raise RuntimeError(f'run.py 数据源不可用：{exc}') from exc
             info = batch['info']
             if writer is None:
-                session_id = info['session_id']
+                session_id, session_mode = info['session_id'], info['mode']
                 root = output or Path(info['config']['runtime']['recording']['root'])
                 if not root.is_absolute():
                     root = REPO / root
@@ -90,11 +91,15 @@ def record(url, output=None, wait=30.):
         error, reason = str(exc), 'record_error'
         print(error, flush=True)
     finally:
+        drained = (final is not None and final.get('telemetry_complete', True)
+                   and frame_id == final.get('final_frame_id', frame_id)
+                   and event_id == final.get('final_event_id', event_id))
+        has_data = frame_id > 0 or (session_mode == 'motion_test' and event_id > 0)
         summary = {'reason': reason, 'error': error, 'completed': error is None,
                    'session_id': session_id, 'run_summary': final, 'run_final_received': final is not None,
                    'missing_frames': frame_gap, 'missing_events': event_gap,
-                   'producer_dropped': producer_dropped, 'last_frame': frame_id,
-                   'recording_complete': error is None and final is not None and frame_id > 0 and frame_gap == event_gap == producer_dropped == 0,
+                   'producer_dropped': producer_dropped, 'last_frame': frame_id, 'last_event': event_id,
+                   'recording_complete': error is None and drained and has_data and frame_gap == event_gap == producer_dropped == 0,
                    'hardware_validated': False}
         try:
             if writer:

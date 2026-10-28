@@ -41,6 +41,12 @@ def load(directory=None):
     control = result['runtime']['control']
     if not 0 < control['max_tilt_degrees'] < 90 or control['stop_settle_s'] >= control['stop_timeout_s']:
         raise ValueError('Invalid tilt limit or stopping time configuration')
+    for group, keys in {'perception': ('request_timeout', 'qwen_vl_timeout', 'result_max_age_s', 'failure_timeout_s'),
+                        'topology_scorer': ('timeout_s', 'max_age_s')}.items():
+        for key in keys:
+            value = result['runtime'][group][key]
+            if type(value) not in (int, float) or value <= 0:
+                raise ValueError(f'{group}.{key} must be positive')
     if result['navigation']['fresh_target_observations'] < 1:
         raise ValueError('fresh_target_observations must be positive')
     if result['robot']['map_frame'] == result['robot']['base_frame']:
@@ -69,19 +75,29 @@ def load(directory=None):
     return result
 
 
-def check_motion_configuration(config):
+def check_control_configuration(config, *, require_takeover=True):
+    """SDK prerequisites, independent of map and full-navigation acceptance."""
     robot = config['robot']
     if not robot['network_interface'].strip():
         raise ValueError('Fill robot.yaml network_interface before enabling motion')
-    for field in ('calibration_verified', 'deskew_and_self_filter_verified', 'communication_verified', 'remote_arbitration_verified'):
-        if robot[field] is not True:
-            raise ValueError(f'Motion disabled: robot.yaml {field} is not verified')
-    if robot['ground_z'] is None or robot['lidar_origin_offset_base_m'] is None:
-        raise ValueError('Measure ground_z and lidar_origin_offset_base_m before enabling motion')
-    if not 0 < int(robot['takeover_button_mask']) <= 65535:
-        raise ValueError('Configure a verified takeover_button_mask')
+    mask = robot['takeover_button_mask']
+    if type(mask) is not int or not 0 <= mask <= 65535:
+        raise ValueError('takeover_button_mask must be an integer from 0 to 65535')
+    if require_takeover and mask == 0:
+        raise ValueError('Configure a verified takeover_button_mask; --motion-test can display button bits')
     if not robot.get('sport_state_motion_codes'):
         raise ValueError('Configure sport_state_motion_codes for this robot before enabling motion')
+
+
+def check_motion_configuration(config):
+    """Full autonomous navigation requires both SDK prerequisites and field acceptance."""
+    robot = config['robot']
+    for field in ('calibration_verified', 'deskew_and_self_filter_verified', 'communication_verified', 'remote_arbitration_verified'):
+        if robot[field] is not True:
+            raise ValueError(f'Motion disabled: robot.yaml {field} is not verified; use --motion-test for bounded acceptance trials')
+    if robot['ground_z'] is None or robot['lidar_origin_offset_base_m'] is None:
+        raise ValueError('Measure ground_z and lidar_origin_offset_base_m before enabling navigation')
+    check_control_configuration(config)
 
 
 def check_task_inputs(robot, snapshot, exploring=False):

@@ -1,10 +1,12 @@
 """Single-owner map feed, bounded loss accounting, and real entrypoint integration."""
+from concurrent.futures import ThreadPoolExecutor
 import json
 from pathlib import Path
 import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 
 import numpy as np
@@ -116,6 +118,104 @@ def test_display_does_not_compress_recording_and_keeps_true_map_age(session, mon
     assert len(calls) == 1  # compressed packet reused by another recorder
 
 
+def test_recorders_share_compression_without_blocking_display(session, monkeypatch):
+    import deploy.app.session as module
+    tasks = Tasks(load()['navigation'])
+    snapshot = DemoSensors(session).latest()
+    tasks.update(snapshot, snapshot.captured_at)
+    session.update(snapshot, tasks, 'disabled')
+    wait_until(lambda: session.frame_id)
+    started, release = threading.Event(), threading.Event()
+    calls = []
+    original = module.encode_packet
+
+    def slow_encode(*args):
+        calls.append(1)
+        started.set()
+        assert release.wait(3)
+        return original(*args)
+
+    monkeypatch.setattr(module, 'encode_packet', slow_encode)
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        first = pool.submit(session.batch, 0, 0)
+        try:
+            assert started.wait(1)
+            second = pool.submit(session.batch, 0, 0)
+            # A slow recorder cannot hold the map/view publication lock.
+            assert pool.submit(session.display).result(timeout=1)['sequence'] == 1
+        finally:
+            release.set()
+        assert first.result(timeout=3)['frames'] == second.result(timeout=3)['frames']
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize('extra_queued', [False, True])
+def test_shutdown_freezes_final_cursors_even_if_renderer_finishes_late(monkeypatch, extra_queued):
+    import deploy.app.session as module
+    session = Session(load(), REPO, port=0, demo=True)
+    started, release = threading.Event(), threading.Event()
+    original = module.map_payload
+
+    def slow_map(scene):
+        started.set()
+        assert release.wait(3)
+        return original(scene)
+
+    monkeypatch.setattr(module, 'map_payload', slow_map)
+    try:
+        tasks = Tasks(load()['navigation'])
+        snapshot = DemoSensors(session).latest()
+        tasks.update(snapshot, snapshot.captured_at)
+        session.update(snapshot, tasks, 'disabled')
+        assert started.wait(1)
+        if extra_queued:
+            session.last_publish = float('-inf')
+            session.update(snapshot, tasks, 'disabled')
+        session.close({'completed': True}, grace=0, drain_timeout=.01)
+        final = session.batch(0, 0)
+        assert not final['summary']['telemetry_complete']
+        assert not final['summary']['completed']
+        assert final['summary']['final_frame_id'] == 0
+        assert final['summary']['final_event_id'] == final['events'][-1]['event_id']
+        assert final['producer_dropped'] == 1 + int(extra_queued)
+        release.set()
+        session.worker.join(timeout=2)
+        assert not session.worker.is_alive()
+        # No late frame/event may appear after record.py has accepted the summary.
+        session.event('late_event')
+        session.update(snapshot, tasks, 'disabled')
+        assert session.batch(0, 0) == final
+    finally:
+        release.set()
+        session.close({'completed': False}, grace=0)
+        session.worker.join(timeout=2)
+
+
+def test_motion_test_records_events_without_fabricating_sensor_frames(session, tmp_path):
+    session.info['mode'] = 'motion_test'
+    session.set_status('ready', 'motion_test', 'stopped')
+    session.event('acceptance_step', phase='ready')
+    display = session.display()
+    assert display['status']['mode'] == 'motion_test'
+    assert not display['map']['ready'] and display['cloud'] is None
+    process = subprocess.Popen([sys.executable, str(REPO/'deploy/record.py'), '--source', session.url,
+                                '--output', str(tmp_path)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    try:
+        wait_until(lambda: list(tmp_path.glob('*/session.json')))
+        session.close({'completed': True}, grace=.8)
+        output, _ = process.communicate(timeout=5)
+        assert process.returncode == 0, output
+        summary = json.loads(next(tmp_path.glob('*/run_summary.json')).read_text())
+        assert summary['recording_complete']
+        assert summary['last_frame'] == summary['observation_count'] == 0
+        assert summary['last_event'] == summary['run_summary']['final_event_id']
+        assert not session.set_status('active', 'motion_test', 'moving')
+    finally:
+        if process.poll() is None:
+            process.terminate()
+            process.communicate(timeout=5)
+
+
 def test_display_sampling_uses_original_public_mapping_api():
     voxels = VoxelPointCloudMap(MappingConfig(voxel_size=.01))
     points = np.column_stack((np.arange(100)/10, np.zeros(100), np.ones(100)))
@@ -213,6 +313,9 @@ def test_real_run_view_record_entrypoints_and_replay(tmp_path):
         summary = json.loads((directory/'run_summary.json').read_text())
         assert summary['run_final_received'] and summary['session_id'] == data['session_id']
         assert summary['missing_frames'] == summary['missing_events'] == 0
+        assert summary['run_summary']['telemetry_complete']
+        assert summary['last_frame'] == summary['run_summary']['final_frame_id']
+        assert summary['last_event'] == summary['run_summary']['final_event_id']
         assert list(directory.glob('frames/*.jpg')) and list(directory.glob('frames/*.png'))
         recorded = list(snapshots(directory))
         assert recorded and all(s.planning_frame == 'experiment' for s in recorded)
@@ -265,7 +368,7 @@ def test_record_stops_without_affecting_live_session(session, tmp_path, action):
 def test_demo_refuses_motion_before_initializing_hardware():
     result = subprocess.run([sys.executable, str(REPO/'deploy/run.py'), '--demo', '--allow-motion'], capture_output=True, text=True)
     assert result.returncode == 2
-    assert '--demo cannot be combined' in result.stderr
+    assert 'not allowed with argument --demo' in result.stderr
 
 
 def test_moving_scans_keep_history_in_world_frame_and_session(session):

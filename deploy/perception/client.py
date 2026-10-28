@@ -5,6 +5,7 @@ import time
 from dataclasses import asdict, fields
 from grutopia_extension.interactive_navigation.open_vocabulary_perception import (
     OpenVocabularyPerception, OpenVocabularyPerceptionConfig,
+    RequestBudget, PerceptionCancelled,
 )
 
 
@@ -35,11 +36,23 @@ class AsyncPerception:
 
     def reset(self):
         self.generation += 1
+        self._clear(self.jobs)
+        self._clear(self.results)
+        self.frame = None
+        self.last_query_status = 'idle'
         self.last_frame = None
         self.last_success = None
         self.last_error = None
         self.last_target_cues = []
         self.last_delivery = None
+
+    @staticmethod
+    def _clear(channel):
+        while True:
+            try:
+                channel.get_nowait()
+            except queue.Empty:
+                return
 
     @staticmethod
     def _replace(channel, item):
@@ -65,11 +78,13 @@ class AsyncPerception:
             generation, captured_at, result, error = self.results.get_nowait()
         except queue.Empty:
             return []
-        if generation != self.generation or self.clock()-captured_at > self.config['result_max_age_s']:
-            self.last_error = 'discarded stale perception result'
-            return []
+        if generation != self.generation:
+            return []  # An old task must not overwrite this task's diagnostics.
         if error:
-            self.last_error = error
+            self.last_error = error  # Preserve HTTP errors even if the request expired.
+            return []
+        if self.clock()-captured_at >= self.config['result_max_age_s']:
+            self.last_error = 'discarded stale perception result'
             return []
         self.last_success = self.clock()
         self.last_error = None
@@ -84,18 +99,30 @@ class AsyncPerception:
                 generation, captured_at, arguments = self.jobs.get(timeout=.1)
             except queue.Empty:
                 continue
-            if generation != self.generation or self.clock()-captured_at > self.config['result_max_age_s']:
-                continue
+            budget = RequestBudget(
+                deadline=captured_at+self.config['result_max_age_s'],
+                cancelled=lambda generation=generation: self.closed.is_set() or generation != self.generation,
+                clock=self.clock,
+            )
             try:
-                # Geometry remains the captured frame's XYZ, never the latest robot pose.
-                result = [item.to_semantic_detection() for item in self.backend.perceive(**arguments)]
+                budget.check()
+                # The shared backend checks before each HTTP request and caps its
+                # timeout to the remaining frame budget. Geometry stays captured.
+                detections = self.backend.perceive(**arguments, request_budget=budget)
+                budget.check()
+                result = [item.to_semantic_detection() for item in detections]
                 error = None
+            except PerceptionCancelled:
+                continue
             except Exception as exc:
                 result, error = [], f'{type(exc).__name__}: {exc}'
-            self._replace(self.results, (generation, captured_at, result, error))
+            if generation == self.generation and not self.closed.is_set():
+                self._replace(self.results, (generation, captured_at, result, error))
 
     def close(self):
         self.closed.set()
+        self._clear(self.jobs)
+        self._clear(self.results)
         self.thread.join(timeout=.2)
 
 

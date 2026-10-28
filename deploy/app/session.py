@@ -35,6 +35,25 @@ def decode_packet(packet):
     return Snapshot(**data['snapshot']), data['scene']
 
 
+class _RecordedFrame:
+    """Detached frame with a single lazy compression shared by all recorders."""
+    def __init__(self, frame_id, snapshot, scene, visual, mapping):
+        self.frame_id = frame_id
+        self.snapshot, self.scene = snapshot, scene
+        self.visual, self.mapping = visual, mapping
+        self._packet = None
+        self._lock = threading.Lock()
+
+    def payload(self):
+        # Compression never holds Session.lock or blocks display publication.
+        with self._lock:
+            if self._packet is None:
+                self._packet = encode_packet(self.snapshot, self.scene)
+            packet = self._packet
+        return {'frame_id': self.frame_id, 'packet': packet,
+                'visual': self.visual, 'map': self.mapping}
+
+
 class Session:
     def __init__(self, config, repo, port=8765, demo=False, mode='live_observe_only', frame_limit=4, event_limit=4096):
         self.info = {'session_id': uuid4().hex, 'started_at': datetime.now(timezone.utc).isoformat(),
@@ -45,6 +64,7 @@ class Session:
         self.pending = queue.Queue(maxsize=1)
         self.frames_ring, self.events_ring = deque(maxlen=frame_limit), deque(maxlen=event_limit)
         self.frame_id = self.event_id = self.dropped = 0
+        self.unpublished_frames = 0
         self.last_publish = float('-inf')
         self.publish_interval = .2
         self.input_times = None
@@ -56,6 +76,8 @@ class Session:
         self.status = {'state': 'starting', 'motion': 'disabled', 'mode': 'observe'}
         self.heartbeat = time.monotonic()
         self.summary = None
+        self.closing = False
+        self.publication_closed = False
         self.worker_stop = threading.Event()
         self.server = self._server(port)  # Bind BEFORE ROS/SDK/motion startup.
         self.worker = threading.Thread(target=self._encode_loop, daemon=True)
@@ -72,38 +94,65 @@ class Session:
         # Events contain only small metadata, never point/image arrays.
         item = json.loads(json.dumps({'event': kind, 'at': time.monotonic(), **details}, default=json_value, allow_nan=False))
         with self.lock:
-            self.event_id += 1
-            self.events_ring.append(dict(item, event_id=self.event_id))
+            if self.summary is None:
+                self._append_event(item)
+
+    def _append_event(self, item):
+        # Caller holds Session.lock, including the atomic final event/summary.
+        self.event_id += 1
+        self.events_ring.append(dict(item, event_id=self.event_id))
+
+    def set_status(self, state, mode, motion, *, error=None, map_ready=False, result=None):
+        """Publish activity independently of mapping, including motion acceptance."""
+        with self.lock:
+            if self.closing:
+                return False
+            self.heartbeat = time.monotonic()
+            self.status = {'state': state, 'mode': mode, 'motion': motion, 'error': error,
+                           'map_ready': map_ready, 'result': result}
+        return True
 
     def update(self, snapshot, tasks, motion, error=None):
+        if not self.set_status(tasks.state, tasks.mode, motion, error=error,
+                               map_ready=tasks.map_ready, result=tasks.result):
+            return
         now = time.monotonic()
         with self.lock:
-            self.heartbeat = now
-            self.status = {'state': tasks.state, 'mode': tasks.mode, 'motion': motion, 'error': error,
-                           'map_ready': tasks.map_ready, 'result': tasks.result}
+            if self.closing:
+                return
             self.input_times = (snapshot.pose_at, snapshot.lidar_at) if snapshot is not None else None
         if snapshot is None or now-self.last_publish < self.publish_interval:
             return
         self.last_publish = now
-        if self.pending.full():
-            try:
-                self.pending.get_nowait()
-                self.dropped += 1
-            except queue.Empty:
-                pass
+        with self.lock:
+            if self.pending.full():
+                try:
+                    self.pending.get_nowait()
+                    self.unpublished_frames -= 1
+                    self.dropped += 1
+                except queue.Empty:
+                    pass
         try:
             # Mutable planner arrays are copied only on their owning thread.
             scene = self.capture.capture(snapshot, tasks)
             captured = time.monotonic()
-            self.pending.put_nowait((snapshot, scene, captured, (captured-now)*1000))
+            with self.lock:
+                if not self.closing:
+                    self.pending.put_nowait((snapshot, scene, captured, (captured-now)*1000))
+                    self.unpublished_frames += 1
         except Exception as exc:
-            self.frames.error('session', exc)
-            self.dropped += 1
+            with self.lock:
+                if not self.publication_closed:
+                    self.frames.error('session', exc)
+                    self.dropped += 1
 
     def rgb(self, rgba, captured_at=None, source='ROS RGB'):
-        self.frames.put('rgb', {'jpeg': jpeg_from_bgr(rgba[..., :3][..., ::-1]),
-                                'source': source, 'stamp': captured_at, 'source_age': None,
-                                'timestamp_basis': 'monotonic_capture_estimate'}, captured_at)
+        payload = {'jpeg': jpeg_from_bgr(rgba[..., :3][..., ::-1]),
+                   'source': source, 'stamp': captured_at, 'source_age': None,
+                   'timestamp_basis': 'monotonic_capture_estimate'}
+        with self.lock:
+            if not self.publication_closed:
+                self.frames.put('rgb', payload, captured_at)
 
     def _encode_loop(self):
         while not self.worker_stop.is_set() or not self.pending.empty():
@@ -135,6 +184,8 @@ class Session:
                 if camera is not None:
                     self.rgb(camera['rgba'], snapshot.camera_at, 'ROS RGB-D colour')
                 with self.lock:
+                    if self.publication_closed:
+                        return
                     self.frames.put('cloud', cloud_payload, map_at)
                     self.frames.put('pose', pose_payload, snapshot.pose_at)
                     self.map, self.map_at = map_image, map_at
@@ -142,14 +193,19 @@ class Session:
                     self.publish_times.append(self.published_at)
                     self.timings = {'capture_ms': capture_ms, 'queue_ms': (encoding_started-queued_at)*1000,
                                     'encode_ms': (self.published_at-encoding_started)*1000}
+                    self.unpublished_frames -= 1
                     self.frame_id += 1
-                    self.frames_ring.append({'frame_id': self.frame_id, '_snapshot': snapshot, '_scene': scene,
-                                             'visual': self.frames.snapshot(), 'map': map_image})
+                    self.frames_ring.append(_RecordedFrame(
+                        self.frame_id, snapshot, scene, self.frames.snapshot(), map_image))
                 with self.frames.lock:
                     self.frames.errors.pop('session', None)
             except Exception as error:
-                self.frames.error('session', error)
-                self.dropped += 1
+                with self.lock:
+                    if self.publication_closed:
+                        return
+                    self.frames.error('session', error)
+                    self.unpublished_frames -= 1
+                    self.dropped += 1
 
     def display(self):
         now = time.monotonic()
@@ -174,21 +230,16 @@ class Session:
 
     def batch(self, after_frame, after_event):
         with self.lock:
-            oldest_frame = self.frames_ring[0]['frame_id'] if self.frames_ring else self.frame_id+1
+            oldest_frame = self.frames_ring[0].frame_id if self.frames_ring else self.frame_id+1
             oldest_event = self.events_ring[0]['event_id'] if self.events_ring else self.event_id+1
-            result = {'info': self.info, 'frames': [p for p in self.frames_ring if p['frame_id'] > after_frame],
+            result = {'info': self.info, 'frames': [p for p in self.frames_ring if p.frame_id > after_frame],
                     'events': [p for p in self.events_ring if p['event_id'] > after_event],
                     'frame_gap': max(0, oldest_frame-after_frame-1),
                     'event_gap': max(0, oldest_event-after_event-1),
                     'producer_dropped': self.dropped, 'summary': self.summary}
         # Recording compression is demand-driven and outside the display lock.
         # An unused recorder must not delay every live visual frame.
-        frames = []
-        for frame in result['frames']:
-            if 'packet' not in frame:
-                frame['packet'] = encode_packet(frame['_snapshot'], frame['_scene'])
-            frames.append({k: v for k, v in frame.items() if not k.startswith('_')})
-        return dict(result, frames=frames)
+        return dict(result, frames=[frame.payload() for frame in result['frames']])
 
     def _server(self, port):
         session = self
@@ -229,15 +280,27 @@ class Session:
         server.daemon_threads = True
         return server
 
-    def close(self, summary, grace=2.):
-        # Called only AFTER motor shutdown. Let record drain the final state.
-        self.worker_stop.set()
-        self.worker.join(timeout=3)
-        if self.worker.is_alive():
-            summary = dict(summary, completed=False, telemetry_error='encoder did not finish')
-        self.event('session_finished', summary=summary)
+    def close(self, summary, grace=2., drain_timeout=3.):
+        # Called only AFTER motor shutdown. Drain accepted frames before declaring
+        # a final cursor; a timed-out worker must never publish after that boundary.
         with self.lock:
-            self.summary = summary
+            if self.closing:
+                return
+            self.closing = True
+        self.worker_stop.set()
+        self.worker.join(timeout=drain_timeout)
+        with self.lock:
+            drained = not self.worker.is_alive()
+            self.publication_closed = True
+            if not drained:
+                self.dropped += self.unpublished_frames
+                self.unpublished_frames = 0
+                summary = dict(summary, completed=False, telemetry_error='encoder did not finish')
+            self.summary = dict(summary, telemetry_complete=drained,
+                                final_frame_id=self.frame_id, final_event_id=self.event_id+1)
+            self._append_event({'event': 'session_finished', 'at': time.monotonic(), 'summary': self.summary})
+        # This is a bounded read-only drain window, not a guarantee for disconnected
+        # or slow recorders. Their final cursors and gap counts disclose any loss.
         time.sleep(grace)
         self.server.shutdown()
         self.http.join(timeout=1)

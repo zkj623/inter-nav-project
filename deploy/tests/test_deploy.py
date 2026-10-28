@@ -224,7 +224,7 @@ def test_replay_and_motion_flags_are_mutually_exclusive(tmp_path):
     result = subprocess.run([sys.executable, str(REPO/'deploy/run.py'), '--replay', str(tmp_path),
                              '--allow-motion'], text=True, capture_output=True)
     assert result.returncode != 0
-    assert 'cannot be combined' in result.stderr
+    assert 'not allowed with argument' in result.stderr
 
 
 def test_unarmed_writer_does_not_interfere_with_manual_control():

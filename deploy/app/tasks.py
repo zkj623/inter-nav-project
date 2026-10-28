@@ -76,6 +76,7 @@ class Tasks:
         new.mapping.buffer_recovery_timeout = max(1, round(5*self.config['tick_hz']))
         if mode == 'explore':
             new.visual_memory = VisualObservationMemory(previous.map.occupancy)
+        if self.perception is not None and (mode == 'explore' or self.mode == 'explore'):
             self.perception.reset()
         self.component, self.mode, self.state = new, mode, 'active'
         self.elapsed, self.last_time, self.last_step = 0., now, -1
@@ -108,9 +109,15 @@ class Tasks:
         self.state = 'active'
 
     def cancel(self):
-        self.state = 'observe'
+        if self.perception is not None and self.mode == 'explore':
+            self.perception.reset()
+        self.state = self.mode = 'observe'
+        self.result = None
+        self.elapsed, self.last_time = 0., None
         self.component.mapping.invalidate_path()
         self.component.mapping.semantic_target = ''
+        if hasattr(self.component, 'target_node'):
+            self.component.target_node = None
 
     def fail(self, reason):
         self.state = 'fault'
@@ -121,21 +128,17 @@ class Tasks:
             if self.state == 'active':
                 raise ValueError('Navigation requires calibrated ground and LiDAR origin')
             return None
-        self.map_ready = True
         observation = {**snapshot.observation, 'sensors': dict(snapshot.observation['sensors'])}
         lidar = observation['sensors'].get('lidar', {})
         lidar_id = lidar.get('physics_step')
         if lidar_id == self.last_lidar:
             observation['sensors'].pop('lidar', None)
-        else:
-            self.last_lidar = lidar_id
         camera = observation['sensors'].get('camera')
         if camera is not None:
             frame = camera['capture_step']
             if frame == self.last_camera:
                 observation['sensors'].pop('camera', None)
             else:
-                self.last_camera = frame
                 if self.perception is not None:
                     self.perception.set_frame(frame, snapshot.camera_at)
         if self.state != 'active':
@@ -145,8 +148,7 @@ class Tasks:
                 self._maintenance_due = now + self.config['topology_interval_s']
             self._observe_tick += 1
             self.component.mapping.update(self._observe_tick, observation, maintenance=due)
-            if 'lidar' in observation['sensors']:
-                self.last_mapping_at = snapshot.lidar_at
+            self._accept_observation(observation, snapshot)
             return None
         self.elapsed += max(0, now-self.last_time)
         self.last_time = now
@@ -157,8 +159,7 @@ class Tasks:
             self.result = {'success': False, 'reason': 'task_timeout'}
             return None
         self.component.update(step, observation)
-        if 'lidar' in observation['sensors']:
-            self.last_mapping_at = snapshot.lidar_at
+        self._accept_observation(observation, snapshot)
         result = self.component.evaluate(step, observation)
         if result.success and self.mode == 'explore' and not self.fresh_target_confirmed():
             # Retained semantic maps can guide a new task, but cannot prove a fresh find.
@@ -171,3 +172,13 @@ class Tasks:
         if set(action) != {'move_by_speed'}:
             raise ValueError(f'Unsupported real-robot action: {list(action)}')
         return np.asarray(action['move_by_speed'], dtype=float)
+
+    def _accept_observation(self, observation, snapshot):
+        # Only deduplicate inputs that the algorithm actually processed successfully.
+        sensors = observation['sensors']
+        if 'lidar' in sensors:
+            self.last_lidar = sensors['lidar']['physics_step']
+            self.last_mapping_at = snapshot.lidar_at
+            self.map_ready = True
+        if 'camera' in sensors:
+            self.last_camera = sensors['camera']['capture_step']

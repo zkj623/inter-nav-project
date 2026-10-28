@@ -9,7 +9,7 @@ MENU = '\n[o]观察 [n]点导航 [e]寻找物体 [p]暂停 [r]继续 [m]停止�
 
 
 class Keyboard:
-    def __init__(self):
+    def __init__(self, menu=MENU, commands=None):
         if not sys.stdin.isatty():
             raise ValueError('Interactive mode needs a terminal (SSH with a TTY)')
         self.fd = sys.stdin.fileno()
@@ -17,7 +17,8 @@ class Keyboard:
         tty.setcbreak(self.fd)
         self.editing = None
         self.text = ''
-        print(MENU, flush=True)
+        self.commands = commands
+        print(menu, flush=True)
 
     def poll(self):
         if not select.select([self.fd], [], [], 0)[0]:
@@ -30,6 +31,8 @@ class Keyboard:
             self.editing, self.text = None, ''
             print('\n停止并取消任务', flush=True)
             return ('stop', None)
+        if getattr(self, 'commands', None) is not None:
+            return (key, None) if key in self.commands else None
         if key == '\x1b':
             self.editing, self.text = None, ''
             print('\n取消输入', flush=True)

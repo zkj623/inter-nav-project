@@ -17,6 +17,38 @@ from grutopia_extension.interactive_navigation.mapping import SemanticDetection
 BBox = Tuple[float, float, float, float]
 
 
+class PerceptionCancelled(RuntimeError):
+    """The operator replaced this request or closed its owner."""
+
+
+class PerceptionDeadlineExceeded(TimeoutError):
+    """The captured frame is too old for another inference request."""
+
+
+@dataclass(frozen=True)
+class RequestBudget:
+    """Optional per-frame budget; no effect on callers that omit it.
+
+    Cancellation is cooperative between requests. In-flight HTTP keeps its
+    socket timeout; that is not a hard wall-clock deadline or a cancellation
+    of remote GPU work. Later requests stop when the budget expires.
+    """
+    deadline: float
+    cancelled: Callable[[], bool]
+    clock: Callable[[], float] = time.monotonic
+
+    def check(self) -> float:
+        if self.cancelled():
+            raise PerceptionCancelled('perception request cancelled')
+        remaining = self.deadline - self.clock()
+        if not np.isfinite(remaining) or remaining <= 0:
+            raise PerceptionDeadlineExceeded('perception frame deadline exceeded')
+        return remaining
+
+    def timeout(self, configured: float) -> float:
+        return min(configured, self.check())
+
+
 @dataclass(frozen=True)
 class TargetObservationCue:
     """A DINO search proposal with geometry, never a semantic class vote."""
@@ -160,12 +192,12 @@ class AgentVLMBackend:
             raise ValueError('could not encode image')
         return base64.b64encode(encoded).decode('utf-8')
 
-    def _post(self, url: str, payload: dict) -> dict:
+    def _post(self, url: str, payload: dict, budget: Optional[RequestBudget] = None) -> dict:
         response = self._session.post(
             url,
             headers={'Content-Type': 'application/json'},
             json=payload,
-            timeout=self.config.request_timeout,
+            timeout=self.config.request_timeout if budget is None else budget.timeout(self.config.request_timeout),
             proxies={'http': '', 'https': ''},
         )
         response.raise_for_status()
@@ -213,10 +245,11 @@ class AgentVLMBackend:
             }
         return status
 
-    def detect(self, image: np.ndarray, caption: str) -> list[dict]:
+    def detect(self, image: np.ndarray, caption: str, budget: Optional[RequestBudget] = None) -> list[dict]:
         result = self._post(
             self.config.grounding_dino_url,
             {'image': self._encode_image(image), 'caption': caption},
+            budget=budget,
         )
         boxes = result.get('boxes', ())
         scores = result.get('logits', result.get('scores', ()))
@@ -228,12 +261,12 @@ class AgentVLMBackend:
             for box, score, label in zip(boxes, scores, labels)
         ]
 
-    def classify(self, image: np.ndarray, labels: Sequence[str]) -> dict:
+    def classify(self, image: np.ndarray, labels: Sequence[str], budget: Optional[RequestBudget] = None) -> dict:
         # This service runs in the VL environment, not inside Isaac Sim.
         response = self._session.post(
             self.config.qwen_vl_url,
             json={'image': self._encode_image(image), 'labels': list(labels)},
-            timeout=self.config.qwen_vl_timeout,
+            timeout=self.config.qwen_vl_timeout if budget is None else budget.timeout(self.config.qwen_vl_timeout),
             proxies={'http': '', 'https': ''},
         )
         response.raise_for_status()
@@ -244,10 +277,11 @@ class AgentVLMBackend:
             raise ValueError('Qwen-VL response is missing model provenance')
         return result
 
-    def segment(self, image: np.ndarray, bbox: Sequence[float]) -> np.ndarray:
+    def segment(self, image: np.ndarray, bbox: Sequence[float], budget: Optional[RequestBudget] = None) -> np.ndarray:
         result = self._post(
             self.config.mobile_sam_url,
             {'image': self._encode_image(image), 'bbox': [float(value) for value in bbox]},
+            budget=budget,
         )
         encoded = result.get('cropped_mask')
         if not isinstance(encoded, str):
@@ -361,7 +395,10 @@ class OpenVocabularyPerception:
         target: str,
         include_context: bool = True,
         step: int = 0,
+        request_budget: Optional[RequestBudget] = None,
     ) -> list[Any]:
+        if request_budget is not None:
+            request_budget.check()
         self.last_item_errors = []
         self.last_debug_frame = None
         self.last_target_cues = []
@@ -400,12 +437,14 @@ class OpenVocabularyPerception:
         try:
             detections, proposal_sources = [], []
             for name, caption in queries:
-                proposals = self._run_detector(rgb, caption)
+                proposals = self._run_detector(rgb, caption, request_budget)
                 boxes = self._debug_detector_boxes(proposals, rgb.shape[:2])
                 debug_frame['boxes'].extend({**box, 'proposal_source': name} for box in boxes)
                 detections.extend(proposals)
                 proposal_sources.extend([name] * len(proposals))
-            result = self._materialize(detections, rgb, depth_array, points, step=step, target=target, proposal_sources=proposal_sources)
+            result = self._materialize(
+                detections, rgb, depth_array, points, step=step, target=target,
+                proposal_sources=proposal_sources, request_budget=request_budget)
             debug_frame['mapped'] = [
                 {
                     'label': detection.label,
@@ -424,6 +463,8 @@ class OpenVocabularyPerception:
                 and detection.centroid is not None
             ]
             debug_frame['item_errors'] = list(self.last_item_errors)
+            if request_budget is not None:
+                request_budget.check()
             debug_frame['status'] = 'ok'
             self.last_query_status = 'ok'
         except Exception as error:
@@ -434,7 +475,8 @@ class OpenVocabularyPerception:
                 'message': str(error),
             }
             self.last_query_status = 'failed'
-            if self.simulator_fallback is None:
+            if (self.simulator_fallback is None
+                    or isinstance(error, (PerceptionCancelled, PerceptionDeadlineExceeded))):
                 raise
             else:
                 result = list(
@@ -493,14 +535,20 @@ class OpenVocabularyPerception:
             raise ValueError('point_image must have shape (height, width, 3)')
         return np.ascontiguousarray(image[..., :3]), depth_array, points
 
-    def _run_detector(self, image: np.ndarray, query: str) -> list[dict]:
+    def _run_detector(self, image: np.ndarray, query: str, request_budget=None) -> list[dict]:
+        if request_budget is not None:
+            request_budget.check()
         detector = self.detector
-        if hasattr(detector, 'detect'):
+        if isinstance(detector, AgentVLMBackend) and request_budget is not None:
+            raw = detector.detect(image, query, budget=request_budget)
+        elif hasattr(detector, 'detect'):
             raw = detector.detect(image, query)
         elif hasattr(detector, 'predict'):
             raw = detector.predict(image, caption=query)
         else:
             raw = detector(image, query)
+        if request_budget is not None:
+            request_budget.check()
         if isinstance(raw, dict):
             boxes = raw.get('boxes', ())
             scores = raw.get('logits', raw.get('scores', ()))
@@ -516,7 +564,8 @@ class OpenVocabularyPerception:
             ]
         return list(raw)
 
-    def _materialize(self, raw_detections, image, depth, point_image, step=0, target='', proposal_sources=None):
+    def _materialize(self, raw_detections, image, depth, point_image, step=0, target='',
+                     proposal_sources=None, request_budget=None):
         output, proposals = [], []
         raw_detections = list(raw_detections)
         if proposal_sources is not None and len(proposal_sources) != len(raw_detections):
@@ -535,8 +584,10 @@ class OpenVocabularyPerception:
             proposals = self._select_proposals(proposals, step)
         categories = list(dict.fromkeys((*CLASSIFICATION_LABELS, *self._target_labels(target))))
         for label, confidence, bbox, proposal_source in proposals:
+            if request_budget is not None:
+                request_budget.check()
             try:
-                mask = self._run_segmenter(image, bbox)
+                mask = self._run_segmenter(image, bbox, request_budget)
                 if mask.shape != image.shape[:2]:
                     raise ValueError('segmenter mask must align pixel-for-pixel with the input')
                 valid = mask & np.isfinite(depth) & (depth > 0) & np.isfinite(point_image).all(axis=-1)
@@ -546,7 +597,15 @@ class OpenVocabularyPerception:
                 centroid = tuple(float(v) for v in world_points.mean(axis=0))
                 classification = {}
                 if use_vl:
-                    classification = self.classifier.classify(self._qwen_context_crop(image, bbox), categories)
+                    crop = self._qwen_context_crop(image, bbox)
+                    if request_budget is not None:
+                        request_budget.check()
+                    if isinstance(self.classifier, AgentVLMBackend) and request_budget is not None:
+                        classification = self.classifier.classify(crop, categories, budget=request_budget)
+                    else:
+                        classification = self.classifier.classify(crop, categories)
+                    if request_budget is not None:
+                        request_budget.check()
                     final_label = classification.get('label')
                     if final_label not in categories or not classification.get('model'):
                         raise ValueError('classifier returned invalid category or missing model provenance')
@@ -586,8 +645,14 @@ class OpenVocabularyPerception:
                     classifier_model=classification.get('model'), classifier_response=classification.get('raw_text'),
                     proposal_source=proposal_source,
                 ))
+            except (PerceptionCancelled, PerceptionDeadlineExceeded):
+                raise
             except Exception as error:
                 self.last_item_errors.append({'label': label, 'type': type(error).__name__, 'message': str(error)})
+                # A service failure is shared by the remaining proposals. Under
+                # a frame budget, preserve the cause and retry on a fresh frame.
+                if request_budget is not None and isinstance(error, requests.RequestException):
+                    raise
         if self.last_item_errors and not output:
             first = self.last_item_errors[0]
             raise RuntimeError(f'all materialized detections failed; first error for {first["label"]!r}: {first["type"]}: {first["message"]}')
@@ -661,14 +726,20 @@ class OpenVocabularyPerception:
         box[[1, 3]] = np.clip(box[[1, 3]], 0, height)
         return label, confidence, tuple(float(value) for value in box)
 
-    def _run_segmenter(self, image: np.ndarray, bbox: BBox) -> np.ndarray:
+    def _run_segmenter(self, image: np.ndarray, bbox: BBox, request_budget=None) -> np.ndarray:
+        if request_budget is not None:
+            request_budget.check()
         segmenter = self.segmenter
-        if hasattr(segmenter, 'segment'):
+        if isinstance(segmenter, AgentVLMBackend) and request_budget is not None:
+            mask = segmenter.segment(image, bbox, budget=request_budget)
+        elif hasattr(segmenter, 'segment'):
             mask = segmenter.segment(image, bbox)
         elif hasattr(segmenter, 'segment_bbox'):
             mask = segmenter.segment_bbox(image, list(bbox))
         else:
             mask = segmenter(image, bbox)
+        if request_budget is not None:
+            request_budget.check()
         return np.asarray(mask, dtype=bool)
 
     def _embed_masked_crop(self, image: np.ndarray, mask: np.ndarray) -> np.ndarray:
