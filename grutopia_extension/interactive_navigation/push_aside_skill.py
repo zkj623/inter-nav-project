@@ -17,6 +17,7 @@ from grutopia_extension.interactive_navigation.go2_voronoi_navigation import (
 from grutopia_extension.interactive_navigation.go2_passage_confirmation import observed_passage_routes
 from grutopia_extension.interactive_navigation.go2_exploration_tracking import decision_buffer_recovery
 from grutopia_extension.interactive_navigation.smooth_go2_navigation import smooth_recovery_action
+from grutopia_extension.interactive_navigation.go2_heading_trim import HeadingTrimControl
 
 
 def wrap(value):return (value+math.pi)%(2*math.pi)-math.pi
@@ -76,12 +77,13 @@ class PushAsideSkill:
         self.last_verify=-1e9;self.observation_moves=0;self.used_stages=[]
         self.progress_mark=None;self.progress_since=None;self.max_tilt=0.
         self.reason='';self.status='running';self.box_velocity=0.;self.last_box_time=None
-        self.preparation_recoveries=0;self.recovery_tracker=None;self.recovery_target=None;self.next_stage_probe=-1e9
+        self.preparation_recoveries=0;self.recovery_tracker=None;self.recovery_target=None;self.next_stage_probe=-1e9;self.heading_trim=None
 
     def _transition(self,state,ctx,reason=''):
         self.events.append({'skill':self.spec.name,'object_id':self.plan.box_id,'from':self.state,
             'to':state,'reason':reason,'time_s':float(ctx.now),'retry':self.retries})
         self.state=state;self.state_since=ctx.now;self.settled_since=None;self.translation_braking=False
+        if state=='refine_heading':self.heading_trim=HeadingTrimControl(self.push_heading,min(self.config.alignment_yaw_tolerance,self.config.yaw_tolerance),acceptance_tolerance=self.config.yaw_tolerance)
         self.progress_mark=np.asarray(ctx.position[:2]).copy();self.progress_since=ctx.now
 
     def _output(self,velocity=(0.,0.,0.),navigation_goal=None):
@@ -118,6 +120,7 @@ class PushAsideSkill:
     def _reuse_alignment_pose(self,ctx):
         """Keep a nearby, observed and already oriented retreat pose."""
         gap,lateral,yaw_error=self._box_frame(ctx)
+        if any(np.linalg.norm(np.asarray(ctx.position[:2])-old)<.10 for old in self.used_stages):return False
         if abs(yaw_error)>self.config.preparation_heading_tolerance or not .20<=gap<=.85 or abs(lateral)>.80:return False
         if not body_motion_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.):return False
         extent=float(np.dot(np.abs(self.direction),np.asarray(ctx.box.dimensions[:2]))/2)
@@ -152,7 +155,7 @@ class PushAsideSkill:
                     points.extend(anchor-self.axis*back+self.direction*along
                                   for back in [.5,.7,.9,1.1] for along in [0.,.2,-.2,.4,-.4])
                     for point in points:
-                        if any(np.linalg.norm(point-old)<.10 for old in self.used_stages):continue
+                        if any(np.linalg.norm(point-old)<.28 for old in self.used_stages):continue
                         if np.dot(np.asarray(ctx.box.xy)-point,self.direction)<extent+.5:continue
                         path=p.path(position,point,boxes) if np.linalg.norm(point-position)>.15 else [tuple(point)]
                         if not path:continue
@@ -171,6 +174,8 @@ class PushAsideSkill:
             finally:p.robot_heading=heading
 
     def _retry(self,ctx,reason):
+        if reason=='heading_refinement_timeout' or reason.startswith('heading_trim_'):
+            self.used_stages.append(np.asarray(ctx.position[:2]).copy())
         self.retries+=1;self.release_reason=reason
         self.release_origin=None
         if self.retries>self.config.max_retries:return self._fail(ctx,'retry_limit:'+reason)
@@ -229,7 +234,8 @@ class PushAsideSkill:
 
         if self.state=='prepare':
             if self._reuse_alignment_pose(ctx):
-                self._transition('settle_alignment',ctx,'reuse_observed_aligned_pose')
+                next_state='settle_at_stage' if abs(yaw_error)>self.config.yaw_tolerance else 'settle_alignment'
+                self._transition(next_state,ctx,'reuse_observed_aligned_pose')
                 return self._output()
             if not self._select_stage(ctx):
                 if self.preparation_recoveries>=self.config.max_retries:return self._fail(ctx,'no_observed_preparation_pose')
@@ -283,7 +289,8 @@ class PushAsideSkill:
                 # intended turn here; then brake and settle before turning.
                 nearby=np.linalg.norm(np.asarray(ctx.position[:2])-self.stage)<self.config.stage_handoff_radius
                 end_heading=ctx.heading+wrap(self.push_heading-ctx.heading)
-                if nearby and body_rotation_clear(ctx.planner,ctx.boxes,ctx.position,
+                rejected=any(np.linalg.norm(np.asarray(ctx.position[:2])-old)<.10 for old in self.used_stages)
+                if nearby and not rejected and body_rotation_clear(ctx.planner,ctx.boxes,ctx.position,
                         ctx.heading,end_heading,margin=.05):
                     self.stage=np.asarray(ctx.position[:2]).copy()
                     self._transition('settle_at_stage',ctx,'actual_safe_stage_pose')
@@ -304,24 +311,29 @@ class PushAsideSkill:
                 self.used_stages.append(np.asarray(ctx.position[:2]).copy())
                 return self._retry(ctx,'turn_preparation_failed')
             if result is None:
-                self.yaw_servo=ContactYawServo(min(self.config.alignment_yaw_tolerance,self.config.yaw_tolerance))
-                self._transition('refine_heading',ctx);return self._output()
+                # Centering already holds heading while the dog is stepping.
+                # Enforce the contact tolerance at the final contact pose;
+                # do not demand a finer stationary yaw at every coarse turn.
+                self._transition('align_longitudinal',ctx,'coarse_heading_ready_for_centering');return self._output()
             return self._output(result[0])
         if self.state=='settle_alignment':
             if ctx.now-self.state_since>self.config.max_alignment_seconds:return self._retry(ctx,'alignment_settling_timeout')
             if self._quiet(ctx):
-                self.yaw_servo=ContactYawServo(min(self.config.alignment_yaw_tolerance,self.config.yaw_tolerance))
-                self._transition('refine_heading',ctx)
+                if abs(yaw_error)>self.config.yaw_tolerance:
+                    self.turn=ContactTurnControl(ctx.position,ctx.heading,self.push_heading,ctx.planner,ctx.boxes,ctx.now)
+                    self._transition('turn_at_stage',ctx)
+                else:self._transition('align_longitudinal',ctx,'settled_heading_ready_for_centering')
             return self._output()
         if self.state=='refine_heading':
             if ctx.now-self.state_since>self.config.max_alignment_seconds:return self._retry(ctx,'heading_refinement_timeout')
-            tolerance=min(self.config.alignment_yaw_tolerance,self.config.yaw_tolerance)
-            if abs(yaw_error)<tolerance:
-                if self._quiet(ctx):self._transition('align_longitudinal',ctx)
-                return self._output()
-            self.settled_since=None
-            rate=self.yaw_servo.update(yaw_error,ctx.yaw_rate,ctx.now)
-            command,_=checked_contact_turn_command([0.,0.,rate],ctx.position,ctx.heading,ctx.planner,ctx.boxes,ctx.limiter,ctx.now)
+            if self.heading_trim is None:
+                self.heading_trim=HeadingTrimControl(self.push_heading,min(self.config.alignment_yaw_tolerance,self.config.yaw_tolerance),acceptance_tolerance=self.config.yaw_tolerance)
+            angular=getattr(ctx,'body_angular_velocity',None)
+            angular=np.asarray((0.,0.,ctx.yaw_rate) if angular is None else angular,float)
+            command,done,_=self.heading_trim.update(ctx.position,ctx.heading,ctx.planner,ctx.boxes,
+                ctx.limiter,ctx.now,ctx.body_velocity,angular,ctx.tilt_degrees)
+            if self.heading_trim.failed:return self._retry(ctx,self.heading_trim.failed)
+            if done:self._transition('align_longitudinal',ctx)
             return self._output(command)
         if self.state in ['align_longitudinal','align_lateral','settle_contact']:
             if abs(yaw_error)>.18:return self._retry(ctx,'heading_drift_during_alignment')
@@ -361,9 +373,8 @@ class PushAsideSkill:
                 self.engage_box_position=np.asarray(ctx.box.xy).copy()
                 self._transition('engage',ctx);return self._output()
             if abs(yaw_error)>self.config.yaw_tolerance:
-                rate=self.yaw_servo.update(yaw_error,ctx.yaw_rate,ctx.now)
-                command,_=checked_contact_turn_command([0,0,rate],ctx.position,ctx.heading,ctx.planner,ctx.boxes,ctx.limiter,ctx.now)
-                return self._output(command)
+                self._transition('refine_heading',ctx,'contact_heading_outside_tolerance')
+                return self._output()
             if abs(lateral)>self.config.lateral_tolerance:self._transition('align_lateral',ctx)
             elif gap>self.config.front_gap+.125 or gap<.20:self._transition('align_longitudinal',ctx)
             return self._output()
@@ -463,6 +474,7 @@ class PushAsideSkill:
                 'body_angular_velocity_rad_s':None if getattr(ctx,'body_angular_velocity',None) is None else list(map(float,ctx.body_angular_velocity)),
                 'stage_xy':None if self.stage is None else self.stage.tolist(),
                 'preparation_recovery_target':None if self.recovery_target is None else self.recovery_target.tolist(),
+                'heading_trim':None if self.heading_trim is None else self.heading_trim.last_detail,
                 'anchor_xy':None if self.anchor is None else self.anchor.tolist()}
 
     def report(self):

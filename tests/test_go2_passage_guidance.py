@@ -32,3 +32,21 @@ def test_explicit_guide_keys_and_already_passed_exit_do_not_backtrack():
     guide=PassageEntryGuide({'guide_entry':[0,-1],'guide_exit':[0,1]},[0,2])
     guide.advance([0,-1]);planner=Planner()
     assert guide.path(planner,[0,1.1],[])==[(0.,2.)]
+
+
+def test_entry_inside_radius_waits_for_measured_stop_before_switching_route():
+    guide=PassageEntryGuide({'corridor_start':[0.,0.],'corridor_end':[0.,1.]},[0.,2.])
+    detail=guide.observe_entry([-.1,0.,.4],[.4,0.,0.],[0.,0.,0.],0.,0.,heading=0.,command=[.4,0.,0.])
+    assert detail['subgoal_braking'] and not detail['entry_advanced'] and not guide.entry_reached
+    guide.observe_entry([-.1,0.,.4],[0.,0.,0.],[0.,0.,0.],0.,1.,heading=0.,command=[0.,0.,0.])
+    detail=guide.observe_entry([-.1,0.,.4],[0.,0.,0.],[0.,0.,0.],0.,1.5,heading=0.,command=[0.,0.,0.])
+    assert detail['entry_advanced'] and guide.entry_reached
+
+
+def test_predictive_entry_brake_does_not_count_stopping_short_as_arrival():
+    guide=PassageEntryGuide({'corridor_start':[0.,0.],'corridor_end':[0.,1.]},[0.,2.])
+    detail=guide.observe_entry([-.3,0.,.4],[.4,0.,0.],[0.,0.,0.],0.,0.,heading=0.,command=[.5,0.,0.])
+    assert detail['subgoal_braking'] and not guide.entry_reached
+    guide.observe_entry([-.3,0.,.4],[0.,0.,0.],[0.,0.,0.],0.,1.,heading=0.,command=[0.,0.,0.])
+    detail=guide.observe_entry([-.3,0.,.4],[0.,0.,0.],[0.,0.,0.],0.,1.5,heading=0.,command=[0.,0.,0.])
+    assert detail['replan'] and not detail['entry_advanced'] and not guide.entry_reached

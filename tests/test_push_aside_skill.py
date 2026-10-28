@@ -183,14 +183,17 @@ def test_standoff_outside_safe_interval_still_requires_longitudinal_motion():
 
 
 def test_fine_heading_brakes_and_waits_for_measured_settling_before_translation():
-    skill,ctx=alignment_context('refine_heading',heading=-.097)
+    skill,ctx=alignment_context('refine_heading',heading=-.15)
     command=skill.step(ctx)
+    assert command.velocity==(0.,0.,0.)
+    ctx.now+=1.21;skill.step(ctx)
+    ctx.now+=.01;command=skill.step(ctx)
     assert command.velocity[0]==command.velocity[1]==0. and command.velocity[2]>0.
     ctx.heading=-.03;ctx.yaw_rate=.12;ctx.now+=.5
     assert skill.step(ctx).state=='refine_heading'
     ctx.yaw_rate=0.;ctx.now+=.5
     assert skill.step(ctx).state=='refine_heading'
-    ctx.now+=.31
+    ctx.now+=1.21
     assert skill.step(ctx).state=='align_longitudinal'
 
 
@@ -313,4 +316,34 @@ def test_small_heading_recovery_still_requires_full_observed_turn_and_contact_al
     assert skill._reuse_alignment_pose(ctx)
     assert abs(skill._box_frame(ctx)[2])>skill.config.yaw_tolerance
     command=skill.step(ctx)
-    assert command.state=='settle_alignment'  # no permission to push yet
+    assert command.state=='settle_at_stage'  # larger error needs coarse turn first
+
+
+def test_timed_out_heading_pose_is_not_immediately_reused():
+    skill,ctx=alignment_context('refine_heading',gap=.46,lateral=.12,heading=.03)
+    assert skill._reuse_alignment_pose(ctx)
+    command=skill._retry(ctx,'heading_refinement_timeout')
+    assert command.state=='brake_for_recovery'
+    assert not skill._reuse_alignment_pose(ctx)
+
+
+def test_nearby_stage_handoff_cannot_reuse_a_rejected_actual_pose():
+    skill,ctx=alignment_context('navigate_to_stage',gap=.46,lateral=.12)
+    skill.stage=ctx.position[:2]+np.array([0.,.19]);skill.used_stages=[ctx.position[:2].copy()]
+    command=skill.step(ctx)
+    assert command.state=='navigate_to_stage' and command.navigation_goal is not None
+
+
+def test_coarse_turn_hands_off_to_centering_without_unnecessary_stationary_trim():
+    skill,ctx=alignment_context('turn_at_stage',gap=.46,lateral=.12,heading=.11)
+    skill.turn=NS(update=lambda *args:None,failed=False)
+    command=skill.step(ctx)
+    assert command.state=='align_longitudinal' and command.status=='running'
+    assert abs(skill._box_frame(ctx)[2])>skill.config.yaw_tolerance  # contact is not yet allowed
+
+
+def test_final_contact_still_requires_heading_tolerance_and_uses_checked_trim():
+    skill,ctx=alignment_context('settle_contact',gap=.46,lateral=0.,heading=.12)
+    command=skill.step(ctx)
+    assert command.state=='refine_heading' and command.velocity==(0.,0.,0.)
+    assert command.events[-1]['reason']=='contact_heading_outside_tolerance'

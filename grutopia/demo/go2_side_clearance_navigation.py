@@ -210,6 +210,7 @@ def main():
         'grutopia_extension/interactive_navigation/go2_exploration_tracking.py',
         'grutopia_extension/interactive_navigation/go2_contact_control.py',
         'grutopia_extension/interactive_navigation/go2_contact_turn.py',
+        'grutopia_extension/interactive_navigation/go2_heading_trim.py',
         'grutopia_extension/interactive_navigation/go2_voronoi_navigation.py',
         'grutopia_extension/interactive_navigation/layered_navigation_map.py',
         'grutopia_extension/interactive_navigation/go2_rollout_health.py',
@@ -672,6 +673,7 @@ def main():
                         if phase not in ['skill','inspect_navigate','inspect_turn','inspect_wait']:phase='decide'
                         phase_start=step;tracker=None;subtracker=None;sub_reached=False
                         sub_arrival.reset();inspection_settle.reset();inspection_turn=None
+                        if passage_guide is not None:passage_guide.reset_arrival()
                         if phase=='inspect_wait':inspection_wait_frames=set();inspection_view_started=planner.control_time
                         decision_recovery_tracker=None;decision_recovery_start=None
                         if smooth_limiter is not None:smooth_limiter.clear_guidance(p,planner.control_time)
@@ -679,9 +681,25 @@ def main():
                 planner.robot_heading=None
                 crossed=completed_box is None or crossed_passage(p,q,completed_box)
                 if passage_guide is not None and crossed:passage_guide=None
-                if passage_guide is not None and phase in ['navigate','decide'] and passage_guide.advance(p[:2]):
-                    event('cleared_passage_entry_reached',step=step,position=p.tolist(),entry=passage_guide.entry.tolist())
-                    phase='decide';tracker=None;obs=tick(stop);last_action=stop;continue
+                if (passage_guide is not None and not passage_guide.entry_reached
+                        and phase in ['navigate','decide']):
+                    ctrl=robot._go2_locomotion_control
+                    braking_before=passage_guide.arrival.braking
+                    arrival=passage_guide.observe_entry(p,ctrl.body_lin_vel,ctrl.body_ang_vel,tilt,
+                        planner.control_time,heading=heading,
+                        command=None if smooth_limiter is None else smooth_limiter.command)
+                    if arrival['subgoal_braking'] and not braking_before:
+                        event('passage_entry_braking',step=step,position=p.tolist(),**arrival)
+                    if arrival['entry_advanced']:
+                        event('cleared_passage_entry_reached',step=step,position=p.tolist(),
+                            entry=passage_guide.entry.tolist(),measured_settled=True,**arrival)
+                        if smooth_limiter is not None:smooth_limiter.clear_guidance(p,planner.control_time)
+                        phase='decide';tracker=None
+                    elif arrival['replan']:phase='decide';tracker=None
+                    if arrival['subgoal_braking']:
+                        record_phase='passage_entry_settling'
+                        action=observation_brake(p,heading,current,planner.control_time)
+                        obs=tick(action);last_action=action;last_tracking=arrival;continue
                 navigation_goal=passage_guide.target if passage_guide is not None else task['goal']
                 if distance<.20 and crossed and phase in ['navigate','decide','cross_passage'] and not planner.blocked(current)[planner.cell(task['goal'])]:
                     # Validate the pose after ALL stationary recording frames.
@@ -753,7 +771,7 @@ def main():
                         layers.decision={**(layers.decision or {}),'kind':'navigate',
                             'execution_state':'follow_cleared_corridor' if passage_guide.entry_reached else 'approach_cleared_corridor_entry',
                             'navigation_subgoal':endpoint.tolist(),'requested_goal':task['goal']}
-                        tracker=ordinary_tracker(p[:2],path,nav_heading)
+                        tracker=ordinary_tracker(p[:2],path,nav_heading,short_goal=not passage_guide.entry_reached)
                         action,tracking=tracker.action(p[:2],heading,planner,current)
                         component.mapping._planned_path=tracker._planned_path[tracker._waypoint_index:]
                         event('verified_passage_route',step=step,path=path,entry=passage_guide.entry.tolist(),
@@ -861,7 +879,7 @@ def main():
                             last_route_replan=step
                             replanned=ordinary_path(p[:2],endpoint,current,local=True)
                             if replanned:
-                                tracker=ordinary_tracker(p[:2],replanned,nav_heading)
+                                tracker=ordinary_tracker(p[:2],replanned,nav_heading,short_goal=goal_kind=='passage_entry')
                                 action,tracking=tracker.action(p[:2],heading,planner,current)
                                 event('path_replanned_from_actual_pose',step=step,map_scope='local_dynamic',
                                       global_map_revision=layers.global_revision,local_map_revision=layers.local_revision,

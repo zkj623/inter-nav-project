@@ -1,5 +1,6 @@
 """Keep the verified corridor entry as a subgoal after a sideways box push."""
 import numpy as np
+from grutopia_extension.interactive_navigation.go2_interaction_motion import ObservedSubgoalArrival
 
 
 class PassageEntryGuide:
@@ -10,6 +11,7 @@ class PassageEntryGuide:
         if not all(np.isfinite(x).all() for x in [self.entry,self.exit,self.goal]):
             raise ValueError('Passage guide coordinates must be finite')
         self.entry_reached=False
+        self.arrival=ObservedSubgoalArrival(tolerance=.20)
 
     @property
     def target(self):
@@ -20,6 +22,16 @@ class PassageEntryGuide:
             self.entry_reached=True
             return True
         return False
+
+    def reset_arrival(self):
+        self.arrival.reset()
+
+    def observe_entry(self,position,linear_velocity,angular_velocity,tilt_degrees,now,*,heading,command=None):
+        """Advance the guide only after a predicted brake and measured stop."""
+        detail=self.arrival.update(self.entry,position,linear_velocity,angular_velocity,
+            tilt_degrees,now,heading=heading,command=command)
+        detail['entry_advanced']=bool(detail['subgoal_reached'] and self.advance(position))
+        return detail
 
     def path(self,planner,position,boxes):
         if not self.entry_reached:return planner.path(position,self.entry,boxes)
