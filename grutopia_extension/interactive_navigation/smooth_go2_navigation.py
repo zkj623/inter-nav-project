@@ -10,6 +10,7 @@ from grutopia_extension.interactive_navigation.go2_voronoi_navigation import bod
 from grutopia_extension.interactive_navigation.mapping import AStarMapPlanner
 from grutopia_extension.interactive_navigation.local_staging_control import LocalStagingControl
 from scipy.ndimage import distance_transform_edt
+from grutopia_extension.interactive_navigation.go2_recovery_settling import RecoveryMotionGate
 
 
 class VelocitySlewLimiter:
@@ -18,6 +19,7 @@ class VelocitySlewLimiter:
         self.command=np.zeros(3);self.last_time=None
         self.measured=np.zeros(3);self.measurement_time=None
         self.staging=None;self.progress_position=None;self.progress_time=None
+        self.recovery_gate=RecoveryMotionGate()
     def observe(self,velocity,now):
         velocity=np.asarray(velocity,float)
         if self.measurement_time is None:self.measured=velocity.copy()
@@ -256,6 +258,8 @@ class SmoothExplorationTracker(ExplorationPathTracker):
 def smooth_recovery_action(action,position,heading,planner,boxes,limiter,now):
     """Preserve a geometry-checked recovery's rotation versus translation."""
     raw=np.asarray(action['move_by_speed'],float)
+    raw=limiter.recovery_gate.filter(raw,limiter.measured,now)
+    if not np.any(raw):return {'move_by_speed':[0.,0.,0.]}
     command=limiter.preview(raw,now)
     if abs(raw[2])>1e-8 and np.linalg.norm(raw[:2])<1e-8:
         if np.linalg.norm(limiter.measured[:2])>.10:return {'move_by_speed':[0.,0.,0.]}

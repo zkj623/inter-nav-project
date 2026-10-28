@@ -184,6 +184,7 @@ def main():
         'grutopia_extension/interactive_navigation/online_lidar_evidence.py',
         'grutopia_extension/interactive_navigation/online_navigation_decision.py',
         'grutopia_extension/interactive_navigation/smooth_go2_navigation.py',
+        'grutopia_extension/interactive_navigation/go2_recovery_settling.py',
         'grutopia_extension/interactive_navigation/local_staging_control.py',
         'grutopia_extension/interactive_navigation/go2_turn_response.py',
         'grutopia_extension/interactive_navigation/go2_passage_confirmation.py',
@@ -612,6 +613,10 @@ def main():
                         if step-decision_recovery_start>2500:reason='decision_buffer_recovery_timeout';break
                         obs=tick(action);last_action=action;last_tracking=tracking;continue
                     decision_recovery_start=None
+                    if (smooth_limiter is not None and last_tracking and last_tracking.get('recovering_buffer')
+                            and not smooth_limiter.recovery_gate.leave_recovery(smooth_limiter.measured,planner.control_time)):
+                        record_phase='navigation_recovery_settle'
+                        obs=tick(stop);last_action=stop;continue
                     planner.robot_heading=heading if args.navigation_heading=='path' else nav_heading
                     layers.refresh_global(current,reason='decision')
                     if args.map_source=='online':
