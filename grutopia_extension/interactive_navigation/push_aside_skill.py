@@ -65,7 +65,7 @@ class PushAsideSkill:
         self.state='prepare';self.started=None;self.state_since=None;self.retries=0
         self.initial_box=None;self.last_box=None;self.stage=None;self.anchor=None;self.axis=None
         self.turn=None;self.yaw_servo=ContactYawServo(self.config.yaw_tolerance)
-        self.settled_since=None;self.navigation_goal=None;self.events=[]
+        self.settled_since=None;self.translation_braking=False;self.navigation_goal=None;self.events=[]
         self.release_origin=None;self.release_reason=None;self.certificate=None
         self.last_verify=-1e9;self.observation_moves=0;self.used_stages=[]
         self.progress_mark=None;self.progress_since=None;self.max_tilt=0.
@@ -74,7 +74,7 @@ class PushAsideSkill:
     def _transition(self,state,ctx,reason=''):
         self.events.append({'skill':self.spec.name,'object_id':self.plan.box_id,'from':self.state,
             'to':state,'reason':reason,'time_s':float(ctx.now),'retry':self.retries})
-        self.state=state;self.state_since=ctx.now;self.settled_since=None
+        self.state=state;self.state_since=ctx.now;self.settled_since=None;self.translation_braking=False
         self.progress_mark=np.asarray(ctx.position[:2]).copy();self.progress_since=ctx.now
 
     def _output(self,velocity=(0.,0.,0.),navigation_goal=None):
@@ -148,13 +148,26 @@ class PushAsideSkill:
 
     def _translation(self,ctx,target,axis,speed,tolerance):
         delta=np.asarray(target)-np.asarray(ctx.position[:2]);error=float(np.dot(delta,axis))
+        if self.translation_braking:
+            if not self._quiet(ctx):return np.zeros(3),False
+            self.translation_braking=False
+            return np.zeros(3),abs(error)<tolerance
         if abs(error)<tolerance:
+            self.translation_braking=True
             return np.zeros(3),self._quiet(ctx)
         self.settled_since=None
         c,s=math.cos(ctx.heading),math.sin(ctx.heading);rot=np.array([[c,-s],[s,c]])
         world_v=rot@np.asarray(ctx.body_velocity[:2]);unit=axis*math.copysign(1.,error)
         toward=float(np.dot(world_v,unit));lateral=abs(np.dot(axis,self.tangent))>.5
-        if toward>.06 and abs(error)<.025+toward*(.65 if lateral else .4):return np.zeros(3),False
+        commanded=np.asarray(getattr(ctx.limiter,'command',(0.,0.,0.)),float)
+        command_toward=max(0.,float(np.dot(rot@commanded[:2],unit)))
+        acceleration=getattr(ctx.limiter,'linear_acceleration',.65)
+        stopping_distance=.025+max(0.,toward)*(.65 if lateral else .4)+command_toward**2/(2*acceleration)
+        if toward>.06 and abs(error)<stopping_distance:
+            # Finish one deceleration before requesting another stride. Without
+            # this latch, falling measured speed immediately restarted the gait.
+            self.translation_braking=True
+            return np.zeros(3),False
         world=unit*speed
         yaw_request=contact_heading_hold(wrap(self.push_heading-ctx.heading),ctx.yaw_rate)
         if not body_motion_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.):yaw_request=0.

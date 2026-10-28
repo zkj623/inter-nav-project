@@ -203,3 +203,20 @@ def test_settling_restarts_on_body_motion_even_when_measured_speed_is_low():
     assert skill._quiet(ctx)
     ctx.limiter.command=np.array([.10,0.,0.])
     assert not skill._quiet(ctx)
+
+
+def test_predictive_braking_finishes_before_requesting_another_alignment_stride():
+    skill,ctx=alignment_context('align_lateral')
+    ctx.body_velocity=np.array([0.,.30,0.]);ctx.limiter.command=np.array([0.,.35,0.])
+    target=ctx.position[:2]+np.array([0.,.25])
+    command,done=skill._translation(ctx,target,skill.tangent,.35,.035)
+    assert not done and np.all(command==0.) and skill.translation_braking
+    ctx.body_velocity=np.array([0.,.04,0.]);ctx.limiter.command=np.zeros(3);ctx.now+=.3
+    command,done=skill._translation(ctx,target,skill.tangent,.35,.035)
+    assert not done and np.all(command==0.) and skill.translation_braking
+    ctx.now+=.31
+    command,done=skill._translation(ctx,target,skill.tangent,.35,.035)
+    assert not done and np.all(command==0.) and not skill.translation_braking
+    ctx.now+=.01
+    command,done=skill._translation(ctx,target,skill.tangent,.35,.035)
+    assert not done and command[1]>0.
