@@ -255,3 +255,22 @@ def test_settling_rejects_roll_pitch_motion_and_vertical_bounce():
     assert not skill._quiet(ctx)
     ctx.now+=.31
     assert skill._quiet(ctx)
+
+
+def test_nearby_safe_stage_handoff_waits_for_settling_instead_of_chasing_nominal_point():
+    skill,ctx=alignment_context('navigate_to_stage',gap=.46,lateral=.12)
+    skill.stage=ctx.position[:2]+np.array([0.,.19])
+    ctx.body_velocity=np.array([0.,.12,0.]);ctx.limiter.command=np.array([0.,.2,0.])
+    command=skill.step(ctx)
+    assert command.state=='settle_at_stage' and command.navigation_goal is None
+    assert command.velocity==(0.,0.,0.) and command.events[-1]['reason']=='actual_safe_stage_pose'
+    ctx.now+=.5
+    assert skill.step(ctx).state=='settle_at_stage'
+
+
+def test_near_stage_is_not_accepted_when_full_turn_intersects_obstacle():
+    skill,ctx=alignment_context('navigate_to_stage',gap=.46,lateral=0.,heading=math.pi/2)
+    skill.stage=ctx.position[:2]+np.array([.19,0.])
+    ctx.planner.free[:,ctx.planner.cell([.40,0.])[1]:]=False
+    command=skill.step(ctx)
+    assert command.state=='navigate_to_stage' and command.navigation_goal is not None

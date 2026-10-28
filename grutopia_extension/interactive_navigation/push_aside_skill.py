@@ -33,6 +33,7 @@ class PushAsideConfig:
     lateral_tolerance:float=.055
     alignment_tolerance:float=.035
     alignment_yaw_tolerance:float=.05
+    stage_handoff_radius:float=.30
     max_retries:int=4
     max_skill_seconds:float=180.
     max_turn_seconds:float=40.
@@ -228,7 +229,18 @@ class PushAsideSkill:
             self.navigation_goal=self.stage;self._transition('navigate_to_stage',ctx)
             return self._output(navigation_goal=self.stage)
         if self.state=='navigate_to_stage':
-            if not ctx.navigation_reached:return self._output(navigation_goal=self.stage)
+            if not ctx.navigation_reached:
+                # A stage is a safe turning region, not the final task goal.
+                # Accept the measured nearby pose only after checking the full
+                # intended turn here; then brake and settle before turning.
+                nearby=np.linalg.norm(np.asarray(ctx.position[:2])-self.stage)<self.config.stage_handoff_radius
+                end_heading=ctx.heading+wrap(self.push_heading-ctx.heading)
+                if nearby and body_rotation_clear(ctx.planner,ctx.boxes,ctx.position,
+                        ctx.heading,end_heading,margin=.05):
+                    self.stage=np.asarray(ctx.position[:2]).copy()
+                    self._transition('settle_at_stage',ctx,'actual_safe_stage_pose')
+                    return self._output()
+                return self._output(navigation_goal=self.stage)
             self._transition('settle_at_stage',ctx);return self._output()
         if self.state=='settle_at_stage':
             if self._quiet(ctx):
