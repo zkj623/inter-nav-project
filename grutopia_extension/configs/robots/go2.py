@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Literal
 
 from grutopia.core.config import RobotCfg
 from grutopia.macros import gm
@@ -81,3 +81,4 @@ class Go2RobotCfg(RobotCfg):
     create_robot: Optional[bool] = True
     usd_path: Optional[str] = DEFAULT_GO2_USD_PATH
     generate_fallback_asset: bool = True
+    physics_profile: Literal["legacy", "isaaclab_training"] = "legacy"

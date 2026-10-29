@@ -48,6 +48,31 @@ def apply_isaaclab_go2_physics(robot_prim_path: str) -> None:
             UsdShade.MaterialBindingAPI.Apply(prim).Bind(material)
 
 
+def apply_training_go2_physics(robot_prim_path: str) -> None:
+    """Apply the checked training-body limits and equivalent leg contact.
+
+    Box, floor and head materials are not modified. A dedicated leg material
+    supplies the training .8/.6 foot-ground friction with a unit-friction floor.
+    """
+    from omni.isaac.core.utils.stage import get_current_stage
+    from pxr import Usd,UsdPhysics,UsdShade,PhysxSchema
+    stage=get_current_stage();root=stage.GetPrimAtPath(robot_prim_path)
+    bodies=[p for p in Usd.PrimRange(root) if p.HasAPI(UsdPhysics.RigidBodyAPI)]
+    masses=[UsdPhysics.MassAPI(p).GetMassAttr().Get() for p in bodies]
+    if len(bodies)!=19 or any(m is None or m<=0 for m in masses) or abs(sum(masses)-15.019)>.01:
+        raise RuntimeError('Go2 training profile requires the checked 19-body,15.019kg asset; requested asset was incompatible or substituted')
+    material=UsdShade.Material.Define(stage,robot_prim_path+'/Looks/policy_training_leg_contact')
+    api=UsdPhysics.MaterialAPI.Apply(material.GetPrim())
+    api.CreateStaticFrictionAttr(.8);api.CreateDynamicFrictionAttr(.6);api.CreateRestitutionAttr(0.)
+    physics=PhysxSchema.PhysxMaterialAPI.Apply(material.GetPrim())
+    physics.CreateFrictionCombineModeAttr('multiply');physics.CreateRestitutionCombineModeAttr('multiply')
+    for prim in bodies:
+        rigid=PhysxSchema.PhysxRigidBodyAPI.Apply(prim)
+        rigid.CreateMaxLinearVelocityAttr(1000.);rigid.CreateMaxAngularVelocityAttr(1000.)
+        if prim.GetName().endswith(('_foot','_calf')) or 'calflower' in prim.GetName():
+            UsdShade.MaterialBindingAPI.Apply(prim).Bind(material,UsdShade.Tokens.strongerThanDescendants,'physics')
+
+
 def _resolve_go2_base_prim(robot_prim_path: str) -> str:
     """Find the Go2 torso prim under the spawned robot root."""
 
@@ -77,7 +102,10 @@ class Go2(IsaacRobot):
         orientation: np.ndarray = None,
         scale: np.ndarray = None,
         generate_fallback_asset: bool = True,
+        physics_profile: str = 'legacy',
     ):
+        if physics_profile not in ['legacy','isaaclab_training']:raise ValueError('Invalid Go2 physics profile')
+        self._go2_physics_profile=physics_profile
         resolved_usd_path = ensure_go2_usd(
             usd_path,
             generate_fallback=generate_fallback_asset,
@@ -85,8 +113,10 @@ class Go2(IsaacRobot):
         # Isaac Core resolves ``prim_path`` to the articulation's /base after
         # initialization. Keep the asset root so sibling leg links are included.
         self._go2_asset_root_path = prim_path
+        self._go2_resolved_usd_path = resolved_usd_path
         add_reference_to_stage(prim_path=prim_path, usd_path=resolved_usd_path)
         apply_isaaclab_go2_physics(self._go2_asset_root_path)
+        if self._go2_physics_profile=='isaaclab_training':apply_training_go2_physics(self._go2_asset_root_path)
         super().__init__(
             prim_path=prim_path,
             name=name,
@@ -121,9 +151,9 @@ class Go2(IsaacRobot):
             values=backend.expand_dims(np.full(12, SATURATION_EFFORT), 0),
             joint_indices=joint_indices,
         )
-        # Preserve authored per-joint simulation limits. Isaac Lab's explicit
-        # DC actuator uses a 30 rad/s motor curve but keeps the USD limits,
-        # including the Go2 calf joints' 15.7 rad/s limit.
+        # Legacy reproductions retain authored native velocity limits. The
+        # explicit training profile below also writes the actuator's30rad/s
+        # limit to PhysX, matching the Isaac Lab training implementation.
         self._articulation_view.set_solver_position_iteration_counts(
             backend.expand_dims(4, 0)
         )
@@ -138,6 +168,12 @@ class Go2(IsaacRobot):
             joint_indices=joint_indices,
         )
         apply_isaaclab_go2_physics(self._go2_asset_root_path)
+        if self._go2_physics_profile=='isaaclab_training':apply_training_go2_physics(self._go2_asset_root_path)
+        if self._go2_physics_profile=='isaaclab_training':
+            if actuator_mode!='explicit_dc':raise ValueError('Go2 training profile requires explicit_dc actuation')
+            from grutopia_extension.controllers.isaac_go2_ctrl import VELOCITY_LIMIT
+            self._articulation_view.set_max_joint_velocities(
+                backend.expand_dims(np.full(12,VELOCITY_LIMIT,dtype=np.float32),0),joint_indices=joint_indices)
         if actuator_mode=='explicit_dc':
             articulation_controller.switch_control_mode('effort')
             self._articulation_view.set_gains(kps=backend.expand_dims(np.zeros(12),0),
@@ -173,6 +209,7 @@ class Go2Robot(BaseRobot):
             orientation=self._start_orientation,
             usd_path=config.usd_path,
             generate_fallback_asset=config.generate_fallback_asset,
+            physics_profile=getattr(config,'physics_profile','legacy'),
         )
         self._robot_scale = np.ones(3, dtype=float)
         if config.scale is not None:

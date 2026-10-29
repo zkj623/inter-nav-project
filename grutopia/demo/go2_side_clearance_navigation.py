@@ -19,6 +19,9 @@ def main():
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--task-ids',default='T01,T02,T03,T04,T05')
     parser.add_argument('--gpu',type=int,default=7)
+    parser.add_argument('--policy-path',type=Path,help='Explicit Go2 RSL-RL checkpoint; actor shape is validated')
+    parser.add_argument('--robot-usd',type=Path,help='Explicit Go2 asset; valid referenced USDs are honored')
+    parser.add_argument('--robot-physics-profile',choices=['legacy','isaaclab_training'],default='legacy')
     parser.add_argument('--max-steps',type=int,default=30000)
     parser.add_argument('--preflight-only',action='store_true')
     parser.add_argument('--record-video',action='store_true')
@@ -231,6 +234,7 @@ def main():
         'grutopia_extension/interactive_navigation/online_navigation_decision.py',
         'grutopia_extension/interactive_navigation/smooth_go2_navigation.py',
         'grutopia_extension/interactive_navigation/go2_recovery_settling.py',
+        'grutopia_extension/interactive_navigation/go2_model_contract.py',
         'grutopia_extension/interactive_navigation/local_staging_control.py',
         'grutopia_extension/interactive_navigation/go2_turn_response.py',
         'grutopia_extension/interactive_navigation/go2_passage_confirmation.py',
@@ -269,8 +273,13 @@ def main():
         actuator_mode=args.actuator_mode,
         lidar_resolution=(.5,2.5) if args.map_source=='online' else (2.,5.),
         material_mode=args.material_mode,generate_fallback_asset=False)
+    if args.policy_path is not None:config=replace(config,policy_path=str(args.policy_path.expanduser().resolve()))
     configure_scene_mdl_paths(profile.scene_asset_path)
     simulation_config=build_go2_navigation_config(profile,config,objects=build_grscene_floor(profile,floor_top=floor_top))
+    robot_configuration=simulation_config.task_config.episodes[0].robots[0]
+    if args.robot_usd is not None:robot_configuration.usd_path=str(args.robot_usd.expanduser().resolve())
+    robot_configuration.physics_profile=args.robot_physics_profile
+    requested_robot_asset=robot_configuration.usd_path
     runtime=SimulatorRuntime(config_class=simulation_config,headless=True,
         active_gpu=args.gpu,physics_gpu=args.gpu)
     env=None;results=[];recorder=None;camera_trace=None
@@ -304,6 +313,10 @@ def main():
                 body=RigidPrim(str(prim.GetPath()),name='tracked_'+prim.GetName());body.initialize()
                 bodies[prim.GetName()]=body
         assert set(bodies)=={o['id'] for o in layout}
+        from grutopia_extension.interactive_navigation.go2_model_contract import collect_model_contract,validate_training_model_contract
+        model_contract=collect_model_contract(robot,config.policy_path,requested_robot_asset,args.robot_physics_profile)
+        if args.robot_physics_profile=='isaaclab_training':validate_training_model_contract(model_contract)
+        (args.output/'robot_model_contract.json').write_text(json.dumps(model_contract,indent=2))
         first_camera=third_camera=None;recording_enabled=False;recording_tick=0;record_phase='start';record_component=None;task_health=None
         if args.record_video or args.interaction_source=='vision':
             from grutopia_extension.interactive_navigation.visualization import FollowingRobotCamera
@@ -324,6 +337,8 @@ def main():
             (args.output/'recording_config.json').write_text(json.dumps({
                 'recognition_required':args.interaction_source=='vision','interaction_source':args.interaction_source,
                 'interaction_skill':'push_aside/1.0',
+                'policy_path':model_contract['policy_path'],'policy_sha256':model_contract['policy_sha256'],
+                'robot_physics_profile':args.robot_physics_profile,'resolved_robot_asset':model_contract['resolved_robot_asset'],
                 'full_task_recording':bool(args.record_video),'capture':'every rendered observation','fps':25,
                 'physics_dt':.005,'rendering_dt':float(simulation_config.simulator.rendering_dt),
                 'rendering_interval':simulation_config.simulator.rendering_interval,

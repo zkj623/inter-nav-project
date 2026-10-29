@@ -24,7 +24,8 @@ def load(relative):
     return module
 
 
-def test_asset_scope_survives_core_resolving_the_articulation_to_base(monkeypatch):
+@pytest.mark.parametrize('profile', ['legacy', 'isaaclab_training'])
+def test_asset_scope_survives_core_resolving_the_articulation_to_base(monkeypatch, profile):
     events = []
 
     class NativeView:
@@ -32,6 +33,8 @@ def test_asset_scope_survives_core_resolving_the_articulation_to_base(monkeypatc
         velocity_limits = np.array([30.1] * 8 + [15.7] * 4)
         def set_gains(self, **kwargs):
             pass
+        def set_max_joint_velocities(self, values, **kwargs):
+            self.velocity_limits = values[0].copy()
         def set_max_efforts(self, values, **kwargs):
             self.max_efforts = values.copy()
         def set_solver_position_iteration_counts(self, values):
@@ -69,15 +72,19 @@ def test_asset_scope_survives_core_resolving_the_articulation_to_base(monkeypatc
     install(monkeypatch, 'grutopia_extension.robots.go2_asset',
             GO2_DEFAULT_JOINT_POSITIONS=[0.] * 12, ensure_go2_usd=lambda p, **kw: p)
     install(monkeypatch, 'grutopia_extension.controllers.isaac_go2_ctrl',
-            STIFFNESS=25., DAMPING=.5, SATURATION_EFFORT=23.5)
+            STIFFNESS=25., DAMPING=.5, SATURATION_EFFORT=23.5, VELOCITY_LIMIT=30.)
     module = load('grutopia_extension/robots/go2.py')
     monkeypatch.setattr(module, 'apply_isaaclab_go2_physics', lambda p: events.append(('physics', p)))
-    robot = module.Go2('/World/Go2', 'asset.usd', 'go2')
+    training_calls = []
+    monkeypatch.setattr(module, 'apply_training_go2_physics', lambda p: training_calls.append(p))
+    robot = module.Go2('/World/Go2', 'asset.usd', 'go2', physics_profile=profile)
     assert events == [('reference', '/World/Go2'), ('physics', '/World/Go2'), ('initialize', '/World/Go2')]
     assert robot.prim_path == '/World/Go2/base'
     robot.configure_locomotion('explicit_dc')
     assert events[-1] == ('physics', '/World/Go2')
-    np.testing.assert_allclose(robot._articulation_view.velocity_limits, [30.1] * 8 + [15.7] * 4)
+    expected = [30.] * 12 if profile == 'isaaclab_training' else [30.1] * 8 + [15.7] * 4
+    np.testing.assert_allclose(robot._articulation_view.velocity_limits, expected)
+    assert training_calls == (['/World/Go2'] * 2 if profile == 'isaaclab_training' else [])
     np.testing.assert_allclose(robot._articulation_view.max_efforts, 1.e9)
 
 

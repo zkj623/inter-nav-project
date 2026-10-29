@@ -126,13 +126,36 @@ def is_isaaclab_go2_usd(path: str | Path) -> bool:
         return handle.read(8) == b'PXR-USDC'
 
 
+def is_composed_go2_usd(path: str | Path) -> bool:
+    """Recognize a usable referenced Go2 asset without a file-size heuristic.
+
+    A small root layer can contain the complete rigid-body topology while its
+    collision meshes live in referenced layers. This is structural validation,
+    not a claim that an arbitrary file is an official model.
+    """
+    path=Path(path).expanduser()
+    if not path.is_file():return False
+    try:
+        from pxr import Usd,UsdGeom,UsdPhysics
+        stage=Usd.Stage.Open(str(path))
+        if stage is None or not stage.GetDefaultPrim():return False
+        joints={p.GetName() for p in stage.Traverse() if p.IsA(UsdPhysics.RevoluteJoint)}
+        expected={f'{leg}_{part}_joint' for leg in ['FL','FR','RL','RR'] for part in ['hip','thigh','calf']}
+        base=any(p.GetName()=='base' and p.HasAPI(UsdPhysics.RigidBodyAPI) for p in stage.Traverse())
+        collision=any(p.HasAPI(UsdPhysics.CollisionAPI) and p.IsA(UsdGeom.Gprim)
+            for p in Usd.PrimRange.Stage(stage,Usd.TraverseInstanceProxies()))
+        return base and expected.issubset(joints) and collision
+    except Exception:
+        return False
+
+
 def ensure_go2_usd(usd_path: str, generate_fallback: bool = True) -> str:
     """Return a usable Go2 USD path, preferring the Isaac Lab official asset."""
 
     if '://' in usd_path:
         return usd_path
     output_path = Path(usd_path).expanduser().resolve()
-    if is_isaaclab_go2_usd(output_path):
+    if is_isaaclab_go2_usd(output_path) or is_composed_go2_usd(output_path):
         return str(output_path)
 
     sibling_isaaclab = output_path.parent / 'isaaclab_go2.usd'
