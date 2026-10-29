@@ -17,6 +17,12 @@ v88 两个守护进程在没有子仿真或输出目录时被替换；v89 两组
 
 `v91-actual-passage-final-tests.log`：530 passed，1 个既有 G1 相机测试 deselected（其中 8 项为这次新验收的回归）。对真实失败的 T04 v85 / T05 v84 运行补充工具，得到 `actual_passage_qa.json`，均为 false；它们虽然最终短时停稳，但没有到原目标，也没有成功的交互穿越证据。新增工具不改变正在运行的 v89 导航源码。
 
+T04 v94 已因遥测错误提前中止，不能视为完整任务结果：约36.17秒处写入live/state.json时，NavigationAttitudeRecovery的settled字段为NumPy bool_，JSON编码失败。没有result.json，监督器判incomplete_task_outputs。主进程峰值18.459GiB、整个scope峰值约16.959GiB，24GiB限制没有被触发、没有OOM，错误不是内存原因。
+
+v95仅将stable or plateau_stable的结果转换为Python bool，保持恢复条件、阈值和运动请求不变；新增平台检测true/false两条JSON往返回归。v95-recovery-json-tests.log：544 passed，1个既有G1相机测试deselected。正在运行的T05 v94保持原93ae182不变；只对其早期导航记录重放恢复监督器的诊断截至53.70秒匹配两次真实触发，没有发现已记录的NumPy布尔值，不能据此断言后续一定不会触发错误，也没有重放机器人动力学。
+
+修正版原始T04/T05回归继续采用相同24GiB硬上限、零交换和全流程串行；源码、空图、实际推箱/穿越/停稳及五路完整视频仍需重新验收。
+
 资源模式v94保留93ae182导航源码，增加已验证的用户scope内存限制：每组24GiB硬上限/零交换，主机40GiB可用稳定60秒、16GiB余量，完整场景串行。探针确认真实内核限制、exec的PID/进程组和信号传递；真实T04已启动，源码51文件/原始坐标/先验读取保护预检通过。启动时主机已恢复到约140.62GiB可用，不能把它称为40GiB低余量启动验证。整个scope占用及OOM事件会记录到resource_telemetry.jsonl；若受限尝试资源失败，不自动重复相同预算。具体命令与限制见 [受限内存试跑](docs/go2_capped_memory.md)。
 
 T05 v89（a19348d）也已结束，结果仍未通过：22810 步，`push_aside:no_observed_preparation_after_recovery`，箱体累计位移 0.240046 m，目标误差 1.472163 m，最大倾角 26.393271°。五路视频均为 4617 帧 / 25 fps / 184.68 秒；恢复就位期间指令约 0.02 m/s，机器人几乎不动，最后 12 秒恢复超时。原有与补充验收均为 false。

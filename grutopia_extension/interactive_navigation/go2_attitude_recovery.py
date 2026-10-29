@@ -55,7 +55,7 @@ class NavigationAttitudeRecovery:
                 and np.ptp([x[2] for x,_,_ in self.plateau])<.015
                 and max(abs((theta-heading+math.pi)%(2*math.pi)-math.pi) for _,theta,_ in self.plateau)<.04
                 and np.ptp([a for _,_,a in self.plateau])<1.5)
-        stable=stable or plateau_stable
+        stable=bool(stable or plateau_stable)
         detail.update(hold_ticks=self.hold_ticks,settled=stable,stable_attitude_plateau=bool(plateau_stable))
         if self.hold_ticks>=self.minimum_hold_ticks and stable:
             self.active=False;self.poses.clear();self.plateau.clear()
