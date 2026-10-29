@@ -4,6 +4,7 @@ The skill emits velocity/navigation commands. It never sets robot or object
 poses; object movement must come from the simulator's contact dynamics.
 """
 from dataclasses import dataclass
+from grutopia_extension.interactive_navigation.box_push_navigation import BoxState
 import math
 import numpy as np
 from grutopia_extension.interactive_navigation.interaction_skill import SkillSpec,SkillCommand
@@ -71,7 +72,7 @@ class PushAsideSkill:
         self.tangent=np.array([-self.direction[1],self.direction[0]])
         self.push_heading=math.atan2(self.direction[1],self.direction[0])
         self.state='prepare';self.started=None;self.state_since=None;self.retries=0
-        self.initial_box=None;self.last_box=None;self.engage_box_position=None;self.stage=None;self.anchor=None;self.axis=None
+        self.initial_box=None;self.last_box=None;self.engage_box_position=None;self.initial_box_geometry=None;self.last_box_motion_time=None;self.last_release_probe=-1e9;self.stage=None;self.anchor=None;self.axis=None
         self.turn=None;self.yaw_servo=ContactYawServo(self.config.yaw_tolerance)
         self.settled_since=None;self.translation_braking=False;self.navigation_goal=None;self.events=[]
         self.release_origin=None;self.release_reason=None;self.certificate=None
@@ -213,11 +214,70 @@ class PushAsideSkill:
             ctx.limiter,ctx.now,target_position=np.asarray(ctx.position[:2])+axis*error)
         return command,False
 
+    def _observed_passage_effect(self,ctx,along,commit=False):
+        """Use the observed effect after a real withdrawal, not a looser distance.
+
+        A current global route, the complete local body corridor, and the
+        original box's counterfactual obstruction must all be established.
+        This never certifies reaching the navigation goal; the caller still
+        executes the corridor and checks the final stopped robot pose.
+        """
+        layers=ctx.layers
+        if (along<=.25 or layers is None or self.engage_box_position is None or self.initial_box_geometry is None
+                or self.last_box_motion_time is None
+                or getattr(layers,'last_local',-1.)<=self.last_box_motion_time
+                or self.plan.box_id not in getattr(layers,'visible_box_ids',())):
+            return False
+        tracked=next((box for box in layers.current_boxes if box.id==self.plan.box_id),None)
+        if tracked is None:return False
+        planner=layers.planner
+        if not body_motion_clear(planner,layers.current_boxes,ctx.position,ctx.heading,0.,0.,horizon=0.):return False
+        confirmation_stage=self.state
+        original_passage=planner.passages.get(self.plan.box_id)
+        original_active=planner.active_passages.get(self.plan.box_id)
+        had_hint=hasattr(layers,'passage_observation_hint');original_hint=getattr(layers,'passage_observation_hint',None)
+        accepted=False
+        try:
+            layers.refresh_global(reason='recovered_push_effect_observation')
+            proof,route,full=observed_passage_routes(layers,tracked,self.task_start,self.task_goal,
+                np.asarray(ctx.position[:2]),layers.current_boxes)
+            if not (proof and route and full):return False
+            heading=math.atan2(proof['axis'][1],proof['axis'][0])
+            before=[box for box in layers.current_boxes if box.id!=self.plan.box_id]+[self.initial_box_geometry]
+            if body_rotation_clear(planner,before,proof['center'],heading,heading,margin=proof['body_margin_m']):
+                return False  # A distant detour is not an effect of this push.
+            accepted=True
+            return {**proof,'confirmation_stage':confirmation_stage,
+                'original_box_would_block_corridor':True,'original_box':vars(self.initial_box_geometry),
+                'original_box_xy':list(self.initial_box_geometry.xy),
+                'actual_push_distance_m':along,'nominal_planned_push_m':self.plan.push_distance,
+                'confirming_observation_time_s':float(layers.last_local),
+                'last_box_motion_time_s':float(self.last_box_motion_time)}
+        finally:
+            if not accepted or not commit:
+                if original_passage is None:planner.passages.pop(self.plan.box_id,None)
+                else:planner.passages[self.plan.box_id]=original_passage
+                if original_active is None:planner.active_passages.pop(self.plan.box_id,None)
+                else:planner.active_passages[self.plan.box_id]=original_active
+                if had_hint:layers.passage_observation_hint=original_hint
+                elif hasattr(layers,'passage_observation_hint'):del layers.passage_observation_hint
+
+    def _recovered_passage_effect(self,ctx,along):
+        proof=self._observed_passage_effect(ctx,along,commit=True)
+        if not proof:return False
+        self.certificate=proof;self.status='succeeded';self.reason='observed_passage_created'
+        self._transition('succeeded',ctx,self.reason)
+        self.events[-1]['confirmation_stage']=proof['confirmation_stage']
+        return True
+
     def step(self,ctx):
         if self.status!='running':return self._output()
         if ctx.box is None or ctx.box.id!=self.plan.box_id:return self._fail(ctx,'target_track_lost')
         if self.started is None:
             self.started=ctx.now;self.state_since=ctx.now;self.initial_box=np.asarray(ctx.box.xy).copy()
+            if hasattr(ctx.box,'dimensions'):
+                self.initial_box_geometry=BoxState(ctx.box.id,tuple(ctx.box.xy),tuple(ctx.box.dimensions),
+                    getattr(ctx.box,'yaw',0.),getattr(ctx.box,'mass_kg',1.))
         self.max_tilt=max(self.max_tilt,float(ctx.tilt_degrees))
         if not ctx.healthy or ctx.tilt_degrees>=30:return self._fail(ctx,'robot_unstable')
         if self.state in ['settle_at_stage','turn_at_stage','refine_heading','settle_alignment','recover_preparation','settle_recovered_preparation','align_longitudinal','align_lateral','settle_contact'] and ctx.tilt_degrees>=18.:
@@ -227,6 +287,7 @@ class PushAsideSkill:
         moved=np.asarray(ctx.box.xy)-self.initial_box;along=float(np.dot(moved,self.direction))
         cross=float(np.dot(moved,self.tangent))
         if self.last_box is not None and ctx.now>self.last_box_time:
+            if np.linalg.norm(np.asarray(ctx.box.xy)-self.last_box)>1e-5:self.last_box_motion_time=ctx.now
             observed=float(np.dot(np.asarray(ctx.box.xy)-self.last_box,self.direction))/(ctx.now-self.last_box_time)
             self.box_velocity=.8*self.box_velocity+.2*observed
         self.last_box=np.asarray(ctx.box.xy).copy();self.last_box_time=ctx.now
@@ -300,6 +361,7 @@ class PushAsideSkill:
             self._transition('settle_at_stage',ctx);return self._output()
         if self.state=='settle_at_stage':
             if self._quiet(ctx):
+                if self._recovered_passage_effect(ctx,along):return self._output()
                 self.turn=ContactTurnControl(ctx.position,ctx.heading,self.push_heading,ctx.planner,ctx.boxes,ctx.now)
                 self._transition('turn_at_stage',ctx)
             return self._output()
@@ -320,6 +382,7 @@ class PushAsideSkill:
         if self.state=='settle_alignment':
             if ctx.now-self.state_since>self.config.max_alignment_seconds:return self._retry(ctx,'alignment_settling_timeout')
             if self._quiet(ctx):
+                if self._recovered_passage_effect(ctx,along):return self._output()
                 if abs(yaw_error)>self.config.yaw_tolerance:
                     self.turn=ContactTurnControl(ctx.position,ctx.heading,self.push_heading,ctx.planner,ctx.boxes,ctx.now)
                     self._transition('turn_at_stage',ctx)
@@ -371,6 +434,7 @@ class PushAsideSkill:
             ready=contact_pose_ready(ctx.position,ctx.heading,ctx.box.xy,ctx.box.dimensions,self.direction,
                 self.config.front_gap+.05,self.config.yaw_tolerance)
             if ready and self._quiet(ctx,.4):
+                if self._recovered_passage_effect(ctx,along):return self._output()
                 self.engage_box_position=np.asarray(ctx.box.xy).copy()
                 self._transition('engage',ctx);return self._output()
             if abs(yaw_error)>self.config.yaw_tolerance:
@@ -440,7 +504,21 @@ class PushAsideSkill:
                 if self.release_origin is None:self.release_origin=np.asarray(ctx.position[:2]).copy()
                 self._transition('retreat',ctx)
             return self._output()
+        if self.state=='settle_released_corridor':
+            if self._quiet(ctx,.4,max_tilt=18.):
+                if self._recovered_passage_effect(ctx,along):return self._output()
+                self.last_release_probe=ctx.now
+                self._transition('retreat',ctx,'corridor_changed_during_release')
+                return self._output()
+            if ctx.now-self.state_since>self.config.max_push_braking_seconds:
+                return self._retry(ctx,'released_corridor_not_settled')
+            return self._output()
         if self.state=='retreat':
+            if ctx.now-self.last_release_probe>=.25:
+                self.last_release_probe=ctx.now
+                if self._observed_passage_effect(ctx,along):
+                    self._transition('settle_released_corridor',ctx,'observed_corridor_and_free_release_pose')
+                    return self._output()
             withdrawn=float(np.dot(self.release_origin-np.asarray(ctx.position[:2]),self.direction))
             target_gap=self.config.front_gap if self.release_reason!='side_parked' else self.config.front_gap+.25
             if gap>=target_gap or withdrawn>=self.config.release_distance:
@@ -451,6 +529,8 @@ class PushAsideSkill:
             return self._output()
         if self.state=='settle_after_retreat':
             if self._quiet(ctx,.4,max_tilt=18.):
+                if self.release_reason!='side_parked' and self._recovered_passage_effect(ctx,along):
+                    return self._output()
                 if self.release_reason=='side_parked':
                     ctx.layers.refresh_global(reason='skill_release_observe');self.last_verify=-1e9
                     self._transition('verify_passage',ctx)

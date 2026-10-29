@@ -1012,6 +1012,10 @@ def main():
                     if command.status!='running':
                         report=skill.report();skill_reports.append(report);event('skill_end',step=step,time_s=planner.control_time,**report)
                         if command.status!='succeeded':reason='push_aside:'+command.reason;break
+                        snapshot=folder/'interaction'/plan.box_id/'effect_confirmation'
+                        snapshot.mkdir(parents=True,exist_ok=True);layers.save(snapshot)
+                        (snapshot/'robot_state.json').write_text(json.dumps({'step':step,'time_s':planner.control_time,
+                            'position':p.tolist(),'orientation':q.tolist(),'certificate':command.certificate},indent=2))
                         completed_box=plan.box_id;passage_certificate=command.certificate
                         passage_guide=PassageEntryGuide(passage_certificate,task['goal'])
                         layers.refresh_global(reason='skill_success_replan_through_passage')
