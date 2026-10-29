@@ -303,7 +303,11 @@ class PushAsideSkill:
                     or getattr(layers,'last_local',-1.)<=self.last_box_motion_time
                     or ctx.now-layers.last_local>2*float(getattr(layers,'local_period',.1))):
                 return False
-        if (along<=.25 or self.engage_box_position is None
+        # Escaping a blocked contact pose must not require a successful push.
+        # Fresh visible geometry, a measured stop in the caller, and the full
+        # checked recovery remain mandatory. The ordinary post-push release
+        # and every passage-effect certificate still require actual progress.
+        if ((not blocked_contact and along<=.25) or self.engage_box_position is None
                 or (not blocked_contact and gap<self.config.front_contact_reach+.02)
                 or self.release_pose_recoveries>=self.config.max_retries
                 or body_motion_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.)):

@@ -1,0 +1,230 @@
+{
+  "actual_task_result": {
+    "success": false,
+    "reason": "push_aside:no_safe_observed_retreat",
+    "steps": 9702,
+    "maximum_tilt_degrees": 22.45938726743141,
+    "goal_error_m": 1.486850936458106
+  },
+  "saved_map_diagnosis": {
+    "diagnostic_only": true,
+    "physical_replay": false,
+    "full_task_accepted": false,
+    "pose_time_s": 81.77499817218632,
+    "map_time_s": 83.00999814458191,
+    "actual_push_m": 0.022110939025878906,
+    "position": [
+      11.111583709716797,
+      0.5065270662307739,
+      0.4284873902797699
+    ],
+    "heading": -3.031635040786719,
+    "nose_gap_m": 0.20016754167594775,
+    "lateral_m": 0.1922952086075964,
+    "yaw_error_rad": -0.1099576128030737,
+    "body_free": false,
+    "body_blocked_cell": true,
+    "existing_backward_retreat_available": false,
+    "whole_body_recovery_action": {
+      "move_by_speed": [
+        0.002906877167667378,
+        0.35,
+        0.0
+      ]
+    },
+    "whole_body_recovery_tracking": {
+      "target": [
+        11.125,
+        0.375
+      ],
+      "recovering_buffer": true,
+      "needs_replan": false,
+      "controller": "calibrated_navigation_buffer_exit",
+      "calibrated_buffer_motion": true
+    },
+    "existing_release_recovery_admitted": false,
+    "admitted_without_minimum_push_gate": true,
+    "candidate_events": [
+      {
+        "skill": "push_aside",
+        "object_id": "B06",
+        "from": "retreat",
+        "to": "recover_release_pose",
+        "reason": "blocked_contact_withdrawal",
+        "time_s": 83.00999814458191,
+        "retry": 0,
+        "recovery_target": [
+          11.125,
+          0.375
+        ],
+        "release_pose_recovery": 1
+      }
+    ],
+    "limits": "Final saved scan is later than the failure. Synthetic fresh-observation/engage markers only isolate the displacement gate; this is not a full-state runtime replay or task acceptance."
+  },
+  "preparation_reuse_comparison": {
+    "diagnostic_only": true,
+    "full_task_accepted": false,
+    "old_run": "recognition-skill-v104-t04-ground-truth-try1",
+    "new_run": "recognition-skill-v105-t04-ground-truth-try1",
+    "compared_fields": [
+      "time_s",
+      "position",
+      "orientation",
+      "command",
+      "body_velocity",
+      "body_angular_velocity"
+    ],
+    "old_sample_count": 10141,
+    "current_new_sample_count": 9625,
+    "first_difference_index": 9222,
+    "identical_prefix_through_time_s": 73.78499835077673,
+    "first_difference": {
+      "old": {
+        "time_s": 73.78999835066497,
+        "phase": "skill_navigate_to_stage",
+        "command": [
+          -7.569246216766885e-05,
+          0.006499559120621093,
+          0.0
+        ],
+        "position": [
+          11.316104888916016,
+          0.2676992416381836,
+          0.4165937900543213
+        ]
+      },
+      "new": {
+        "time_s": 73.78999835066497,
+        "phase": "skill_settle_alignment",
+        "command": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "position": [
+          11.316104888916016,
+          0.2676992416381836,
+          0.4165937900543213
+        ]
+      }
+    },
+    "old_transitions_after_recovered_pose": [
+      {
+        "event": "skill_transition",
+        "task": "T04",
+        "step": 8674,
+        "skill": "push_aside",
+        "object_id": "B06",
+        "from": "settle_recovered_preparation",
+        "to": "prepare",
+        "reason": "replan_from_settled_recovery_pose",
+        "time_s": 73.55999835580587,
+        "retry": 1
+      },
+      {
+        "event": "skill_transition",
+        "task": "T04",
+        "step": 8675,
+        "skill": "push_aside",
+        "object_id": "B06",
+        "from": "prepare",
+        "to": "navigate_to_stage",
+        "reason": "",
+        "time_s": 73.56999835558236,
+        "retry": 1
+      }
+    ],
+    "new_transitions_after_recovered_pose": [
+      {
+        "event": "skill_transition",
+        "task": "T04",
+        "step": 8674,
+        "skill": "push_aside",
+        "object_id": "B06",
+        "from": "settle_recovered_preparation",
+        "to": "prepare",
+        "reason": "replan_from_settled_recovery_pose",
+        "time_s": 73.55999835580587,
+        "retry": 1
+      },
+      {
+        "event": "skill_transition",
+        "task": "T04",
+        "step": 8675,
+        "skill": "push_aside",
+        "object_id": "B06",
+        "from": "prepare",
+        "to": "settle_alignment",
+        "reason": "reuse_observed_aligned_pose",
+        "time_s": 73.56999835558236,
+        "retry": 1
+      },
+      {
+        "event": "skill_transition",
+        "task": "T04",
+        "step": 8714,
+        "skill": "push_aside",
+        "object_id": "B06",
+        "from": "settle_alignment",
+        "to": "align_lateral",
+        "reason": "settled_heading_ready_for_centering",
+        "time_s": 73.87999834865332,
+        "retry": 1
+      },
+      {
+        "event": "skill_transition",
+        "task": "T04",
+        "step": 8715,
+        "skill": "push_aside",
+        "object_id": "B06",
+        "from": "align_lateral",
+        "to": "settle_contact",
+        "reason": "actual_contact_pose_ready",
+        "time_s": 73.8899983484298,
+        "retry": 1
+      },
+      {
+        "event": "skill_transition",
+        "task": "T04",
+        "step": 8767,
+        "skill": "push_aside",
+        "object_id": "B06",
+        "from": "settle_contact",
+        "to": "engage",
+        "reason": "",
+        "time_s": 74.30499833915383,
+        "retry": 1
+      },
+      {
+        "event": "skill_transition",
+        "task": "T04",
+        "step": 8887,
+        "skill": "push_aside",
+        "object_id": "B06",
+        "from": "engage",
+        "to": "brake_for_recovery",
+        "reason": "contact_attitude",
+        "time_s": 75.26499831769615,
+        "retry": 2,
+        "recovery_source_state": "engage",
+        "recovery_from_contact": true
+      }
+    ],
+    "current_last_sample": {
+      "time_s": 77.00999827869236,
+      "phase": "skill_retreat",
+      "position": [
+        10.951573371887207,
+        0.2232414335012436,
+        0.41255924105644226
+      ],
+      "command": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "current_max_trace_tilt_deg": 22.437346205230448
+  }
+}
