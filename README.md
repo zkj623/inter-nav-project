@@ -17,6 +17,7 @@ a text target such as `refrigerator` and walks up to the scanned object.
 全局层 1 Hz 更新，局部层 10 Hz 更新，箱子移开后的空间需要新射线确认才会通行。
 在线模式默认使用固定 200 Hz 物理步长的 DC 电机控制、50 Hz 原 Go2 policy 和 25 fps 录像。
 当前五组统一物理验收尚未完成；各版本成功及失败结果见下方在线导航说明。
+当前候选通过 `--forward-stop-feedback` 对前进导航后的停止持续做实测速度反馈，经过原有碰撞检查后才下发修正；目标成功还必须通过实测停稳检查。
 原始 T05 的 v77 复跑在导航终段低速转弯时触发 30° 健康上限；当前候选增加该情形下的制动与停稳转向，仍需整场验收。
 T04 v77 已物理侧推 B06 0.671 m，但后续补推/对准未完成；当前候选修复了补推过早制动，原任务仍需复跑。
 当前候选修复了 Go2 全关节物理设置的作用范围、辅助地面接触参数的初始化时机，并采用可启动步态的接触速度和基于实测速度的提前制动。原始 T04/T05 仍须整场复跑验收；局部推箱对照不计为任务完成。
@@ -32,7 +33,7 @@ go2_out="/data20t/embodied/zkj/inter-nav-results/go2-online-$(date +%Y%m%d-%H%M%
 "$ISAAC_PYTHON" -u grutopia/demo/go2_online_interactive_navigation.py \
   --benchmark-dir "$go2_inputs" --output "$go2_out" \
   --task-ids T01,T02,T03,T04,T05 --gpu 1 --max-steps 40000 \
-  --floor-top .01 --map-source online --interaction-source ground_truth --path-controller continuous --navigation-attitude-recovery \
+  --floor-top .01 --map-source online --interaction-source ground_truth --path-controller continuous --navigation-attitude-recovery --forward-stop-feedback \
   --route-planner voronoi --navigation-heading path \
   --roadmap-shape circle --route-clearance .30 --navigation-half-width .22 \
   --voronoi-clearance-weight .30 \

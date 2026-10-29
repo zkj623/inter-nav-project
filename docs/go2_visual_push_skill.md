@@ -51,7 +51,7 @@ go2_out="/data20t/embodied/zkj/inter-nav-results/go2-visual-skill-$(date +%Y%m%d
 "$ISAAC_PYTHON" -u grutopia/demo/go2_online_interactive_navigation.py \
   --benchmark-dir "$go2_inputs" --output "$go2_out" --task-ids T04,T05 --gpu 3 --max-steps 40000 \
   --floor-top .01 --map-source online --interaction-source ground_truth --actuator-mode explicit_dc --path-controller continuous \
-  --navigation-attitude-recovery --route-planner voronoi --navigation-heading path \
+  --navigation-attitude-recovery --forward-stop-feedback --route-planner voronoi --navigation-heading path \
   --roadmap-shape circle --route-clearance .30 --navigation-half-width .22 --voronoi-clearance-weight .30 \
   --global-map-hz 1 --local-map-hz 10 --local-map-radius 3 \
   --interaction-catalog grutopia/demo/profiles/interactive_object_catalog.json \
@@ -91,7 +91,26 @@ go2_out="/data20t/embodied/zkj/inter-nav-results/go2-visual-skill-$(date +%Y%m%d
 
 新增类别还必须提供支持该类别的技能；仅加白名单不会让 `PushAsideSkill` 自动支持未知物体。
 
-## 当前候选：补推按本次新位移判断制动
+## 当前候选：前进导航停止后的持续速度反馈
+
+T05 v78 已结束：23,005 步，`push_aside:subnavigation_timeout`，最终误差 1.280 m，最大倾角 26.393°，尚未完成推箱与通路确认。就位途中从约 130.4 s 到 140 s，控制记录与 policy 输入持续为零，策略仍以约 50 Hz 推理；机器人却继续漂移、转向，最终进入在线地图无法连接就位路径的位置。在保存的地图上，既有完整机身退让约束未找到有效出口，因此没有修改地图或放宽碰撞约束。
+
+`--forward-stop-feedback` 仅用于连续导航、显式 DC 模式。在显式停止请求之前确实有以前进为主的运动时，启用限幅的实测速度负反馈，并通过现有完整机身及动量检查；相邻静止状态切换后继续保持反馈，直到下一条实际运动指令。纯侧移、纯转向以及正在进行的推箱接触/推动/制动阶段保持各自既有控制。原始请求和每个 5 ms 物理步真正下发的命令分别记录，便于审计。硬健康失败仍立即下发零命令。
+
+平地原动作片段对照中，普通停止的总位移约 0.635 m、停止两秒后继续漂移约 0.392 m；持续前进停止反馈分别为 0.346 m、0.083 m。若在第一次检测到静止后立即撤去反馈，继续漂移又增至约 0.436 m，因此反馈不能只在短暂制动阶段使用。正式 `ForwardStopFeedback` 经现有地图检查的诊断复测得到同样结果。该片段使用原 policy，仍是独立平地诊断，不计为原 MV7 导航成功。
+
+目标处保留原最短录像保持时间，并使用 `MeasuredStopGate` 检查实际线速度、角速度、倾角和位置漂移；最多等待 1,000 个控制 tick。未停稳时以 `goal_settling_timeout` 失败，不仅依据等待时长或一帧位置判成功。最终误差仍须小于 0.25 m，全程倾角仍须小于 30°。
+
+候选检查：**501 passed、1 deselected**（既有 G1 相机测试未运行），CLI 预检和语法检查通过。原始 T05 必须带此开关从原起点复跑，当前任务尚未验收完成。可重现独立停止诊断：
+
+```bash
+"$ISAAC_PYTHON" tools/diagnose_go2_stopping.py --gpu 5 --mode forward_feedback \
+  --replay-prefix tests/fixtures/t05_forward_stop_prefix_v78.npz --output <新诊断目录>
+```
+
+省略 `--replay-prefix` 会测试前进、侧移和纯转向后的停止；`--mode passive` 用于对照。夹具只含记录的速度指令，原始导航入口不会读取它。
+
+## 补推按本次新位移判断制动
 
 原始 T04 v77 已结束：22,966 步，B06 共侧移 0.671313 m，全程最大倾角 22.474°，最终目标误差 1.549 m。任务因 `retry_limit:heading_refinement_timeout` 失败，未取得通路证书，不能算到点成功。第二次补推从 `push` 到提前制动仅约 65 ms，之后只多移动约 5 cm，并再次进入对准恢复。
 

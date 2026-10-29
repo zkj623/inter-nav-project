@@ -37,6 +37,8 @@ def main():
     parser.add_argument('--map-source',choices=['prior','online'],default='online')
     parser.add_argument('--actuator-mode',choices=['implicit_pd','explicit_dc'],default=None,
                         help='Online mode defaults to per-physics-step DC torque control; legacy mode remains available')
+    parser.add_argument('--forward-stop-feedback',action='store_true',
+                        help='Use checked persistent velocity feedback after forward-navigation stops')
     parser.add_argument('--navigation-attitude-recovery',action='store_true',
                         help='Stop on rising navigation tilt, settle with the original policy, then replan')
     parser.add_argument('--route-clearance',type=float,default=.30)
@@ -66,6 +68,9 @@ def main():
                         help='Use known box eligibility from the layout, or require live visual classification')
     args=parser.parse_args()
     if args.actuator_mode is None:args.actuator_mode='explicit_dc' if args.map_source=='online' else 'implicit_pd'
+    if args.forward_stop_feedback and (args.actuator_mode!='explicit_dc' or args.path_controller!='continuous'):
+        raise ValueError('forward-stop-feedback requires continuous navigation and explicit_dc')
+    from grutopia_extension.interactive_navigation.go2_stop_feedback import ForwardStopFeedback
     if not np.isfinite(args.floor_top) or not 0 < args.floor_top <= .30:
         raise ValueError('floor-top must be within (0, 0.30] m')
     floor_top=args.floor_top
@@ -220,6 +225,7 @@ def main():
         'grutopia_extension/interactive_navigation/go2_rollout_health.py',
         'grutopia_extension/interactive_navigation/go2_attitude_recovery.py',
         'grutopia_extension/interactive_navigation/go2_interaction_motion.py',
+        'grutopia_extension/interactive_navigation/go2_stop_feedback.py',
         'grutopia_extension/interactive_navigation/online_navigation_map.py',
         'grutopia_extension/interactive_navigation/online_lidar_evidence.py',
         'grutopia_extension/interactive_navigation/online_navigation_decision.py',
@@ -346,6 +352,7 @@ def main():
                 'route_planner':args.route_planner,'navigation_heading':args.navigation_heading,
                 'path_controller':args.path_controller,
                 'navigation_attitude_recovery':args.navigation_attitude_recovery,
+                'forward_stop_feedback':args.forward_stop_feedback,
                 'map_source':args.map_source,'initial_map':'unknown' if args.map_source=='online' else 'scene_prior',
                 'uses_navigation_grid':args.map_source=='prior','uses_static_metadata':args.map_source=='prior',
                 'normal_navigation_max_forward':.50 if args.path_controller=='continuous' else .40,
@@ -387,16 +394,32 @@ def main():
                 base_position=np.asarray(observation['position']),base_orientation=np.asarray(observation['orientation']),
                 physics_step=int(lidar.get('physics_step',-1)),max_range=float(lidar.get('max_range',5.)),
                 self_hits_removed=int(lidar.get('self_hits_removed',0)))
-        command_tick_index=0
+        command_tick_index=0;forward_stop_servo=None
         def tick(action):
             nonlocal recording_tick,command_tick_index
             if task_health is not None and not task_health.healthy:action=stop
             command_time=float(robot._go2_locomotion_control._simulation_time() or 0.)
             if smooth_limiter is not None:smooth_limiter.accept(action.get('move_by_speed',[0.,0.,0.]),command_time)
             microsteps=physics_steps_per_command(command_tick_index,args.actuator_mode)
-            physical_commands=[]
+            physical_commands=[];feedback_details=[]
             for _ in range(microsteps):
-                micro_action=stop if task_health is not None and not task_health.healthy else action
+                healthy=task_health is None or task_health.healthy
+                requested=stop if not healthy else action
+                micro_action={k:v for k,v in requested.items() if k!='_forward_stop_request'}
+                if forward_stop_servo is not None:
+                    ctrl=robot._go2_locomotion_control;when=float(ctrl._simulation_time() or 0.)
+                    def checked_feedback(target,limiter,check_time):
+                        if layers is None:return np.zeros(3),False
+                        position,orientation=robot.get_world_pose()
+                        return checked_contact_turn_command(target,position,yaw(orientation),planner,planning_boxes(),limiter,check_time)
+                    contact_phase=(phase=='skill' and skill is not None and skill.state in
+                        {'engage','push','settle_push_progress','brake_after_push','brake_for_recovery'})
+                    command=forward_stop_servo.apply(micro_action.get('move_by_speed',[0.,0.,0.]),
+                        [*ctrl.body_lin_vel[:2],ctrl.body_ang_vel[2]],when,
+                        stop_requested=bool(requested.get('_forward_stop_request',False)),
+                        feedback_allowed=not contact_phase,healthy=healthy,checker=checked_feedback)
+                    micro_action['move_by_speed']=command.tolist()
+                    feedback_details.append(dict(forward_stop_servo.last_detail))
                 physical_commands.append(list(micro_action.get('move_by_speed',[0.,0.,0.])))
                 if first_camera:
                     position,orientation=robot.get_world_pose()
@@ -425,6 +448,8 @@ def main():
                     'controller_root_orientation':list(map(float,root_orientation)),
                     'policy_inferences':diagnostic['policy_inferences'],
                     'actuator_mode':args.actuator_mode,'physics_substeps':microsteps,'physical_commands':physical_commands,
+                    'forward_stop_requested':bool(action.get('_forward_stop_request',False)),
+                    'forward_stop_feedback':feedback_details,
                     'observed_cells':int(layers.observed.sum()) if hasattr(layers,'observed') else None})+'\n')
             if layers is not None:
                 recognized=recognition.poll()
@@ -508,6 +533,7 @@ def main():
             skill=None;skill_reports=[];subtracker=None;subtarget=None;sub_started=None;sub_reached=False
             control_log=(folder/'control_trace.jsonl').open('w',buffering=1)
             smooth_limiter=VelocitySlewLimiter() if args.path_controller=='continuous' else None
+            forward_stop_servo=ForwardStopFeedback() if args.forward_stop_feedback else None
             online_selector=OnlineGoalSelector();goal_kind='task';online_wait_start=None;online_next_decision_time=0.
             if args.map_source=='online':planner.passages={};planner.active_passages={}
             events=[];samples=[];phase='decide';phase_start=0;plan=None;path=();push_count=0
@@ -578,7 +604,9 @@ def main():
             def observation_brake(position,heading,boxes,now):
                 if smooth_limiter is None:return stop
                 command,_=checked_contact_turn_command([0.,0.,0.],position,heading,planner,boxes,smooth_limiter,now)
-                return {'move_by_speed':command.tolist()}
+                action={'move_by_speed':command.tolist()}
+                if args.forward_stop_feedback:action['_forward_stop_request']=True
+                return action
             def inspection_stopped(position,tilt,now):
                 ctrl=robot._go2_locomotion_control
                 return inspection_settle.update(position,ctrl.body_lin_vel,ctrl.body_ang_vel,tilt,now)
@@ -711,14 +739,26 @@ def main():
                     # Checking before an extra tail can report success even when
                     # the gait drifts outside the final goal tolerance afterwards.
                     record_phase='goal_settling'
-                    for _ in range(260 if args.record_video else 200):
+                    goal_stop=MeasuredStopGate();measured_stopped=False
+                    minimum_hold=260 if args.record_video else 200
+                    for held in range(1000):
                         braking=observation_brake(np.asarray(obs['position']),yaw(obs['orientation']),planning_boxes(),
                             float(robot._go2_locomotion_control._simulation_time() or planner.control_time))
                         obs=tick(braking)
+                        ctrl=robot._go2_locomotion_control
+                        settle_q=np.asarray(obs['orientation']);settle_q=settle_q/np.linalg.norm(settle_q)
+                        settle_tilt=math.degrees(math.acos(np.clip(1-2*(settle_q[1]**2+settle_q[2]**2),-1,1)))
+                        measured_stopped=goal_stop.update(obs['position'],ctrl.body_lin_vel,ctrl.body_ang_vel,
+                            settle_tilt,float(ctrl._simulation_time() or planner.control_time))
+                        if held+1>=minimum_hold and (measured_stopped or not task_health.healthy):break
                     if not task_health.healthy:reason='robot_unstable';break
+                    if not measured_stopped:
+                        reason='goal_settling_timeout'
+                        event('goal_not_settled',step=step,position=list(map(float,obs['position'])))
+                        break
                     crossed=completed_box is None or crossed_passage(np.array(obs['position']),np.array(obs['orientation']),completed_box)
                     settled_error=float(np.linalg.norm(np.array(obs['position'][:2])-task['goal']))
-                    event('goal_settled',step=step,distance=settled_error,full_body_crossed=bool(crossed))
+                    event('goal_settled',step=step,distance=settled_error,full_body_crossed=bool(crossed),measured_stopped=True)
                     if settled_error<.25 and crossed:
                         success=True;reason='goal_reached';break
                     # The observation changed during settling. Start the next
