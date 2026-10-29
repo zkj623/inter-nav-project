@@ -504,6 +504,33 @@ def navigation_footprint_samples(planner,margin=0.):
         np.linspace(-halfwidth,halfwidth,int(math.ceil(2*halfwidth/planner.resolution))+1))
 
 
+def _recovery_translation_samples(position,delta,limits,resolution):
+    """Cover every crossed base cell, retaining every original sample.
+
+    A diagonal can cross two grid edges between uniform samples, so a safe
+    endpoint/long stride does not imply a safe short executed prefix. Cell
+    interval midpoints expose those intermediate poses. The interval's end
+    also bounds how far unchanged overlap persists before the next cell.
+    """
+    distance=float(np.linalg.norm(delta))
+    count=max(2,int(np.ceil(distance/resolution))+1)
+    samples={float(f):float(f) for f in np.linspace(0.,1.,count)}
+    cuts=[0.,1.]
+    for axis in [0,1]:
+        if abs(delta[axis])<1e-12:continue
+        first=(position[axis]-limits[axis][0])/resolution
+        last=(position[axis]+delta[axis]-limits[axis][0])/resolution
+        for edge in range(math.floor(min(first,last))+1,math.ceil(max(first,last))):
+            fraction=(limits[axis][0]+edge*resolution-position[axis])/delta[axis]
+            if 0.<fraction<1.:cuts.append(float(fraction))
+    cuts=sorted(set(cuts))
+    for fraction in cuts:samples[fraction]=max(samples.get(fraction,0.),fraction)
+    for first,last in zip(cuts,cuts[1:]):
+        middle=(first+last)/2
+        samples[middle]=max(samples.get(middle,0.),last)
+    return sorted(samples.items())
+
+
 def body_translation_recovery_clear(planner,boxes,position,heading,target,require_clear_end=True):
     """Allow existing mild overlap to decrease, never a deeper/new body collision."""
     raw=planner.free.copy()
@@ -514,11 +541,13 @@ def body_translation_recovery_clear(planner,boxes,position,heading,target,requir
     xx,yy=navigation_footprint_samples(planner);c,s=math.cos(heading),math.sin(heading)
     dx=np.rint((c*xx-s*yy)/planner.resolution).astype(int)
     dy=np.rint((s*xx+c*yy)/planner.resolution).astype(int)
-    position=np.asarray(position[:2],float);delta=np.asarray(target[:2])-position
-    count=max(2,int(np.ceil(np.linalg.norm(delta)/planner.resolution))+1)
+    position=np.asarray(position[:2],float);target=np.asarray(target[:2],float);delta=target-position
+    if (not np.isfinite(position).all() or not np.isfinite(target).all()
+            or not planner.valid_cell(planner.cell(position)) or not planner.valid_cell(planner.cell(target))):return False
+    distance=float(np.linalg.norm(delta))
     first=None;last=None;initial_hit=None;initial_depth=None
     penetration=distance_transform_edt(~raw)*planner.resolution
-    for fraction in np.linspace(0.,1.,count):
+    for fraction,cell_interval_end in _recovery_translation_samples(position,delta,planner.limits,planner.resolution):
         r,col=planner.cell(position+fraction*delta);rows=r+dy;cols=col+dx
         if rows.min()<0 or cols.min()<0 or rows.max()>=raw.shape[0] or cols.max()>=raw.shape[1]:return False
         hit=~raw[rows,cols]
@@ -538,7 +567,7 @@ def body_translation_recovery_clear(planner,boxes,position,heading,target,requir
         if (hit & ~initial_hit).any():return False
         if (depth>initial_depth+1e-9).any():return False
         if last is not None and overlap>last:return False
-        if first>0 and fraction*np.linalg.norm(delta)>max(.05,2*planner.resolution) and overlap>=first:return False
+        if first>0 and cell_interval_end*distance>max(.05,2*planner.resolution) and overlap>=first:return False
         last=overlap
     return last==0 if require_clear_end else last<=first
 
