@@ -374,7 +374,8 @@ def main():
                     [2*(x*y+w*z),1-2*(x*x+z*z),2*(y*z-w*x)],
                     [2*(x*z-w*y),2*(y*z+w*x),1-2*(x*x+y*y)]])
                 dimensions=tuple(map(float,np.abs(matrix)@o['dimensions']))
-                states.append(BoxState(o['id'],tuple(map(float,p[:2])),dimensions,0.,o['mass_kg']))
+                states.append(BoxState(o['id'],tuple(map(float,p[:2])),dimensions,0.,o['mass_kg'],
+                    local_dimensions=tuple(map(float,o['dimensions'])),orientation=tuple(map(float,q)),center_z=float(p[2])))
             return states
         def box_height_states():
             heights=[]
@@ -994,7 +995,7 @@ def main():
                     ctx=SkillContext(planner.control_time,p,heading,robot._go2_locomotion_control.body_lin_vel,
                         float(robot._go2_locomotion_control.body_ang_vel[2]),tilt,task_health.healthy,
                         by_id.get(plan.box_id),current,planner,layers,smooth_limiter,sub_reached,
-                        body_angular_velocity=robot._go2_locomotion_control.body_ang_vel)
+                        body_angular_velocity=robot._go2_locomotion_control.body_ang_vel,orientation=q.copy())
                     command=skill.step(ctx)
                     for transition in command.events:event('skill_transition',step=step,**transition)
                     layers.decision={**(layers.decision or {}),'skill':'push_aside','skill_state':command.state,

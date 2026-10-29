@@ -118,6 +118,73 @@ def contact_braking_required(delta, velocity, horizon=1.0, stop_margin=.025):
     return toward>0 and distance<stop_margin+horizon*toward
 
 
+def contact_face_lateral_allowance(dimensions, direction, heading_error, tilt_degrees,
+                                   maximum=.10, face_margin=.04):
+    """Keep the whole Go2 head envelope inside a cardinal box face.
+
+    The two head colliders in isaaclab_go2.usd fit body-frame bounds
+    x=[.239,.341], y=[-.051,.051], z=[-.108,.061] (including 1 mm padding).
+    Bound their lateral projection relative to the existing .33 m nose point
+    for every roll/pitch compatible with the measured total tilt. This is a
+    contact-face margin; all robot-body collision checks remain independent.
+    """
+    dimensions=np.asarray(dimensions,float);direction=np.asarray(direction,float)
+    if (dimensions.size<2 or direction.shape!=(2,) or not np.isfinite(dimensions).all()
+            or not np.isfinite(direction).all() or np.any(dimensions[:2]<=0)
+            or not np.isfinite([heading_error,tilt_degrees,maximum,face_margin]).all()
+            or maximum<0 or face_margin<0 or not 0<=tilt_degrees<90):return 0.
+    length=float(np.linalg.norm(direction))
+    if length<1e-9:return 0.
+    direction=direction/length
+    # This skill plans against axis-aligned faces. Do not infer a full face
+    # from a diagonal AABB support projection.
+    if np.max(np.abs(direction))<1.-1e-6:return 0.
+    tangent=np.array([-direction[1],direction[0]])
+    half_face=float(np.dot(np.abs(tangent),dimensions[:2]))/2
+    tilt=np.deg2rad(tilt_degrees);st,ct=np.sin(tilt),np.cos(tilt)
+    sy,cy=abs(np.sin(heading_error)),abs(np.cos(heading_error))
+    longitudinal=max(abs(.239*ct-.33),abs(.341-.33))
+    projected_head=sy*(longitudinal+st*(.051*st+.108))+cy*(.051+.108*st)
+    return float(max(0.,min(maximum,half_face-projected_head-face_margin)))
+
+
+def observed_contact_face_clear(position, orientation, box_xy, center_z, local_dimensions,
+                                box_orientation, direction, maximum=.10, face_margin=.04):
+    """Project the padded head envelope onto the observed, oriented box face.
+
+    The world AABB is retained for obstacle checks, but is not a physical
+    contact face when the box rotates. This checks face width and bounded
+    centering; it does not certify box movement or passage clearance.
+    """
+    position=np.asarray(position,float);dimensions=np.asarray(local_dimensions,float)
+    direction=np.asarray(direction,float);box_xy=np.asarray(box_xy,float)
+    if (position.shape!=(3,) or dimensions.shape!=(3,) or direction.shape!=(2,) or box_xy.shape!=(2,)
+            or not all(np.isfinite(x).all() for x in [position,dimensions,direction,box_xy])
+            or not np.isfinite([center_z,maximum,face_margin]).all() or np.any(dimensions<=0)
+            or maximum<0 or face_margin<0):return False
+    def rotation(q):
+        q=np.asarray(q,float)
+        if q.shape!=(4,) or not np.isfinite(q).all() or np.linalg.norm(q)<1e-9:return None
+        w,x,y,z=q/np.linalg.norm(q)
+        return np.array([[1-2*(y*y+z*z),2*(x*y-w*z),2*(x*z+w*y)],
+            [2*(x*y+w*z),1-2*(x*x+z*z),2*(y*z-w*x)],
+            [2*(x*z-w*y),2*(y*z+w*x),1-2*(x*x+y*y)]])
+    robot_rotation=rotation(orientation);box_rotation=rotation(box_orientation)
+    if robot_rotation is None or box_rotation is None or np.linalg.norm(direction)<1e-9:return False
+    normal=np.array([*(direction/np.linalg.norm(direction)),0.])
+    alignment=np.abs(box_rotation[:,:2].T@normal);face_axis=int(np.argmax(alignment))
+    if alignment[face_axis]<.9:return False  # No near-normal cardinal push on this observed face.
+    tangent_axis=1-face_axis
+    corners=np.array([[x,y,z] for x in [.239,.341] for y in [-.051,.051] for z in [-.108,.061]])
+    head_world=position+corners@robot_rotation.T
+    box_center=np.array([*box_xy,float(center_z)])
+    local_head=(head_world-box_center)@box_rotation
+    projected=local_head[:,tangent_axis];lower=float(projected.min());upper=float(projected.max())
+    half_face=dimensions[tangent_axis]/2
+    return bool(lower>=-half_face+face_margin and upper<=half_face-face_margin
+                and abs((lower+upper)/2)<maximum)
+
+
 def contact_pose_ready(position, heading, box_xy, dimensions, direction,
                        front_gap, yaw_tolerance, nose_offset=.33, minimum_gap=.20):
     """Accept a safe standoff interval instead of demanding backward gait at one point."""

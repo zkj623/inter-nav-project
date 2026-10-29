@@ -38,6 +38,7 @@ class SkillContext:
     limiter:Any
     navigation_reached:bool=False
     body_angular_velocity:Any=None
+    orientation:Any=None
 
 
 class SkillRegistry:

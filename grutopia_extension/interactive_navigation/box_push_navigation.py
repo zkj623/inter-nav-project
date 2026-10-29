@@ -17,6 +17,11 @@ class BoxState:
     dimensions: tuple
     yaw: float = 0.0
     mass_kg: float = 1.0
+    # Optional observed rigid-body geometry; planning still uses the existing
+    # conservative world AABB in dimensions.
+    local_dimensions: tuple = None
+    orientation: tuple = None
+    center_z: float = None
 
 
 @dataclass(frozen=True)

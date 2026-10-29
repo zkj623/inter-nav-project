@@ -9,7 +9,7 @@ import math
 import numpy as np
 from grutopia_extension.interactive_navigation.interaction_skill import SkillSpec,SkillCommand
 from grutopia_extension.interactive_navigation.go2_contact_control import (
-    ContactYawServo,contact_heading_hold,contact_pose_ready,observed_contact_retreat,
+    ContactYawServo,contact_heading_hold,contact_face_lateral_allowance,observed_contact_face_clear,observed_contact_retreat,
     push_centerline_velocity,push_completion_state,push_braking_distance)
 from grutopia_extension.interactive_navigation.go2_contact_turn import ContactTurnControl,checked_contact_turn_command
 from grutopia_extension.interactive_navigation.go2_voronoi_navigation import (
@@ -40,6 +40,10 @@ class PushAsideConfig:
     max_push_braking_seconds:float=6.
     yaw_tolerance:float=.10
     lateral_tolerance:float=.055
+    preparation_face_offset_max:float=.10
+    pushing_face_offset_max:float=.15
+    contact_face_margin:float=.04
+    max_engage_standoff:float=.60
     alignment_tolerance:float=.035
     alignment_yaw_tolerance:float=.05
     stage_handoff_radius:float=.30
@@ -122,6 +126,38 @@ class PushAsideSkill:
         nose=np.asarray(ctx.position[:2])+.33*np.array([math.cos(ctx.heading),math.sin(ctx.heading)])
         delta=np.asarray(ctx.box.xy)-nose
         return float(np.dot(delta,self.direction)-extent),float(np.dot(delta,self.tangent)),wrap(self.push_heading-ctx.heading)
+
+    def _contact_lateral_allowance(self,ctx,*,moving=False):
+        maximum=(self.config.pushing_face_offset_max if moving else self.config.preparation_face_offset_max)
+        return contact_face_lateral_allowance(ctx.box.dimensions,self.direction,
+            wrap(self.push_heading-ctx.heading),ctx.tilt_degrees,maximum,self.config.contact_face_margin)
+
+    def _contact_face_clear(self,ctx,*,moving=False):
+        maximum=(self.config.pushing_face_offset_max if moving else self.config.preparation_face_offset_max)
+        geometry=[getattr(ctx.box,k,None) for k in ['local_dimensions','orientation','center_z']]
+        if any(value is not None for value in geometry):
+            if any(value is None for value in geometry) or getattr(ctx,'orientation',None) is None:return False
+            return observed_contact_face_clear(ctx.position,ctx.orientation,ctx.box.xy,geometry[2],
+                geometry[0],geometry[1],self.direction,maximum,self.config.contact_face_margin)
+        # Legacy static BoxState fixtures declare an axis-aligned face. The
+        # live proposal source always supplies the observed rigid-body pose.
+        if abs(float(getattr(ctx.box,'yaw',0.)))>1e-8:return False
+        allowance=self._contact_lateral_allowance(ctx,moving=moving)
+        return allowance>0 and abs(self._box_frame(ctx)[1])<allowance
+
+    def _contact_ready(self,ctx):
+        # Accept a verified approach corridor, not a tiny exact body pose.
+        # The final task goal and measured-stop gates are unchanged.
+        gap,lateral,error=self._box_frame(ctx)
+        if (not self._contact_face_clear(ctx) or abs(error)>=self.config.yaw_tolerance
+                or not .20<=gap<=self.config.max_engage_standoff):return False
+        if not body_motion_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.):return False
+        # Keep the selected box in this check. The endpoint is still outside
+        # the front-foot contact envelope; intentional contact is checked by
+        # the existing execution guard only after the measured stop.
+        distance=max(0.,gap-(self.config.front_contact_reach+.075))
+        target=np.asarray(ctx.position[:2])+self.direction*distance
+        return body_translation_recovery_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,target)
 
     def _reuse_alignment_pose(self,ctx):
         """Keep a nearby, observed and already oriented retreat pose."""
@@ -478,11 +514,12 @@ class PushAsideSkill:
         if self.state in ['align_longitudinal','align_lateral','settle_contact']:
             if abs(yaw_error)>.18:return self._retry(ctx,'heading_drift_during_alignment')
             if ctx.now-self.state_since>self.config.max_alignment_seconds:return self._retry(ctx,'alignment_timeout')
-            actual_ready=contact_pose_ready(ctx.position,ctx.heading,ctx.box.xy,ctx.box.dimensions,self.direction,
-                self.config.front_gap+.05,self.config.yaw_tolerance)
-            if (self.state!='settle_contact' and actual_ready and abs(lateral)<self.config.alignment_tolerance and body_motion_clear(
-                    ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.)):
+            actual_ready=self._contact_ready(ctx)
+            if self.state!='settle_contact' and actual_ready:
                 self._transition('settle_contact',ctx,'actual_contact_pose_ready')
+                self.events[-1].update(nose_gap_m=gap,nose_lateral_error_m=lateral,
+                    contact_face_center_offset_cap_m=self.config.preparation_face_offset_max,
+                    contact_face_margin_m=self.config.contact_face_margin)
                 return self._output()
             if self.state=='align_longitudinal':
                 # Use the same measured nose standoff interval as final contact
@@ -513,8 +550,7 @@ class PushAsideSkill:
                 command,done=self._translation(ctx,body_target,self.tangent,self.config.lateral_speed,self.config.alignment_tolerance)
                 if done:self._transition('settle_contact',ctx)
                 return self._output(command)
-            ready=contact_pose_ready(ctx.position,ctx.heading,ctx.box.xy,ctx.box.dimensions,self.direction,
-                self.config.front_gap+.05,self.config.yaw_tolerance)
+            ready=self._contact_ready(ctx)
             if ready and self._quiet(ctx,.4):
                 if self._recovered_passage_effect(ctx,along):return self._output()
                 self.engage_box_position=np.asarray(ctx.box.xy).copy()
@@ -522,8 +558,8 @@ class PushAsideSkill:
             if abs(yaw_error)>self.config.yaw_tolerance:
                 self._transition('refine_heading',ctx,'contact_heading_outside_tolerance')
                 return self._output()
-            if abs(lateral)>self.config.lateral_tolerance:self._transition('align_lateral',ctx)
-            elif gap>self.config.front_gap+.125 or gap<.20:self._transition('align_longitudinal',ctx)
+            if not self._contact_face_clear(ctx):self._transition('align_lateral',ctx)
+            elif gap>self.config.max_engage_standoff or gap<.20:self._transition('align_longitudinal',ctx)
             return self._output()
         if self.state in ['engage','push','settle_push_progress','brake_after_push'] and along>self.plan.push_distance+.25:
             return self._fail(ctx,'safe_push_distance_exceeded')
@@ -544,7 +580,7 @@ class PushAsideSkill:
             return self._output()
         if self.state in ['engage','push']:
             if ctx.tilt_degrees>18:return self._retry(ctx,'contact_attitude')
-            if abs(yaw_error)>.18 or abs(lateral)>.075:return self._retry(ctx,'contact_alignment_drift')
+            if abs(yaw_error)>.18 or not self._contact_face_clear(ctx,moving=True):return self._retry(ctx,'contact_alignment_drift')
             if self.state=='engage' and (gap<=self.config.front_contact_reach+.02 or float(np.dot(np.asarray(ctx.box.xy)-self.engage_box_position,self.direction))>.015):
                 self._transition('push',ctx);self.push_progress=along;self.push_progress_time=ctx.now
             clearance=ctx.planner.clearance(ctx.box)
