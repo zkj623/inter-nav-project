@@ -396,3 +396,12 @@ def test_previous_push_distance_does_not_brake_a_resume_before_box_motion():
     ctx.now=1.1;ctx.box.xy=(1.185,0.)
     assert skill.step(ctx).state=='settle_push_progress'
     assert skill.push_brakes==1
+
+
+def test_retry_remembers_whether_it_came_from_actual_box_contact():
+    for state,contact in [('settle_at_stage',False),('align_lateral',False),('push',True),('engage',True)]:
+        skill=make_skill();skill.state=state
+        result=skill._retry(context(),'diagnostic_recovery')
+        assert skill.recovery_from_contact is contact
+        assert result.events[-1]['recovery_source_state']==state
+        assert result.events[-1]['recovery_from_contact'] is contact

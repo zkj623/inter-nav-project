@@ -58,3 +58,9 @@ class ForwardStopFeedback:
             'active':self.active,'eligible':self.eligible,'motion_safe':bool(safe),
             'requested':requested.tolist(),'feedback_target':target.tolist(),'applied':applied.tolist()}
         return applied
+
+
+def skill_has_active_contact(state, recovery_from_contact=True):
+    """Do not confuse a navigation/preparation stop with box-contact braking."""
+    return state in {'engage','push','settle_push_progress','brake_after_push'} or (
+        state=='brake_for_recovery' and bool(recovery_from_contact))

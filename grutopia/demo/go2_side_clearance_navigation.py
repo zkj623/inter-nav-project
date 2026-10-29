@@ -70,7 +70,7 @@ def main():
     if args.actuator_mode is None:args.actuator_mode='explicit_dc' if args.map_source=='online' else 'implicit_pd'
     if args.forward_stop_feedback and (args.actuator_mode!='explicit_dc' or args.path_controller!='continuous'):
         raise ValueError('forward-stop-feedback requires continuous navigation and explicit_dc')
-    from grutopia_extension.interactive_navigation.go2_stop_feedback import ForwardStopFeedback
+    from grutopia_extension.interactive_navigation.go2_stop_feedback import ForwardStopFeedback,skill_has_active_contact
     if not np.isfinite(args.floor_top) or not 0 < args.floor_top <= .30:
         raise ValueError('floor-top must be within (0, 0.30] m')
     floor_top=args.floor_top
@@ -412,8 +412,8 @@ def main():
                         if layers is None:return np.zeros(3),False
                         position,orientation=robot.get_world_pose()
                         return checked_contact_turn_command(target,position,yaw(orientation),planner,planning_boxes(),limiter,check_time)
-                    contact_phase=(phase=='skill' and skill is not None and skill.state in
-                        {'engage','push','settle_push_progress','brake_after_push','brake_for_recovery'})
+                    contact_phase=(phase=='skill' and skill is not None and skill_has_active_contact(
+                        skill.state,getattr(skill,'recovery_from_contact',True)))
                     command=forward_stop_servo.apply(micro_action.get('move_by_speed',[0.,0.,0.]),
                         [*ctrl.body_lin_vel[:2],ctrl.body_ang_vel[2]],when,
                         stop_requested=bool(requested.get('_forward_stop_request',False)),

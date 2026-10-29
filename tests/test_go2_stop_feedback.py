@@ -60,3 +60,17 @@ def test_small_forward_residue_does_not_arm_after_a_lateral_maneuver():
     servo.apply([.1,0,0],[.2,0,0],.3)
     servo.apply([0,0,0],[.2,0,0],.31,stop_requested=True,checker=free_checker)
     assert servo.active
+
+
+def test_preparation_recovery_keeps_hold_but_contact_recovery_disables_it():
+    from grutopia_extension.interactive_navigation.go2_stop_feedback import skill_has_active_contact
+    servo=ForwardStopFeedback();servo.apply([.5,0,0],[.4,0,0],0.)
+    servo.apply([0,0,0],[.2,0,0],.01,stop_requested=True,checker=free_checker)
+    servo.apply([0,0,0],[.1,0,0],.02,
+        feedback_allowed=not skill_has_active_contact('brake_for_recovery',False),checker=free_checker)
+    assert servo.active
+    servo.apply([0,0,0],[.1,0,0],.03,
+        feedback_allowed=not skill_has_active_contact('brake_for_recovery',True),checker=free_checker)
+    assert not servo.active
+    for state in ['engage','push','settle_push_progress','brake_after_push']:
+        assert skill_has_active_contact(state,False)

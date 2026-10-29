@@ -78,7 +78,7 @@ class PushAsideSkill:
         self.release_origin=None;self.release_reason=None;self.certificate=None
         self.last_verify=-1e9;self.observation_moves=0;self.used_stages=[]
         self.progress_mark=None;self.progress_since=None;self.max_tilt=0.
-        self.reason='';self.status='running';self.box_velocity=0.;self.last_box_time=None;self.push_brakes=0
+        self.reason='';self.status='running';self.recovery_from_contact=False;self.box_velocity=0.;self.last_box_time=None;self.push_brakes=0
         self.preparation_recoveries=0;self.recovery_tracker=None;self.recovery_target=None;self.next_stage_probe=-1e9;self.heading_trim=None
 
     def _transition(self,state,ctx,reason=''):
@@ -176,12 +176,15 @@ class PushAsideSkill:
             finally:p.robot_heading=heading
 
     def _retry(self,ctx,reason):
+        recovery_source=self.state
+        self.recovery_from_contact=recovery_source in {'engage','push','settle_push_progress','brake_after_push'}
         if reason=='heading_refinement_timeout' or reason.startswith('heading_trim_'):
             self.used_stages.append(np.asarray(ctx.position[:2]).copy())
         self.retries+=1;self.release_reason=reason
         self.release_origin=None
         if self.retries>self.config.max_retries:return self._fail(ctx,'retry_limit:'+reason)
         self._transition('brake_for_recovery',ctx,reason)
+        self.events[-1].update(recovery_source_state=recovery_source,recovery_from_contact=self.recovery_from_contact)
         return self._output()
 
     def _translation(self,ctx,target,axis,speed,tolerance):
