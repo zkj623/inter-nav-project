@@ -16,10 +16,10 @@ a text target such as `refrigerator` and walks up to the scanned object.
 墙体地图由在线 LiDAR 建立，目标尚不可达时沿 Voronoi 路线探索可达边界。
 全局层 1 Hz 更新，局部层 10 Hz 更新，箱子移开后的空间需要新射线确认才会通行。
 在线模式默认使用固定 200 Hz 物理步长的 DC 电机控制、50 Hz 原 Go2 policy 和 25 fps 录像。
-原始 T04/T05 尚未通过最终验收，不能把代码测试或局部推箱结果当作导航成功。
+原始 T04 已在 v119 完成侧推、实际通路穿越及目标停稳验收（误差0.184m、最大倾角29.37°）；T05仍在复测。不能把T04通过当作T05或全部五组已通过。
 当前候选包含完整身体状态的恢复停稳、共享转向限速、受阻撤离恢复及真实接触面判断；额外前进停止反馈默认关闭。
-旧策略加恢复修正后的完整 T04/T05 仍失稳。已修正部署质量和原生关节限速等训练匹配问题；NVIDIA rough 候选虽通过短测健康检查，却在原始 T04/T05 的启动静止阶段超过15°，因此未替换为默认策略。匹配物理参数后的旧 rough 静止20秒最大倾角4.084°，当前以此组合进行v119完整复测，尚未验收。
-默认命令保留历史模型；当前匹配训练模型的候选需要追加三个参数，下载、最新结果及命令见 [模型匹配与策略对照](docs/go2_training_policy_candidate.md)。宇树公开权重核查见 [官方策略核查](docs/go2_official_policy_review.md)。最新实验依据见 [交互技能说明](docs/go2_visual_push_skill.md) 和 [HANDOFF](HANDOFF.md)。
+已修正部署质量和原生关节限速等训练匹配问题。当前T04通过的组合为旧 rough +匹配训练模型，NVIDIA rough候选因启动倾角过大未采用。转向时仍出现一次接近健康阈值的恢复，继续核查鲁棒性。
+默认命令保留历史模型；匹配训练模型需要追加三个参数，下载、当前复现命令、T04视频路径和验收依据见 [模型匹配与策略对照](docs/go2_training_policy_candidate.md)。宇树公开权重核查见 [官方策略核查](docs/go2_official_policy_review.md)，交接状态见 [HANDOFF](HANDOFF.md)。
 
 在实验分支 `codex/go2-online-smooth-20261027` 的仓库根目录执行：
 
