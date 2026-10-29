@@ -2,6 +2,14 @@
 
 使用原尺寸 Go2、原尺寸 MV7、1 cm 辅助地面和原始任务起终点。占据图从空地图开始，经 LiDAR 在线构建，全局 1 Hz、局部 10 Hz。
 
+## 当前完整任务对照：关闭额外停止反馈
+
+T04 v101 的原场景复测仍以失稳失败：停止信号确实修复，90.280 s 起保持了 `forward_hold`，但全程最大倾角约56.091°，最终误差2.421649 m，尚未实际推箱。与 v99 的实测对照中，在首次实际指令变化前，机器人位姿和速度完全一致；因此不能把之前的信号传递修复当成已经解决倾倒。
+
+下一组完整 T04/T05 对照使用现有默认值，不传 `--forward-stop-feedback`。保留原策略、200 Hz DC、50 Hz policy、平滑限速，以及恢复动作的目标保持、停稳和通路验证修复；仅关闭额外的速度负反馈补偿。此前该补偿在首次制动中的位移改善很小，当前全任务结果也未证明它能提高稳定性。这个对照组合仍须实际运行，不能直接沿用早期 v96 的局部清路结果认定成功。
+
+下面的运行命令已对应此对照模式。需要复现启用补偿的历史实验时可显式加回 `--forward-stop-feedback`，该选项仍保留，接口测试575项通过。当前正在运行的 T05 v101 继续保持原固定源码和启用补偿的配置，后续对照串行等待；不会在运行中修改它。两组原始任务的完整验收仍未完成。
+
 ## 当前开发模式：交互资格使用真值
 
 按当前测试要求，默认 `--interaction-source ground_truth`：从场景 `layout.json` 读取已知箱子的交互能力，只有声明 `interactions` 包含 `push`、未被禁用且类别在白名单中的对象才能调用 `push_aside`。当前原始场景 B01–B07 都声明支持推。
@@ -51,7 +59,7 @@ go2_out="/data20t/embodied/zkj/inter-nav-results/go2-visual-skill-$(date +%Y%m%d
 "$ISAAC_PYTHON" -u grutopia/demo/go2_online_interactive_navigation.py \
   --benchmark-dir "$go2_inputs" --output "$go2_out" --task-ids T04,T05 --gpu 3 --max-steps 40000 \
   --floor-top .01 --map-source online --interaction-source ground_truth --actuator-mode explicit_dc --path-controller continuous \
-  --navigation-attitude-recovery --forward-stop-feedback --route-planner voronoi --navigation-heading path \
+  --navigation-attitude-recovery --route-planner voronoi --navigation-heading path \
   --roadmap-shape circle --route-clearance .30 --navigation-half-width .22 --voronoi-clearance-weight .30 \
   --global-map-hz 1 --local-map-hz 10 --local-map-radius 3 \
   --interaction-catalog grutopia/demo/profiles/interactive_object_catalog.json \

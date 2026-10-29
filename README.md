@@ -35,7 +35,7 @@ go2_out="/data20t/embodied/zkj/inter-nav-results/go2-online-$(date +%Y%m%d-%H%M%
 "$ISAAC_PYTHON" -u grutopia/demo/go2_online_interactive_navigation.py \
   --benchmark-dir "$go2_inputs" --output "$go2_out" \
   --task-ids T01,T02,T03,T04,T05 --gpu 1 --max-steps 40000 \
-  --floor-top .01 --map-source online --interaction-source ground_truth --path-controller continuous --navigation-attitude-recovery --forward-stop-feedback \
+  --floor-top .01 --map-source online --interaction-source ground_truth --path-controller continuous --navigation-attitude-recovery \
   --route-planner voronoi --navigation-heading path \
   --roadmap-shape circle --route-clearance .30 --navigation-half-width .22 \
   --voronoi-clearance-weight .30 \

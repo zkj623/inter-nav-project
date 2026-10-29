@@ -32,7 +32,7 @@ systemd-run --user --scope --quiet --collect \
   "$ISAAC_PYTHON" -u grutopia/demo/go2_online_interactive_navigation.py \
   --benchmark-dir "$go2_inputs" --output "$go2_out" --task-ids T04 --gpu 2 --max-steps 40000 \
   --floor-top .01 --map-source online --interaction-source ground_truth \
-  --actuator-mode explicit_dc --path-controller continuous --forward-stop-feedback \
+  --actuator-mode explicit_dc --path-controller continuous \
   --navigation-attitude-recovery --route-planner voronoi --navigation-heading path \
   --roadmap-shape circle --route-clearance .30 --navigation-half-width .22 --voronoi-clearance-weight .30 \
   --global-map-hz 1 --local-map-hz 10 --local-map-radius 3 \
