@@ -1,0 +1,23 @@
+{
+  "source_run": "recognition-skill-v104-t05-ground-truth-try1",
+  "source_sha256": "c2850ca13d1c4d9a11923518982cc96c41114e680399a6effb67f9df1c3aea2e",
+  "diagnostic_only": true,
+  "task_accepted": false,
+  "termination_reason": "robot_unstable",
+  "goal_error_m": 2.567605895549513,
+  "max_tilt_degrees": 30.58588080158708,
+  "push_count": 0,
+  "skill_count": 0,
+  "first_recorded_30deg_time_s": 66.09499852266163,
+  "window_start_s": 63.094998522661626,
+  "staging_turn_samples_in_window": 303,
+  "staging_command_max_abs_vx": 0.0,
+  "staging_command_max_abs_vy": 0.0,
+  "staging_command_max_abs_yaw": 1.0,
+  "staging_measured_max_abs_vy": 0.2760847508907318,
+  "staging_planar_displacement_m": 0.23923133970888757,
+  "finding": "Failure occurred before any push skill during pure-yaw staging, followed by attitude recovery. Sideways velocity was measured drift, not a commanded sidestep in this window.",
+  "remaining_uncertainty": "This does not establish a root cause in the policy or prove a yaw-speed adjustment would fix it.",
+  "v105_scope": "Only push-skill preparation rotation endpoint checks changed. This earlier navigation failure has no direct fix in v105.",
+  "next_experiment": "Use this logged pure-yaw turn as the regression case; compare measured-response yaw limiting against constant 1 rad/s, retaining body checks and 30 degree health limit. Validate physically before claiming improvement."
+}

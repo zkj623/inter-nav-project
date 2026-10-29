@@ -9,6 +9,40 @@ from grutopia_extension.interactive_navigation.go2_turn_response import TurnResp
 def wrap(value):return (value+math.pi)%(2*math.pi)-math.pi
 
 
+class StagingYawRate:
+    """Use the start request only until measured turning is established.
+
+    A persistent 1 rad/s request can produce drift during a long in-place
+    turn, even though yaw itself tracks. Keep the calibrated start request
+    for a stalled stance, then cruise at .6 after sustained measured motion.
+    The enclosing limiter and body sweep still check the applied command.
+    """
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.sign=None;self.moving_since=None;self.stalled_since=None
+        self.cruising=False
+
+    def request(self,error,measured_yaw,now):
+        sign=math.copysign(1.,error)
+        if sign!=self.sign:
+            self.reset();self.sign=sign
+        toward=sign*float(measured_yaw)
+        if self.cruising:
+            if toward<.15:
+                if self.stalled_since is None:self.stalled_since=now
+                if now-self.stalled_since>=.8:
+                    self.cruising=False;self.moving_since=None;self.stalled_since=None
+            else:self.stalled_since=None
+        elif toward>=.35:
+            if self.moving_since is None:self.moving_since=now
+            if now-self.moving_since>=.12:
+                self.cruising=True;self.stalled_since=None
+        else:self.moving_since=None
+        return sign*(.6 if self.cruising else 1.)
+
+
 class LocalStagingControl:
     def __init__(self,position,heading,goal_heading,planner,boxes,now):
         self.origin=np.asarray(position[:2],float).copy();self.started=now
@@ -17,6 +51,7 @@ class LocalStagingControl:
         self.target=self.selector._select_stage(planner,boxes,self.origin,heading,require_stepping_arc=True)
         self.phase='staging_move';self.stable_since=None;self.failed=self.target is None
         self.turn_response=TurnResponseAssist()
+        self.yaw_rate=StagingYawRate()
 
     def update(self,position,heading,planner,boxes,limiter,now):
         position=np.asarray(position[:2],float)
@@ -64,6 +99,7 @@ class LocalStagingControl:
                 command=np.array([c*world[0]+s*world[1],-s*world[0]+c*world[1],0.])
                 return command,{**state,'target':self.target.tolist(),'staging_phase':self.phase}
         if self.phase in ['staging_brake','staging_turn_brake']:
+            self.yaw_rate.reset()
             if settled:
                 if self.stable_since is None:self.stable_since=now
                 if now-self.stable_since>=.20:
@@ -81,7 +117,7 @@ class LocalStagingControl:
                     or (error*limiter.measured[2]<0 and abs(limiter.measured[2])>.1)):
                 self.phase='staging_turn_brake';self.stable_since=None
                 return np.zeros(3),{**state,'staging_phase':self.phase}
-            request=np.array([0.,0.,math.copysign(1.,error)])
+            request=np.array([0.,0.,self.yaw_rate.request(error,limiter.measured[2],now)])
             # Keep the effective stepping gait until predictive braking.
             # Returning to pure yaw after only 0.18 rad repeatedly stalls it.
             request,detail=self.turn_response.update(request,position,heading,planner,boxes,limiter,now,maintain_arc=True)

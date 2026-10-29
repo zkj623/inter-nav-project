@@ -62,4 +62,58 @@ class TurnResponseTests(unittest.TestCase):
             command,_=stage.update([0,0],0,p,[],limiter,.2)
             np.testing.assert_array_equal(command,[0,0,0])
 
+class StagingYawRateTests(unittest.TestCase):
+    def make(self):
+        from grutopia_extension.interactive_navigation.local_staging_control import StagingYawRate
+        return StagingYawRate()
+
+    def test_requires_sustained_directional_motion_before_cruising(self):
+        rate=self.make()
+        self.assertEqual(rate.request(2.8,0.,0.),1.)
+        self.assertEqual(rate.request(2.8,.5,.1),1.)
+        self.assertEqual(rate.request(2.8,.5,.20),1.)
+        self.assertEqual(rate.request(2.8,.5,.23),.6)
+        self.assertEqual(rate.request(2.8,.5,1.),.6)
+
+    def test_noise_or_rotation_in_wrong_direction_does_not_confirm_motion(self):
+        rate=self.make()
+        for now,measured in [(0.,-.7),(.2,-.7),(.3,.5),(.4,.1),(.5,.5),(.6,.5)]:
+            self.assertEqual(rate.request(2.,measured,now),1.)
+
+    def test_short_response_dip_keeps_cruise_but_sustained_stall_rearms(self):
+        rate=self.make()
+        rate.request(2.,.5,0.)
+        self.assertEqual(rate.request(2.,.5,.13),.6)
+        self.assertEqual(rate.request(2.,.1,.2),.6)
+        self.assertEqual(rate.request(2.,.5,.8),.6)
+        self.assertEqual(rate.request(2.,.1,.9),.6)
+        self.assertEqual(rate.request(2.,.1,1.6),.6)
+        self.assertEqual(rate.request(2.,.1,1.71),1.)
+
+    def test_reverse_turn_and_new_maneuver_require_new_confirmation(self):
+        rate=self.make()
+        rate.request(-2.,-.5,0.)
+        self.assertEqual(rate.request(-2.,-.5,.13),-.6)
+        self.assertEqual(rate.request(2.,-.5,.3),1.)
+        rate.request(2.,.5,.4)
+        self.assertEqual(rate.request(2.,.5,.53),.6)
+        rate.reset()
+        self.assertEqual(rate.request(2.,0.,.6),1.)
+
+    def test_actual_stage_uses_measured_cruise_and_retains_predictive_braking(self):
+        from grutopia_extension.interactive_navigation.local_staging_control import LocalStagingControl
+        p=SidePushPlanner(np.ones((120,120),bool),[[-3,3],[-3,3]],resolution=.05)
+        p.navigation_half_width=.22
+        limiter=VelocitySlewLimiter()
+        stage=LocalStagingControl([0,0],0,2.,p,[],0.);stage.phase='staging_turn'
+        limiter.measured=np.array([0.,0.,.5]);limiter.command=np.array([0.,0.,1.])
+        command,_=stage.update([0,0],0.,p,[],limiter,.1)
+        self.assertEqual(command[2],1.)
+        command,_=stage.update([0,0],.1,p,[],limiter,.23)
+        self.assertEqual(command[2],.6)
+        command,state=stage.update([0,0],1.9,p,[],limiter,.3)
+        np.testing.assert_array_equal(command,[0.,0.,0.])
+        self.assertEqual(state['staging_phase'],'staging_turn_brake')
+
+
 if __name__=='__main__':unittest.main()
