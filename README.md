@@ -64,6 +64,7 @@ go2_out="/data20t/embodied/zkj/inter-nav-results/go2-online-$(date +%Y%m%d-%H%M%
 `original_metadata.json` 或 `passages.json` 交给规划器。箱子身份/尺寸/位姿仍是仿真检测接口，
 只有当前 LiDAR 命中后才加入几何规划。当前交互资格使用布局真值；视觉模式则要求实际 RGB-D 关联及 Qwen3-VL 两帧确认。定位及几何跟踪仍沿用仿真接口。
 视觉识别、白名单、技能接口与运行命令见 [视觉推箱 skill](docs/go2_visual_push_skill.md)。
+任务结束并完成视频 QA 后，可用 `"$ISAAC_PYTHON" tools/audit_actual_passage.py "$go2_out/T04"` 补充核验实际通路穿越与最后的实测停稳；T05 同理。该工具不代替地图、源码和五路视频检查。
 设计、证据和验证状态见 [在线导航说明](docs/go2_online_navigation.md)。
 
 ## 历史结果：使用已知全局地图的箱子导航
