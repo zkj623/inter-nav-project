@@ -157,13 +157,13 @@ class ExplorationVoronoiRoutes:
 
 
 def decision_recovery_required(planner, boxes, position, heading, tracker=None):
-    """Finish a latched recovery turn before handing a briefly free pose off.
+    """Finish a latched recovery maneuver before handing a briefly free pose off.
 
-    The tracker rechecks its turn against every new map and can stop/replan
+    The tracker rechecks its motion against every new map and can stop/replan
     if it becomes blocked. A transient free footprint is not a completed
-    maneuver; clearing the tracker there repeatedly resets the yaw ramp.
+    maneuver; clearing the tracker there repeatedly resets the velocity ramp.
     """
-    if tracker is not None and tracker._buffer_turn_target is not None:
+    if tracker is not None and (tracker._buffer_turn_target is not None or tracker._buffer_active):
         return True
     return bool(navigation_body_blocked(planner, boxes, heading)[planner.cell(position)])
 
@@ -261,7 +261,13 @@ class ForwardExplorationPathTracker(ExplorationPathTracker):
                         'needs_replan':False,'controller':'footprint_heading_recovery','heading_error_rad':float(error)}
         if planner.valid_cell(cell) and (combined[cell] or self._buffer_active):
             clearance=distance_transform_edt(~combined)*planner.resolution
-            if self._buffer_active and not combined[cell] and (getattr(planner,'layered_local_control',False) or clearance[cell]>.08):
+            # The selected target includes the checked escape direction and
+            # room for an effective stride. A first free intermediate cell
+            # can be only millimeters past the obstacle boundary; stopping
+            # there repeatedly cancels the gait before reaching that target.
+            local_control=getattr(planner,'layered_local_control',False)
+            target_reached=(self._buffer_target is not None and cell==planner.cell(self._buffer_target))
+            if self._buffer_active and not combined[cell] and (target_reached if local_control else clearance[cell]>.08):
                 released_target=self._buffer_target.tolist()
                 self._buffer_active=False;self._buffer_target=None
                 self._buffer_replan=not getattr(planner,'layered_local_control',False)
