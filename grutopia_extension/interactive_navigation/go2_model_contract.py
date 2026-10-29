@@ -38,6 +38,8 @@ def collect_model_contract(robot,policy_path,requested_asset,profile):
         'resolved_robot_asset':resolved,'actual_asset_references':references,
         'robot_asset_sha256':hashlib.sha256(asset.read_bytes()).hexdigest() if asset.is_file() else None,
         'physics_profile':profile,'actuator_mode':ctrl.actuator_mode,'robot_scale':_values(robot._robot_scale),
+        'stationary_joint_hold':getattr(ctrl,'stationary_hold_control',None) is not None,
+        'stationary_hold_config':(ctrl.stationary_hold_control.report() if getattr(ctrl,'stationary_hold_control',None) is not None else None),
         'body_count':view.num_bodies,'body_names':view.body_names,'body_masses':masses,'total_mass_kg':float(np.asarray(masses).sum()),
         'collider_count':int(colliders),'solver_position_iterations':_values(view.get_solver_position_iteration_counts()),
         'solver_velocity_iterations':_values(view.get_solver_velocity_iteration_counts()),

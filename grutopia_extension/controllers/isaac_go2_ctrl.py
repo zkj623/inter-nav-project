@@ -81,13 +81,19 @@ class Go2RSLControl:
         joint_names: Iterable[str],
         ground_height: float = 0.0,
         actuator_mode: str = 'implicit_pd',
+        stationary_joint_hold: bool = False,
     ) -> None:
         init_base_vel_cmd(1)
         if actuator_mode not in ['implicit_pd','explicit_dc']:raise ValueError('Invalid Go2 actuator mode')
+        if stationary_joint_hold and actuator_mode!='explicit_dc':
+            raise ValueError('Stationary joint holding requires explicit_dc')
         self.actuator_mode=actuator_mode
         self._last_control_time=None
         self.applied_joint_efforts=np.zeros(12,dtype=np.float32)
         self.ground_height = float(ground_height)
+        from grutopia_extension.interactive_navigation.go2_stationary_hold import StationaryJointHold
+        self.stationary_hold_control = StationaryJointHold(ground_height=self.ground_height) if stationary_joint_hold else None
+        self.stationary_hold_allowed = True
         joint_names = list(joint_names)
         self.policy = load_go2_actor(policy_weights_path)
         self.policy_command = np.zeros(3, dtype=np.float32)
@@ -99,6 +105,7 @@ class Go2RSLControl:
             dtype=np.float32,
         )
         self.last_action = np.zeros(12, dtype=np.float32)
+        self.raw_policy_action = np.zeros(12, dtype=np.float32)
         self.applied_joint_positions = self.default_joint_positions.copy()
         self.apply_times_left = 0
         self.policy_name = Path(policy_weights_path).name
@@ -116,6 +123,9 @@ class Go2RSLControl:
         self._last_control_time=None
         if hasattr(self,'applied_joint_efforts'):self.applied_joint_efforts.fill(0.)
         self.last_action.fill(0)
+        if hasattr(self,'raw_policy_action'):self.raw_policy_action.fill(0.)
+        if getattr(self,'stationary_hold_control',None) is not None:self.stationary_hold_control.reset()
+        self.stationary_hold_allowed=True
         self.applied_joint_positions = self.default_joint_positions.copy()
         self.apply_times_left = 0
         self._prev_position = None
@@ -206,6 +216,9 @@ class Go2RSLControl:
             'command': base_vel_cmd(),
             'policy_command': self.policy_command.copy(),
             'policy_action': self.last_action.copy(),
+            'raw_policy_action': getattr(self,'raw_policy_action',self.last_action).copy(),
+            'motor_joint_target': self.applied_joint_positions.copy(),
+            'stationary_hold': (self.stationary_hold_control.report() if getattr(self,'stationary_hold_control',None) is not None else None),
             'policy_name': self.policy_name,
             'observation_dim': self.observation_dim,
             'policy_backend': 'rsl',
@@ -288,7 +301,18 @@ class Go2RSLControl:
             action = self.policy(torch.from_numpy(observation).unsqueeze(0))[0].numpy()
         if action.shape != (12,) or not np.isfinite(action).all():
             raise RuntimeError('Go2 locomotion policy produced invalid actions')
-        self.last_action = action.astype(np.float32, copy=True)
+        self.raw_policy_action = action.astype(np.float32, copy=True)
+        self.last_action = self.raw_policy_action.copy()
         self.applied_joint_positions = (
             self.default_joint_positions + DEFAULT_ACTION_SCALE * self.last_action
         )
+        holding = getattr(self,'stationary_hold_control',None)
+        now = self._simulation_time()
+        if holding is not None and now is not None:
+            self.applied_joint_positions = holding.update(self.applied_joint_positions,command,
+                position,linear_body,angular_body,float(np.degrees(np.arccos(np.clip(-gravity_body[2],-1.,1.)))),
+                now,allowed=self.stationary_hold_allowed)
+            if holding.state!='tracking':
+                # The actor sees the action actually sent to the motor, not
+                # an ignored prediction from its continued50Hz inference.
+                self.last_action=((self.applied_joint_positions-self.default_joint_positions)/DEFAULT_ACTION_SCALE).astype(np.float32)

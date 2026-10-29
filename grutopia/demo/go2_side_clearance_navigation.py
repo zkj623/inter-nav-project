@@ -22,6 +22,7 @@ def main():
     parser.add_argument('--policy-path',type=Path,help='Explicit Go2 RSL-RL checkpoint; actor shape is validated')
     parser.add_argument('--robot-usd',type=Path,help='Explicit Go2 asset; valid referenced USDs are honored')
     parser.add_argument('--robot-physics-profile',choices=['legacy','isaaclab_training'],default='legacy')
+    parser.add_argument('--stationary-joint-hold',action='store_true',help='Hold supported joint targets after a measured free-space stop; blend back into walking')
     parser.add_argument('--max-steps',type=int,default=30000)
     parser.add_argument('--preflight-only',action='store_true')
     parser.add_argument('--record-video',action='store_true')
@@ -71,6 +72,7 @@ def main():
                         help='Use known box eligibility from the layout, or require live visual classification')
     args=parser.parse_args()
     if args.actuator_mode is None:args.actuator_mode='explicit_dc' if args.map_source=='online' else 'implicit_pd'
+    if args.stationary_joint_hold and args.actuator_mode!='explicit_dc':parser.error('--stationary-joint-hold requires explicit_dc')
     if args.forward_stop_feedback and (args.actuator_mode!='explicit_dc' or args.path_controller!='continuous'):
         raise ValueError('forward-stop-feedback requires continuous navigation and explicit_dc')
     from grutopia_extension.interactive_navigation.go2_stop_feedback import ForwardStopFeedback,skill_has_active_contact,tracked_navigation_action
@@ -235,6 +237,7 @@ def main():
         'grutopia_extension/interactive_navigation/smooth_go2_navigation.py',
         'grutopia_extension/interactive_navigation/go2_recovery_settling.py',
         'grutopia_extension/interactive_navigation/go2_model_contract.py',
+        'grutopia_extension/interactive_navigation/go2_stationary_hold.py',
         'grutopia_extension/interactive_navigation/local_staging_control.py',
         'grutopia_extension/interactive_navigation/go2_turn_response.py',
         'grutopia_extension/interactive_navigation/go2_passage_confirmation.py',
@@ -252,7 +255,8 @@ def main():
         'grutopia_extension/interactive_navigation/go2_navigation_runner.py',
         'grutopia_extension/interactive_navigation/visualization.py',
         'grutopia_extension/configs/objects/__init__.py','grutopia_extension/objects/fixed_cube.py',
-        'grutopia_extension/configs/robots/go2.py','grutopia_extension/robots/go2.py']:
+        'grutopia_extension/configs/robots/go2.py','grutopia_extension/robots/go2.py',
+        'grutopia_extension/robots/go2_asset.py']:
         target=args.output/'source'/rel;target.parent.mkdir(parents=True,exist_ok=True)
         shutil.copy2(repo/rel,target);manifest[rel]=hashlib.sha256((repo/rel).read_bytes()).hexdigest()
     (args.output/'source_manifest.json').write_text(json.dumps(manifest,indent=2))
@@ -270,7 +274,7 @@ def main():
     from grutopia_extension.interactive_navigation.scene_paths import configure_scene_mdl_paths
     config=Go2NavigationRunConfig(gpu=args.gpu,ground_height=floor_top,
         max_steps=args.max_steps,rendering_interval=4,use_fabric=False,lidar_max_range=5.0,
-        actuator_mode=args.actuator_mode,
+        actuator_mode=args.actuator_mode,stationary_joint_hold=args.stationary_joint_hold,
         lidar_resolution=(.5,2.5) if args.map_source=='online' else (2.,5.),
         material_mode=args.material_mode,generate_fallback_asset=False)
     if args.policy_path is not None:config=replace(config,policy_path=str(args.policy_path.expanduser().resolve()))
@@ -316,6 +320,7 @@ def main():
         from grutopia_extension.interactive_navigation.go2_model_contract import collect_model_contract,validate_training_model_contract
         model_contract=collect_model_contract(robot,config.policy_path,requested_robot_asset,args.robot_physics_profile)
         if args.robot_physics_profile=='isaaclab_training':validate_training_model_contract(model_contract)
+        if model_contract['stationary_joint_hold']!=args.stationary_joint_hold:raise RuntimeError('Stationary hold configuration was not propagated')
         (args.output/'robot_model_contract.json').write_text(json.dumps(model_contract,indent=2))
         first_camera=third_camera=None;recording_enabled=False;recording_tick=0;record_phase='start';record_component=None;task_health=None
         if args.record_video or args.interaction_source=='vision':
@@ -368,6 +373,8 @@ def main():
                 'path_controller':args.path_controller,
                 'navigation_attitude_recovery':args.navigation_attitude_recovery,
                 'forward_stop_feedback':args.forward_stop_feedback,
+                'stationary_joint_hold':model_contract['stationary_joint_hold'],
+                'stationary_hold_config':model_contract['stationary_hold_config'],
                 'map_source':args.map_source,'initial_map':'unknown' if args.map_source=='online' else 'scene_prior',
                 'uses_navigation_grid':args.map_source=='prior','uses_static_metadata':args.map_source=='prior',
                 'normal_navigation_max_forward':.50 if args.path_controller=='continuous' else .40,
@@ -410,7 +417,8 @@ def main():
                 base_position=np.asarray(observation['position']),base_orientation=np.asarray(observation['orientation']),
                 physics_step=int(lidar.get('physics_step',-1)),max_range=float(lidar.get('max_range',5.)),
                 self_hits_removed=int(lidar.get('self_hits_removed',0)))
-        command_tick_index=0;forward_stop_servo=None
+        from grutopia_extension.interactive_navigation.go2_stationary_hold import stationary_hold_permitted
+        command_tick_index=0;forward_stop_servo=None;phase='start';skill=None
         def tick(action):
             nonlocal recording_tick,command_tick_index
             if task_health is not None and not task_health.healthy:action=stop
@@ -422,6 +430,8 @@ def main():
                 healthy=task_health is None or task_health.healthy
                 requested=stop if not healthy else action
                 micro_action={k:v for k,v in requested.items() if k!='_forward_stop_request'}
+                robot._go2_locomotion_control.stationary_hold_allowed=stationary_hold_permitted(
+                    phase,getattr(skill,'state',None),getattr(skill,'recovery_from_contact',True),healthy=healthy)
                 if forward_stop_servo is not None:
                     ctrl=robot._go2_locomotion_control;when=float(ctrl._simulation_time() or 0.)
                     def checked_feedback(target,limiter,check_time):
@@ -466,6 +476,9 @@ def main():
                     'controller_root_position':list(map(float,root_position)),
                     'controller_root_orientation':list(map(float,root_orientation)),
                     'policy_inferences':diagnostic['policy_inferences'],
+                    'stationary_hold':diagnostic['stationary_hold'],
+                    'stationary_hold_allowed':bool(robot._go2_locomotion_control.stationary_hold_allowed),
+                    'motor_joint_target':diagnostic['motor_joint_target'].tolist(),
                     'actuator_mode':args.actuator_mode,'physics_substeps':microsteps,'physical_commands':physical_commands,
                     'forward_stop_requested':bool(action.get('_forward_stop_request',False)),
                     'forward_stop_feedback':feedback_details,
@@ -1070,6 +1083,8 @@ def main():
                 'final_orientation':final_q.tolist(),'final_tilt_degrees':final_tilt,
                 'maximum_tilt_degrees':max(maximum_tilt,task_health.max_tilt),'wall_seconds':time.time()-start_time,
                 'rollout_health':task_health.report(),
+                'stationary_joint_hold':args.stationary_joint_hold,
+                'stationary_hold_report':robot._go2_locomotion_control.get_obs()['stationary_hold'],
                 'navigation_attitude_recovery':{'enabled':args.navigation_attitude_recovery,**attitude_recovery.report()},
                 'contact_realignments':realign_count,
                 'actual_path_length_m':float(sum(np.linalg.norm(np.array(b['robot'][:2])-a['robot'][:2]) for a,b in zip(samples,samples[1:]))),

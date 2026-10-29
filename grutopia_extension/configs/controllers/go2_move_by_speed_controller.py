@@ -14,3 +14,4 @@ class Go2MoveBySpeedControllerCfg(ControllerCfg):
     # collision floor a stale 0.0 makes the policy walk in a crouch.
     ground_height: float = 0.0
     actuator_mode: str = 'implicit_pd'
+    stationary_joint_hold: bool = False

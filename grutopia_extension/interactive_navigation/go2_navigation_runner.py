@@ -79,8 +79,11 @@ class Go2NavigationRunConfig:
     lidar_max_range: float = 8.0
     lidar_resolution: tuple[float, float] = (2.0, 5.0)
     actuator_mode: str = 'implicit_pd'
+    stationary_joint_hold: bool = False
 
     def __post_init__(self):
+        if self.stationary_joint_hold and self.actuator_mode!='explicit_dc':
+            raise ValueError('stationary_joint_hold requires explicit_dc')
         if self.actuator_mode not in ('implicit_pd','explicit_dc'):
             raise ValueError('actuator_mode must be implicit_pd or explicit_dc')
         if self.material_mode not in (None, 'original', 'preview', 'simple'):
@@ -172,6 +175,7 @@ def build_go2_navigation_config(
         run.policy_path,
         ground_height=getattr(run, 'ground_height', 0.0),
         actuator_mode=getattr(run,'actuator_mode','implicit_pd'),
+        stationary_joint_hold=getattr(run,'stationary_joint_hold',False),
     )
     robot = Go2RobotCfg(
         position=profile.start,

@@ -37,6 +37,7 @@ def go2_navigation_controller_cfgs(
     policy_weights_path: str = DEFAULT_GO2_POLICY_PATH,
     ground_height: float = 0.0,
     actuator_mode: str = 'implicit_pd',
+    stationary_joint_hold: bool = False,
 ):
     """Build independent direct-speed and path-following controller trees."""
 
@@ -46,6 +47,7 @@ def go2_navigation_controller_cfgs(
         joint_names=GO2_JOINT_NAMES,
         ground_height=ground_height,
         actuator_mode=actuator_mode,
+        stationary_joint_hold=stationary_joint_hold,
     )
     nested_move_by_speed = Go2MoveBySpeedControllerCfg(
         name='move_by_speed',
@@ -53,6 +55,7 @@ def go2_navigation_controller_cfgs(
         joint_names=GO2_JOINT_NAMES,
         ground_height=ground_height,
         actuator_mode=actuator_mode,
+        stationary_joint_hold=stationary_joint_hold,
     )
     move_to_point = MoveToPointBySpeedControllerCfg(
         name='move_to_point',
