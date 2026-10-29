@@ -61,7 +61,11 @@ class LocalStagingControl:
             self.failed=True
             return np.zeros(3),{**state,'needs_replan':True,'staging_phase':'staging_failed'}
         turn_end=heading+wrap(self.goal_heading-heading)
-        can_turn=body_rotation_clear(planner,boxes,position,heading,turn_end,margin=.025)
+        # The selected turn pose already has a checked clearance margin.
+        # Keep it for admission and target validation: silently dropping a
+        # .05m selection to .025m can brake after a5mm grid-cell crossing,
+        # before the gait has translated into the selected turning region.
+        can_turn=body_rotation_clear(planner,boxes,position,heading,turn_end,margin=self.selector.stage_margin)
         can_start_turn=can_turn and stepping_arc_clear(planner,boxes,position,heading,math.copysign(1.,turn_end-heading))
         settled=(np.linalg.norm(limiter.measured[:2])<.06 and abs(limiter.measured[2])<.10
                  and np.linalg.norm(limiter.command[:2])<.06 and abs(limiter.command[2])<.10)
@@ -70,7 +74,7 @@ class LocalStagingControl:
             if can_start_turn:
                 self.phase='staging_brake';self.stable_since=None
             else:
-                if (not body_rotation_clear(planner,boxes,self.target,heading,turn_end,margin=.025)
+                if (not body_rotation_clear(planner,boxes,self.target,heading,turn_end,margin=self.selector.stage_margin)
                         or not stepping_arc_clear(planner,boxes,self.target,heading,math.copysign(1.,turn_end-heading))
                         or not body_translation_recovery_clear(planner,boxes,position,heading,self.target)):
                     self.target=self.selector._select_stage(planner,boxes,position,heading,require_stepping_arc=True)
