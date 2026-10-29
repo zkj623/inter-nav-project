@@ -18,8 +18,8 @@ a text target such as `refrigerator` and walks up to the scanned object.
 在线模式默认使用固定 200 Hz 物理步长的 DC 电机控制、50 Hz 原 Go2 policy 和 25 fps 录像。
 原始 T04/T05 尚未通过最终验收，不能把代码测试或局部推箱结果当作导航成功。
 当前候选包含完整身体状态的恢复停稳、共享转向限速、受阻撤离恢复及真实接触面判断；额外前进停止反馈默认关闭。
-634项代码检查通过，原始T04/T05仍未完成物理验收。最新T04在导航恢复阶段失稳，当前修复已覆盖停稳信息不完整和停止请求被取消的问题，等待完整复跑。
-当前policy来自第三方项目；宇树官方代码、权重可用性和适配差异见 [官方策略核查](docs/go2_official_policy_review.md)。最新实验依据见 [交互技能说明](docs/go2_visual_push_skill.md) 和 [HANDOFF](HANDOFF.md)。
+旧策略加恢复修正后的完整 T04/T05 仍失稳。现已查出部署质量和原生关节限速与训练不一致，并接入可显式选择的匹配训练配置；NVIDIA Isaac Lab rough 候选在十组短测中健康完成 10/10、最终停稳 7/10，尚未完成原场景验收。
+默认命令保留旧策略；候选资产下载、三个追加参数、实际模型检查与测试数据见 [模型匹配与候选策略](docs/go2_training_policy_candidate.md)。宇树公开权重核查见 [官方策略核查](docs/go2_official_policy_review.md)。最新实验依据见 [交互技能说明](docs/go2_visual_push_skill.md) 和 [HANDOFF](HANDOFF.md)。
 
 在实验分支 `codex/go2-online-smooth-20261027` 的仓库根目录执行：
 
