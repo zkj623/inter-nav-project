@@ -274,15 +274,22 @@ class PushAsideSkill:
         self.events[-1]['confirmation_stage']=proof['confirmation_stage']
         return True
 
-    def _begin_release_pose_recovery(self,ctx,along):
-        # Only a previously observed cleared corridor brings us here. After
-        # braking, the body may drift into a small static-map overlap even
-        # though the box no longer blocks that corridor. Reuse the original
-        # navigation recovery, including every box and unknown cell, instead
-        # of restricting withdrawal to the old push axis forever.
+    def _begin_release_pose_recovery(self,ctx,along,*,blocked_contact=False):
+        # Restore the actual body pose after a real push. This can be needed
+        # before the old straight withdrawal has cleared the front feet, as
+        # well as after braking out of a previously observed free corridor.
+        # Reuse the original full-body navigation recovery with ALL boxes and
+        # unknown cells; the target box is never excluded from these checks.
         gap,_,_=self._box_frame(ctx)
+        if blocked_contact:
+            layers=ctx.layers
+            if (layers is None or self.plan.box_id not in getattr(layers,'visible_box_ids',())
+                    or self.last_box_motion_time is None
+                    or getattr(layers,'last_local',-1.)<=self.last_box_motion_time
+                    or ctx.now-layers.last_local>2*float(getattr(layers,'local_period',.1))):
+                return False
         if (along<=.25 or self.engage_box_position is None
-                or gap<self.config.front_contact_reach+.02
+                or (not blocked_contact and gap<self.config.front_contact_reach+.02)
                 or self.release_pose_recoveries>=self.config.max_retries
                 or body_motion_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.)):
             return False
@@ -293,7 +300,7 @@ class PushAsideSkill:
         self.release_recovery_tracker=tracker
         self.release_recovery_target=np.asarray(tracking['target'][:2])
         self.release_pose_recoveries+=1
-        self._transition('recover_release_pose',ctx,'settled_release_body_overlap')
+        self._transition('recover_release_pose',ctx,'blocked_contact_withdrawal' if blocked_contact else 'settled_release_body_overlap')
         self.events[-1].update(recovery_target=self.release_recovery_target.tolist(),
             release_pose_recovery=self.release_pose_recoveries)
         return True
@@ -583,7 +590,11 @@ class PushAsideSkill:
             if gap>=target_gap or withdrawn>=self.config.release_distance:
                 self._transition('settle_after_retreat',ctx);return self._output()
             answer=observed_contact_retreat(ctx.planner,ctx.boxes,ctx.position,ctx.heading,self.direction,ctx.limiter,ctx.now)
-            if answer is not None:return self._output(answer[0])
+            if answer is not None:
+                self.settled_since=None
+                return self._output(answer[0])
+            if self._quiet(ctx,.4,max_tilt=18.) and self._begin_release_pose_recovery(ctx,along,blocked_contact=True):
+                return self._output()
             if ctx.now-self.state_since>5:return self._fail(ctx,'no_safe_observed_retreat')
             return self._output()
         if self.state=='settle_after_retreat':
