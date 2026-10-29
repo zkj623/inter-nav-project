@@ -132,7 +132,10 @@ class PushAsideSkill:
         extent=float(np.dot(np.abs(self.direction),np.asarray(ctx.box.dimensions[:2]))/2)
         anchor=np.asarray(ctx.box.xy)-self.direction*(extent+.33+self.config.front_gap)
         longitudinal=anchor+self.tangent*float(np.dot(np.asarray(ctx.position[:2])-anchor,self.tangent))
-        if not body_rotation_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,self.push_heading,margin=.025):return False
+        # The turn controller executes the shortest yaw change. Near +/-pi,
+        # raw endpoints would test almost a full revolution instead.
+        end_heading=ctx.heading+wrap(self.push_heading-ctx.heading)
+        if not body_rotation_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,end_heading,margin=.025):return False
         if not body_translation_recovery_clear(ctx.planner,ctx.boxes,ctx.position,self.push_heading,longitudinal):return False
         if not body_translation_recovery_clear(ctx.planner,ctx.boxes,longitudinal,self.push_heading,anchor):return False
         self.stage=np.asarray(ctx.position[:2]).copy();self.anchor=anchor
@@ -166,7 +169,8 @@ class PushAsideSkill:
                         path=p.path(position,point,boxes) if np.linalg.norm(point-position)>.15 else [tuple(point)]
                         if not path:continue
                         arrival=ctx.heading if np.linalg.norm(point-position)<.15 else math.atan2(point[1]-path[-2][1],point[0]-path[-2][0]) if len(path)>1 else math.atan2(point[1]-position[1],point[0]-position[0])
-                        if not body_rotation_clear(p,boxes,point,arrival,self.push_heading,margin=.05):continue
+                        end_heading=arrival+wrap(self.push_heading-arrival)
+                        if not body_rotation_clear(p,boxes,point,arrival,end_heading,margin=.05):continue
                         longitudinal=anchor+self.tangent*float(np.dot(point-anchor,self.tangent))
                         if not body_translation_recovery_clear(p,boxes,point,self.push_heading,longitudinal):continue
                         if not body_translation_recovery_clear(p,boxes,longitudinal,self.push_heading,anchor):continue
