@@ -79,6 +79,7 @@ class PushAsideSkill:
         self.last_verify=-1e9;self.observation_moves=0;self.used_stages=[]
         self.progress_mark=None;self.progress_since=None;self.max_tilt=0.
         self.reason='';self.status='running';self.recovery_from_contact=False;self.box_velocity=0.;self.last_box_time=None;self.push_brakes=0
+        self.release_pose_recoveries=0;self.release_recovery_tracker=None;self.release_recovery_target=None
         self.preparation_recoveries=0;self.recovery_tracker=None;self.recovery_target=None;self.next_stage_probe=-1e9;self.heading_trim=None
 
     def _transition(self,state,ctx,reason=''):
@@ -271,6 +272,30 @@ class PushAsideSkill:
         self.certificate=proof;self.status='succeeded';self.reason='observed_passage_created'
         self._transition('succeeded',ctx,self.reason)
         self.events[-1]['confirmation_stage']=proof['confirmation_stage']
+        return True
+
+    def _begin_release_pose_recovery(self,ctx,along):
+        # Only a previously observed cleared corridor brings us here. After
+        # braking, the body may drift into a small static-map overlap even
+        # though the box no longer blocks that corridor. Reuse the original
+        # navigation recovery, including every box and unknown cell, instead
+        # of restricting withdrawal to the old push axis forever.
+        gap,_,_=self._box_frame(ctx)
+        if (along<=.25 or self.engage_box_position is None
+                or gap<self.config.front_contact_reach+.02
+                or self.release_pose_recoveries>=self.config.max_retries
+                or body_motion_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.)):
+            return False
+        tracker=ForwardExplorationPathTracker(ctx.position[:2],[tuple(self.task_goal)],guard_motion=False)
+        action,tracking=tracker.action(ctx.position[:2],ctx.heading,ctx.planner,ctx.boxes)
+        if tracking.get('needs_replan') or not tracking.get('recovering_buffer'):return False
+        if not np.any(np.asarray(action['move_by_speed'],float)):return False
+        self.release_recovery_tracker=tracker
+        self.release_recovery_target=np.asarray(tracking['target'][:2])
+        self.release_pose_recoveries+=1
+        self._transition('recover_release_pose',ctx,'settled_release_body_overlap')
+        self.events[-1].update(recovery_target=self.release_recovery_target.tolist(),
+            release_pose_recovery=self.release_pose_recoveries)
         return True
 
     def step(self,ctx):
@@ -520,12 +545,33 @@ class PushAsideSkill:
         if self.state=='settle_released_corridor':
             if self._quiet(ctx,.4,max_tilt=18.):
                 if self._recovered_passage_effect(ctx,along):return self._output()
+                if self._begin_release_pose_recovery(ctx,along):return self._output()
                 self.last_release_probe=ctx.now
                 self._transition('retreat',ctx,'corridor_changed_during_release')
                 return self._output()
             if ctx.now-self.state_since>self.config.max_push_braking_seconds:
                 return self._retry(ctx,'released_corridor_not_settled')
             return self._output()
+        if self.state=='recover_release_pose':
+            if ctx.now-self.state_since>self.config.max_preparation_recovery_seconds:
+                return self._fail(ctx,'release_pose_recovery_timeout')
+            current_free=body_motion_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.)
+            if current_free:
+                measured=np.asarray(ctx.limiter.measured,float)
+                # A free present pose alone is insufficient while the base
+                # is still moving toward a wall. Keep the original measured
+                # stopping sweep, then settle and recheck the fresh map.
+                if body_motion_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,
+                        measured[0],measured[2],horizon=.8,lateral=measured[1]):
+                    self.release_recovery_tracker=None;self.release_recovery_target=None
+                    self._transition('settle_released_corridor',ctx,'release_body_space_recovered')
+                return self._output()
+            action,tracking=self.release_recovery_tracker.action(ctx.position[:2],ctx.heading,ctx.planner,ctx.boxes)
+            if tracking.get('needs_replan') or not tracking.get('recovering_buffer'):return self._output()
+            self.release_recovery_target=np.asarray(tracking['target'][:2])
+            action=smooth_recovery_action(action,ctx.position[:2],ctx.heading,ctx.planner,
+                ctx.boxes,ctx.limiter,ctx.now)
+            return self._output(action['move_by_speed'])
         if self.state=='retreat':
             if ctx.now-self.last_release_probe>=.25:
                 self.last_release_probe=ctx.now
@@ -603,6 +649,8 @@ class PushAsideSkill:
                 'remaining_push_m':None if self.initial_box is None else float(self.plan.push_distance-np.dot(np.asarray(ctx.box.xy)-self.initial_box,self.direction)),
                 'stage_xy':None if self.stage is None else self.stage.tolist(),
                 'preparation_recovery_target':None if self.recovery_target is None else self.recovery_target.tolist(),
+            'release_recovery_target':None if self.release_recovery_target is None else self.release_recovery_target.tolist(),
+            'release_pose_recoveries':self.release_pose_recoveries,
                 'heading_trim':None if self.heading_trim is None else self.heading_trim.last_detail,
                 'anchor_xy':None if self.anchor is None else self.anchor.tolist()}
 
