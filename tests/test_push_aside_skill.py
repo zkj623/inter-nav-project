@@ -194,7 +194,7 @@ def test_fine_heading_brakes_and_waits_for_measured_settling_before_translation(
     ctx.yaw_rate=0.;ctx.now+=.5
     assert skill.step(ctx).state=='refine_heading'
     ctx.now+=1.21
-    assert skill.step(ctx).state=='align_longitudinal'
+    assert skill.step(ctx).state=='align_lateral'  # already stopped and within the safe standoff
 
 
 def test_settling_restarts_on_body_motion_even_when_measured_speed_is_low():
@@ -432,3 +432,71 @@ def test_retry_remembers_whether_it_came_from_actual_box_contact():
         assert skill.recovery_from_contact is contact
         assert result.events[-1]['recovery_source_state']==state
         assert result.events[-1]['recovery_from_contact'] is contact
+
+
+@pytest.mark.parametrize('state',['settle_at_stage','settle_alignment','settle_recovered_preparation','settle_contact'])
+def test_stationary_preparation_holds_through_transient_tilt_without_a_retry(state):
+    skill,ctx=alignment_context(state,gap=.35,lateral=0.)
+    ctx.layers=NS(refresh_global=lambda **kwargs:None)
+    ctx.tilt_degrees=20.
+    command=skill.step(ctx)
+    assert command.state==state and command.velocity==(0.,0.,0.) and skill.retries==0
+    ctx.now+=.2;ctx.tilt_degrees=14.
+    assert skill.step(ctx).state==state  # original measured quiet interval still required
+    ctx.now+=.41
+    command=skill.step(ctx)
+    assert command.state!=state and skill.retries==0
+
+
+def test_stationary_preparation_preserves_hard_health_and_total_skill_deadlines():
+    for violation in ['health','deadline']:
+        skill,ctx=alignment_context('settle_recovered_preparation')
+        ctx.tilt_degrees=30. if violation=='health' else 20.
+        if violation=='deadline':ctx.now=skill.config.max_skill_seconds+.01
+        command=skill.step(ctx)
+        assert command.status=='failed' and command.velocity==(0.,0.,0.)
+        assert command.reason==('robot_unstable' if violation=='health' else 'skill_timeout')
+
+
+def test_stationary_preparation_cannot_wait_forever_below_hard_health_limit():
+    skill,ctx=alignment_context('settle_recovered_preparation');ctx.tilt_degrees=20.
+    ctx.now=skill.config.max_alignment_seconds+.01
+    command=skill.step(ctx)
+    assert command.state=='brake_for_recovery' and skill.retries==1
+    assert skill.release_reason=='preparation_settling_timeout'
+
+
+def test_completed_alignment_stop_hands_off_without_repeating_safe_standoff_wait():
+    skill,ctx=alignment_context('settle_alignment',gap=.46,lateral=.3)
+    assert skill.step(ctx).state=='settle_alignment'
+    ctx.now+=.31
+    assert skill.step(ctx).state=='align_lateral'
+    ctx.now+=.01
+    command=skill.step(ctx)
+    assert command.state=='align_lateral' and command.velocity[1]>0.
+
+
+
+def test_lateral_alignment_tracks_validated_body_centerline_while_heading_is_corrected():
+    skill,ctx=alignment_context('align_lateral',gap=.35,lateral=.30,heading=.12)
+    captured=[]
+    def translate(context,target,axis,speed,tolerance):
+        captured.append(np.array(target));return np.zeros(3),False
+    skill._translation=translate
+    assert skill.step(ctx).state=='align_lateral'
+    assert len(captured)==1
+    assert captured[0][1]==pytest.approx(ctx.box.xy[1])
+    assert captured[0][0]==pytest.approx(ctx.position[0])
+
+
+def test_body_already_on_centerline_is_not_moved_to_compensate_an_unfinished_yaw():
+    heading=.12
+    skill,ctx=alignment_context('align_lateral',gap=.35,lateral=-.33*math.sin(heading),heading=heading)
+    assert abs(ctx.position[1]-ctx.box.xy[1])<1e-9
+    assert abs(skill._box_frame(ctx)[1])>.035
+    command=skill.step(ctx)
+    assert command.velocity==(0.,0.,0.) and command.state=='align_lateral'
+    ctx.now+=.31
+    assert skill.step(ctx).state=='settle_contact'
+    ctx.now+=.01
+    assert skill.step(ctx).state=='refine_heading'  # actual heading condition still enforced

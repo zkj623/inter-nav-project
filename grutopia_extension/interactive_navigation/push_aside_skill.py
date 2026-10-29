@@ -24,6 +24,9 @@ from grutopia_extension.interactive_navigation.go2_heading_trim import HeadingTr
 def wrap(value):return (value+math.pi)%(2*math.pi)-math.pi
 
 
+PREPARATION_SETTLING_STATES=frozenset({'settle_at_stage','settle_alignment','settle_recovered_preparation','settle_contact'})
+
+
 @dataclass(frozen=True)
 class PushAsideConfig:
     front_gap:float=.35
@@ -274,6 +277,14 @@ class PushAsideSkill:
         self.events[-1]['confirmation_stage']=proof['confirmation_stage']
         return True
 
+    def _centering_state_after_stop(self,ctx):
+        # The caller already established a measured stop. Reuse it when the
+        # actual standoff is safe instead of adding another stationary dwell.
+        gap,_,_=self._box_frame(ctx)
+        safe=(.20<=gap<=self.config.front_gap+.125 and
+            body_motion_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.))
+        return 'align_lateral' if safe else 'align_longitudinal'
+
     def _begin_release_pose_recovery(self,ctx,along,*,blocked_contact=False):
         # Restore the actual body pose after a real push. This can be needed
         # before the old straight withdrawal has cleared the front feet, as
@@ -315,10 +326,23 @@ class PushAsideSkill:
                     getattr(ctx.box,'yaw',0.),getattr(ctx.box,'mass_kg',1.))
         self.max_tilt=max(self.max_tilt,float(ctx.tilt_degrees))
         if not ctx.healthy or ctx.tilt_degrees>=30:return self._fail(ctx,'robot_unstable')
-        if self.state in ['settle_at_stage','turn_at_stage','refine_heading','settle_alignment','recover_preparation','settle_recovered_preparation','align_longitudinal','align_lateral','settle_contact'] and ctx.tilt_degrees>=18.:
+        if ctx.now-self.started>self.config.max_skill_seconds:return self._fail(ctx,'skill_timeout')
+        if self.state in PREPARATION_SETTLING_STATES:
+            if ctx.now-self.state_since>self.config.max_alignment_seconds:
+                reason=('alignment_settling_timeout' if self.state=='settle_alignment' else
+                        'alignment_timeout' if self.state=='settle_contact' else 'preparation_settling_timeout')
+                self.used_stages.append(np.asarray(ctx.position[:2]).copy())
+                return self._retry(ctx,reason)
+            if ctx.tilt_degrees>=18.:
+                # This phase already requests a stop. Allow its measured
+                # settling gate to finish; do not spend a new retry merely
+                # because braking briefly crosses the movement stop trigger.
+                # The30degree hard limit above and15degree quiet gate remain.
+                self.settled_since=None
+                return self._output()
+        elif self.state in ['turn_at_stage','refine_heading','recover_preparation','align_longitudinal','align_lateral'] and ctx.tilt_degrees>=18.:
             self.used_stages.append(np.asarray(ctx.position[:2]).copy())
             return self._retry(ctx,'preparation_attitude')
-        if ctx.now-self.started>self.config.max_skill_seconds:return self._fail(ctx,'skill_timeout')
         moved=np.asarray(ctx.box.xy)-self.initial_box;along=float(np.dot(moved,self.direction))
         cross=float(np.dot(moved,self.tangent))
         if self.last_box is not None and ctx.now>self.last_box_time:
@@ -417,9 +441,8 @@ class PushAsideSkill:
                 # for centering instead of inserting a second idle dwell.
                 # In T05 v84 the rough policy resumed yaw drift during that
                 # duplicate dwell, exhausting retries before any sidestep.
-                safe_standoff=(.20<=gap<=self.config.front_gap+.125 and
-                    body_motion_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.))
-                next_state='align_lateral' if safe_standoff else 'align_longitudinal'
+                next_state=self._centering_state_after_stop(ctx)
+                safe_standoff=next_state=='align_lateral'
                 self._transition(next_state,ctx,'coarse_heading_ready_for_centering')
                 self.events[-1]['reused_turn_stop_for_standoff']=bool(safe_standoff)
                 return self._output()
@@ -431,7 +454,7 @@ class PushAsideSkill:
                 if abs(yaw_error)>self.config.yaw_tolerance:
                     self.turn=ContactTurnControl(ctx.position,ctx.heading,self.push_heading,ctx.planner,ctx.boxes,ctx.now)
                     self._transition('turn_at_stage',ctx)
-                else:self._transition('align_longitudinal',ctx,'settled_heading_ready_for_centering')
+                else:self._transition(self._centering_state_after_stop(ctx),ctx,'settled_heading_ready_for_centering')
             return self._output()
         if self.state=='refine_heading':
             if ctx.now-self.state_since>self.config.max_alignment_seconds:return self._retry(ctx,'heading_refinement_timeout')
@@ -442,7 +465,7 @@ class PushAsideSkill:
             command,done,_=self.heading_trim.update(ctx.position,ctx.heading,ctx.planner,ctx.boxes,
                 ctx.limiter,ctx.now,ctx.body_velocity,angular,ctx.tilt_degrees)
             if self.heading_trim.failed:return self._retry(ctx,self.heading_trim.failed)
-            if done:self._transition('align_longitudinal',ctx)
+            if done:self._transition(self._centering_state_after_stop(ctx),ctx)
             return self._output(command)
         if self.state in ['align_longitudinal','align_lateral','settle_contact']:
             if abs(yaw_error)>.18:return self._retry(ctx,'heading_drift_during_alignment')
@@ -472,8 +495,14 @@ class PushAsideSkill:
                 if gap<.20 or gap>self.config.front_gap+.175:
                     self._transition('settle_alignment',ctx,'standoff_drift_during_sidestep')
                     return self._output()
-                nose_target=np.asarray(ctx.position[:2])+self.tangent*lateral
-                command,done=self._translation(ctx,nose_target,self.tangent,self.config.lateral_speed,self.config.alignment_tolerance)
+                # The validated anchor is a BODY pose at push_heading.
+                # Centering the currently rotated nose shifts that target by
+                # .33*sin(yaw_error), then final heading trim undoes it. Track
+                # the same body centerline that preparation planning checked;
+                # final contact still validates the actual nose and heading.
+                body_lateral=float(np.dot(np.asarray(ctx.box.xy)-np.asarray(ctx.position[:2]),self.tangent))
+                body_target=np.asarray(ctx.position[:2])+self.tangent*body_lateral
+                command,done=self._translation(ctx,body_target,self.tangent,self.config.lateral_speed,self.config.alignment_tolerance)
                 if done:self._transition('settle_contact',ctx)
                 return self._output(command)
             ready=contact_pose_ready(ctx.position,ctx.heading,ctx.box.xy,ctx.box.dimensions,self.direction,
@@ -662,6 +691,7 @@ class PushAsideSkill:
                 'preparation_recovery_target':None if self.recovery_target is None else self.recovery_target.tolist(),
             'release_recovery_target':None if self.release_recovery_target is None else self.release_recovery_target.tolist(),
             'release_pose_recoveries':self.release_pose_recoveries,
+            'preparation_attitude_hold':bool(self.state in PREPARATION_SETTLING_STATES and ctx.tilt_degrees>=18.),
                 'heading_trim':None if self.heading_trim is None else self.heading_trim.last_detail,
                 'anchor_xy':None if self.anchor is None else self.anchor.tolist()}
 

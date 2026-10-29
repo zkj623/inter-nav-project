@@ -17,6 +17,14 @@ v88 两个守护进程在没有子仿真或输出目录时被替换；v89 两组
 
 `v91-actual-passage-final-tests.log`：530 passed，1 个既有 G1 相机测试 deselected（其中 8 项为这次新验收的回归）。对真实失败的 T04 v85 / T05 v84 运行补充工具，得到 `actual_passage_qa.json`，均为 false；它们虽然最终短时停稳，但没有到原目标，也没有成功的交互穿越证据。新增工具不改变正在运行的 v89 导航源码。
 
+T05 v94 已自然结束并生成完整失败记录：22093 步，`push_aside:retry_limit:preparation_attitude`，B07累计位移0.240046m，目标误差1.490722m，最大倾角26.393271°。恢复路径漏检修正后，这次已能退出原来低速停滞位置，但最终在settle_recovered_preparation中遇到18°准备触发值并耗尽重试。五路视频各4474帧/25fps/178.96秒，任务尚未通过。
+
+v96 对准备阶段做两类修正。四个本来就请求停止的状态（settle_at_stage、settle_alignment、settle_recovered_preparation、settle_contact）在短暂倾角≥18°时继续保持停止，不立即重复发起恢复并消耗重试；运动状态仍在18°触发原恢复，30°硬健康阈值不变。停稳阶段仍须满足原来低于15°的静止条件才可进入相应下一步，等待不超过既有20秒对齐预算，技能总180秒优先。已经通过停稳的对齐和航向精调会像粗转向一样，按当前安全间距与完整机身检查直接选择后续轴，减少重复停等。
+
+侧向对齐现在跟踪准备规划检查过的机身中心线。旧执行目标按当前已旋转的鼻端居中，与最终push_heading下的机身目标相差0.33*sin(航向误差)，后续修正航向又产生额外横向偏差；T04 v95的记录可见机身y约0.312、箱体/规划中心线y约0.277且仍有约0.13rad航向误差。新目标使用当前箱体中心在推向切线上的投影；碰撞检查、速度限制以及最终真实鼻端/航向接触条件不变。
+
+v96-final-preparation-tests.log：553 passed，1个既有G1相机测试deselected。上述变化仍需原始两组的物理复跑；不能把单元测试当作任务通过。
+
 T04 v94 已因遥测错误提前中止，不能视为完整任务结果：约36.17秒处写入live/state.json时，NavigationAttitudeRecovery的settled字段为NumPy bool_，JSON编码失败。没有result.json，监督器判incomplete_task_outputs。主进程峰值18.459GiB、整个scope峰值约16.959GiB，24GiB限制没有被触发、没有OOM，错误不是内存原因。
 
 v95仅将stable or plateau_stable的结果转换为Python bool，保持恢复条件、阈值和运动请求不变；新增平台检测true/false两条JSON往返回归。v95-recovery-json-tests.log：544 passed，1个既有G1相机测试deselected。正在运行的T05 v94保持原93ae182不变；只对其早期导航记录重放恢复监督器的诊断截至53.70秒匹配两次真实触发，没有发现已记录的NumPy布尔值，不能据此断言后续一定不会触发错误，也没有重放机器人动力学。
