@@ -1,0 +1,125 @@
+{
+  "diagnostic_only": true,
+  "navigation_accepted": false,
+  "idle_tests": [
+    {
+      "case": "standstill",
+      "reason": "completed",
+      "completed_script": true,
+      "healthy": true,
+      "first_failure_s": null,
+      "maximum_tilt_deg": 4.08403929680755,
+      "minimum_base_height_m": 0.40133994817733765,
+      "physics_steps": 4000,
+      "policy_inferences": 1000,
+      "linear_command_rmse_mps": 0.0041476860217408784,
+      "yaw_command_rmse_rad_s": 0.012007948986054406,
+      "stops": [],
+      "final_stop_valid": false,
+      "label": "current_rough_standstill",
+      "final_idle_measured_settled": true,
+      "end_tilt_deg": 4.083965070492739,
+      "end_height_m": 0.42556285858154297,
+      "maximum_planar_displacement_m": 0.013604504814746428,
+      "note": "The generic benchmark has no moving-to-stopped event for this script, so its final_stop_valid=false is inapplicable; final_idle_measured_settled replays the measured stop gate on the saved20ms trace."
+    },
+    {
+      "case": "standstill",
+      "reason": "completed",
+      "completed_script": true,
+      "healthy": true,
+      "first_failure_s": null,
+      "maximum_tilt_deg": 18.948020546902544,
+      "minimum_base_height_m": 0.34698277711868286,
+      "physics_steps": 4000,
+      "policy_inferences": 1000,
+      "linear_command_rmse_mps": 0.007002467040170707,
+      "yaw_command_rmse_rad_s": 0.011741678934662967,
+      "stops": [],
+      "final_stop_valid": false,
+      "label": "nvidia_rough_standstill",
+      "final_idle_measured_settled": false,
+      "end_tilt_deg": 18.941187501846358,
+      "end_height_m": 0.34702616930007935,
+      "maximum_planar_displacement_m": 0.037087714484165334,
+      "note": "The generic benchmark has no moving-to-stopped event for this script, so its final_stop_valid=false is inapplicable; final_idle_measured_settled replays the measured stop gate on the saved20ms trace."
+    },
+    {
+      "case": "standstill",
+      "reason": "completed",
+      "completed_script": true,
+      "healthy": true,
+      "first_failure_s": null,
+      "maximum_tilt_deg": 2.990313304734483,
+      "minimum_base_height_m": 0.25237640738487244,
+      "physics_steps": 4000,
+      "policy_inferences": 1000,
+      "linear_command_rmse_mps": 0.007198715137822405,
+      "yaw_command_rmse_rad_s": 0.014795301012830104,
+      "stops": [],
+      "final_stop_valid": false,
+      "label": "nvidia_flat_standstill",
+      "final_idle_measured_settled": true,
+      "end_tilt_deg": 2.7592534611335533,
+      "end_height_m": 0.2547297477722168,
+      "maximum_planar_displacement_m": 0.047307467775916115,
+      "note": "The generic benchmark has no moving-to-stopped event for this script, so its final_stop_valid=false is inapplicable; final_idle_measured_settled replays the measured stop gate on the saved20ms trace."
+    }
+  ],
+  "original_task_candidate_failures": [
+    {
+      "task": "T04",
+      "result": {
+        "id": "T04",
+        "start": [
+          2.11,
+          -0.78
+        ],
+        "goal": [
+          10.3,
+          1.75
+        ],
+        "success": false,
+        "reason": "startup_unstable",
+        "position": [
+          2.135651111602783,
+          -0.756341814994812,
+          0.3560984432697296
+        ]
+      },
+      "startup_tilt_deg": 16.24961752692385,
+      "native_contract_valid": true,
+      "source_commit": "c57e86dbd6be5bc359fbb6da45afcd6d6ff6bf3d",
+      "video_available": false,
+      "reason_for_no_video": "Initialization failed before task recorder activation; control traces and model contracts preserved."
+    },
+    {
+      "task": "T05",
+      "result": {
+        "id": "T05",
+        "start": [
+          13.6,
+          -0.4
+        ],
+        "goal": [
+          3.3,
+          1.4
+        ],
+        "success": false,
+        "reason": "startup_unstable",
+        "position": [
+          13.574414253234863,
+          -0.4236750900745392,
+          0.3560735583305359
+        ]
+      },
+      "startup_tilt_deg": 16.258081811879137,
+      "native_contract_valid": true,
+      "source_commit": "c57e86dbd6be5bc359fbb6da45afcd6d6ff6bf3d",
+      "video_available": false,
+      "reason_for_no_video": "Initialization failed before task recorder activation; control traces and model contracts preserved."
+    }
+  ],
+  "next_candidate": "original rough_model_7850.pt + canonical training asset/native30/training leg contact",
+  "next_run": "v119 T04 and T05 queued serially, same c57e86d runtime, no threshold relaxation"
+}

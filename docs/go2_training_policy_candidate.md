@@ -1,4 +1,31 @@
-# Go2 模型匹配与候选策略（v117，2026-10-30）
+# Go2 模型匹配与策略对照（更新至 v118，2026-10-30）
+
+## 最新结果：v117 启动失败与 v118 长静止对照
+
+NVIDIA rough 在原始 T04/T05 都未通过启动检查，导航没有开始。T04/T05 的启动倾角分别为 16.250° / 16.258°，超过原有 15° 启动界限；模型参数检查均通过。零速静止过程中倾角持续增大，不能把之前仅静止3秒的短测试当成充分验证。此次失败发生在录像器启动前，没有五路任务视频；保留了实际控制轨迹、启动事件、模型与源码检查，不能称作完整任务录像。
+
+补充20秒纯静止对照，同一规范资产、限速和材料：
+
+| 策略 | 最大倾角 | 最低高度 | 健康完成 | 最后实测停稳 |
+|---|---:|---:|---|---|
+| current_rough_standstill | 4.084° | 0.401 m | True | True |
+| nvidia_rough_standstill | 18.948° | 0.347 m | True | False |
+| nvidia_flat_standstill | 2.990° | 0.252 m | True | True |
+
+详情见 [静止与启动证据](data/go2_idle_and_startup_v118.json)。长静止脚本没有“从移动转到停止”事件，因此使用完整测量停稳器回放末段数据另行检查，没有把通用脚本的空停止列表当成失败。
+
+当前完整场景候选调整为**旧 rough +匹配训练的机器人模型/物理参数**。v119 已安排原始 T04/T05 串行复测，源码仍固定为 `c57e86dbd6be5bc359fbb6da45afcd6d6ff6bf3d`。启动15°、全程30°、目标0.25m等标准不变。NVIDIA rough 暂不作为通过验证的替代品，原始任务仍未完成。
+
+在 README 的完整命令后追加以下参数即可复现当前候选；这是追加参数，不是独立 shell 命令：
+
+```bash
+--policy-path /data20t/embodied/share/inter-nav/assets/robots/go2/policy/move_by_speed/rough_model_7850.pt \
+--robot-usd "$go2_reference/go2_training_flattened.usdc" \
+--robot-physics-profile isaaclab_training --actuator-mode explicit_dc
+```
+
+`go2_reference` 的准备方法见下方。下方 NVIDIA rough 选择说明保留为被完整场景结果修正的历史试验依据。
+
 
 原始 T04/T05 尚未完成。T05 v108 已把 B07 推开 0.778568 m，并获得在线通路确认，但后续导航失稳，未穿越到点；T04 v109 在接触箱子前失稳。两次最大倾角分别为 39.879° / 42.480°，最终目标误差为 1.529 m / 4.822 m。进程正常退出和局部推箱成功均不代表任务成功。
 
