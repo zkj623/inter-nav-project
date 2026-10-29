@@ -156,6 +156,18 @@ class ExplorationVoronoiRoutes:
             'map_source':'known_collision_prior_and_simulator_box_poses'}
 
 
+def decision_recovery_required(planner, boxes, position, heading, tracker=None):
+    """Finish a latched recovery turn before handing a briefly free pose off.
+
+    The tracker rechecks its turn against every new map and can stop/replan
+    if it becomes blocked. A transient free footprint is not a completed
+    maneuver; clearing the tracker there repeatedly resets the yaw ramp.
+    """
+    if tracker is not None and tracker._buffer_turn_target is not None:
+        return True
+    return bool(navigation_body_blocked(planner, boxes, heading)[planner.cell(position)])
+
+
 def calibrated_buffer_translation(planner,boxes,position,heading,target):
     """A reachable free pose must also admit an effective, stoppable stride."""
     delta=np.asarray(target[:2],float)-np.asarray(position[:2],float)

@@ -124,7 +124,7 @@ def main():
     from grutopia_extension.interactive_navigation.go2_contact_control import (
         nose_aligned_body_target,approach_alignment_ready,contact_centering_velocity,contact_axis_delta,contact_braking_required,contact_pose_ready,safe_contact_retreat,observed_contact_retreat,push_centerline_velocity,push_completion_state,ContactAlignmentGate,CONTACT_BRAKING_HORIZON_S)
     from grutopia_extension.interactive_navigation.go2_voronoi_navigation import (
-        ExplorationVoronoiRoutes,ForwardExplorationPathTracker,update_task_cameras,body_rotation_clear,body_motion_clear,navigation_body_blocked,body_translation_recovery_clear)
+        ExplorationVoronoiRoutes,ForwardExplorationPathTracker,update_task_cameras,body_rotation_clear,body_motion_clear,navigation_body_blocked,body_translation_recovery_clear,decision_recovery_required)
     from grutopia_extension.interactive_navigation.layered_navigation_map import LayeredNavigationMap
     from grutopia_extension.interactive_navigation.go2_rollout_health import Go2RolloutHealth
     from grutopia_extension.interactive_navigation.go2_actuation import physics_steps_per_command
@@ -770,7 +770,7 @@ def main():
                         if step-online_wait_start>1200:reason='no_observed_route_or_frontier';break
                         obs=tick(stop);last_action=stop;continue
                     recovery=None
-                    if navigation_body_blocked(planner,current,heading)[planner.cell(p[:2])]:
+                    if decision_recovery_required(planner,current,p[:2],heading,decision_recovery_tracker):
                         if decision_recovery_tracker is None:
                             decision_recovery_tracker=ForwardExplorationPathTracker(p[:2],[(*navigation_goal,0.)],guard_motion=False)
                         recovery=tracked_navigation_action(decision_recovery_tracker,p[:2],heading,planner,current,enabled=args.forward_stop_feedback)
