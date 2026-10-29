@@ -61,6 +61,48 @@ class OnlineMapTests(unittest.TestCase):
         self.assertTrue(m.observed[p.cell(target)])
         with m.global_planning() as boxes:self.assertTrue(p.path((0,0),target,boxes))
         self.assertFalse(m.observed[p.cell((2.5,0))])
+    def test_failed_frontier_selects_another_observed_route_without_revealing_goal(self):
+        p,m=self.make();yy,xx=np.indices(m.observed.shape)
+        known=(xx>20)&(xx<95)&(yy>35)&(yy<85)
+        m.ingest_scan_masks(np.zeros_like(known),known);m.refresh_global();m._bind_local()
+        selector=OnlineGoalSelector();goal=(2.7,0)
+        first,target=selector.decide(m,(0,0),goal)
+        observed=m.observed.copy();occupied=m.global_occupied.copy()
+        failure=selector.consume_execution_failure(target,m.observed.sum(),{
+            'needs_replan':True,'blocked_ticks':100,'staging_phase':'staging_failed',
+            'controller':'continuous_staging_failed'})
+        self.assertEqual(failure['reason'],'staging_failed')
+        second,next_target=selector.decide(m,(0,0),goal)
+        self.assertEqual(second.kind,'explore')
+        self.assertNotEqual(selector.key(target),selector.key(next_target))
+        with m.global_planning() as boxes:self.assertTrue(p.path((0,0),next_target,boxes))
+        np.testing.assert_array_equal(m.observed,observed)
+        np.testing.assert_array_equal(m.global_occupied,occupied)
+        self.assertFalse(m.observed[p.cell(goal)])
+        self.assertEqual(second.explanation['goal'],list(goal))
+
+    def test_routine_local_replan_does_not_blacklist_frontier(self):
+        selector=OnlineGoalSelector()
+        for tracking in [{'needs_replan':True,'blocked_ticks':0},
+                         {'needs_replan':True,'blocked_ticks':30},
+                         {'needs_replan':False,'blocked_ticks':100,'staging_phase':'staging_move'}]:
+            self.assertIsNone(selector.consume_execution_failure((1,0),100,tracking))
+        self.assertEqual(selector.visited,{})
+
+    def test_blocked_controller_failure_is_consumed_without_stage_label(self):
+        selector=OnlineGoalSelector()
+        report=selector.consume_execution_failure((1,0),100,{'needs_replan':True,'blocked_ticks':31})
+        self.assertEqual(report['reason'],'controller_motion_blocked')
+        self.assertEqual(selector.visited[selector.key((1,0))],100)
+        json.dumps(report)
+
+    def test_failed_exploration_destination_does_not_blacklist_the_task_goal(self):
+        p,m=self.make();m.ingest_scan_masks(np.zeros_like(m.observed),np.ones_like(m.observed));m.refresh_global();m._bind_local()
+        selector=OnlineGoalSelector();goal=(1.,0.)
+        selector.consume_execution_failure(goal,m.observed.sum(),{'needs_replan':True,'staging_phase':'staging_failed'})
+        decision,target=selector.decide(m,(0,0),goal)
+        self.assertEqual(decision.kind,'navigate');self.assertEqual(target,goal)
+
     def test_goal_is_used_only_when_connected_in_observed_map(self):
         p,m=self.make();m.ingest_scan_masks(np.zeros_like(m.observed),np.ones_like(m.observed));m.refresh_global();m._bind_local()
         d,target=OnlineGoalSelector().decide(m,(0,0),(1,0))

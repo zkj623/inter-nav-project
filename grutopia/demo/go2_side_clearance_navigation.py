@@ -938,6 +938,18 @@ def main():
                         event('side_push_begin',step=step,box_id=plan.box_id,passage=planner.active_passages[plan.box_id])
                     else:
                         action,tracking=tracked_navigation_action(tracker,p[:2],heading,planner,current,enabled=args.forward_stop_feedback)
+                        # Consume the old controller's terminal failure BEFORE
+                        # local replanning replaces tracking with a fresh tracker.
+                        # Otherwise an unexecutable frontier is retried forever.
+                        frontier_failure=(online_selector.consume_execution_failure(
+                            endpoint,layers.observed.sum(),tracking)
+                            if args.map_source=='online' and goal_kind=='frontier' else None)
+                        if frontier_failure is not None:
+                            event('frontier_execution_failed',step=step,position=p.tolist(),**frontier_failure)
+                            phase='decide';tracker=None
+                            if smooth_limiter is not None:smooth_limiter.clear_guidance(p,planner.control_time)
+                            action=observation_brake(p,heading,current,planner.control_time)
+                            obs=tick(action);last_action=action;last_tracking=tracking;continue
                         if (tracking.get('needs_replan')
                                 and (np.linalg.norm(p[:2]-endpoint)>.30 or tracking.get('buffer_cleared_replan'))
                                 and (step-last_route_replan>=100 or tracking.get('staging_completed'))):
