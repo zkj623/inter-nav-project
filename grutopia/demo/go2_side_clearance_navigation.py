@@ -70,7 +70,7 @@ def main():
     if args.actuator_mode is None:args.actuator_mode='explicit_dc' if args.map_source=='online' else 'implicit_pd'
     if args.forward_stop_feedback and (args.actuator_mode!='explicit_dc' or args.path_controller!='continuous'):
         raise ValueError('forward-stop-feedback requires continuous navigation and explicit_dc')
-    from grutopia_extension.interactive_navigation.go2_stop_feedback import ForwardStopFeedback,skill_has_active_contact
+    from grutopia_extension.interactive_navigation.go2_stop_feedback import ForwardStopFeedback,skill_has_active_contact,tracked_navigation_action
     if not np.isfinite(args.floor_top) or not 0 < args.floor_top <= .30:
         raise ValueError('floor-top must be within (0, 0.30] m')
     floor_top=args.floor_top
@@ -639,7 +639,7 @@ def main():
                     if not route:route=ordinary_path(position[:2],target,boxes)
                     if not route:return stop,False,{'needs_replan':True}
                     subtracker=ordinary_tracker(position[:2],route,heading,short_goal=True)
-                action,detail=subtracker.action(position[:2],heading,planner,boxes)
+                action,detail=tracked_navigation_action(subtracker,position[:2],heading,planner,boxes,enabled=args.forward_stop_feedback)
                 if detail.get('needs_replan') and step%100==0:
                     route=ordinary_path(position[:2],target,boxes,local=True)
                     if route:subtracker=ordinary_tracker(position[:2],route,heading,short_goal=True)
@@ -773,7 +773,7 @@ def main():
                     if navigation_body_blocked(planner,current,heading)[planner.cell(p[:2])]:
                         if decision_recovery_tracker is None:
                             decision_recovery_tracker=ForwardExplorationPathTracker(p[:2],[(*navigation_goal,0.)],guard_motion=False)
-                        recovery=decision_recovery_tracker.action(p[:2],heading,planner,current)
+                        recovery=tracked_navigation_action(decision_recovery_tracker,p[:2],heading,planner,current,enabled=args.forward_stop_feedback)
                     else:decision_recovery_tracker=None
                     if recovery is not None and recovery[1].get('needs_replan'):recovery=None
                     if recovery is None and args.roadmap_shape=='circle':
@@ -817,7 +817,7 @@ def main():
                             'execution_state':'follow_cleared_corridor' if passage_guide.entry_reached else 'approach_cleared_corridor_entry',
                             'navigation_subgoal':endpoint.tolist(),'requested_goal':task['goal']}
                         tracker=ordinary_tracker(p[:2],path,nav_heading,short_goal=not passage_guide.entry_reached)
-                        action,tracking=tracker.action(p[:2],heading,planner,current)
+                        action,tracking=tracked_navigation_action(tracker,p[:2],heading,planner,current,enabled=args.forward_stop_feedback)
                         component.mapping._planned_path=tracker._planned_path[tracker._waypoint_index:]
                         event('verified_passage_route',step=step,path=path,entry=passage_guide.entry.tolist(),
                               exit=passage_guide.exit.tolist(),entry_reached=passage_guide.entry_reached)
@@ -874,7 +874,7 @@ def main():
                     event('ordinary_route',step=step,path=path,**(routes.last_plan if args.route_planner=='voronoi' else {'engine':'grid_astar'}))
                     phase_start=step;planned_positions={b.id:np.array(b.xy) for b in current};action=stop
                     if args.path_controller=='continuous':
-                        action,iteration_tracking=tracker.action(p[:2],heading,planner,current)
+                        action,iteration_tracking=tracked_navigation_action(tracker,p[:2],heading,planner,current,enabled=args.forward_stop_feedback)
                         component.mapping._planned_path=tracker._planned_path[tracker._waypoint_index:]
                 elif phase in ['navigate','approach']:
                     planner.robot_heading=heading if args.navigation_heading=='path' else nav_heading
@@ -891,7 +891,7 @@ def main():
                         # the route, not an unconditional zero-speed pulse.
                         # The old route's next twist is checked against all
                         # current obstacles before the next decision tick.
-                        action,tracking=(tracker.action(p[:2],heading,planner,current)
+                        action,tracking=(tracked_navigation_action(tracker,p[:2],heading,planner,current,enabled=args.forward_stop_feedback)
                                          if args.path_controller=='continuous' else (stop,{}))
                         phase='decide';obs=tick(action);last_action=action;last_tracking=tracking;continue
                     approach_error=abs(float(np.cross(np.array(plan.direction),p[:2]-plan.approach_xy))) if phase=='approach' else 0.
@@ -917,7 +917,7 @@ def main():
                         event('initial_contact_prepare',step=step,position=p.tolist())
                         event('side_push_begin',step=step,box_id=plan.box_id,passage=planner.active_passages[plan.box_id])
                     else:
-                        action,tracking=tracker.action(p[:2],heading,planner,current)
+                        action,tracking=tracked_navigation_action(tracker,p[:2],heading,planner,current,enabled=args.forward_stop_feedback)
                         if (tracking.get('needs_replan')
                                 and (np.linalg.norm(p[:2]-endpoint)>.30 or tracking.get('buffer_cleared_replan'))
                                 and (step-last_route_replan>=100 or tracking.get('staging_completed'))):
@@ -925,7 +925,7 @@ def main():
                             replanned=ordinary_path(p[:2],endpoint,current,local=True)
                             if replanned:
                                 tracker=ordinary_tracker(p[:2],replanned,nav_heading,short_goal=goal_kind=='passage_entry')
-                                action,tracking=tracker.action(p[:2],heading,planner,current)
+                                action,tracking=tracked_navigation_action(tracker,p[:2],heading,planner,current,enabled=args.forward_stop_feedback)
                                 event('path_replanned_from_actual_pose',step=step,map_scope='local_dynamic',
                                       global_map_revision=layers.global_revision,local_map_revision=layers.local_revision,
                                       position=p.tolist(),orientation=q.tolist(),path=[list(map(float,point)) for point in replanned])

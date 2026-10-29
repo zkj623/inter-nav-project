@@ -64,3 +64,27 @@ def skill_has_active_contact(state, recovery_from_contact=True):
     """Do not confuse a navigation/preparation stop with box-contact braking."""
     return state in {'engage','push','settle_push_progress','brake_after_push'} or (
         state=='brake_for_recovery' and bool(recovery_from_contact))
+
+
+def with_staging_stop_request(action, tracking, *, enabled):
+    """Forward a deliberate pre-turn stop to the existing checked servo.
+
+    The tracker can still be sending a slew-limited positive velocity while
+    its intent is already to stop. Do not infer intent from a tiny/zero
+    velocity, which also occurs on collision rejection or during yaw motion.
+    Forward-travel eligibility remains the servo's responsibility.
+    """
+    if (enabled and tracking.get('local_staging')
+            and tracking.get('staging_phase') == 'staging_brake'
+            and tracking.get('body_motion_safe', False)
+            and not tracking.get('needs_replan')
+            and not tracking.get('emergency_collision_stop')
+            and not tracking.get('measured_braking_space_blocked')):
+        return {**action, '_forward_stop_request': True}
+    return action
+
+
+def tracked_navigation_action(tracker, position, heading, planner, boxes, *, enabled):
+    """Use the same stop-intent handoff on initial, replanned and skill routes."""
+    action, tracking = tracker.action(position, heading, planner, boxes)
+    return with_staging_stop_request(action, tracking, enabled=enabled), tracking
