@@ -380,7 +380,17 @@ class PushAsideSkill:
                 # Centering already holds heading while the dog is stepping.
                 # Enforce the contact tolerance at the final contact pose;
                 # do not demand a finer stationary yaw at every coarse turn.
-                self._transition('align_longitudinal',ctx,'coarse_heading_ready_for_centering');return self._output()
+                # ContactTurnControl has already completed its measured
+                # translation/yaw stop. If standoff is safe, reuse that gate
+                # for centering instead of inserting a second idle dwell.
+                # In T05 v84 the rough policy resumed yaw drift during that
+                # duplicate dwell, exhausting retries before any sidestep.
+                safe_standoff=(.20<=gap<=self.config.front_gap+.125 and
+                    body_motion_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.))
+                next_state='align_lateral' if safe_standoff else 'align_longitudinal'
+                self._transition(next_state,ctx,'coarse_heading_ready_for_centering')
+                self.events[-1]['reused_turn_stop_for_standoff']=bool(safe_standoff)
+                return self._output()
             return self._output(result[0])
         if self.state=='settle_alignment':
             if ctx.now-self.state_since>self.config.max_alignment_seconds:return self._retry(ctx,'alignment_settling_timeout')

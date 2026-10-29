@@ -338,8 +338,35 @@ def test_coarse_turn_hands_off_to_centering_without_unnecessary_stationary_trim(
     skill,ctx=alignment_context('turn_at_stage',gap=.46,lateral=.12,heading=.11)
     skill.turn=NS(update=lambda *args:None,failed=False)
     command=skill.step(ctx)
-    assert command.state=='align_longitudinal' and command.status=='running'
+    assert command.state=='align_lateral' and command.status=='running'
+    assert command.events[-1]['reused_turn_stop_for_standoff'] is True
     assert abs(skill._box_frame(ctx)[2])>skill.config.yaw_tolerance  # contact is not yet allowed
+    ctx.now+=.01
+    command=skill.step(ctx)
+    assert command.state=='align_lateral' and command.velocity[1]>0.
+    assert skill.retries==0  # checked centering starts without another idle dwell
+
+
+@pytest.mark.parametrize('gap',[.15,.55])
+def test_completed_turn_cannot_skip_an_unsafe_longitudinal_standoff(gap):
+    skill,ctx=alignment_context('turn_at_stage',gap=gap,lateral=.12,heading=.11)
+    skill.turn=NS(update=lambda *args:None,failed=False)
+    command=skill.step(ctx)
+    assert command.state=='align_longitudinal'
+    assert command.events[-1]['reused_turn_stop_for_standoff'] is False
+
+
+def test_completed_turn_rechecks_the_current_observed_body_footprint():
+    skill,ctx=alignment_context('turn_at_stage',gap=.46,lateral=.12,heading=.11)
+    skill.turn=NS(update=lambda *args:None,failed=False)
+    row,col=ctx.planner.cell(ctx.position);ctx.planner.free[row,col]=False
+    assert skill.step(ctx).state=='align_longitudinal'
+
+
+def test_unfinished_turn_does_not_handoff_even_at_a_safe_standoff():
+    skill,ctx=alignment_context('turn_at_stage',gap=.46,lateral=.12,heading=.11)
+    skill.turn=NS(update=lambda *args:(np.zeros(3),{}),failed=False)
+    assert skill.step(ctx).state=='turn_at_stage'
 
 
 def test_final_contact_still_requires_heading_tolerance_and_uses_checked_trim():
