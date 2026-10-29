@@ -1,0 +1,252 @@
+{
+  "state": "finished",
+  "time_unix": 1793315876.451065,
+  "diagnostic_only": true,
+  "outcomes": [
+    {
+      "label": "no_hold",
+      "exit_code": 0,
+      "resource_stop": false,
+      "scope_cap_verified": true,
+      "peak_scope_gib": 3.63092041015625,
+      "failure": null,
+      "summary": {
+        "diagnostic_only": true,
+        "navigation_accepted": false,
+        "label": "no_hold",
+        "cases": [
+          {
+            "case": "normal_restart",
+            "reason": "health_guard",
+            "healthy": false,
+            "stage_completed": true,
+            "final_stop_valid": false,
+            "maximum_tilt_deg": 30.35877280615653,
+            "minimum_height_m": 0.3383038640022278,
+            "restart_displacement_m": 0.0,
+            "stationary_hold_report": null,
+            "contact_permission_violation": false,
+            "physical_steps": 2515,
+            "policy_inferences": 629,
+            "navigation_attitude_recovery": {
+              "episodes": 0,
+              "total_hold_ticks": 0,
+              "failed": false,
+              "trigger_degrees": 18.0,
+              "release_degrees": 10.0,
+              "stable_plateau_max_degrees": 15.0,
+              "minimum_hold_ticks": 100,
+              "stable_window_ticks": 50,
+              "maximum_hold_ticks": 750
+            },
+            "recovery_events": [],
+            "all_checks_passed": false,
+            "diagnostic_only": true
+          },
+          {
+            "case": "contact_permission_restart",
+            "reason": "completed",
+            "healthy": true,
+            "stage_completed": true,
+            "final_stop_valid": true,
+            "maximum_tilt_deg": 22.104212161087183,
+            "minimum_height_m": 0.33374324440956116,
+            "restart_displacement_m": 0.8481150269508362,
+            "stationary_hold_report": null,
+            "contact_permission_violation": false,
+            "physical_steps": 7289,
+            "policy_inferences": 1823,
+            "navigation_attitude_recovery": {
+              "episodes": 2,
+              "total_hold_ticks": 265,
+              "failed": false,
+              "trigger_degrees": 18.0,
+              "release_degrees": 10.0,
+              "stable_plateau_max_degrees": 15.0,
+              "minimum_hold_ticks": 100,
+              "stable_window_ticks": 50,
+              "maximum_hold_ticks": 750
+            },
+            "recovery_events": [
+              {
+                "time_s": 7.999999821186066,
+                "state": "hold",
+                "tilt_degrees": 18.16320370693062,
+                "started": true,
+                "episode": 1,
+                "hold_ticks": 1,
+                "settled": false,
+                "stable_attitude_plateau": false
+              },
+              {
+                "time_s": 9.109999796375632,
+                "state": "released",
+                "tilt_degrees": 6.233023092228776,
+                "started": false,
+                "episode": 1,
+                "hold_ticks": 140,
+                "settled": true,
+                "stable_attitude_plateau": false
+              },
+              {
+                "time_s": 9.629999784752727,
+                "state": "hold",
+                "tilt_degrees": 18.266214645477756,
+                "started": true,
+                "episode": 2,
+                "hold_ticks": 1,
+                "settled": false,
+                "stable_attitude_plateau": false
+              },
+              {
+                "time_s": 10.619999762624502,
+                "state": "released",
+                "tilt_degrees": 2.549552516664704,
+                "started": false,
+                "episode": 2,
+                "hold_ticks": 125,
+                "settled": true,
+                "stable_attitude_plateau": false
+              }
+            ],
+            "all_checks_passed": true,
+            "diagnostic_only": true
+          }
+        ],
+        "all_cases_healthy_and_stopped": false
+      }
+    },
+    {
+      "label": "with_hold",
+      "exit_code": 0,
+      "resource_stop": false,
+      "scope_cap_verified": true,
+      "peak_scope_gib": 3.533771514892578,
+      "failure": null,
+      "summary": {
+        "diagnostic_only": true,
+        "navigation_accepted": false,
+        "label": "with_hold",
+        "cases": [
+          {
+            "case": "normal_restart",
+            "reason": "completed",
+            "healthy": true,
+            "stage_completed": true,
+            "final_stop_valid": true,
+            "maximum_tilt_deg": 15.12058197178722,
+            "minimum_height_m": 0.36930686235427856,
+            "restart_displacement_m": 0.8594528436660767,
+            "stationary_hold_report": {
+              "state": "holding",
+              "hold_seconds": 0.4,
+              "release_seconds": 0.4,
+              "capture_count": 4,
+              "release_count": 3,
+              "held_since": 20.86999953351915,
+              "release_fraction": 0.0,
+              "reason": "complete_measured_stop"
+            },
+            "contact_permission_violation": false,
+            "physical_steps": 5929,
+            "policy_inferences": 1483,
+            "navigation_attitude_recovery": {
+              "episodes": 0,
+              "total_hold_ticks": 0,
+              "failed": false,
+              "trigger_degrees": 18.0,
+              "release_degrees": 10.0,
+              "stable_plateau_max_degrees": 15.0,
+              "minimum_hold_ticks": 100,
+              "stable_window_ticks": 50,
+              "maximum_hold_ticks": 750
+            },
+            "recovery_events": [],
+            "all_checks_passed": true,
+            "diagnostic_only": true
+          },
+          {
+            "case": "contact_permission_restart",
+            "reason": "completed",
+            "healthy": true,
+            "stage_completed": true,
+            "final_stop_valid": true,
+            "maximum_tilt_deg": 29.12853665734542,
+            "minimum_height_m": 0.31737691164016724,
+            "restart_displacement_m": 0.8394541144371033,
+            "stationary_hold_report": {
+              "state": "holding",
+              "hold_seconds": 0.4,
+              "release_seconds": 0.4,
+              "capture_count": 3,
+              "release_count": 2,
+              "held_since": 62.93499859329313,
+              "release_fraction": 0.0,
+              "reason": "complete_measured_stop"
+            },
+            "contact_permission_violation": false,
+            "physical_steps": 8350,
+            "policy_inferences": 2088,
+            "navigation_attitude_recovery": {
+              "episodes": 2,
+              "total_hold_ticks": 281,
+              "failed": false,
+              "trigger_degrees": 18.0,
+              "release_degrees": 10.0,
+              "stable_plateau_max_degrees": 15.0,
+              "minimum_hold_ticks": 100,
+              "stable_window_ticks": 50,
+              "maximum_hold_ticks": 750
+            },
+            "recovery_events": [
+              {
+                "time_s": 7.9799998216331005,
+                "state": "hold",
+                "tilt_degrees": 18.109807412817986,
+                "started": true,
+                "episode": 1,
+                "hold_ticks": 1,
+                "settled": false,
+                "stable_attitude_plateau": false
+              },
+              {
+                "time_s": 9.029999798163772,
+                "state": "released",
+                "tilt_degrees": 2.1045842727502078,
+                "started": false,
+                "episode": 1,
+                "hold_ticks": 132,
+                "settled": true,
+                "stable_attitude_plateau": false
+              },
+              {
+                "time_s": 19.119999572634697,
+                "state": "hold",
+                "tilt_degrees": 18.02674660679805,
+                "started": true,
+                "episode": 2,
+                "hold_ticks": 1,
+                "settled": false,
+                "stable_attitude_plateau": false
+              },
+              {
+                "time_s": 20.29999954625964,
+                "state": "released",
+                "tilt_degrees": 4.492802156788151,
+                "started": false,
+                "episode": 2,
+                "hold_ticks": 149,
+                "settled": true,
+                "stable_attitude_plateau": false
+              }
+            ],
+            "all_checks_passed": true,
+            "diagnostic_only": true
+          }
+        ],
+        "all_cases_healthy_and_stopped": true
+      }
+    }
+  ],
+  "navigation_accepted": false
+}

@@ -1,0 +1,122 @@
+{
+  "state": "finished",
+  "time_unix": 1793315326.4261,
+  "diagnostic_only": true,
+  "outcomes": [
+    {
+      "label": "no_hold",
+      "exit_code": 0,
+      "resource_stop": false,
+      "scope_cap_verified": true,
+      "peak_scope_gib": 3.493389129638672,
+      "failure": null,
+      "summary": {
+        "diagnostic_only": true,
+        "navigation_accepted": false,
+        "label": "no_hold",
+        "cases": [
+          {
+            "case": "normal_restart",
+            "reason": "health_guard",
+            "healthy": false,
+            "stage_completed": true,
+            "final_stop_valid": false,
+            "maximum_tilt_deg": 30.35877280615653,
+            "minimum_height_m": 0.3383038640022278,
+            "restart_displacement_m": 0.0,
+            "stationary_hold_report": null,
+            "contact_permission_violation": false,
+            "physical_steps": 2515,
+            "policy_inferences": 629,
+            "all_checks_passed": false,
+            "diagnostic_only": true
+          },
+          {
+            "case": "contact_permission_restart",
+            "reason": "completed",
+            "healthy": true,
+            "stage_completed": true,
+            "final_stop_valid": true,
+            "maximum_tilt_deg": 28.14639197287134,
+            "minimum_height_m": 0.3101484477519989,
+            "restart_displacement_m": 0.9052896499633789,
+            "stationary_hold_report": null,
+            "contact_permission_violation": false,
+            "physical_steps": 7563,
+            "policy_inferences": 1891,
+            "all_checks_passed": true,
+            "diagnostic_only": true
+          }
+        ],
+        "all_cases_healthy_and_stopped": false
+      }
+    },
+    {
+      "label": "with_hold",
+      "exit_code": 0,
+      "resource_stop": false,
+      "scope_cap_verified": true,
+      "peak_scope_gib": 3.545116424560547,
+      "failure": null,
+      "summary": {
+        "diagnostic_only": true,
+        "navigation_accepted": false,
+        "label": "with_hold",
+        "cases": [
+          {
+            "case": "normal_restart",
+            "reason": "completed",
+            "healthy": true,
+            "stage_completed": true,
+            "final_stop_valid": true,
+            "maximum_tilt_deg": 15.12058197178722,
+            "minimum_height_m": 0.36930686235427856,
+            "restart_displacement_m": 0.8594528436660767,
+            "stationary_hold_report": {
+              "state": "holding",
+              "hold_seconds": 0.4,
+              "release_seconds": 0.4,
+              "capture_count": 4,
+              "release_count": 3,
+              "held_since": 20.86999953351915,
+              "release_fraction": 0.0,
+              "reason": "complete_measured_stop"
+            },
+            "contact_permission_violation": false,
+            "physical_steps": 5929,
+            "policy_inferences": 1483,
+            "all_checks_passed": true,
+            "diagnostic_only": true
+          },
+          {
+            "case": "contact_permission_restart",
+            "reason": "health_guard",
+            "healthy": false,
+            "stage_completed": false,
+            "final_stop_valid": false,
+            "maximum_tilt_deg": 30.09500762163003,
+            "minimum_height_m": 0.3126539885997772,
+            "restart_displacement_m": 0.0,
+            "stationary_hold_report": {
+              "state": "tracking",
+              "hold_seconds": 0.4,
+              "release_seconds": 0.4,
+              "capture_count": 1,
+              "release_count": 1,
+              "held_since": null,
+              "release_fraction": 1.0,
+              "reason": "movement_requested"
+            },
+            "contact_permission_violation": false,
+            "physical_steps": 1651,
+            "policy_inferences": 413,
+            "all_checks_passed": false,
+            "diagnostic_only": true
+          }
+        ],
+        "all_cases_healthy_and_stopped": false
+      }
+    }
+  ],
+  "navigation_accepted": false
+}
