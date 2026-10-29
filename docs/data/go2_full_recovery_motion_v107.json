@@ -1,0 +1,104 @@
+{
+  "diagnostic_only": true,
+  "physical_replay": false,
+  "navigation_accepted": false,
+  "source_run": "recognition-skill-v107-t04-ground-truth-try1",
+  "result": {
+    "success": false,
+    "reason": "robot_unstable",
+    "steps": 4907,
+    "maximum_tilt_degrees": 33.62547423497386,
+    "goal_error_m": 4.01989855594649
+  },
+  "examples": [
+    {
+      "recorded": {
+        "time_s": 39.4149991190061,
+        "phase": "recover_navigation_buffer",
+        "position": [
+          6.19725227355957,
+          0.3107685446739197,
+          0.4047794044017792
+        ],
+        "command": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "body_velocity": [
+          -0.02710365317761898,
+          0.004003464709967375,
+          0.004554337356239557
+        ],
+        "body_angular_velocity": [
+          0.035457152873277664,
+          -0.013598972000181675,
+          -0.03788087144494057
+        ]
+      },
+      "tilt_degrees": 13.638439565978434,
+      "raw_planar_only_quiet": true,
+      "full_instant_quiet": true
+    },
+    {
+      "recorded": {
+        "time_s": 40.80999908782542,
+        "phase": "recover_navigation_buffer",
+        "position": [
+          6.217094421386719,
+          0.2567470967769623,
+          0.36316049098968506
+        ],
+        "command": [
+          0.10387419086687562,
+          0.004920321436874851,
+          0.0
+        ],
+        "body_velocity": [
+          -0.030607616528868675,
+          0.014795632101595402,
+          0.07696525752544403
+        ],
+        "body_angular_velocity": [
+          -0.10738959908485413,
+          -0.3354916572570801,
+          0.06929080188274384
+        ]
+      },
+      "tilt_degrees": 7.636025377300247,
+      "raw_planar_only_quiet": true,
+      "full_instant_quiet": false
+    },
+    {
+      "recorded": {
+        "time_s": 41.809999065473676,
+        "phase": "recover_navigation_buffer",
+        "position": [
+          6.248144149780273,
+          0.2800979018211365,
+          0.4123620092868805
+        ],
+        "command": [
+          0.07114283470114433,
+          -0.007097694137683877,
+          0.0
+        ],
+        "body_velocity": [
+          0.014543863013386726,
+          0.020871780812740326,
+          0.10049957782030106
+        ],
+        "body_angular_velocity": [
+          0.06299508363008499,
+          0.2287082076072693,
+          -0.001473484793677926
+        ]
+      },
+      "tilt_degrees": 11.703666454935668,
+      "raw_planar_only_quiet": true,
+      "full_instant_quiet": false
+    }
+  ],
+  "fix": "Latch a stop across recovery/free classification changes; use the existing complete measured-stop gate, plus command and freshness checks.",
+  "limits": "Pointwise recorded-state checks are not an exact filtered-controller or counterfactual dynamics replay. A full original-task rerun is still required."
+}

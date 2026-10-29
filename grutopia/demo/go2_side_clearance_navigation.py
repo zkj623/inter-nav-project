@@ -431,7 +431,10 @@ def main():
             now=float(robot._go2_locomotion_control._simulation_time() or 0.)
             if smooth_limiter is not None:
                 controller=robot._go2_locomotion_control
-                smooth_limiter.observe([*controller.body_lin_vel[:2],controller.body_ang_vel[2]],now)
+                motion_q=np.asarray(observation['orientation'],float);motion_q=motion_q/np.linalg.norm(motion_q)
+                motion_tilt=math.degrees(math.acos(np.clip(1-2*(motion_q[1]**2+motion_q[2]**2),-1.,1.)))
+                smooth_limiter.observe([*controller.body_lin_vel[:2],controller.body_ang_vel[2]],now,
+                    body_state=(observation['position'],controller.body_lin_vel,controller.body_ang_vel,motion_tilt))
             if layers is not None:
                 now=robot._go2_locomotion_control._simulation_time()
                 now=float(now) if now is not None else layers.now+.008
@@ -798,7 +801,8 @@ def main():
                         obs=tick(action);last_action=action;last_tracking=tracking;continue
                     decision_recovery_start=None
                     if smooth_limiter is not None and last_tracking and last_tracking.get('recovering_buffer'):
-                        if not smooth_limiter.recovery_gate.leave_recovery(smooth_limiter.measured,planner.control_time):
+                        if not smooth_limiter.recovery_gate.leave_recovery(smooth_limiter.measured,planner.control_time,
+                                body_state=smooth_limiter.body_state,command=smooth_limiter.command):
                             record_phase='navigation_recovery_settle'
                             obs=tick(stop);last_action=stop;continue
                         smooth_limiter.clear_guidance(p,planner.control_time)

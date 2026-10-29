@@ -17,7 +17,7 @@ class VelocitySlewLimiter:
     def __init__(self,linear_acceleration=.65,yaw_acceleration=1.8):
         self.linear_acceleration=linear_acceleration;self.yaw_acceleration=yaw_acceleration
         self.command=np.zeros(3);self.last_time=None
-        self.measured=np.zeros(3);self.measurement_time=None
+        self.measured=np.zeros(3);self.measurement_time=None;self.body_state=None
         self.staging=None;self.progress_position=None;self.progress_time=None
         self.recovery_gate=RecoveryMotionGate()
     def clear_guidance(self,position,now):
@@ -29,13 +29,17 @@ class VelocitySlewLimiter:
         self.staging=None;self.recovery_gate=RecoveryMotionGate()
         self.progress_position=np.asarray(position[:2],float).copy();self.progress_time=float(now)
 
-    def observe(self,velocity,now):
+    def observe(self,velocity,now,*,body_state=None):
         velocity=np.asarray(velocity,float)
         if self.measurement_time is None:self.measured=velocity.copy()
         else:
             dt=max(0.,float(now)-self.measurement_time);alpha=dt/(.15+dt)
             self.measured+=alpha*(velocity-self.measured)
         self.measurement_time=float(now)
+        if body_state is not None:
+            position,linear,angular,tilt=body_state
+            self.body_state=(np.asarray(position,float).copy(),np.asarray(linear,float).copy(),
+                np.asarray(angular,float).copy(),float(tilt),float(now))
     def preview(self,target,now):
         dt=.005 if self.last_time is None else max(.001,min(.1,float(now)-self.last_time))
         target=np.asarray(target,float);delta=target[:2]-self.command[:2]
@@ -281,7 +285,7 @@ class SmoothExplorationTracker(ExplorationPathTracker):
 def smooth_recovery_action(action,position,heading,planner,boxes,limiter,now):
     """Preserve a geometry-checked recovery's rotation versus translation."""
     raw=np.asarray(action['move_by_speed'],float)
-    raw=limiter.recovery_gate.filter(raw,limiter.measured,now)
+    raw=limiter.recovery_gate.filter(raw,limiter.measured,now,body_state=limiter.body_state,command=limiter.command)
     if not np.any(raw):return {'move_by_speed':[0.,0.,0.]}
     command=limiter.preview(raw,now)
     if abs(raw[2])>1e-8 and np.linalg.norm(raw[:2])<1e-8:
