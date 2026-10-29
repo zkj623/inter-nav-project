@@ -72,3 +72,22 @@ def checked_skill_brake(command,context):
     safe,_=checked_contact_turn_command([0.,0.,0.],context.position,context.heading,
         context.planner,boxes,context.limiter,context.now)
     return safe
+
+
+def checked_skill_action(command, context, *, forward_stop_feedback=False, recovery_from_contact=True):
+    """Keep explicit skill stop intent while its checked brake still slews.
+
+    A zero SkillCommand with no navigation goal requests a stop even when
+    checked_skill_brake returns a nonzero residual. Preserve that intent
+    across the subnavigation-to-settling handoff so the stop servo does not
+    mistake braking for renewed forward travel. Its eligibility and current
+    map checks still decide whether any feedback motion may be applied.
+    """
+    from grutopia_extension.interactive_navigation.go2_stop_feedback import skill_has_active_contact
+    action={'move_by_speed':checked_skill_brake(command,context).tolist()}
+    if (forward_stop_feedback and command.status=='running' and context.healthy
+            and command.navigation_goal is None
+            and not np.any(np.abs(np.asarray(command.velocity,float))>1e-9)
+            and not skill_has_active_contact(command.state,recovery_from_contact)):
+        action['_forward_stop_request']=True
+    return action

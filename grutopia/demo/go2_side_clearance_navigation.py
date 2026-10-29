@@ -132,7 +132,7 @@ def main():
     from grutopia_extension.interactive_navigation.online_navigation_map import OnlineNavigationMap
     from grutopia_extension.interactive_navigation.online_navigation_decision import OnlineGoalSelector
     from grutopia_extension.interactive_navigation.smooth_go2_navigation import SmoothExplorationTracker,VelocitySlewLimiter,smooth_recovery_action
-    from grutopia_extension.interactive_navigation.go2_interaction_motion import navigation_recovery_enabled,MeasuredStopGate,ObservedSubgoalArrival,checked_skill_brake
+    from grutopia_extension.interactive_navigation.go2_interaction_motion import navigation_recovery_enabled,MeasuredStopGate,ObservedSubgoalArrival,checked_skill_action
     from grutopia_extension.interactive_navigation.go2_attitude_recovery import NavigationAttitudeRecovery
     from grutopia_extension.interactive_navigation.local_path_guidance import local_guidance_path
     from scipy.ndimage import distance_transform_edt
@@ -1001,7 +1001,8 @@ def main():
                         'skill_retry':skill.retries,'recognized_category':skill.permission.category,
                         'interaction_allowed':True,'interaction_source':skill.permission.source,'execution_state':command.state}
                     record_phase='skill_'+command.state
-                    action={'move_by_speed':checked_skill_brake(command,ctx).tolist()};sub_reached=False
+                    action=checked_skill_action(command,ctx,forward_stop_feedback=args.forward_stop_feedback,
+                        recovery_from_contact=getattr(skill,'recovery_from_contact',True));sub_reached=False
                     if command.navigation_goal is not None:
                         action,sub_reached,iteration_tracking=subnavigation(command.navigation_goal,p,heading,current,planner.control_time)
                         if iteration_tracking.get('failed'):
