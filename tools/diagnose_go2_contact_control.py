@@ -14,7 +14,12 @@ from grutopia_extension.configs.objects import FixedCubeCfg,DynamicCubeCfg
 p=argparse.ArgumentParser();p.add_argument('--gpu',type=int,required=True);p.add_argument('--output',type=Path,required=True)
 p.add_argument('--mode',default='explicit_dc',choices=['explicit_dc','implicit_pd'])
 p.add_argument('--suite',default='comparison',choices=['comparison','perturbed','forward_only','contact_latched','forward_steer','contact_guard','approach_caps','contact_frequency','native_contract','skill_contact'])
-a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False)
+p.add_argument('--initial-push-progress',type=float,default=0.,
+    help='Diagnostic-only already completed displacement before a resumed contact (m)')
+a=p.parse_args()
+if not 0.<=a.initial_push_progress<.85:p.error('initial-push-progress must be in [0,.85)')
+if a.initial_push_progress and a.suite!='skill_contact':p.error('resume progress requires --suite skill_contact')
+a.output.mkdir(parents=True,exist_ok=False)
 shutil.copy2(__file__,a.output/'source.py')
 (a.output/'source_sha256.txt').write_text(hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
 cases=[dict(name='current_abort18',start=.30,ramp=.15,guard=18.,yaw_gain=3.),
@@ -77,6 +82,7 @@ try:
     box=RigidPrim('/World/ContactProbeBox',name='contact_calibration_box');box.initialize()
     runner._apply_high_friction_material('/World/env_0/objects/grscene_go2_floor')
     (a.output/'contract.json').write_text(json.dumps({'diagnostic_only':True,'navigation_task':False,
+        'initial_progress_m':a.initial_push_progress,'remaining_fixture_push_m':.85-a.initial_push_progress,
         'mode':a.mode,'physics_dt':.005,'policy_hz':'case_specific' if a.suite=='contact_frequency' else 50,'floor_top_m':.01,
         'box_dimensions_m':[.85,.55,.95],'box_mass_kg':float(box.get_mass()),
         'box_authoring':'interactive_box_scenarios.author_box_before_reset',
@@ -145,13 +151,18 @@ try:
                         # navigation. Isolate contact/stop after initialization.
                         planner=SidePushPlanner(np.ones((160,240),dtype=bool),[(-6.,6.),(-4.,4.)],resolution=.05)
                         planner.full_navigation_footprint=True
-                        planner.active_passages['Probe']={'center':[1.155,0.],'axis':[0.,1.]}
+                        planner.active_passages['Probe']={'center':[1.155-a.initial_push_progress,0.],'axis':[0.,1.]}
                         permission=InteractionPermission('Probe','box','push_aside',(),(),now,
                             source='ground_truth_layout',source_reference=str(a.output/'source.py'),
                             source_digest=hashlib.sha256((a.output/'source.py').read_bytes()).hexdigest())
                         plan=SimpleNamespace(box_id='Probe',direction=(1.,0.),push_distance=.85)
                         skill=PushAsideSkill(permission,plan,(0.,0.),(3.,0.))
                         skill.state='engage';skill.engage_box_position=np.asarray(bp[:2]).copy()
+                        if a.initial_push_progress:
+                            # Fixture initialization, not a teleport within a
+                            # navigation run. Report resumed progress separately.
+                            skill.started=now;skill.state_since=now
+                            skill.initial_box=np.asarray(bp[:2])-np.array([a.initial_push_progress,0.])
                     tracked=BoxState('Probe',tuple(bp[:2]),(.85,.55,.95),mass_kg=6.)
                     context=SkillContext(now,np.asarray(pos),heading,ctrl.body_lin_vel,
                         float(ctrl.body_ang_vel[2]),tilt,tilt<30. and pos[2]>.21,

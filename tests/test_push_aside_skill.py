@@ -352,6 +352,7 @@ def test_final_contact_still_requires_heading_tolerance_and_uses_checked_trim():
 def test_predicted_push_stop_must_settle_and_complete_measured_shortfall():
     skill=make_skill();skill.state='push';skill.started=0.;skill.state_since=0.
     skill.initial_box=np.array([0.,0.]);skill.push_progress=.8;skill.push_progress_time=1.
+    skill.engage_box_position=skill.initial_box.copy()
     box=NS(id='B1',xy=(.83,0.),dimensions=(1.,1.,1.))
     ctx=context(box,1.)
     ctx.planner=NS(clearance=lambda box:{'side_parked':False})
@@ -379,3 +380,19 @@ def test_measured_park_after_predictive_braking_releases_without_another_push():
     ctx.now=3.6
     assert skill.step(ctx).state=='retreat'
     assert skill.release_reason=='side_parked'
+
+
+def test_previous_push_distance_does_not_brake_a_resume_before_box_motion():
+    skill=make_skill();skill.state='engage';skill.started=0.;skill.state_since=0.
+    skill.initial_box=np.array([.535,0.]);skill.engage_box_position=np.array([1.155,0.])
+    skill.plan.push_distance=.85
+    ctx=context(NS(id='B1',xy=(1.155,0.),dimensions=(.85,.55,.95)),1.)
+    ctx.position=np.array([.22,0.,.4]);ctx.body_velocity=np.array([.45,0.,0.])
+    ctx.planner=NS(clearance=lambda box:{'side_parked':False})
+    ctx.limiter=NS(preview=lambda command,now:command,measured=np.array([.45,0.,0.]),command=np.array([.6,0.,0.]))
+    command=skill.step(ctx)
+    assert command.state=='push' and command.velocity[0]>0
+    assert skill.push_brakes==0
+    ctx.now=1.1;ctx.box.xy=(1.185,0.)
+    assert skill.step(ctx).state=='settle_push_progress'
+    assert skill.push_brakes==1

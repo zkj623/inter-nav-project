@@ -71,7 +71,7 @@ class PushAsideSkill:
         self.tangent=np.array([-self.direction[1],self.direction[0]])
         self.push_heading=math.atan2(self.direction[1],self.direction[0])
         self.state='prepare';self.started=None;self.state_since=None;self.retries=0
-        self.initial_box=None;self.last_box=None;self.stage=None;self.anchor=None;self.axis=None
+        self.initial_box=None;self.last_box=None;self.engage_box_position=None;self.stage=None;self.anchor=None;self.axis=None
         self.turn=None;self.yaw_servo=ContactYawServo(self.config.yaw_tolerance)
         self.settled_since=None;self.translation_braking=False;self.navigation_goal=None;self.events=[]
         self.release_origin=None;self.release_reason=None;self.certificate=None
@@ -409,9 +409,19 @@ class PushAsideSkill:
             c,s=math.cos(ctx.heading),math.sin(ctx.heading);rot=np.array([[c,-s],[s,c]])
             measured=np.asarray(getattr(ctx.limiter,'measured',ctx.body_velocity),float)
             push_velocity=float(np.dot(rot@measured[:2],self.direction))
-            if self.state=='push' and along>.10 and self.plan.push_distance-along<=push_braking_distance(push_velocity):
+            attempt_progress=(0. if self.engage_box_position is None else
+                float(np.dot(np.asarray(ctx.box.xy)-self.engage_box_position,self.direction)))
+            stopping_distance=push_braking_distance(push_velocity)
+            # After a partial push, the robot is accelerating toward contact
+            # again. Historical box displacement cannot prove that THIS push
+            # is moving the box or will coast with the approaching robot.
+            if (self.state=='push' and along>.10 and attempt_progress>.015
+                    and self.plan.push_distance-along<=stopping_distance):
                 self.push_brakes+=1
                 self._transition('settle_push_progress',ctx,'predicted_push_coast')
+                self.events[-1].update(actual_push_m=along,attempt_push_m=attempt_progress,
+                    remaining_push_m=self.plan.push_distance-along,
+                    filtered_push_speed_mps=push_velocity,predicted_coast_m=stopping_distance)
                 return self._output()
             elapsed=ctx.now-self.state_since
             if self.state=='engage' and elapsed>12:return self._retry(ctx,'contact_not_established')
