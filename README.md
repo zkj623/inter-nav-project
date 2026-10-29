@@ -17,6 +17,7 @@ a text target such as `refrigerator` and walks up to the scanned object.
 全局层 1 Hz 更新，局部层 10 Hz 更新，箱子移开后的空间需要新射线确认才会通行。
 在线模式默认使用固定 200 Hz 物理步长的 DC 电机控制、50 Hz 原 Go2 policy 和 25 fps 录像。
 当前五组统一物理验收尚未完成；各版本成功及失败结果见下方在线导航说明。
+转向控制器已经确认停稳、前后间距和当前完整机身空间合格时，直接进入侧向对齐，避免重复静止等待期间朝向漂移。513 项测试通过；独立平地对照两种方式都完成接触准备，新方式用时 5.11 秒、最大倾角 10.35°，尚不能代替 MV7 原任务验收。
 停止反馈会区分准备恢复与实际接触恢复，避免准备阶段切换状态时再次丢失制动反馈。
 交互恢复后会复核实际通路效果：新观测必须同时通过全局连通、局部完整机身通路和原箱位阻塞对照；确认后再进入实际穿越与原目标到点。
 当前候选通过 `--forward-stop-feedback` 对前进导航后的停止持续做实测速度反馈，经过原有碰撞检查后才下发修正；目标成功还必须通过实测停稳检查。
@@ -41,15 +42,15 @@ go2_out="/data20t/embodied/zkj/inter-nav-results/go2-online-$(date +%Y%m%d-%H%M%
   --voronoi-clearance-weight .30 \
   --global-map-hz 1 --local-map-hz 10 --local-map-radius 3 \
   --push-start-speed .60 --push-max-speed .95 --turn-speed 1.0 --contact-centering-speed .25 --contact-lateral-speed .35 \
-  --contact-yaw-tolerance .10 --contact-front-gap .40 \
-  --record-video --material-mode preview \
+  --contact-yaw-tolerance .10 --contact-front-gap .35 \
+  --record-video --material-mode simple \
   --third-person-height 1.35 --third-person-forward .25 --third-person-fov 100
 ```
 
 `--task-ids T04` 可单独运行一组。完整视频为 `<输出目录>/T04/video/combined.mp4`，
 地图灰色为未观测区域，绿色起点和红色目标始终标在请求坐标。
-不录像的物理诊断可去掉 `--record-video` 并使用 `--material-mode simple`。
-完整材质场景加载时间较长，建议保留至少 78 GiB 可用内存和 14 GiB 显存。
+上方命令采用无纹理录像；需要材质时改为 `--material-mode preview`。不录像的诊断可去掉 `--record-video`。
+当前完整场景队列要求至少 80 GiB 可用内存持续 60 秒，以及 14 GiB 空闲显存，再加载下一任务。
 
 上方命令是当前交互控制的复测配置。已验收的普通导航中，T01 采用 DC 控制，T02/T03 保留
 实测更平稳的原 PD 控制版本；对应源码、视频及尚未通过的试验见下方在线导航说明。
