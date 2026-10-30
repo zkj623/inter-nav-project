@@ -35,7 +35,7 @@ def test_measured_five_mm_cell_crossing_does_not_cancel_clearance_translation(go
 @pytest.mark.parametrize('goal',[.7064224145543709,-1.0864211847023988])
 def test_braking_begins_after_selected_clearance_is_observed(goal):
     planner,position,heading,stage=observed_boundary(goal)
-    inside=position+np.array([.075,0.]);limiter=VelocitySlewLimiter()
+    inside=stage.target.copy();limiter=VelocitySlewLimiter()
     command,state=stage.update(inside,heading,planner,[],limiter,.01)
     assert state['staging_phase']=='staging_brake'
     np.testing.assert_array_equal(command,np.zeros(3))
@@ -46,6 +46,26 @@ def test_explicit_narrow_stage_keeps_its_selected_margin():
     # A narrow fallback is allowed by the existing stage search. Applying
     # a universal larger margin here would contradict that selection.
     stage.selector.stage_margin=.025
-    command,state=stage.update(position+np.array([.005,0.]),heading,planner,[],VelocitySlewLimiter(),.01)
+    # This pose has half-cell placement slack with the selected .025m
+    # margin, while its lower-x neighbor still fails the .05m sweep.
+    inside=position+np.array([.05,0.])
+    goal=.7064224145543709
+    end=heading+(goal-heading+math.pi)%(2*math.pi)-math.pi
+    for off in [(-.025,-.025),(-.025,.025),(.025,-.025),(.025,.025)]:
+        assert body_rotation_clear(planner,[],inside+off,heading,end,margin=.025)
+    assert not body_rotation_clear(planner,[],inside-[.025,0.],heading,end,margin=.05)
+    command,state=stage.update(inside,heading,planner,[],VelocitySlewLimiter(),.01)
     assert state['staging_phase']=='staging_brake'
     np.testing.assert_array_equal(command,np.zeros(3))
+
+
+@pytest.mark.parametrize('goal',[.7064224145543709,-1.0864211847023988])
+def test_pose_clearance_alone_is_not_a_stable_stopping_region(goal):
+    planner,position,heading,stage=observed_boundary(goal)
+    near=position+np.array([.075,0.])
+    end=heading+(goal-heading+math.pi)%(2*math.pi)-math.pi
+    assert body_rotation_clear(planner,[],near,heading,end,margin=.05)
+    assert not body_rotation_clear(planner,[],near-[.025,0.],heading,end,margin=.05)
+    command,state=stage.update(near,heading,planner,[],VelocitySlewLimiter(),.01)
+    assert state['staging_phase']=='staging_move'
+    assert np.linalg.norm(command[:2])>=.20

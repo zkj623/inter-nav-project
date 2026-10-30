@@ -8,6 +8,25 @@ from grutopia_extension.interactive_navigation.go2_voronoi_navigation import (
 def wrap(angle):return (angle+math.pi)%(2*math.pi)-math.pi
 
 
+def turn_placement_clear(planner,boxes,position,first_heading,last_heading,margin):
+    """Require a half-cell pose neighborhood before committing to a stop.
+
+    A millimeter grid crossing is insufficient: braking drift can put the
+    base back in the previous cell and repeatedly restart translation.
+    Check the same footprint/heading sweep in each neighboring base cell;
+    this never changes occupancy or reduces the selected clearance margin.
+    """
+    position=np.asarray(position[:2],float)
+    radius=.5*planner.resolution
+    checked=set()
+    for offset in [(0.,0.),(-radius,-radius),(-radius,radius),(radius,-radius),(radius,radius)]:
+        xy=position+np.asarray(offset);cell=tuple(planner.cell(xy))
+        if cell in checked:continue
+        checked.add(cell)
+        if not body_rotation_clear(planner,boxes,xy,first_heading,last_heading,margin=margin):return False
+    return True
+
+
 class LocalTurnManeuver:
     def __init__(self,goal_heading,max_ticks=2500):
         self.goal_heading=float(goal_heading)
@@ -15,7 +34,7 @@ class LocalTurnManeuver:
         self.ticks=0;self.max_ticks=max_ticks;self.turn_ticks=0;self.turn_sign=0.
         self.origin=None;self.failed=False
 
-    def _select_stage(self,planner,boxes,position,heading,require_stepping_arc=False):
+    def _select_stage(self,planner,boxes,position,heading,require_stepping_arc=False,require_stable_placement=False):
         c,s=math.cos(heading),math.sin(heading)
         last_heading=heading+wrap(self.goal_heading-heading)
         choices=[]
@@ -35,6 +54,7 @@ class LocalTurnManeuver:
                     if not stepping_arc_clear(planner,boxes,target,heading,math.copysign(1.,last_heading-heading)):continue
                 if (body_rotation_clear(planner,boxes,target,heading,last_heading,margin=margin)
                         and body_translation_recovery_clear(planner,boxes,position,heading,target)):
+                    if require_stable_placement and not turn_placement_clear(planner,boxes,target,heading,last_heading,margin):continue
                     self.stage_margin=margin
                     return target
         return None

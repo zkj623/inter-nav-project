@@ -1,7 +1,7 @@
 """Measured settling and continuous translation into a known safe turn pose."""
 import math
 import numpy as np
-from grutopia_extension.interactive_navigation.local_turn_maneuver import LocalTurnManeuver
+from grutopia_extension.interactive_navigation.local_turn_maneuver import LocalTurnManeuver,turn_placement_clear
 from grutopia_extension.interactive_navigation.go2_voronoi_navigation import body_rotation_clear,body_translation_recovery_clear
 from grutopia_extension.interactive_navigation.go2_turn_response import TurnResponseAssist,stepping_arc_clear
 
@@ -48,10 +48,11 @@ class LocalStagingControl:
         self.origin=np.asarray(position[:2],float).copy();self.started=now
         self.goal_heading=heading+wrap(goal_heading-heading)
         self.selector=LocalTurnManeuver(self.goal_heading)
-        self.target=self.selector._select_stage(planner,boxes,self.origin,heading,require_stepping_arc=True)
+        self.target=self.selector._select_stage(planner,boxes,self.origin,heading,require_stepping_arc=True,require_stable_placement=True)
         self.phase='staging_move';self.stable_since=None;self.failed=self.target is None
         self.turn_response=TurnResponseAssist()
         self.yaw_rate=StagingYawRate()
+        self.placement_latched=False
 
     def update(self,position,heading,planner,boxes,limiter,now):
         position=np.asarray(position[:2],float)
@@ -66,7 +67,16 @@ class LocalStagingControl:
         # .05m selection to .025m can brake after a5mm grid-cell crossing,
         # before the gait has translated into the selected turning region.
         can_turn=body_rotation_clear(planner,boxes,position,heading,turn_end,margin=self.selector.stage_margin)
-        can_start_turn=can_turn and stepping_arc_clear(planner,boxes,position,heading,math.copysign(1.,turn_end-heading))
+        placement_ready=can_turn and turn_placement_clear(planner,boxes,position,heading,turn_end,self.selector.stage_margin)
+        arc_ready=can_turn and stepping_arc_clear(planner,boxes,position,heading,math.copysign(1.,turn_end-heading))
+        # Enter from the interior, then keep permission while the actual
+        # complete turn remains clear. Applying the interior threshold again
+        # during braking only moves the chatter to a different boundary.
+        if not can_turn:self.placement_latched=False
+        elif placement_ready and arc_ready:self.placement_latched=True
+        can_start_turn=self.placement_latched and can_turn and arc_ready
+        state.update(turn_placement_radius_m=.5*planner.resolution,turn_placement_ready=bool(placement_ready),
+                     turn_placement_latched=bool(self.placement_latched))
         settled=(np.linalg.norm(limiter.measured[:2])<.06 and abs(limiter.measured[2])<.10
                  and np.linalg.norm(limiter.command[:2])<.06 and abs(limiter.command[2])<.10)
         error=wrap(self.goal_heading-heading)
@@ -74,10 +84,10 @@ class LocalStagingControl:
             if can_start_turn:
                 self.phase='staging_brake';self.stable_since=None
             else:
-                if (not body_rotation_clear(planner,boxes,self.target,heading,turn_end,margin=self.selector.stage_margin)
+                if (not turn_placement_clear(planner,boxes,self.target,heading,turn_end,self.selector.stage_margin)
                         or not stepping_arc_clear(planner,boxes,self.target,heading,math.copysign(1.,turn_end-heading))
                         or not body_translation_recovery_clear(planner,boxes,position,heading,self.target)):
-                    self.target=self.selector._select_stage(planner,boxes,position,heading,require_stepping_arc=True)
+                    self.target=self.selector._select_stage(planner,boxes,position,heading,require_stepping_arc=True,require_stable_placement=True)
                 if self.target is None:
                     self.failed=True
                     return np.zeros(3),{**state,'needs_replan':True,'staging_phase':'staging_failed'}
