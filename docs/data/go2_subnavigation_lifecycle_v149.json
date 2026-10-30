@@ -1,0 +1,292 @@
+{
+  "failed_original_t05": {
+    "run": "recognition-skill-v147-t05-ground-truth-try1",
+    "task": "T05",
+    "operator_stopped_prefix": false,
+    "video_sha256_match": {
+      "combined.mp4": true,
+      "map_topdown.mp4": true,
+      "pointcloud_map.mp4": true,
+      "robot_rgb.mp4": true,
+      "third_person.mp4": true
+    },
+    "media_valid": true,
+    "source_valid": true,
+    "visual_task_valid": false,
+    "actual_passage_valid": false,
+    "navigation_success": false,
+    "termination_reason": "push_aside:subnavigation_timeout",
+    "steps": 16601,
+    "error_m": 1.7242957724829666,
+    "max_tilt_degrees": 18.91766128847918,
+    "frames": 3376,
+    "duration_s": 135.04,
+    "selected_box_displacements": [
+      {
+        "object_id": "B07",
+        "world_displacement_m": 1.4901161193847656e-08,
+        "along_planned_push_m": 0.0
+      }
+    ],
+    "full_task_accepted": false
+  },
+  "failure_result": {
+    "start": [
+      13.6,
+      -0.4
+    ],
+    "goal": [
+      3.3,
+      1.4
+    ],
+    "success": false,
+    "reason": "push_aside:subnavigation_timeout",
+    "steps": 16601,
+    "goal_error_m": 1.7242957724829666,
+    "rollout_health": {
+      "samples": 27008,
+      "healthy": true,
+      "maximum_tilt_degrees": 18.91766128847918,
+      "minimum_base_height_m": 0.3586357831954956,
+      "first_violation": null,
+      "scope": "all rollout ticks including settling"
+    },
+    "interaction_skills": [
+      {
+        "name": "push_aside",
+        "version": "1.0",
+        "status": "failed",
+        "reason": "subnavigation_timeout",
+        "object_id": "B07",
+        "recognized_category": "box",
+        "interaction_source": "ground_truth_layout",
+        "source_reference": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v147-t05-ground-truth-try1/interaction_ground_truth.json",
+        "source_digest": "98541cbfa094539280941ac000e58945a9669608e982879db5743d053d97701c",
+        "recognition_frames": [],
+        "classifier_models": [],
+        "push_braking_cycles": 0,
+        "retries": 2,
+        "preparation_recoveries": 0,
+        "actual_push_distance_m": 0.0,
+        "maximum_tilt_degrees": 18.90651649034066,
+        "passage_certificate": null,
+        "object_pose_feedback": "selected permitted simulator rigid body"
+      }
+    ]
+  },
+  "visual_checks": {
+    "interaction_source_declared": true,
+    "ground_truth_manifest": true,
+    "goal_reached": false,
+    "original_scale_and_floor": true,
+    "no_rollout_teleport": true,
+    "healthy": true,
+    "initial_unknown": true,
+    "no_prior_reads": true,
+    "original_task_coordinates": true,
+    "skill_executed": true,
+    "interaction_permission_effect_chain": false,
+    "full_body_passage": false,
+    "video_decoding": true,
+    "source_snapshot": true,
+    "new_source_present": true
+  },
+  "stage_feedback": [
+    {
+      "step": 6200,
+      "retry": 0,
+      "state": "settle_at_stage",
+      "stage_xy": [
+        2.361600160598755,
+        -0.5638037919998169
+      ]
+    },
+    {
+      "step": 10600,
+      "retry": 1,
+      "state": "brake_for_recovery",
+      "stage_xy": [
+        2.361600160598755,
+        -0.5638037919998169
+      ]
+    },
+    {
+      "step": 10800,
+      "retry": 1,
+      "state": "navigate_to_stage",
+      "stage_xy": [
+        2.255911022522166,
+        -0.2838754234850641
+      ]
+    },
+    {
+      "step": 12000,
+      "retry": 1,
+      "state": "settle_at_stage",
+      "stage_xy": [
+        2.209641218185425,
+        0.010563028044998646
+      ]
+    },
+    {
+      "step": 16600,
+      "retry": 2,
+      "state": "failed",
+      "stage_xy": [
+        2.255911083617909,
+        -0.2838754234850641
+      ]
+    }
+  ],
+  "heading_trim_observation": {
+    "diagnosis_only": true,
+    "source_run": "recognition-skill-v147-t05-ground-truth-try1",
+    "window_s": [
+      68.66,
+      88.68
+    ],
+    "samples": 2501,
+    "minimum_absolute_heading_error_rad": 0.09742813298440033,
+    "cycles": [
+      {
+        "motion_start_s": 70.77499841805547,
+        "motion_end_s": 71.06999841146171,
+        "rest_end_s": 74.52999833412468,
+        "peak_actual_policy_yaw_request": 0.2879999876022339,
+        "error_at_start_rad": 0.13984927191162388,
+        "error_at_brake_rad": 0.10241758389534283,
+        "best_absolute_error_while_commanded_rad": 0.10241758389534283,
+        "error_after_rest_rad": 0.1466499898354929,
+        "measured_yaw_at_brake_rad_s": 0.08641619980335236,
+        "retained_change_toward_goal_rad": -0.006800717923869021
+      },
+      {
+        "motion_start_s": 74.53499833401293,
+        "motion_end_s": 74.86999832652509,
+        "rest_end_s": 78.16999825276434,
+        "peak_actual_policy_yaw_request": 0.3240000009536743,
+        "error_at_start_rad": 0.14667084647284506,
+        "error_at_brake_rad": 0.09809795960208223,
+        "best_absolute_error_while_commanded_rad": 0.09809795960208223,
+        "error_after_rest_rad": 0.14341650936423816,
+        "measured_yaw_at_brake_rad_s": 0.0853133276104927,
+        "retained_change_toward_goal_rad": 0.0032543371086068973
+      },
+      {
+        "motion_start_s": 78.17499825265259,
+        "motion_end_s": 78.46999824605882,
+        "rest_end_s": 80.84999819286168,
+        "peak_actual_policy_yaw_request": 0.2879999876022339,
+        "error_at_start_rad": 0.1434445823611831,
+        "error_at_brake_rad": 0.10578258207759733,
+        "best_absolute_error_while_commanded_rad": 0.10578258207759733,
+        "error_after_rest_rad": 0.13814903292971306,
+        "measured_yaw_at_brake_rad_s": 0.08744668960571289,
+        "retained_change_toward_goal_rad": 0.005295549431470037
+      },
+      {
+        "motion_start_s": 80.85499819274992,
+        "motion_end_s": 81.12999818660319,
+        "rest_end_s": 84.5699981097132,
+        "peak_actual_policy_yaw_request": 0.2789999842643738,
+        "error_at_start_rad": 0.13812102758165537,
+        "error_at_brake_rad": 0.10115109976751997,
+        "best_absolute_error_while_commanded_rad": 0.10115109976751997,
+        "error_after_rest_rad": 0.14550805047765264,
+        "measured_yaw_at_brake_rad_s": 0.09434535354375839,
+        "retained_change_toward_goal_rad": -0.0073870228959972695
+      },
+      {
+        "motion_start_s": 84.57499810960144,
+        "motion_end_s": 84.86999810300767,
+        "rest_end_s": 88.24999802745879,
+        "peak_actual_policy_yaw_request": 0.3149999976158142,
+        "error_at_start_rad": 0.14547227496255652,
+        "error_at_brake_rad": 0.10066344900897813,
+        "best_absolute_error_while_commanded_rad": 0.10066344900897813,
+        "error_after_rest_rad": 0.14464673126477542,
+        "measured_yaw_at_brake_rad_s": 0.11134632676839828,
+        "retained_change_toward_goal_rad": 0.0008255436977810948
+      },
+      {
+        "motion_start_s": 88.25499802734703,
+        "motion_end_s": 88.54999802075326,
+        "rest_end_s": 88.66999801807106,
+        "peak_actual_policy_yaw_request": 0.296999990940094,
+        "error_at_start_rad": 0.14465086357731158,
+        "error_at_brake_rad": 0.10458381131039508,
+        "best_absolute_error_while_commanded_rad": 0.10458381131039508,
+        "error_after_rest_rad": 0.10450744830935159,
+        "measured_yaw_at_brake_rad_s": 0.09543497115373611,
+        "retained_change_toward_goal_rad": 0.04014341526795999
+      }
+    ],
+    "limitation": "Recorded closed-loop trajectory only; it does not predict a modified controller rollout."
+  },
+  "tests": {
+    "commit": "fbcaa14be1f8f79eb8d5deb3c45df20b8083e06a",
+    "passed": 726,
+    "deselected": 1,
+    "before_fix": {
+      "failed": 2,
+      "passed": 3
+    },
+    "source_hashes": {
+      "grutopia/demo/go2_side_clearance_navigation.py": "4c7a74c0a4b03abb4494e672eb5d8e8c45572362e80402d55b8c8d283a7e0891",
+      "tests/test_subnavigation_lifecycle.py": "6562e4a4adf7457db3362d9f9ca7f0af2cc339850c7ba0757510107f44fc7ffb"
+    },
+    "subnavigation_timeout_seconds": 80.0,
+    "max_skill_seconds": 180.0,
+    "max_retries": 4,
+    "wide_release_candidate_merged": false
+  },
+  "new_original_runs": [
+    {
+      "task": "T05",
+      "source_commit": "fbcaa14be1f8f79eb8d5deb3c45df20b8083e06a",
+      "supervisor_pid": 648432,
+      "worktree": "/data20t/embodied/zkj/inter-nav-run-t05-v149-20261030",
+      "output": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v149-t05-ground-truth-try1",
+      "start_override": null,
+      "original_start": [
+        13.6,
+        -0.4
+      ],
+      "original_goal": [
+        3.3,
+        1.4
+      ],
+      "predecessor": "v147 T05 diagnosis and v149 tests",
+      "policy": "original rough7850",
+      "physics_backend": "gpu_dynamics",
+      "stationary_joint_hold": false,
+      "scope_cap_gib": 24,
+      "serial": true,
+      "change": "end inactive subnavigation sessions; keep the 80-second visit timeout"
+    },
+    {
+      "task": "T04",
+      "source_commit": "fbcaa14be1f8f79eb8d5deb3c45df20b8083e06a",
+      "supervisor_pid": 648443,
+      "worktree": "/data20t/embodied/zkj/inter-nav-run-t04-v149-20261030",
+      "output": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v149-t04-ground-truth-try1",
+      "start_override": null,
+      "original_start": [
+        2.11,
+        -0.78
+      ],
+      "original_goal": [
+        10.3,
+        1.75
+      ],
+      "predecessor": "v149 original T05 full acceptance",
+      "policy": "original rough7850",
+      "physics_backend": "gpu_dynamics",
+      "stationary_joint_hold": false,
+      "scope_cap_gib": 24,
+      "serial": true,
+      "change": "end inactive subnavigation sessions; keep the 80-second visit timeout"
+    }
+  ],
+  "original_pair_accepted_at_candidate_launch": false
+}

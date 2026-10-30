@@ -1,6 +1,6 @@
 # v147原始T04完整验收通过
 
-更新：2026-10-30。**原始T04已通过完整验收，T05正在使用同一运行版本测试。两项任务尚未统一完成。** 运行源码为`fdaf2aa22f3e1cae34079761184e67cb3d8807eb`，没有采用较大角度撤离候选。
+更新：2026-10-30。**本页记录的v147原始T04已完整通过；随后同版T05失败，整体任务未完成。** 当前v149先复跑原始T05、再回归T04，见[最新修复与状态](go2_subnavigation_lifecycle.md)。本页成功记录的运行源码仍为`fdaf2aa22f3e1cae34079761184e67cb3d8807eb`，没有采用较大角度撤离候选。
 
 ## 原始任务结果
 
@@ -36,4 +36,4 @@ Windows总览：`E:/inter-nav-results/go2-online-smooth-20261027/recognition-ski
 
 服务器结果：`/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v147-t04-ground-truth-try1`。
 
-复现入口和完整参数见[README](../README.md)，最后一次接触撤离的修改见[实现说明](go2_final_push_release.md)，完整证据见[结果和审计数据](data/go2_original_t04_v147.json)。T05已按前置验收门控启动，仍需自己的原坐标推箱、实际穿越、原目标停稳和五路视频验收。
+复现入口和完整参数见[README](../README.md)，最后一次接触撤离的修改见[实现说明](go2_final_push_release.md)，完整证据见[结果和审计数据](data/go2_original_t04_v147.json)。随后T05因子导航访问状态问题失败，当前复跑状态见[最新说明](go2_subnavigation_lifecycle.md)。
