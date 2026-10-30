@@ -104,6 +104,15 @@ class Go2RSLControl:
             [GO2_DEFAULT_JOINT_POSITIONS[GO2_JOINT_NAMES.index(name)] for name in joint_names],
             dtype=np.float32,
         )
+        contract = getattr(self.policy, 'go2_deployment_contract', None)
+        if contract is not None:
+            if actuator_mode != 'explicit_dc' or stationary_joint_hold:
+                raise ValueError('Unitree Go2 policy requires explicit_dc without stationary joint hold')
+            if contract.get('joint_names') != joint_names:
+                raise ValueError('Unitree Go2 deployment joint order differs from controller')
+            defaults = np.asarray(contract.get('default_joint_positions', []), dtype=np.float32)
+            if defaults.shape != (12,) or not np.allclose(defaults, self.default_joint_positions, atol=1e-6, rtol=0):
+                raise ValueError('Unitree Go2 deployment default joint positions differ from controller')
         self.last_action = np.zeros(12, dtype=np.float32)
         self.raw_policy_action = np.zeros(12, dtype=np.float32)
         self.applied_joint_positions = self.default_joint_positions.copy()
@@ -302,7 +311,8 @@ class Go2RSLControl:
         if action.shape != (12,) or not np.isfinite(action).all():
             raise RuntimeError('Go2 locomotion policy produced invalid actions')
         self.raw_policy_action = action.astype(np.float32, copy=True)
-        self.last_action = self.raw_policy_action.copy()
+        self.last_action = (np.clip(self.raw_policy_action, -100., 100.)
+                            if self.observation_dim == 45 else self.raw_policy_action.copy())
         self.applied_joint_positions = (
             self.default_joint_positions + DEFAULT_ACTION_SCALE * self.last_action
         )

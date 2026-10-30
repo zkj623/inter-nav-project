@@ -1,12 +1,16 @@
 """Isaac Lab RSL-RL Go2 actor loading and observation packing."""
 
 from pathlib import Path
+import hashlib
+import json
 from typing import Iterable, Sequence
 
 import numpy as np
 import torch
 from torch import nn
 
+UNITREE_OBSERVATION_DIM = 45
+UNITREE_OBSERVATION_PROFILE = "unitree_go2_45"
 FLAT_OBSERVATION_DIM = 48
 HEIGHT_SCAN_DIM = 187
 ROUGH_OBSERVATION_DIM = FLAT_OBSERVATION_DIM + HEIGHT_SCAN_DIM
@@ -94,6 +98,32 @@ def load_go2_actor(path: str) -> nn.Module:
         infer_actor_hidden_dims(actor_state),
     )
     actor.load_state_dict(actor_state, strict=True)
+    if infer_observation_dim(actor_state) == UNITREE_OBSERVATION_DIM:
+        if checkpoint.get('observation_profile') != UNITREE_OBSERVATION_PROFILE:
+            raise ValueError('45-dimensional Go2 checkpoint must declare unitree_go2_45 profile')
+        if checkpoint.get('empirical_normalization') is not False:
+            raise ValueError('Unitree Go2 adapter requires explicit unnormalized observations')
+        contract_path = checkpoint_path.with_name('deployment_contract.json')
+        if not contract_path.is_file():
+            raise ValueError('Unitree Go2 checkpoint requires deployment_contract.json')
+        contract = json.loads(contract_path.read_text())
+        expected = {
+            'observation_profile': UNITREE_OBSERVATION_PROFILE,
+            'actor_dimension': 45, 'action_dimension': 12,
+            'observation_order': ['base_ang_vel', 'projected_gravity', 'velocity_commands',
+                                  'joint_pos_rel', 'joint_vel_rel', 'last_action'],
+            'observation_scales': [.2, 1., 1., 1., .05, 1.],
+            'observation_clip_before_scale': [-100., 100.],
+            'empirical_normalization': False, 'action_scale': .25,
+            'actor_hz': 50, 'physics_hz': 200, 'kp': 25., 'kd': .5,
+            'saturation_torque_nm': 23.5, 'velocity_limit_rad_s': 30.,
+        }
+        for key, value in expected.items():
+            if contract.get(key) != value:
+                raise ValueError(f'Unitree Go2 deployment contract mismatch for {key}')
+        if contract.get('actor_checkpoint_sha256') != hashlib.sha256(checkpoint_path.read_bytes()).hexdigest():
+            raise ValueError('Unitree Go2 checkpoint hash differs from deployment contract')
+        actor.go2_deployment_contract = contract
     actor.eval()
     return actor
 
@@ -205,12 +235,19 @@ def build_go2_observation(
             'Go2 proprioceptive observation has shape '
             f'{observation.shape}, expected ({FLAT_OBSERVATION_DIM},)'
         )
+    if observation_dim == UNITREE_OBSERVATION_DIM:
+        # Unitree's actor omits base linear velocity and height. Native Lab
+        # clips each observation term before scaling it; preserve that order.
+        unitree = np.clip(observation[3:], -100., 100.).copy()
+        unitree[:3] *= .2
+        unitree[21:33] *= .05
+        return unitree
     if observation_dim == FLAT_OBSERVATION_DIM:
         return observation
     if observation_dim != ROUGH_OBSERVATION_DIM:
         raise RuntimeError(
             f'unsupported Go2 policy observation dim {observation_dim}; '
-            f'expected {FLAT_OBSERVATION_DIM} or {ROUGH_OBSERVATION_DIM}'
+            f'expected {UNITREE_OBSERVATION_DIM}, {FLAT_OBSERVATION_DIM} or {ROUGH_OBSERVATION_DIM}'
         )
     if height_scan is None:
         height_scan = flat_ground_height_scan(base_height, ground_height)
