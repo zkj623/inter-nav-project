@@ -521,7 +521,8 @@ class PushAsideSkill:
             angular=getattr(ctx,'body_angular_velocity',None)
             angular=np.asarray((0.,0.,ctx.yaw_rate) if angular is None else angular,float)
             command,done,_=self.heading_trim.update(ctx.position,ctx.heading,ctx.planner,ctx.boxes,
-                ctx.limiter,ctx.now,ctx.body_velocity,angular,ctx.tilt_degrees)
+                ctx.limiter,ctx.now,ctx.body_velocity,angular,ctx.tilt_degrees,
+                policy_command=getattr(ctx,'policy_command',None))
             if self.heading_trim.failed:return self._retry(ctx,self.heading_trim.failed)
             if done:self._transition(self._centering_state_after_stop(ctx),ctx)
             return self._output(command)

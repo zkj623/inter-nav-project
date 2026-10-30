@@ -7,6 +7,53 @@ from grutopia_extension.interactive_navigation.go2_interaction_motion import Mea
 from grutopia_extension.interactive_navigation.go2_voronoi_navigation import body_motion_clear
 
 
+class YawStepPulse:
+    """Deliver a calibrated finite yaw request before measuring retained heading.
+
+    A transient body twist can reach the angle target before the velocity
+    policy receives an effective turning input. Completion here means only
+    that the input was delivered; HeadingTrimControl still requires its
+    original measured stop and actual heading tolerance afterwards.
+    """
+    POLICY_SPEED=.55
+    ACK_SECONDS=.04
+    MAX_SECONDS=3.
+    MAX_HEADING_EXCURSION=.45
+
+    @classmethod
+    def configuration(cls):
+        return {'policy_yaw_speed_rad_s':cls.POLICY_SPEED,
+            'acknowledged_hold_seconds':cls.ACK_SECONDS,'input_timeout_seconds':cls.MAX_SECONDS,
+            'heading_excursion_limit_rad':cls.MAX_HEADING_EXCURSION,'requires_actual_policy_feedback':True}
+
+    def __init__(self,error,heading,now):
+        self.direction=math.copysign(1.,error);self.origin_heading=float(heading);self.started=float(now)
+        self.acknowledged_since=None;self.complete=False;self.failed=None
+
+    def update(self,heading,policy_command,now):
+        elapsed=float(now)-self.started
+        excursion=abs((float(heading)-self.origin_heading+math.pi)%(2*math.pi)-math.pi)
+        feedback=np.asarray(policy_command,dtype=float) if policy_command is not None else np.empty(0)
+        valid=feedback.shape==(3,) and np.isfinite(feedback).all()
+        if not self.complete and self.failed is None:
+            if not valid:self.failed='heading_step_feedback_unavailable'
+            elif elapsed>self.MAX_SECONDS:self.failed='heading_step_input_timeout'
+            elif excursion>self.MAX_HEADING_EXCURSION:self.failed='heading_step_excursion_limit'
+        if valid and not self.failed and not self.complete:
+            acknowledged=self.direction*float(feedback[2])>=self.POLICY_SPEED-1e-5
+            if acknowledged:
+                if self.acknowledged_since is None:self.acknowledged_since=float(now)
+                if float(now)-self.acknowledged_since>=self.ACK_SECONDS:self.complete=True
+            else:self.acknowledged_since=None
+        detail={'direction':self.direction,'policy_speed_rad_s':self.POLICY_SPEED,
+            'actual_policy_yaw_rad_s':float(feedback[2]) if valid else None,
+            'elapsed_seconds':elapsed,'heading_excursion_rad':excursion,
+            'acknowledged_seconds':0. if self.acknowledged_since is None else float(now)-self.acknowledged_since,
+            'input_complete':self.complete,'failure':self.failed}
+        request=np.zeros(3) if self.complete or self.failed else np.array([0.,0.,self.direction*self.POLICY_SPEED])
+        return request,detail
+
+
 class HeadingTrimControl:
     def __init__(self,goal_heading,tolerance=.05,stalled_seconds=2.,max_translation=.25,acceptance_tolerance=None):
         self.goal_heading=float(goal_heading);self.tolerance=float(tolerance)
@@ -17,9 +64,10 @@ class HeadingTrimControl:
         self.origin=None;self.best_error=None;self.last_progress=None
         self.braking=True;self.arc_enabled=False;self.arc_speed=None;self.done=False;self.failed=None
         self.last_detail={};self.stop_heading=None;self.travel_budget_exhausted=False
+        self.yaw_step=None;self.yaw_step_count=0;self.last_yaw_step=None
         self.arc_phase=None;self.prime_speed=None;self.prime_since=None;self.prime_stable_since=None;self.prime_origin=None;self.prime_direction=None
 
-    def update(self,position,heading,planner,boxes,limiter,now,body_velocity,angular_velocity,tilt):
+    def update(self,position,heading,planner,boxes,limiter,now,body_velocity,angular_velocity,tilt,*,policy_command=None):
         position=np.asarray(position,float);error=(self.goal_heading-heading+math.pi)%(2*math.pi)-math.pi
         if self.origin is None:
             self.origin=position[:2].copy();self.best_error=abs(error);self.last_progress=now
@@ -28,13 +76,13 @@ class HeadingTrimControl:
             # Stop requesting travel at the budget, then assess the actual
             # settled heading. Braking drift is not a second motion request.
             self.travel_budget_exhausted=True;self.braking=True
-            self.stop.reset();self.stop_heading=None;self.arc_phase=None
+            self.stop.reset();self.stop_heading=None;self.arc_phase=None;self.yaw_step=None
         if abs(error)<self.best_error-.015:self.best_error=abs(error);self.last_progress=now
         if now-self.last_progress>=self.stalled_seconds:self.arc_enabled=True
         detail={'heading_error_rad':float(error),'best_error_rad':float(self.best_error),
             'translation_from_origin_m':travel,'arc_enabled':self.arc_enabled,'mode':'yaw_trim',
             'aiming_tolerance_rad':self.tolerance,'settled_tolerance_rad':self.acceptance_tolerance,
-            'travel_budget_exhausted':self.travel_budget_exhausted}
+            'travel_budget_exhausted':self.travel_budget_exhausted,'yaw_step_count':self.yaw_step_count}
         def checked(request):
             command,safe=checked_contact_turn_command(request,position,heading,planner,boxes,limiter,now)
             detail.update(body_motion_safe=bool(safe),applied_command=command.tolist())
@@ -42,7 +90,7 @@ class HeadingTrimControl:
             return command
         if self.failed or self.done:
             return checked([0.,0.,0.]),self.done,detail
-        if abs(error)<self.tolerance and not self.braking:
+        if abs(error)<self.tolerance and not self.braking and self.yaw_step is None:
             self.braking=True;self.stop.reset();self.stop_heading=None;self.arc_phase=None
         if self.braking:
             detail['mode']='heading_trim_brake';command=checked([0.,0.,0.])
@@ -65,7 +113,7 @@ class HeadingTrimControl:
                         self.servo=ContactYawServo(self.tolerance)
             self.last_detail=detail.copy()
             return command,self.done,detail
-        if self.arc_enabled and self.arc_phase is None:
+        if self.arc_enabled and self.arc_phase is None and self.yaw_step is None:
             probe_rate=math.copysign(1.,error)
             speeds=[self.arc_speed] if self.arc_speed is not None else [-.20,.20]
             for speed in speeds:
@@ -78,7 +126,19 @@ class HeadingTrimControl:
                         self.prime_origin=position[:2].copy()
                         self.prime_direction=np.sign(speed)*np.array([math.cos(heading),math.sin(heading)])
                         break
-            else:detail['arc_unavailable']=True
+            else:
+                detail['arc_unavailable']=True
+                if policy_command is not None:
+                    self.yaw_step=YawStepPulse(error,heading,now);self.yaw_step_count+=1
+        if self.yaw_step is not None:
+            request,pulse_detail=self.yaw_step.update(heading,policy_command,now)
+            detail.update(mode='calibrated_yaw_step',yaw_step_count=self.yaw_step_count,yaw_step=pulse_detail)
+            self.last_yaw_step=pulse_detail.copy()
+            if self.yaw_step.failed or self.yaw_step.complete:
+                self.failed=self.yaw_step.failed
+                self.yaw_step=None;self.braking=True;self.stop.reset();self.stop_heading=None;self.arc_phase=None
+                detail['mode']='heading_step_brake'
+            return checked(request),False,detail
         if self.arc_phase=='prime':
             progress=float(np.dot(position[:2]-self.prime_origin,self.prime_direction))
             actual=float(np.sign(self.arc_speed)*body_velocity[0])

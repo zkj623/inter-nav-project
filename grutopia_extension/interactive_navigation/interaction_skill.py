@@ -39,6 +39,7 @@ class SkillContext:
     navigation_reached:bool=False
     body_angular_velocity:Any=None
     orientation:Any=None
+    policy_command:Any=None
 
 
 class SkillRegistry:

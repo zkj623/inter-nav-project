@@ -134,6 +134,7 @@ def main():
     from grutopia_extension.interactive_navigation.layered_navigation_map import LayeredNavigationMap
     from grutopia_extension.interactive_navigation.go2_rollout_health import Go2RolloutHealth
     from grutopia_extension.interactive_navigation.go2_actuation import physics_steps_per_command
+    from grutopia_extension.interactive_navigation.go2_heading_trim import YawStepPulse
     from grutopia_extension.interactive_navigation.go2_passage_confirmation import observed_passage_routes
     from grutopia_extension.interactive_navigation.online_navigation_map import OnlineNavigationMap
     from grutopia_extension.interactive_navigation.online_navigation_decision import OnlineGoalSelector
@@ -373,6 +374,7 @@ def main():
                 'contact_lateral_brake_horizon_s':.65 if args.path_controller=='continuous' else CONTACT_BRAKING_HORIZON_S,
                 'contact_front_gap_m':args.contact_front_gap,'contact_braking_horizon_s':CONTACT_BRAKING_HORIZON_S,
                 'contact_centering_axes':'lateral correction before longitudinal approach',
+                'heading_trim_yaw_step':YawStepPulse.configuration(),
                 'live_control_config':str(args.control_config) if args.control_config else None,
                 'third_person_offset':[args.third_person_forward,0.,args.third_person_height],'third_person_pitch_degrees':90,
                 'third_person_fov_degrees':args.third_person_fov,
@@ -1049,7 +1051,8 @@ def main():
                     ctx=SkillContext(planner.control_time,p,heading,robot._go2_locomotion_control.body_lin_vel,
                         float(robot._go2_locomotion_control.body_ang_vel[2]),tilt,task_health.healthy,
                         by_id.get(plan.box_id),current,planner,layers,smooth_limiter,sub_reached,
-                        body_angular_velocity=robot._go2_locomotion_control.body_ang_vel,orientation=q.copy())
+                        body_angular_velocity=robot._go2_locomotion_control.body_ang_vel,orientation=q.copy(),
+                        policy_command=robot._go2_locomotion_control.policy_command.copy())
                     command=skill.step(ctx)
                     for transition in command.events:event('skill_transition',step=step,**transition)
                     layers.decision={**(layers.decision or {}),'skill':'push_aside','skill_state':command.state,
