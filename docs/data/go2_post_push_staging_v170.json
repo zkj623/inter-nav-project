@@ -1,0 +1,370 @@
+{
+  "original_pair_complete": false,
+  "archive": {
+    "run": "recognition-skill-v170-t05-ground-truth-try1",
+    "task": "T05",
+    "operator_stopped_prefix": true,
+    "video_sha256_match": {
+      "combined.mp4": true,
+      "map_topdown.mp4": true,
+      "pointcloud_map.mp4": true,
+      "robot_rgb.mp4": true,
+      "third_person.mp4": true
+    },
+    "media_valid": true,
+    "source_valid": true,
+    "visual_task_valid": false,
+    "actual_passage_valid": false,
+    "navigation_success": false,
+    "termination_reason": "stop_requested",
+    "steps": 15738,
+    "error_m": 1.1973661861791614,
+    "max_tilt_degrees": 2.7285276321252305,
+    "frames": 3203,
+    "duration_s": 128.12,
+    "selected_box_displacements": [
+      {
+        "object_id": "B07",
+        "world_displacement_m": 0.8400584565134922,
+        "along_planned_push_m": 0.8393712043762207
+      }
+    ],
+    "policy_artifact_checks": {
+      "actor_checkpoint.pt": true,
+      "deployment_contract.json": true,
+      "model_and_contract_match": true
+    },
+    "policy_artifacts_valid": true,
+    "full_task_accepted": false
+  },
+  "completion_audit": {
+    "supplemental_completion_audit": true,
+    "task": "T05",
+    "run": "recognition-skill-v170-t05-ground-truth-try1",
+    "valid": false,
+    "checks": {
+      "task_reports_success": false,
+      "not_operator_stopped": false,
+      "original_coordinates": true,
+      "scene_scale_one": true,
+      "robot_scale_one": true,
+      "floor_one_cm": true,
+      "final_measured_error_below_025": false,
+      "no_teleports_flag": true,
+      "recorded_health_valid": true,
+      "startup_gate_below_15": true,
+      "model_contract_valid": true,
+      "original_robot_geometry": true,
+      "canonical_asset_hash": true,
+      "physics_gpu_and_200hz": true,
+      "explicit_dc": true,
+      "online_map_cadence": true,
+      "ground_truth_box_mode": true,
+      "full_five_stream_recording": true,
+      "source_version_valid": true,
+      "source_snapshot_hashes": true,
+      "expected_commit": true,
+      "expected_policy": true,
+      "video_qa": false,
+      "visual_skill_qa": false,
+      "actual_passage_qa": false,
+      "initial_map_empty": true,
+      "no_prior_reads": true,
+      "exactly_five_videos": true,
+      "all_streams_complete_25fps": true,
+      "policy_artifacts": true,
+      "new_controller_source_included": true,
+      "raw_all_physics_coverage": true,
+      "raw_all_physics_health": true,
+      "raw_startup_tilt_below_15": true,
+      "no_large_physics_pose_jump": true,
+      "policy_50hz_cadence": true,
+      "physical_push_fresh_map_then_traversal": false
+    },
+    "effects": [
+      {
+        "object_id": "B07",
+        "fresh_after_last_box_motion": true,
+        "confirming_observation_time_s": 101.40999773330986,
+        "last_box_motion_time_s": 95.80999785847962,
+        "box_visible_at_confirmation": true,
+        "side_parked": true,
+        "push_is_sideways": true,
+        "actual_push_over_025": true,
+        "contact_impulse_samples": 1458,
+        "valid_crossings_after_confirmation": [],
+        "valid": false
+      }
+    ],
+    "policy_artifacts": {
+      "actor_checkpoint.pt": true,
+      "deployment_contract.json": true,
+      "hash_matches_model": true
+    },
+    "source_commit": "696ba2ed9909a97d34f4d3daddf0598e7f8c615c",
+    "policy_sha256": "8862682da34ebb090a2e56f39254af430d5645f20cb5e3e104c72a4720671db8",
+    "raw_physics": {
+      "rows": 26267,
+      "expected_rows": 26267,
+      "maximum_tilt_deg": 2.7285275330621857,
+      "startup_maximum_tilt_deg": 1.6814821648911846,
+      "minimum_height_m": 0.32549214363098145,
+      "maximum_planar_step_m": 0.0029611865546517917
+    },
+    "videos_sha256": {
+      "robot_rgb.mp4": "2781d99d175953aa1e6e10d60296e0fc92811cb79f508a7a761dcc9c2ce47eee",
+      "third_person.mp4": "f706276dd50db47c487e52525ee3e6616427dfa7a9d06097c0c8ecc153cb3154",
+      "pointcloud_map.mp4": "f8cc8d70111a9f2c0d672cf5ec558ea27c7a5b91538689c925f939afc753d6b6",
+      "map_topdown.mp4": "e68060520babf30223c770bfd84288c7e16a673173fb5aef4eaeeef313e669da",
+      "combined.mp4": "2249df0d6e562c46a79fa1210f5142369eca85090d434afb7eaca62a7edfb647"
+    },
+    "missing_timestamp_proofs_require_review": false
+  },
+  "operator_stop": {
+    "operator_stopped_prefix": true,
+    "original_task_accepted": false,
+    "reason": "Physical side push, withdrawal and fresh passage confirmation succeeded, but subsequent diagonal turn-staging commands near (-0.21,-0.21) m/s produce no translation; the 20 s stage timeout and replan repeat the same stall.",
+    "last_simulation_time_s": 130.04999709315598,
+    "last_position": [
+      3.1097002029418945,
+      0.21853511035442352,
+      0.3303873538970947
+    ],
+    "window_s": 3.999999910593033,
+    "maximum_position_excursion_m": 0.00021809009650895414,
+    "mean_policy_command": [
+      -0.2138166308046101,
+      -0.21043393402518387,
+      0.0
+    ],
+    "successful_skill": {
+      "event": "skill_end",
+      "task": "T05",
+      "step": 12162,
+      "time_s": 101.46499773208052,
+      "name": "push_aside",
+      "version": "1.0",
+      "status": "succeeded",
+      "reason": "observed_passage_created",
+      "object_id": "B07",
+      "recognized_category": "box",
+      "interaction_source": "ground_truth_layout",
+      "source_reference": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v170-t05-ground-truth-try1/interaction_ground_truth.json",
+      "source_digest": "98541cbfa094539280941ac000e58945a9669608e982879db5743d053d97701c",
+      "recognition_frames": [],
+      "classifier_models": [],
+      "push_braking_cycles": 3,
+      "retries": 0,
+      "preparation_recoveries": 0,
+      "actual_push_distance_m": 0.8393712043762207,
+      "maximum_tilt_degrees": 2.7285276321252305,
+      "passage_certificate": {
+        "axis": [
+          -0.0204039146625196,
+          0.9997918184634462
+        ],
+        "center": [
+          3.1796353401608486,
+          0.21354835301407982
+        ],
+        "nominal_center": [
+          3.3241531082608122,
+          0.21649769522020162
+        ],
+        "lateral_offset_m": 0.9621014632111682,
+        "required_lateral_offset_m": 0.7144039092667691,
+        "passage_clearance_margin_m": 0.24769755394439907,
+        "robot_passage_width_m": 0.52,
+        "side_parked": true,
+        "completion_rule": "current_global_route_and_full_body_local_corridor",
+        "body_margin_m": 0.04,
+        "corridor_start": [
+          3.200039254823368,
+          -0.7862434654493664
+        ],
+        "corridor_end": [
+          3.165352599897085,
+          0.9134026259384921
+        ],
+        "route_goal": [
+          3.3,
+          1.4
+        ],
+        "ends_at_goal": false,
+        "checked_pose_count": 69,
+        "axis_source": "initial_observed_route",
+        "confirmation_stage": "settle_released_corridor",
+        "original_box_would_block_corridor": true,
+        "original_box": {
+          "id": "B07",
+          "xy": [
+            3.301821708679199,
+            0.2160419523715973
+          ],
+          "dimensions": [
+            0.8500001720370548,
+            0.6500007367711362,
+            0.7000008082882735
+          ],
+          "yaw": 0.0,
+          "mass_kg": 5.0,
+          "local_dimensions": null,
+          "orientation": null,
+          "center_z": null
+        },
+        "original_box_xy": [
+          3.301821708679199,
+          0.2160419523715973
+        ],
+        "actual_push_distance_m": 0.8393712043762207,
+        "nominal_planned_push_m": 0.8499999999999999,
+        "confirming_observation_time_s": 101.40999773330986,
+        "last_box_motion_time_s": 95.80999785847962
+      },
+      "object_pose_feedback": "selected permitted simulator rigid body"
+    },
+    "post_skill_replans": [
+      {
+        "event": "path_replanned_from_actual_pose",
+        "task": "T05",
+        "step": 14664,
+        "map_scope": "local_dynamic",
+        "global_map_revision": 98,
+        "local_map_revision": 1025,
+        "position": [
+          3.109281539916992,
+          0.21947243809700012,
+          0.33035808801651
+        ],
+        "orientation": [
+          -0.999956488609314,
+          -0.002002804772928357,
+          0.005586834158748388,
+          0.007201670203357935
+        ],
+        "path": [
+          [
+            2.875,
+            -0.024999999999999467,
+            0.0
+          ],
+          [
+            2.875,
+            -0.4249999999999998,
+            0.0
+          ],
+          [
+            3.200039254823368,
+            -0.7862434654493664,
+            0.0
+          ]
+        ]
+      }
+    ],
+    "code_changed_during_run": false,
+    "stop_method": "existing STOP file and normal five-video finalization"
+  },
+  "status": {
+    "state": "finished",
+    "time_unix": 1793391696.393538,
+    "attempt": 1,
+    "output": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v170-t05-ground-truth-try1",
+    "exit_code": 0,
+    "resource_stop": false,
+    "peak_sampled_process_rss_gib": 18.996322631835938,
+    "verified_scope_limit": true,
+    "scope_memory_max_gib": 24,
+    "peak_observed_cgroup_gib": 18.823333740234375,
+    "oom_kill_before": 2,
+    "oom_kill_after": 2,
+    "user_oom_counter_increased": false,
+    "resource_pressure_guard": {
+      "state": "running",
+      "pause_count": 0,
+      "resume_count": 0,
+      "pause_below_gib": 16.0,
+      "emergency_below_gib": 4.0,
+      "resume_at_gib": 56.0,
+      "low_seconds": 10.0,
+      "resume_seconds": 30.0,
+      "maximum_pause_seconds": 600.0,
+      "abort_grace_seconds": 300.0
+    },
+    "resource_guard_sha256": "d6f1568b732e202e210eafa8c6a07ef2e3a473e2cabe8cbbbb1038c68c97894b",
+    "acceptance": [
+      {
+        "task": "T05",
+        "valid": false,
+        "visual_skill": {
+          "task": "T05",
+          "interaction_source": "ground_truth",
+          "valid": false,
+          "checks": {
+            "interaction_source_declared": true,
+            "ground_truth_manifest": true,
+            "goal_reached": false,
+            "original_scale_and_floor": true,
+            "no_rollout_teleport": true,
+            "healthy": true,
+            "initial_unknown": true,
+            "no_prior_reads": true,
+            "original_task_coordinates": true,
+            "skill_executed": true,
+            "interaction_permission_effect_chain": true,
+            "full_body_passage": false,
+            "video_decoding": true,
+            "source_snapshot": true,
+            "new_source_present": true
+          },
+          "skills": [
+            {
+              "object_id": "B07",
+              "interaction_source": "ground_truth",
+              "visual_frames_before_skill": [],
+              "valid": true
+            }
+          ],
+          "audit_tool_sha256": "660198d9bff2627a9e27beb32ed582190a1cf94b8bdc5fa256a9c99919bc4c50"
+        },
+        "actual_passage": {
+          "supplemental_only": true,
+          "does_not_replace_map_source_video_audits": true,
+          "task": "T05",
+          "valid": false,
+          "checks": {
+            "result_reports_success": false,
+            "original_coordinates": true,
+            "maximum_tilt_below_30": true,
+            "measured_final_stop": false,
+            "successful_skill_and_actual_crossing": false
+          },
+          "maximum_tilt_degrees_from_trace": 2.7285275330621857,
+          "final_stop": {
+            "valid": false,
+            "window_seconds": 0.3999999910593033,
+            "window_long_enough": true,
+            "goal_error_m": 1.1973661861791614,
+            "goal_within_tolerance": false,
+            "linear_xy_quiet": true,
+            "vertical_quiet": true,
+            "angular_quiet": true,
+            "tilt_quiet": true,
+            "position_stable": true,
+            "height_stable": true,
+            "tilt_stable": true
+          },
+          "passages": [
+            {
+              "object_id": "B07",
+              "actual_push_distance_m": 0.8393712043762207,
+              "valid": false,
+              "crossings": []
+            }
+          ]
+        }
+      }
+    ],
+    "all_tasks_accepted": false
+  },
+  "new_staging_fix_validated": false
+}

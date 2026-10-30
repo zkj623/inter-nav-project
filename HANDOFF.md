@@ -1,6 +1,18 @@
 # HANDOFF
 
-## 当前：退出余量验证后，原始 T05 v170 复测
+## 当前：v170 推箱退出成功，后续斜向转向准备停滞
+
+v170 T05 已停止并完成导出/检查，任务未通过，同版 T04 尚未启动。运行源码 696ba2ed9909a97d34f4d3daddf0598e7f8c615c，policy 8862682da34ebb090a2e56f39254af430d5645f20cb5e3e104c72a4720671db8。实际侧推 0.839371 m，退出后新观测确认时间 101.409998 s，最后箱子移动时间 95.809998 s；第 12162 步 skill 成功。原始物理记录 26267 行完整，最大倾角 2.728528°，非零箱子接触 1458 次。
+
+后续 LocalStagingControl 的 staging_move 请求约 [-0.214,-0.210,0]，范数 0.30 m/s，但实际几乎无移动。20 秒超时后第 14664 步重规划，仍重复同样动作；停止前末 4 秒位移仅 0.218 mm。最终 15738 步、误差 1.197366 m，无确认后的实际穿越。旧 turn staging 排除在普通 execution_stalled 反馈外，不能只重试原请求。
+
+五路各 3203 帧/25 fps/128.12 s，全部黑帧 0，媒体、源码、policy、本地哈希有效；总 video_qa/任务/通路检查仍为 false。archive-v170-t05-verification.json 已回传结果根目录，completion-audits/v170-t05.json 保留独立失败审计。录像在 E:/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v170-t05-ground-truth-try1/T05/video/。不要把局部 skill 成功当作完整 T05 成功，也不要运行 v170 的 T04 队列。
+
+下一步是验证 45 维策略的低速斜向转向准备请求。候选可采用经过实测无位移后的有界启动速度补偿，仍在完整位姿、已观测通路、加速度和实测制动检查内；尚未实现或验证。必要时用 v170 的实际物理前缀和最近在线地图做完整状态回放，不覆盖 rollout 物理状态。之后从原始起点重跑 T05，再跑同版 T04。新候选不能复用本轮为完整成功。
+
+详见[当前失败与录像](docs/go2_post_push_staging.md)。以下为历史记录。
+
+## 历史：退出余量验证后，原始 T05 v170 复测
 
 当前运行提交 696ba2ed9909a97d34f4d3daddf0598e7f8c615c，policy 仍为 8862682da34ebb090a2e56f39254af430d5645f20cb5e3e104c72a4720671db8。原始 T05 v170 已提交；实时检查结果根目录 recognition-skill-v170-t05-ground-truth.status.json，启动记录 v170-t05.launch.json。同版 T04 尚未启动。
 
