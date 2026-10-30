@@ -53,6 +53,20 @@ def checked_contact_turn_command(request, position, heading, planner, boxes, lim
     return command if safe else np.zeros(3), bool(safe)
 
 
+def checked_contact_step_command(request, position, heading, planner, boxes, limiter, now, *, target_position):
+    """Bound a short correction by its goal, retaining measured stopping space.
+
+    Prefer the original full horizon. The fallback uses the already existing
+    finite-goal check, including its independent 0.8 s measured-motion sweep.
+    No box, unknown cell, or footprint sample is removed from either check.
+    """
+    command,safe=checked_contact_turn_command(request,position,heading,planner,boxes,limiter,now)
+    if safe:return command,True,'full'
+    command,safe=checked_contact_turn_command(request,position,heading,planner,boxes,limiter,now,
+                                            target_position=target_position)
+    return command,safe,'finite_target' if safe else 'blocked'
+
+
 class ContactTurnControl:
     def __init__(self, position, heading, goal_heading, planner, boxes, now):
         self.stage = LocalStagingControl(position, heading, goal_heading, planner, boxes, now)

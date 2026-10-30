@@ -11,7 +11,7 @@ from grutopia_extension.interactive_navigation.interaction_skill import SkillSpe
 from grutopia_extension.interactive_navigation.go2_contact_control import (
     ContactYawServo,contact_heading_hold,contact_face_lateral_allowance,observed_contact_face_clear,observed_contact_retreat,
     push_centerline_velocity,push_completion_state,push_braking_distance,observed_release_braking_clear)
-from grutopia_extension.interactive_navigation.go2_contact_turn import ContactTurnControl,checked_contact_turn_command
+from grutopia_extension.interactive_navigation.go2_contact_turn import ContactTurnControl,checked_contact_turn_command,checked_contact_step_command
 from grutopia_extension.interactive_navigation.go2_voronoi_navigation import (
     body_rotation_clear,body_translation_recovery_clear,body_motion_clear,
     ForwardExplorationPathTracker,navigation_body_blocked)
@@ -260,6 +260,20 @@ class PushAsideSkill:
         if self.translation_braking:
             if not self._quiet(ctx):return np.zeros(3),False
             self.translation_braking=False
+            # A measured brake that repeatedly leaves the initial centering
+            # short needs the same bounded input as a failed contact settle.
+            # Log a control adjustment without resetting the phase deadline.
+            if (self.state=='align_lateral' and self.lateral_step is None
+                    and getattr(ctx,'policy_command',None) is not None
+                    and abs(self.config.lateral_speed-ContactTranslationStep.SPEED)<1e-6
+                    and abs(error)>tolerance and self.progress_since is not None
+                    and ctx.now-self.progress_since>=ContactTranslationStep.PROGRESS_SECONDS):
+                self.events.append({'skill':self.spec.name,'object_id':self.plan.box_id,
+                    'from':self.state,'to':self.state,'reason':'settled_initial_lateral_plateau',
+                    'time_s':float(ctx.now),'retry':self.retries,'lateral_error_m':abs(error),
+                    'progress_stall_seconds':float(ctx.now-self.progress_since),
+                    'alignment_deadline_preserved':True})
+                self._start_corrective_lateral_step(ctx)
             return np.zeros(3),abs(error)<tolerance
         if abs(error)<tolerance:
             self.translation_braking=True
@@ -573,12 +587,17 @@ class PushAsideSkill:
                 # final contact still validates the actual nose and heading.
                 body_lateral=float(np.dot(np.asarray(ctx.box.xy)-np.asarray(ctx.position[:2]),self.tangent))
                 body_target=np.asarray(ctx.position[:2])+self.tangent*body_lateral
+                if (self.progress_mark is None or self.progress_since is None or
+                        abs(float(np.dot(np.asarray(ctx.position[:2])-self.progress_mark,self.tangent)))>=ContactTranslationStep.PROGRESS_DISTANCE):
+                    self.progress_mark=np.asarray(ctx.position[:2]).copy();self.progress_since=ctx.now
                 if self.lateral_step is not None:
                     # The outer face band can be entered by a temporary body
                     # lean. Finish bounded input delivery or reach the inner
                     # centerline band, then re-evaluate the original quiet gate.
                     if abs(body_lateral)<self.config.alignment_tolerance:
+                        finite_used=self.lateral_step.finite_target_check_used
                         self._transition('settle_contact',ctx,'lateral_inner_alignment_observed')
+                        self.events[-1]['finite_target_check_used']=finite_used
                         return self._output()
                     world,detail=self.lateral_step.update(ctx.position,ctx.heading,
                         getattr(ctx,'policy_command',None),ctx.now)
@@ -589,10 +608,10 @@ class PushAsideSkill:
                         return self._output()
                     c,s=math.cos(ctx.heading),math.sin(ctx.heading);rot=np.array([[c,-s],[s,c]])
                     request=[*(rot.T@world),contact_heading_hold(yaw_error,ctx.yaw_rate)]
-                    # No endpoint-shortened horizon: the map must permit the
-                    # requested input under the full existing motion check.
-                    command,_=checked_contact_turn_command(request,ctx.position,ctx.heading,
-                        ctx.planner,ctx.boxes,ctx.limiter,ctx.now)
+                    command,_,mode=checked_contact_step_command(request,ctx.position,ctx.heading,
+                        ctx.planner,ctx.boxes,ctx.limiter,ctx.now,target_position=body_target)
+                    self.lateral_step.last_motion_check=mode
+                    self.lateral_step.finite_target_check_used |= mode=='finite_target'
                     return self._output(command)
                 command,done=self._translation(ctx,body_target,self.tangent,self.config.lateral_speed,self.config.alignment_tolerance)
                 if done:self._transition('settle_contact',ctx)
