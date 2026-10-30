@@ -7,6 +7,16 @@ from grutopia_extension.interactive_navigation.go2_interaction_motion import Mea
 from grutopia_extension.interactive_navigation.go2_voronoi_navigation import body_motion_clear
 
 
+def policy_feedback_for_heading_step(controller):
+    """Enable this candidate only for a loader-validated Unitree 45D policy."""
+    contract=getattr(getattr(controller,'policy',None),'go2_deployment_contract',{})
+    if (getattr(controller,'observation_dim',None)!=45 or
+            contract.get('observation_profile')!='unitree_go2_45'):
+        return None
+    command=np.asarray(getattr(controller,'policy_command',[]),dtype=float)
+    return command.copy() if command.shape==(3,) and np.isfinite(command).all() else None
+
+
 class YawStepPulse:
     """Deliver a calibrated finite yaw request before measuring retained heading.
 

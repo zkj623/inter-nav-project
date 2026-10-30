@@ -159,3 +159,18 @@ def test_existing_attitude_guards_precede_any_heading_step(tilt,expected_state):
     def unexpected(*args,**kwargs):raise AssertionError('heading controller must not run past the attitude gate')
     skill.heading_trim=NS(update=unexpected,failed=None)
     assert skill.step(context).state==expected_state
+
+
+@pytest.mark.parametrize('dimension,contract,expected',[
+    (235,{},False),(45,{},False),(235,{'observation_profile':'unitree_go2_45'},False),
+    (45,{'observation_profile':'unitree_go2_45'},True),
+])
+def test_full_task_feedback_only_enables_the_validated_unitree_profile(dimension,contract,expected):
+    controller=NS(observation_dim=dimension,policy=NS(go2_deployment_contract=contract),
+                  policy_command=np.array([0.,0.,.55]))
+    actual=module.policy_feedback_for_heading_step(controller)
+    assert (actual is not None)==expected
+    if expected:
+        np.testing.assert_array_equal(actual,controller.policy_command)
+        actual[2]=0.
+        assert controller.policy_command[2]==.55
