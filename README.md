@@ -19,7 +19,7 @@ a text target such as `refrigerator` and walks up to the scanned object.
 原始 **T05 v127已完整验收通过**：B07实际侧推0.836m、在线确认并穿越新通路，最终停稳误差0.174m、全程最大倾角21.712°。同版T04已失败：推箱前转向失稳，最大倾角37.904°；历史T04 v119成功结果保留，不能据此声称新版T04或五组统一通过。当前正对照底层策略与物理配置，见 [失稳诊断](docs/go2_policy_physics_diagnosis.md)。
 通过的T05使用旧rough+匹配训练模型、显式支撑目标保持和原姿态恢复。五路完整视频、保持权限检查、证据及所需追加参数见 [T05结果与支撑目标保持](docs/go2_supported_idle_hold.md)。模型来源见 [策略对照](docs/go2_training_policy_candidate.md)，交接状态见 [HANDOFF](HANDOFF.md)。
 
-接触准备修改后的v145近箱诊断已完成侧推、实际穿越和停稳：B06沿推向移动0.634m，最终误差0.203m、最大倾角24.704°，五路25fps视频已校验。它改变了起点且选用了不同推向，不能作为原始T04通过；v146正从原始起点复跑T04，再回归T05。详见 [最新状态、视频和验证范围](docs/go2_contact_preparation_settling.md)。GPU候选追加参数见 [物理配置](docs/go2_policy_physics_diagnosis.md#v136候选原roughgpu物理不启用关节目标保持)。
+v146原始T04已实际向西侧推B06 0.670m，但补推停滞、重试耗尽，最终误差1.337m，未通过；五路完整25fps视频已校验。v147补齐最后一次部分推箱后的撤离和原效果确认，721项回归通过，正在从原始起点复跑T04，通过后再回归T05。未增加推箱机会、放宽30°/0.25m标准或更换policy。详见 [最新状态、视频和验证范围](docs/go2_final_push_release.md)。GPU配置见 [物理配置](docs/go2_policy_physics_diagnosis.md#v136候选原roughgpu物理不启用关节目标保持)。
 
 以下是当前原始T04复跑的直接导航入口，包含实际使用的模型、policy和GPU物理参数。机器人参考资产的准备方法见 [模型准备](docs/go2_training_policy_candidate.md#获取资产和运行)。在实验分支 `codex/go2-online-smooth-20261027` 的仓库根目录执行：
 

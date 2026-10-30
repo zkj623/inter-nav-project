@@ -1,0 +1,236 @@
+{
+  "previous_full_run": {
+    "run": "recognition-skill-v146-t04-ground-truth-try1",
+    "task": "T04",
+    "operator_stopped_prefix": false,
+    "video_sha256_match": {
+      "combined.mp4": true,
+      "map_topdown.mp4": true,
+      "pointcloud_map.mp4": true,
+      "robot_rgb.mp4": true,
+      "third_person.mp4": true
+    },
+    "media_valid": true,
+    "source_valid": true,
+    "visual_task_valid": false,
+    "actual_passage_valid": false,
+    "navigation_success": false,
+    "termination_reason": "push_aside:retry_limit:box_motion_stalled",
+    "steps": 27150,
+    "error_m": 1.3373218742839124,
+    "max_tilt_degrees": 27.931621377725524,
+    "frames": 5485,
+    "duration_s": 219.4,
+    "selected_box_displacements": [
+      {
+        "object_id": "B06",
+        "world_displacement_m": 0.6734510523877636,
+        "along_planned_push_m": 0.6704025268554688
+      }
+    ],
+    "full_task_accepted": false
+  },
+  "new_code_tests": {
+    "commit": "fdaf2aa22f3e1cae34079761184e67cb3d8807eb",
+    "passed": 721,
+    "deselected": 1,
+    "new_regressions_before_fix": {
+      "failed": 7,
+      "passed": 5
+    },
+    "source_hashes": {
+      "grutopia_extension/interactive_navigation/push_aside_skill.py": "fe20a336ce5af5523450c917ab27360a927e8cb14a16e60c1a8a7e5d6496ff1b",
+      "tests/test_final_push_release.py": "6d11fd69f892109067cb0516f642514cc37168ee4e8eefc93bdc45c1ae974729"
+    }
+  },
+  "new_original_runs": [
+    {
+      "task": "T04",
+      "source_commit": "fdaf2aa22f3e1cae34079761184e67cb3d8807eb",
+      "supervisor_pid": 541423,
+      "worktree": "/data20t/embodied/zkj/inter-nav-run-t04-v147-20261030",
+      "output": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v147-t04-ground-truth-try1",
+      "start_override": null,
+      "original_start": [
+        2.11,
+        -0.78
+      ],
+      "original_goal": [
+        10.3,
+        1.75
+      ],
+      "predecessor": "v146 diagnosis and v147 tests",
+      "policy": "original rough7850",
+      "physics_backend": "gpu_dynamics",
+      "stationary_joint_hold": false,
+      "scope_cap_gib": 24,
+      "serial": true,
+      "change": "final partial-push release and unchanged effect verification"
+    },
+    {
+      "task": "T05",
+      "source_commit": "fdaf2aa22f3e1cae34079761184e67cb3d8807eb",
+      "supervisor_pid": 541434,
+      "worktree": "/data20t/embodied/zkj/inter-nav-run-t05-v147-20261030",
+      "output": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v147-t05-ground-truth-try1",
+      "start_override": null,
+      "original_start": [
+        13.6,
+        -0.4
+      ],
+      "original_goal": [
+        3.3,
+        1.4
+      ],
+      "predecessor": "v147 original T04 full acceptance",
+      "policy": "original rough7850",
+      "physics_backend": "gpu_dynamics",
+      "stationary_joint_hold": false,
+      "scope_cap_gib": 24,
+      "serial": true,
+      "change": "final partial-push release and unchanged effect verification"
+    }
+  ],
+  "frozen_map_diagnostic": {
+    "diagnostic_only": true,
+    "physical_task_completed": false,
+    "frozen_map_time_s": 222.60999502427876,
+    "final_recorded_position": [
+      10.271002769470215,
+      0.41299253702163696,
+      0.4290362596511841
+    ],
+    "actual_box": {
+      "id": "B06",
+      "xy": [
+        9.509597778320312,
+        0.34149107336997986
+      ],
+      "dimensions": [
+        0.9120983562617055,
+        0.6519628381090726,
+        0.9500003464007735
+      ],
+      "yaw": 0.0,
+      "mass_kg": 6.0,
+      "local_dimensions": [
+        0.85,
+        0.55,
+        0.95
+      ],
+      "orientation": [
+        0.9980361461639404,
+        1.784010663641311e-07,
+        -9.602734252212031e-08,
+        -0.06263984739780426
+      ],
+      "center_z": 0.48499998450279236
+    },
+    "reports": [
+      {
+        "back_m": 0.0,
+        "hypothetical_pose": [
+          10.271002769470215,
+          0.41299253702163696
+        ],
+        "body_clear": false,
+        "proof": {
+          "axis": [
+            -0.21693045781865658,
+            0.9761870601839527
+          ],
+          "center": [
+            10.344103599081235,
+            0.26403380413444666
+          ],
+          "nominal_center": [
+            10.344103599081235,
+            0.26403380413444655
+          ],
+          "lateral_offset_m": 0.7978309429983542,
+          "required_lateral_offset_m": 0.7759046049747409,
+          "passage_clearance_margin_m": 0.021926338023613323,
+          "robot_passage_width_m": 0.52,
+          "side_parked": true,
+          "completion_rule": "current_global_route_and_full_body_local_corridor",
+          "body_margin_m": 0.04,
+          "corridor_start": [
+            10.561034056899892,
+            -0.7121532560495061
+          ],
+          "corridor_end": [
+            10.192252278608175,
+            0.9473647462632135
+          ],
+          "route_goal": [
+            10.3,
+            1.75
+          ],
+          "ends_at_goal": false,
+          "checked_pose_count": 69,
+          "axis_source": "observed_route_tangent"
+        },
+        "route_exists": true,
+        "original_route_exists": true,
+        "original_box_would_block": true
+      },
+      {
+        "back_m": 0.2,
+        "hypothetical_pose": [
+          10.466031981306587,
+          0.4573051371539144
+        ],
+        "body_clear": false,
+        "proof": null,
+        "route_exists": false,
+        "original_route_exists": true,
+        "original_box_would_block": null
+      },
+      {
+        "back_m": 0.4,
+        "hypothetical_pose": [
+          10.661061193142961,
+          0.5016177372861919
+        ],
+        "body_clear": false,
+        "proof": null,
+        "route_exists": false,
+        "original_route_exists": true,
+        "original_box_would_block": null
+      },
+      {
+        "back_m": 0.6,
+        "hypothetical_pose": [
+          10.856090404979334,
+          0.5459303374184692
+        ],
+        "body_clear": false,
+        "proof": null,
+        "route_exists": false,
+        "original_route_exists": true,
+        "original_box_would_block": null
+      }
+    ],
+    "release_geometry": {
+      "diagnostic_only": true,
+      "measured_zero_velocity_assumed_for_geometry": true,
+      "observed_retreat_available": false,
+      "recovery_action": {
+        "move_by_speed": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "recovery_tracking": {
+        "target": [
+          10.271002769470215,
+          0.41299253702163696
+        ],
+        "recovering_buffer": true,
+        "needs_replan": true,
+        "controller": "no_body_safe_buffer_exit"
+      }
+    }
+  }
+}
