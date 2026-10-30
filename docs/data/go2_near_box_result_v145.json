@@ -1,0 +1,257 @@
+{
+  "original_tasks_complete": false,
+  "diagnostic": {
+    "run": "recognition-skill-v145-t04-near-box-diagnostic-try1",
+    "diagnostic_only": true,
+    "original_task_accepted": false,
+    "diagnostic_valid": true,
+    "checks": {
+      "declared_diagnostic": true,
+      "calibration_task_metadata": true,
+      "diagnostic_start": true,
+      "original_goal_retained": true,
+      "navigation_result": true,
+      "media_valid": true,
+      "source_valid": true,
+      "gpu_physics": true,
+      "all_physics_healthy": true,
+      "original_coordinate_audits_correctly_reject_override": true,
+      "remaining_visual_checks": true,
+      "remaining_actual_passage_checks": true,
+      "actual_B06_push_and_crossing": true
+    },
+    "video_sha256_match": {
+      "combined.mp4": true,
+      "map_topdown.mp4": true,
+      "pointcloud_map.mp4": true,
+      "robot_rgb.mp4": true,
+      "third_person.mp4": true
+    },
+    "result_reason": "goal_reached",
+    "steps": 18006,
+    "goal_error_m": 0.20342652387221602,
+    "maximum_tilt_degrees": 24.704124585634425,
+    "frames": 3677,
+    "duration_s": 147.08,
+    "source_commit": "c87c96d4bed0d22be71aa92dc779cf2c487f3ced",
+    "actual_passages": [
+      {
+        "object_id": "B06",
+        "actual_push_distance_m": 0.6336297988891602,
+        "valid": true,
+        "crossings": [
+          {
+            "row": 18103,
+            "time_s": 144.83999676257372,
+            "position": [
+              10.060079574584961,
+              0.6434893608093262,
+              0.4043363332748413
+            ],
+            "rear_beyond_boundary_m": 0.022308140345994154,
+            "original_box_would_block_body_clearance": true,
+            "counterfactual_clearance_margin_m": 0.04,
+            "recorded_box_stable_near_crossing": true,
+            "actual_body_clear_of_relocated_box": true,
+            "observed_side_displacement_m": 0.6360632812358733,
+            "continuous_local_trace": true,
+            "valid": true,
+            "bracketing_box_observations": [
+              {
+                "time_s": 144.80999676324427,
+                "xy": [
+                  10.813630104064941,
+                  0.22177186608314514
+                ]
+              },
+              {
+                "time_s": 144.969996759668,
+                "xy": [
+                  10.813630104064941,
+                  0.22177188098430634
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "plan": {
+    "box_id": "B06",
+    "initial_xy": [
+      10.180000305175781,
+      0.2774848937988281
+    ],
+    "destination_xy": [
+      11.030000305175781,
+      0.2774848937988281
+    ],
+    "direction": [
+      1.0,
+      0.0
+    ],
+    "approach_xy": [
+      9.105000228839396,
+      0.2774848937988281
+    ],
+    "approach_path": [
+      [
+        9.105000228839396,
+        0.2774848937988281,
+        0.0
+      ]
+    ],
+    "push_distance": 0.8499999999999999,
+    "score": 5.931964755069178
+  },
+  "skill": {
+    "event": "skill_end",
+    "task": "T04",
+    "step": 12980,
+    "time_s": 108.00999758578837,
+    "name": "push_aside",
+    "version": "1.0",
+    "status": "succeeded",
+    "reason": "observed_passage_created",
+    "object_id": "B06",
+    "recognized_category": "box",
+    "interaction_source": "ground_truth_layout",
+    "source_reference": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v145-t04-near-box-diagnostic-try1/interaction_ground_truth.json",
+    "source_digest": "98541cbfa094539280941ac000e58945a9669608e982879db5743d053d97701c",
+    "recognition_frames": [],
+    "classifier_models": [],
+    "push_braking_cycles": 1,
+    "retries": 4,
+    "preparation_recoveries": 0,
+    "actual_push_distance_m": 0.6336297988891602,
+    "maximum_tilt_degrees": 21.943045063111857,
+    "passage_certificate": {
+      "axis": [
+        0.08169323944527154,
+        0.9966575212323125
+      ],
+      "center": [
+        10.02980807235921,
+        0.2897957325542848
+      ],
+      "nominal_center": [
+        10.179306700544057,
+        0.277541746637494
+      ],
+      "lateral_offset_m": 0.7867592107840817,
+      "required_lateral_offset_m": 0.746130788809881,
+      "passage_clearance_margin_m": 0.04062842197420069,
+      "robot_passage_width_m": 0.52,
+      "side_parked": true,
+      "completion_rule": "current_global_route_and_full_body_local_corridor",
+      "body_margin_m": 0.04,
+      "corridor_start": [
+        9.948114832913937,
+        -0.7068617886780277
+      ],
+      "corridor_end": [
+        10.086993339970899,
+        0.9874559974169036
+      ],
+      "route_goal": [
+        10.3,
+        1.75
+      ],
+      "ends_at_goal": false,
+      "checked_pose_count": 69,
+      "confirmation_source": "connected_observed_corridor",
+      "axis_source": "initial_observed_route",
+      "guide_entry": [
+        9.948114832913937,
+        -0.7068617886780278
+      ],
+      "guide_exit": [
+        10.086993339970899,
+        0.9874559974169035
+      ],
+      "nominal_offset_m": 0.15,
+      "confirmation_stage": "settle_released_corridor",
+      "original_box_would_block_corridor": true,
+      "original_box": {
+        "id": "B06",
+        "xy": [
+          10.180000305175781,
+          0.27748483419418335
+        ],
+        "dimensions": [
+          0.8500000862189695,
+          0.5500002789855873,
+          0.9500002336204265
+        ],
+        "yaw": 0.0,
+        "mass_kg": 6.0,
+        "local_dimensions": null,
+        "orientation": null,
+        "center_z": null
+      },
+      "original_box_xy": [
+        10.180000305175781,
+        0.27748483419418335
+      ],
+      "actual_push_distance_m": 0.6336297988891602,
+      "nominal_planned_push_m": 0.8499999999999999,
+      "confirming_observation_time_s": 108.00999758578837,
+      "last_box_motion_time_s": 102.3099977131933
+    },
+    "object_pose_feedback": "selected permitted simulator rigid body"
+  },
+  "video_sha256": {
+    "combined.mp4": "d46129334fae60f8c3d1f577c57b661a6c085fbc7b599187d19297a69e2ef6d0",
+    "robot_rgb.mp4": "1a6c746582a34e70cb217dc2f2e20b21f8661cbe2688c30c2d9f8f42ff86311e",
+    "third_person.mp4": "8bf8f5375d5442d68c4031fcfeebd7ec517e071880fb55c5d4104b8a52bcc0f3",
+    "pointcloud_map.mp4": "80e74ad09ca9a3de79ccf53eeae59918cf453f6350abdfc262a0664bc783086c",
+    "map_topdown.mp4": "cff93e92f51c8999d1e579b811c38f43482efd9f4590a12b490ee33bfa6db4ac"
+  },
+  "original_task_queue": [
+    {
+      "task": "T04",
+      "source_commit": "c87c96d4bed0d22be71aa92dc779cf2c487f3ced",
+      "supervisor_pid": 336539,
+      "worktree": "/data20t/embodied/zkj/inter-nav-run-t04-v146-20261030",
+      "output": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v146-t04-ground-truth-try1",
+      "start_override": null,
+      "original_start": [
+        2.11,
+        -0.78
+      ],
+      "original_goal": [
+        10.3,
+        1.75
+      ],
+      "predecessor": "v145 diagnostic plus unit/source checks",
+      "policy": "original rough7850",
+      "physics_backend": "gpu_dynamics",
+      "stationary_joint_hold": false,
+      "scope_cap_gib": 24,
+      "serial": true
+    },
+    {
+      "task": "T05",
+      "source_commit": "c87c96d4bed0d22be71aa92dc779cf2c487f3ced",
+      "supervisor_pid": 336550,
+      "worktree": "/data20t/embodied/zkj/inter-nav-run-t05-v146-20261030",
+      "output": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v146-t05-ground-truth-try1",
+      "start_override": null,
+      "original_start": [
+        13.6,
+        -0.4
+      ],
+      "original_goal": [
+        3.3,
+        1.4
+      ],
+      "predecessor": "v146 original T04 full acceptance",
+      "policy": "original rough7850",
+      "physics_backend": "gpu_dynamics",
+      "stationary_joint_hold": false,
+      "scope_cap_gib": 24,
+      "serial": true
+    }
+  ]
+}
