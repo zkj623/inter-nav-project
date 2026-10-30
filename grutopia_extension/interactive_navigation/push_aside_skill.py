@@ -85,6 +85,7 @@ class PushAsideSkill:
         self.release_origin=None;self.release_reason=None;self.certificate=None
         self.last_verify=-1e9;self.observation_moves=0;self.used_stages=[]
         self.progress_mark=None;self.progress_since=None;self.max_tilt=0.
+        self.terminal_release_reason=None
         self.reason='';self.status='running';self.recovery_from_contact=False;self.box_velocity=0.;self.last_box_time=None;self.push_brakes=0
         self.release_pose_recoveries=0;self.release_recovery_tracker=None;self.release_recovery_target=None
         self.preparation_recoveries=0;self.recovery_tracker=None;self.recovery_target=None;self.next_stage_probe=-1e9;self.heading_trim=None
@@ -220,15 +221,27 @@ class PushAsideSkill:
             finally:p.robot_heading=heading
 
     def _retry(self,ctx,reason):
+        if self.terminal_release_reason is not None:
+            return self._fail(ctx,self.terminal_release_reason)
         recovery_source=self.state
         self.recovery_from_contact=recovery_source in {'engage','push','settle_push_progress','brake_after_push'}
         if reason=='heading_refinement_timeout' or reason.startswith('heading_trim_'):
             self.used_stages.append(np.asarray(ctx.position[:2]).copy())
         self.retries+=1;self.release_reason=reason
         self.release_origin=None
-        if self.retries>self.config.max_retries:return self._fail(ctx,'retry_limit:'+reason)
+        if self.retries>self.config.max_retries:
+            # A final partial push must still release contact and inspect the
+            # actual passage. This grants no further preparation/push attempt
+            # and uses exactly the existing fresh-map/full-body certificate.
+            partial=(self.recovery_from_contact and self.engage_box_position is not None
+                and self.initial_box_geometry is not None and self.last_box_motion_time is not None
+                and ctx.box is not None and self.initial_box is not None
+                and float(np.dot(np.asarray(ctx.box.xy)-self.initial_box,self.direction))>.25)
+            if not partial:return self._fail(ctx,'retry_limit:'+reason)
+            self.terminal_release_reason='retry_limit:'+reason
         self._transition('brake_for_recovery',ctx,reason)
-        self.events[-1].update(recovery_source_state=recovery_source,recovery_from_contact=self.recovery_from_contact)
+        self.events[-1].update(recovery_source_state=recovery_source,recovery_from_contact=self.recovery_from_contact,
+            terminal_release=self.terminal_release_reason is not None)
         return self._output()
 
     def _translation(self,ctx,target,axis,speed,tolerance):
@@ -398,6 +411,7 @@ class PushAsideSkill:
         gap,lateral,yaw_error=self._box_frame(ctx)
 
         if self.state=='prepare':
+            if self.terminal_release_reason is not None:return self._fail(ctx,self.terminal_release_reason)
             if self._reuse_alignment_pose(ctx):
                 next_state='settle_at_stage' if abs(yaw_error)>self.config.yaw_tolerance else 'settle_alignment'
                 self._transition(next_state,ctx,'reuse_observed_aligned_pose')
@@ -688,6 +702,7 @@ class PushAsideSkill:
             if self._quiet(ctx,.4,max_tilt=18.):
                 if self.release_reason!='side_parked' and self._recovered_passage_effect(ctx,along):
                     return self._output()
+                if self.terminal_release_reason is not None:return self._fail(ctx,self.terminal_release_reason)
                 if self.release_reason=='side_parked':
                     ctx.layers.refresh_global(reason='skill_release_observe');self.last_verify=-1e9
                     self._transition('verify_passage',ctx)
