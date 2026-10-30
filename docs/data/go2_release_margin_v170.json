@@ -1,0 +1,994 @@
+{
+  "original_pair_complete": false,
+  "runtime_commit": "696ba2ed9909a97d34f4d3daddf0598e7f8c615c",
+  "v165_failure": {
+    "run": "recognition-skill-v165-t05-ground-truth-try1",
+    "task": "T05",
+    "operator_stopped_prefix": true,
+    "video_sha256_match": {
+      "combined.mp4": true,
+      "map_topdown.mp4": true,
+      "pointcloud_map.mp4": true,
+      "robot_rgb.mp4": true,
+      "third_person.mp4": true
+    },
+    "media_valid": false,
+    "source_valid": true,
+    "visual_task_valid": false,
+    "actual_passage_valid": false,
+    "navigation_success": false,
+    "termination_reason": "stop_requested",
+    "steps": 19061,
+    "error_m": 1.187778245353316,
+    "max_tilt_degrees": 2.7285276321252305,
+    "frames": 3868,
+    "duration_s": 154.72,
+    "selected_box_displacements": [
+      {
+        "object_id": "B07",
+        "world_displacement_m": 0.8402224488360767,
+        "along_planned_push_m": 0.8395357131958008
+      }
+    ],
+    "policy_artifact_checks": {
+      "actor_checkpoint.pt": true,
+      "deployment_contract.json": true,
+      "model_and_contract_match": true
+    },
+    "policy_artifacts_valid": true,
+    "full_task_accepted": false
+  },
+  "v167c_failed_withdrawal": {
+    "diagnostic_only": true,
+    "original_task_accepted": false,
+    "label": "configured",
+    "reason": "body_released",
+    "full_original_physics_scene": true,
+    "recorded_commands_only_during_prefix": true,
+    "prefix_exact": true,
+    "prefix_maximum_errors": {
+      "position_m": 0.0,
+      "orientation_deg": 3.4150945850063755e-06,
+      "yaw_rad": 0.0,
+      "motor_target_rad": 0.0
+    },
+    "box_position_error_m": 0.0,
+    "box_dimension_error_m": 1.2495398049594542e-09,
+    "baseline_stall_reproduced": false,
+    "withdrawal_probe_passed": false,
+    "initially_body_clear": false,
+    "body_released": true,
+    "body_clear_after_extra_10s": false,
+    "measured_stop_after_extra_10s": true,
+    "body_clear_on_frozen_map": false,
+    "body_clear_after_fresh_rays": false,
+    "fresh_scan_count": 2268,
+    "new_unknown_cells_confirmed_free": 62,
+    "known_occupied_cells_never_cleared": true,
+    "fresh_map_used_only_for_final_validation": true,
+    "withdrawn_m": 0.20509862899780273,
+    "maximum_translation_all_physics_m": 0.2286379247342021,
+    "post_maximum_tilt_deg": 1.4367639417027072,
+    "final_position": [
+      3.1528642177581787,
+      0.22565017640590668,
+      0.3328539729118347
+    ],
+    "final_box": {
+      "id": "B07",
+      "xy": [
+        4.14119291305542,
+        0.25001534819602966
+      ],
+      "dimensions": [
+        0.8945192386670263,
+        0.7094117263546801,
+        0.7000008625663257
+      ],
+      "yaw": 0.0,
+      "mass_kg": 5.0,
+      "local_dimensions": [
+        0.85,
+        0.65,
+        0.7
+      ],
+      "orientation": [
+        0.9993532299995422,
+        5.311436552801752e-07,
+        -8.477238111481711e-08,
+        0.03595973551273346
+      ],
+      "center_z": 0.35999998450279236
+    },
+    "camera_review": [
+      {
+        "name": "original",
+        "offset": [
+          0.42,
+          0.0,
+          0.14
+        ],
+        "position": [
+          3.777872323989868,
+          0.20626699924468994,
+          0.4719674587249756
+        ],
+        "inside_box": true,
+        "mean_rgb": 0.3201766304347826,
+        "black": true,
+        "rendering_time": 106.50499761942774,
+        "fresh_frame": true
+      },
+      {
+        "name": "rearward",
+        "offset": [
+          0.2,
+          0.0,
+          0.14
+        ],
+        "position": [
+          3.55791974067688,
+          0.21083231270313263,
+          0.4719674587249756
+        ],
+        "inside_box": false,
+        "mean_rgb": 89.94529127038044,
+        "black": false,
+        "rendering_time": 106.50499761942774,
+        "fresh_frame": true
+      },
+      {
+        "name": "rearward_high",
+        "offset": [
+          0.2,
+          0.0,
+          0.22
+        ],
+        "position": [
+          3.55791974067688,
+          0.21083231270313263,
+          0.551967442035675
+        ],
+        "inside_box": false,
+        "mean_rgb": 90.11977326766305,
+        "black": false,
+        "rendering_time": 106.50499761942774,
+        "fresh_frame": true
+      }
+    ],
+    "policy_sha256": "8862682da34ebb090a2e56f39254af430d5645f20cb5e3e104c72a4720671db8",
+    "source_sha256": "6d8b989d5322607ee863fa3fe39895652f60d45fd678ba31b3d11fd3f7a80859",
+    "scope": "Full original physics scene replay with real LiDAR enabled. Withdrawal control uses the recorded map; final body clearance also checks only previously unknown cells confirmed by new actual free rays. No original navigation-task acceptance."
+  },
+  "v167c_box_edge_review": {
+    "diagnostic_only": true,
+    "blocked_cells": [
+      {
+        "cell": [
+          133,
+          63
+        ],
+        "world_xy": [
+          3.6750000000000003,
+          0.47500000000000053
+        ],
+        "robot_relative_xy": [
+          0.5221357822418216,
+          0.24934982359409386
+        ],
+        "last_lidar_xy_distance_m": 0.37341591894209086,
+        "old_observed": false,
+        "old_free": false,
+        "ray_free": true,
+        "ray_hits": true,
+        "new_observed_free": false,
+        "nearest_hits_xyz": [
+          [
+            3.6986804008483887,
+            0.4779629707336426,
+            0.29936879873275757
+          ],
+          [
+            3.6986777782440186,
+            0.4780004620552063,
+            0.3183271884918213
+          ],
+          [
+            3.6986751556396484,
+            0.47803691029548645,
+            0.3367992043495178
+          ],
+          [
+            3.6986725330352783,
+            0.47807249426841736,
+            0.3548712134361267
+          ],
+          [
+            3.698669910430908,
+            0.4781075119972229,
+            0.3726227879524231
+          ],
+          [
+            3.698667526245117,
+            0.47814202308654785,
+            0.390128493309021
+          ],
+          [
+            3.698665142059326,
+            0.47817614674568176,
+            0.4074588716030121
+          ],
+          [
+            3.698662757873535,
+            0.47821012139320374,
+            0.42468175292015076
+          ]
+        ]
+      }
+    ],
+    "last_lidar_origin": [
+      3.3914642333984375,
+      0.2320042848587036,
+      0.4359540343284607
+    ],
+    "first_hold": {
+      "time_s": 107.84999758936465,
+      "command_time_s": 107.83999758958817,
+      "phase": "post_hold",
+      "command": [
+        -0.3435000001452863,
+        0.0,
+        0.0
+      ],
+      "policy_command": [
+        -0.3499999940395355,
+        0.0,
+        0.0
+      ],
+      "position": [
+        3.197049140930176,
+        0.22697165608406067,
+        0.3329107463359833
+      ],
+      "orientation": [
+        -0.9999646544456482,
+        0.004537694156169891,
+        0.004688850603997707,
+        0.005291960202157497
+      ],
+      "body_velocity": [
+        -0.19175754487514496,
+        -0.01700190268456936,
+        -0.016016319394111633
+      ],
+      "body_angular_velocity": [
+        -0.057914089411497116,
+        0.1559423804283142,
+        0.013234719634056091
+      ],
+      "motor_joint_target": [
+        -0.015173770487308502,
+        -0.05415281653404236,
+        0.016850903630256653,
+        0.13386082649230957,
+        0.6007405519485474,
+        0.8738654255867004,
+        1.048326015472412,
+        0.9486669301986694,
+        -1.081569790840149,
+        -1.4125549793243408,
+        -1.4367080926895142,
+        -1.2378243207931519
+      ],
+      "policy_inferences": 5392,
+      "tilt_deg": 0.7477184588835942,
+      "physics_substeps": 2
+    },
+    "last_hold": {
+      "time_s": 117.84999736584723,
+      "command_time_s": 117.83999736607075,
+      "phase": "post_hold",
+      "command": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "policy_command": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "position": [
+        3.1528642177581787,
+        0.22565017640590668,
+        0.3328539729118347
+      ],
+      "orientation": [
+        -0.999859631061554,
+        -0.0039631640538573265,
+        0.006423846818506718,
+        -0.014956402592360973
+      ],
+      "body_velocity": [
+        7.604585698572919e-05,
+        1.883605364128016e-05,
+        -4.056394573126454e-06
+      ],
+      "body_angular_velocity": [
+        -0.0006782607524655759,
+        7.43607452022843e-05,
+        2.5605659175198525e-05
+      ],
+      "motor_joint_target": [
+        0.11284013092517853,
+        0.09808149188756943,
+        -0.1007009968161583,
+        -0.10906005650758743,
+        0.7764182686805725,
+        0.7552136182785034,
+        0.8996561765670776,
+        0.991854190826416,
+        -1.3661878108978271,
+        -1.1496702432632446,
+        -1.251318335533142,
+        -1.4882153272628784
+      ],
+      "policy_inferences": 5892,
+      "tilt_deg": 0.8649466382861388,
+      "physics_substeps": 2
+    },
+    "max_forward_relaxation_after_braking_m": 0.023444652557373047
+  },
+  "v167_archive": {
+    "archive": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/withdrawal-v167-evidence.tar.gz",
+    "sha256": "cdc63af5fbd41e037f1419d467609f85430477e7ab4c118d90200c6fdd206341",
+    "bytes": 14105386,
+    "files": 90,
+    "candidate_commit": "e634b775513cfab2d12da48bb156e2fd004db38b",
+    "diagnostic_only": true,
+    "original_tasks_accepted": false,
+    "local_path": "E:\\inter-nav-results\\go2-online-smooth-20261027\\interface-v59\\withdrawal-v167-evidence.tar.gz",
+    "sha256_match": true,
+    "all_member_hashes_match": true,
+    "verified_members": 89
+  },
+  "v169_invalid_launcher": {
+    "state": "finished_incomplete",
+    "time_unix": 1793387969.8828359,
+    "diagnostic_only": true,
+    "outcomes": [
+      {
+        "label": "configured",
+        "exit_code": 0,
+        "resource_stop": false,
+        "scope_cap_verified": true,
+        "peak_scope_gib": 14.615543365478516,
+        "failure": {
+          "type": "RuntimeError",
+          "message": "Replay stopped before its first sample",
+          "traceback": "Traceback (most recent call last):\n  File \"/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/benchmark_release_margin_v169.py\", line 168, in <module>\n    if not errors:raise RuntimeError('Replay stopped before its first sample')\nRuntimeError: Replay stopped before its first sample\n"
+        },
+        "summary": null
+      }
+    ]
+  },
+  "v169b_summary": {
+    "diagnostic_only": true,
+    "original_task_accepted": false,
+    "label": "configured",
+    "reason": "body_released_with_braking_reserve",
+    "full_original_physics_scene": true,
+    "recorded_commands_only_during_prefix": true,
+    "prefix_exact": true,
+    "prefix_maximum_errors": {
+      "position_m": 0.0,
+      "orientation_deg": 3.4150945850063755e-06,
+      "yaw_rad": 0.0,
+      "motor_target_rad": 0.0
+    },
+    "box_position_error_m": 0.0,
+    "box_dimension_error_m": 1.2495398049594542e-09,
+    "baseline_stall_reproduced": false,
+    "withdrawal_probe_passed": false,
+    "runtime_source_audit_valid": true,
+    "runtime_commit": "696ba2ed9909a97d34f4d3daddf0598e7f8c615c",
+    "initially_body_clear": false,
+    "body_released": true,
+    "body_clear_after_extra_10s": false,
+    "measured_stop_after_extra_10s": true,
+    "body_clear_on_frozen_map": true,
+    "body_clear_after_fresh_rays": false,
+    "fresh_scan_count": 2365,
+    "new_unknown_cells_confirmed_free": 56,
+    "known_occupied_cells_never_cleared": true,
+    "all_fresh_hit_cells_excluded_at_validation": true,
+    "braking_reserve_m": 0.04,
+    "fresh_map_used_only_for_final_validation": true,
+    "withdrawn_m": 0.31160640716552734,
+    "maximum_translation_all_physics_m": 0.32977884310804645,
+    "post_maximum_tilt_deg": 1.4367639417027072,
+    "final_position": [
+      3.046356439590454,
+      0.23313692212104797,
+      0.3329310119152069
+    ],
+    "final_box": {
+      "id": "B07",
+      "xy": [
+        4.14119291305542,
+        0.2500153183937073
+      ],
+      "dimensions": [
+        0.8945191818216169,
+        0.7094116834148233,
+        0.7000007429165362
+      ],
+      "yaw": 0.0,
+      "mass_kg": 5.0,
+      "local_dimensions": [
+        0.85,
+        0.65,
+        0.7
+      ],
+      "orientation": [
+        0.9993532299995422,
+        4.977957246410369e-07,
+        -3.980864349273361e-08,
+        0.03595973923802376
+      ],
+      "center_z": 0.35999998450279236
+    },
+    "camera_review": [
+      {
+        "name": "original",
+        "offset": [
+          0.42,
+          0.0,
+          0.14
+        ],
+        "position": [
+          3.777872323989868,
+          0.20626699924468994,
+          0.4719674587249756
+        ],
+        "inside_box": true,
+        "mean_rgb": 0.32012001811594204,
+        "black": true,
+        "rendering_time": 106.50499761942774,
+        "fresh_frame": true
+      },
+      {
+        "name": "rearward",
+        "offset": [
+          0.2,
+          0.0,
+          0.14
+        ],
+        "position": [
+          3.55791974067688,
+          0.21083231270313263,
+          0.4719674587249756
+        ],
+        "inside_box": false,
+        "mean_rgb": 89.96019870923914,
+        "black": false,
+        "rendering_time": 106.50499761942774,
+        "fresh_frame": true
+      },
+      {
+        "name": "rearward_high",
+        "offset": [
+          0.2,
+          0.0,
+          0.22
+        ],
+        "position": [
+          3.55791974067688,
+          0.21083231270313263,
+          0.551967442035675
+        ],
+        "inside_box": false,
+        "mean_rgb": 90.18976732336957,
+        "black": false,
+        "rendering_time": 106.50499761942774,
+        "fresh_frame": true
+      }
+    ],
+    "policy_sha256": "8862682da34ebb090a2e56f39254af430d5645f20cb5e3e104c72a4720671db8",
+    "source_sha256": "12306d0a8a33d36ac6ea11b5385119b5314c5351c9a6a90c47f7d1835e5d867c",
+    "scope": "Full original physics replay with the production 4 cm observed braking reserve. Control map remains frozen. Final clearance must pass the frozen map and a conservative validation map excluding every fresh LiDAR hit. No original-task acceptance."
+  },
+  "v169b_fresh_hit_review": {
+    "diagnostic_only": true,
+    "original_task_accepted": false,
+    "raw_probe_passed": false,
+    "reviewed_withdrawal_passed": true,
+    "candidate_commit": "696ba2ed9909a97d34f4d3daddf0598e7f8c615c",
+    "review_reason": "The cumulative raw-hit union never clears historical hits; every blocking cell is already known free and has an actual free ray with no hit in the final fresh scan. No raw points were removed.",
+    "frozen_body_clear": true,
+    "body_clear_against_latest_production_filtered_scan": true,
+    "accumulated_raw_hit_body_cells": 10,
+    "latest_raw_hit_body_samples": 0,
+    "latest_filtered_hit_body_samples": 0,
+    "removed_points": 0,
+    "raw_point_count": 11830,
+    "all_historical_body_hits_have_current_free_rays": true,
+    "post_takeover_physics_steps": 2365,
+    "every_post_takeover_step_has_fresh_scan": true,
+    "last_scan_pose_matches_final_trace": true,
+    "final_time_s": 118.33499735500664,
+    "blocked_cells": [
+      {
+        "cell": [
+          125,
+          44
+        ],
+        "world_xy": [
+          2.725,
+          0.07500000000000018
+        ],
+        "robot_relative_xy": [
+          -0.321356439590454,
+          -0.1581369221210478
+        ],
+        "old_free": true,
+        "known_static": false,
+        "tracked_box_margin": false,
+        "robot_footprint": true,
+        "latest_raw_hit": false,
+        "latest_raw_free": true,
+        "latest_filtered_hit": false,
+        "nearest_latest_raw_points": [
+          [
+            2.2148327827453613,
+            -0.08926434814929962,
+            0.009999454021453857
+          ],
+          [
+            2.217763900756836,
+            -0.09863872826099396,
+            0.00999942421913147
+          ],
+          [
+            2.220773220062256,
+            -0.10798816382884979,
+            0.009999454021453857
+          ]
+        ]
+      },
+      {
+        "cell": [
+          125,
+          48
+        ],
+        "world_xy": [
+          2.9250000000000003,
+          0.07500000000000018
+        ],
+        "robot_relative_xy": [
+          -0.12135643959045384,
+          -0.1581369221210478
+        ],
+        "old_free": true,
+        "known_static": false,
+        "tracked_box_margin": false,
+        "robot_footprint": true,
+        "latest_raw_hit": false,
+        "latest_raw_free": true,
+        "latest_filtered_hit": false,
+        "nearest_latest_raw_points": [
+          [
+            2.8523473739624023,
+            0.6864997744560242,
+            0.4051418900489807
+          ],
+          [
+            2.851841449737549,
+            0.686499834060669,
+            0.43230947852134705
+          ],
+          [
+            2.8513340950012207,
+            0.6864997744560242,
+            0.4594924747943878
+          ]
+        ]
+      },
+      {
+        "cell": [
+          125,
+          49
+        ],
+        "world_xy": [
+          2.975,
+          0.07500000000000018
+        ],
+        "robot_relative_xy": [
+          -0.07135643959045401,
+          -0.1581369221210478
+        ],
+        "old_free": true,
+        "known_static": false,
+        "tracked_box_margin": false,
+        "robot_footprint": true,
+        "latest_raw_hit": false,
+        "latest_raw_free": true,
+        "latest_filtered_hit": false,
+        "nearest_latest_raw_points": [
+          [
+            2.8523473739624023,
+            0.6864997744560242,
+            0.4051418900489807
+          ],
+          [
+            2.851841449737549,
+            0.686499834060669,
+            0.43230947852134705
+          ],
+          [
+            2.8513340950012207,
+            0.6864997744560242,
+            0.4594924747943878
+          ]
+        ]
+      },
+      {
+        "cell": [
+          126,
+          50
+        ],
+        "world_xy": [
+          3.0250000000000004,
+          0.125
+        ],
+        "robot_relative_xy": [
+          -0.021356439590453746,
+          -0.10813692212104797
+        ],
+        "old_free": true,
+        "known_static": false,
+        "tracked_box_margin": false,
+        "robot_footprint": true,
+        "latest_raw_hit": false,
+        "latest_raw_free": true,
+        "latest_filtered_hit": false,
+        "nearest_latest_raw_points": [
+          [
+            2.8523473739624023,
+            0.6864997744560242,
+            0.4051418900489807
+          ],
+          [
+            2.851841449737549,
+            0.686499834060669,
+            0.43230947852134705
+          ],
+          [
+            2.8513340950012207,
+            0.6864997744560242,
+            0.4594924747943878
+          ]
+        ]
+      },
+      {
+        "cell": [
+          130,
+          46
+        ],
+        "world_xy": [
+          2.825,
+          0.3250000000000002
+        ],
+        "robot_relative_xy": [
+          -0.22135643959045392,
+          0.0918630778789522
+        ],
+        "old_free": true,
+        "known_static": false,
+        "tracked_box_margin": false,
+        "robot_footprint": true,
+        "latest_raw_hit": false,
+        "latest_raw_free": true,
+        "latest_filtered_hit": false,
+        "nearest_latest_raw_points": [
+          [
+            2.824753761291504,
+            0.6864997148513794,
+            0.6338248252868652
+          ],
+          [
+            2.825327157974243,
+            0.6864997148513794,
+            0.6034588813781738
+          ],
+          [
+            2.8249659538269043,
+            0.6864999532699585,
+            0.1978299617767334
+          ]
+        ]
+      },
+      {
+        "cell": [
+          130,
+          50
+        ],
+        "world_xy": [
+          3.0250000000000004,
+          0.3250000000000002
+        ],
+        "robot_relative_xy": [
+          -0.021356439590453746,
+          0.0918630778789522
+        ],
+        "old_free": true,
+        "known_static": false,
+        "tracked_box_margin": false,
+        "robot_footprint": true,
+        "latest_raw_hit": false,
+        "latest_raw_free": true,
+        "latest_filtered_hit": false,
+        "nearest_latest_raw_points": [
+          [
+            2.8523473739624023,
+            0.6864997744560242,
+            0.4051418900489807
+          ],
+          [
+            2.851841449737549,
+            0.686499834060669,
+            0.43230947852134705
+          ],
+          [
+            2.8513340950012207,
+            0.6864997744560242,
+            0.4594924747943878
+          ]
+        ]
+      },
+      {
+        "cell": [
+          131,
+          46
+        ],
+        "world_xy": [
+          2.825,
+          0.375
+        ],
+        "robot_relative_xy": [
+          -0.22135643959045392,
+          0.14186307787895203
+        ],
+        "old_free": true,
+        "known_static": false,
+        "tracked_box_margin": false,
+        "robot_footprint": true,
+        "latest_raw_hit": false,
+        "latest_raw_free": true,
+        "latest_filtered_hit": false,
+        "nearest_latest_raw_points": [
+          [
+            2.824753761291504,
+            0.6864997148513794,
+            0.6338248252868652
+          ],
+          [
+            2.825327157974243,
+            0.6864997148513794,
+            0.6034588813781738
+          ],
+          [
+            2.8249659538269043,
+            0.6864999532699585,
+            0.1978299617767334
+          ]
+        ]
+      },
+      {
+        "cell": [
+          131,
+          47
+        ],
+        "world_xy": [
+          2.875,
+          0.375
+        ],
+        "robot_relative_xy": [
+          -0.1713564395904541,
+          0.14186307787895203
+        ],
+        "old_free": true,
+        "known_static": false,
+        "tracked_box_margin": false,
+        "robot_footprint": true,
+        "latest_raw_hit": false,
+        "latest_raw_free": true,
+        "latest_filtered_hit": false,
+        "nearest_latest_raw_points": [
+          [
+            2.8523473739624023,
+            0.6864997744560242,
+            0.4051418900489807
+          ],
+          [
+            2.851841449737549,
+            0.686499834060669,
+            0.43230947852134705
+          ],
+          [
+            2.8513340950012207,
+            0.6864997744560242,
+            0.4594924747943878
+          ]
+        ]
+      },
+      {
+        "cell": [
+          131,
+          49
+        ],
+        "world_xy": [
+          2.975,
+          0.375
+        ],
+        "robot_relative_xy": [
+          -0.07135643959045401,
+          0.14186307787895203
+        ],
+        "old_free": true,
+        "known_static": false,
+        "tracked_box_margin": false,
+        "robot_footprint": true,
+        "latest_raw_hit": false,
+        "latest_raw_free": true,
+        "latest_filtered_hit": false,
+        "nearest_latest_raw_points": [
+          [
+            2.8523473739624023,
+            0.6864997744560242,
+            0.4051418900489807
+          ],
+          [
+            2.851841449737549,
+            0.686499834060669,
+            0.43230947852134705
+          ],
+          [
+            2.8513340950012207,
+            0.6864997744560242,
+            0.4594924747943878
+          ]
+        ]
+      },
+      {
+        "cell": [
+          131,
+          50
+        ],
+        "world_xy": [
+          3.0250000000000004,
+          0.375
+        ],
+        "robot_relative_xy": [
+          -0.021356439590453746,
+          0.14186307787895203
+        ],
+        "old_free": true,
+        "known_static": false,
+        "tracked_box_margin": false,
+        "robot_footprint": true,
+        "latest_raw_hit": false,
+        "latest_raw_free": true,
+        "latest_filtered_hit": false,
+        "nearest_latest_raw_points": [
+          [
+            2.8523473739624023,
+            0.6864997744560242,
+            0.4051418900489807
+          ],
+          [
+            2.851841449737549,
+            0.686499834060669,
+            0.43230947852134705
+          ],
+          [
+            2.8513340950012207,
+            0.6864997744560242,
+            0.4594924747943878
+          ]
+        ]
+      }
+    ],
+    "no_unknown_cells_marked_free": true,
+    "filter_respects_known_static_and_tracked_boxes": true,
+    "raw_evidence_npz_sha256": "825d9364a632041b0a45ce9618272209b8419a98088a6b1f59578df7369c5c0b"
+  },
+  "v169b_archive": {
+    "archive": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/release-margin-v169b-evidence.tar.gz",
+    "sha256": "e3633f0d3368bf559c9a9fe7c770810b88c697512461a6c39fba8f18e7e38ba1",
+    "manifest": "release-margin-v169b-manifest.json",
+    "bytes": 6128990,
+    "files": 98,
+    "candidate_commit": "696ba2ed9909a97d34f4d3daddf0598e7f8c615c",
+    "diagnostic_only": true,
+    "raw_probe_passed": false,
+    "reviewed_withdrawal_passed": true,
+    "original_tasks_accepted": false,
+    "local_path": "E:\\inter-nav-results\\go2-online-smooth-20261027\\interface-v59\\release-margin-v169b-evidence.tar.gz",
+    "sha256_match": true,
+    "all_member_hashes_match": true,
+    "verified_members": 97
+  },
+  "v170_launch": {
+    "task": "T05",
+    "source_commit": "696ba2ed9909a97d34f4d3daddf0598e7f8c615c",
+    "supervisor_pid": 1085028,
+    "snapshot_observer_pid": 1085029,
+    "worktree": "/data20t/embodied/zkj/inter-nav-run-t05-v170-20261031",
+    "policy_sha256": "8862682da34ebb090a2e56f39254af430d5645f20cb5e3e104c72a4720671db8",
+    "start_override": null,
+    "original_start": [
+      13.6,
+      -0.4
+    ],
+    "original_goal": [
+      3.3,
+      1.4
+    ],
+    "scope_cap_gib": 24,
+    "swap_max_gib": 0,
+    "map_source": "online",
+    "global_local_map_hz": [
+      1,
+      10
+    ],
+    "floor_top_m": 0.01,
+    "original_task_accepted": false,
+    "same_version_pair_complete": false
+  },
+  "v170_status_at_documentation": {
+    "state": "waiting_resources",
+    "time_unix": 1793389259.28192,
+    "available_ram_gib": 214.93,
+    "required_ram_gib": 56.0,
+    "eligible_gpus": [
+      [
+        23827,
+        0,
+        0
+      ],
+      [
+        23838,
+        2,
+        0
+      ],
+      [
+        23834,
+        3,
+        0
+      ],
+      [
+        15095,
+        4,
+        0
+      ],
+      [
+        15230,
+        5,
+        0
+      ],
+      [
+        14912,
+        6,
+        0
+      ],
+      [
+        23823,
+        7,
+        0
+      ]
+    ],
+    "stable_seconds": 0.0,
+    "required_stable_seconds": 60.0
+  }
+}
