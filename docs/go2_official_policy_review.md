@@ -1,5 +1,7 @@
 # Go2 策略来源与宇树官方方案核查
 
+最新：v142 T04在接触准备阶段失败，v143参考policy对照未支持直接替换；v145正验证接触准备修改，且仅为近箱诊断。见 [当前结果](go2_contact_preparation_settling.md)。
+
 核查日期：2026-10-30。原始任务仍未完成。下方为宇树来源核查；随后找到 NVIDIA Isaac Lab 发布的 Go2 权重，并完成匹配资产的短测试。新候选、部署差异和运行命令见 [Go2 模型匹配与候选策略](go2_training_policy_candidate.md)。NVIDIA 权重不是宇树出厂策略；未启动宇树策略训练。完整任务最新状态为T05 v127通过、T04 v127失败；同一策略在CPU/GPU物理下表现不同，正在进一步诊断，见 [当前证据](go2_policy_physics_diagnosis.md)。
 
 ## 当前策略

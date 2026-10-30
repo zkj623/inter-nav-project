@@ -1,0 +1,453 @@
+{
+  "original_task_accepted": false,
+  "candidate_runtime_commit": "c87c96d4bed0d22be71aa92dc779cf2c487f3ced",
+  "v142_archive": {
+    "run": "recognition-skill-v142-t04-ground-truth-try1",
+    "task": "T04",
+    "operator_stopped_prefix": false,
+    "video_sha256_match": {
+      "combined.mp4": true,
+      "map_topdown.mp4": true,
+      "pointcloud_map.mp4": true,
+      "robot_rgb.mp4": true,
+      "third_person.mp4": true
+    },
+    "media_valid": true,
+    "source_valid": true,
+    "visual_task_valid": false,
+    "actual_passage_valid": false,
+    "navigation_success": false,
+    "termination_reason": "push_aside:retry_limit:heading_drift_during_alignment",
+    "steps": 30391,
+    "error_m": 2.378011569498896,
+    "max_tilt_degrees": 27.931621377725524,
+    "frames": 6134,
+    "duration_s": 245.36,
+    "selected_box_displacements": [
+      {
+        "object_id": "B06",
+        "world_displacement_m": 0.0,
+        "along_planned_push_m": 0.0
+      }
+    ],
+    "full_task_accepted": false
+  },
+  "v143_policy_comparison": [
+    {
+      "label": "current_rough_gpu",
+      "exit_code": 0,
+      "resource_stop": false,
+      "scope_cap_verified": true,
+      "peak_scope_gib": 3.619403839111328,
+      "failure": null,
+      "summary": {
+        "diagnostic_only": true,
+        "navigation_accepted": false,
+        "label": "current_rough_gpu",
+        "reason": "completed",
+        "healthy": true,
+        "maximum_tilt_deg": 21.905375868499892,
+        "sampled_50hz_max_tilt_deg": 21.824539523810934,
+        "minimum_height_m": 0.36624348163604736,
+        "policy_steps": 2000,
+        "policy_inferences": 2000,
+        "actual_physics": {
+          "device": "cpu",
+          "use_gpu_sim": false,
+          "use_gpu_pipeline": false,
+          "gpu_dynamics": true,
+          "broadphase": "GPU",
+          "solver": "TGS",
+          "attributes": {
+            "physics:gravityDirection": "(0, 0, 0)",
+            "physics:gravityMagnitude": "-inf",
+            "physxScene:bounceThreshold": "0.0",
+            "physxScene:broadphaseType": "GPU",
+            "physxScene:collisionSystem": "PCM",
+            "physxScene:enableCCD": "False",
+            "physxScene:enableEnhancedDeterminism": "False",
+            "physxScene:enableExternalForcesEveryIteration": "False",
+            "physxScene:enableGPUDynamics": "True",
+            "physxScene:enableResidualReporting": "False",
+            "physxScene:enableSceneQuerySupport": "True",
+            "physxScene:enableStabilization": "False",
+            "physxScene:frictionCorrelationDistance": "0.02500000037252903",
+            "physxScene:frictionOffsetThreshold": "0.03999999910593033",
+            "physxScene:frictionType": "patch",
+            "physxScene:gpuCollisionStackSize": "67108864",
+            "physxScene:gpuFoundLostAggregatePairsCapacity": "1024",
+            "physxScene:gpuFoundLostPairsCapacity": "262144",
+            "physxScene:gpuHeapCapacity": "67108864",
+            "physxScene:gpuMaxDeformableSurfaceContacts": "1048576",
+            "physxScene:gpuMaxHairContacts": "1048576",
+            "physxScene:gpuMaxNumPartitions": "8",
+            "physxScene:gpuMaxParticleContacts": "1048576",
+            "physxScene:gpuMaxRigidContactCount": "524288",
+            "physxScene:gpuMaxRigidPatchCount": "81920",
+            "physxScene:gpuMaxSoftBodyContacts": "1048576",
+            "physxScene:gpuTempBufferCapacity": "16777216",
+            "physxScene:gpuTotalAggregatePairsCapacity": "1024",
+            "physxScene:invertCollisionGroupFilter": "False",
+            "physxScene:maxBiasCoefficient": "inf",
+            "physxScene:maxPositionIterationCount": "255",
+            "physxScene:maxVelocityIterationCount": "255",
+            "physxScene:minPositionIterationCount": "1",
+            "physxScene:minVelocityIterationCount": "0",
+            "physxScene:reportKinematicKinematicPairs": "False",
+            "physxScene:reportKinematicStaticPairs": "False",
+            "physxScene:solverType": "TGS",
+            "physxScene:timeStepsPerSecond": "200",
+            "physxScene:updateType": "Synchronous"
+          }
+        },
+        "framework_source_commit": "5a2cf9ee53a47ab0f41e83c92d752a84a471e16c",
+        "frozen_source_root": "/data20t/embodied/zkj/inter-nav-policy-v143-20261030",
+        "publisher": "Zhefan-Xu/isaac-go2-ros2",
+        "not_unitree_factory_policy": true,
+        "policy_sha256": "d435f46dcf2d614cad28e21e033b34d6036d079924e1746530a36f2fba2315bd",
+        "initial_20s_complete": true,
+        "initial_idle_maximum_sampled_tilt_deg": 4.069998221439738,
+        "initial_idle_stop": {
+          "valid": true,
+          "window_seconds": 0.3999999999999986,
+          "window_long_enough": true,
+          "goal_error_m": 0.010006197563256705,
+          "goal_within_tolerance": true,
+          "linear_xy_quiet": true,
+          "vertical_quiet": true,
+          "angular_quiet": true,
+          "tilt_quiet": true,
+          "position_stable": true,
+          "height_stable": true,
+          "tilt_stable": true
+        },
+        "yaw_retention": [
+          {
+            "begin_s": 20.0,
+            "end_s": 26.0,
+            "direction": 1.0,
+            "maximum_progress_deg": 48.679024759937846,
+            "retained_progress_deg": 41.52789206115994,
+            "rollback_deg": 7.151132698777906,
+            "hold_stop": {
+              "valid": false,
+              "window_seconds": 0.3999999999999986,
+              "window_long_enough": true,
+              "goal_error_m": 0.2572997897504649,
+              "goal_within_tolerance": false,
+              "linear_xy_quiet": true,
+              "vertical_quiet": true,
+              "angular_quiet": true,
+              "tilt_quiet": true,
+              "position_stable": true,
+              "height_stable": true,
+              "tilt_stable": true
+            }
+          },
+          {
+            "begin_s": 26.0,
+            "end_s": 32.0,
+            "direction": -1.0,
+            "maximum_progress_deg": 26.642332806479224,
+            "retained_progress_deg": 20.901807384198957,
+            "rollback_deg": 5.740525422280268,
+            "hold_stop": {
+              "valid": true,
+              "window_seconds": 0.3999999999999986,
+              "window_long_enough": true,
+              "goal_error_m": 0.008448413436040025,
+              "goal_within_tolerance": true,
+              "linear_xy_quiet": true,
+              "vertical_quiet": true,
+              "angular_quiet": true,
+              "tilt_quiet": true,
+              "position_stable": true,
+              "height_stable": true,
+              "tilt_stable": true
+            }
+          }
+        ],
+        "final_stop": {
+          "valid": true,
+          "window_seconds": 0.3999999999999986,
+          "window_long_enough": true,
+          "goal_error_m": 0.0,
+          "goal_within_tolerance": true,
+          "linear_xy_quiet": true,
+          "vertical_quiet": true,
+          "angular_quiet": true,
+          "tilt_quiet": true,
+          "position_stable": true,
+          "height_stable": true,
+          "tilt_stable": true
+        }
+      }
+    },
+    {
+      "label": "nvidia_rough_gpu",
+      "exit_code": 0,
+      "resource_stop": false,
+      "scope_cap_verified": true,
+      "peak_scope_gib": 3.6925888061523438,
+      "failure": null,
+      "summary": {
+        "diagnostic_only": true,
+        "navigation_accepted": false,
+        "label": "nvidia_rough_gpu",
+        "reason": "completed",
+        "healthy": true,
+        "maximum_tilt_deg": 18.708997290655084,
+        "sampled_50hz_max_tilt_deg": 18.707558694321936,
+        "minimum_height_m": 0.34847718477249146,
+        "policy_steps": 2000,
+        "policy_inferences": 2000,
+        "actual_physics": {
+          "device": "cpu",
+          "use_gpu_sim": false,
+          "use_gpu_pipeline": false,
+          "gpu_dynamics": true,
+          "broadphase": "GPU",
+          "solver": "TGS",
+          "attributes": {
+            "physics:gravityDirection": "(0, 0, 0)",
+            "physics:gravityMagnitude": "-inf",
+            "physxScene:bounceThreshold": "0.0",
+            "physxScene:broadphaseType": "GPU",
+            "physxScene:collisionSystem": "PCM",
+            "physxScene:enableCCD": "False",
+            "physxScene:enableEnhancedDeterminism": "False",
+            "physxScene:enableExternalForcesEveryIteration": "False",
+            "physxScene:enableGPUDynamics": "True",
+            "physxScene:enableResidualReporting": "False",
+            "physxScene:enableSceneQuerySupport": "True",
+            "physxScene:enableStabilization": "False",
+            "physxScene:frictionCorrelationDistance": "0.02500000037252903",
+            "physxScene:frictionOffsetThreshold": "0.03999999910593033",
+            "physxScene:frictionType": "patch",
+            "physxScene:gpuCollisionStackSize": "67108864",
+            "physxScene:gpuFoundLostAggregatePairsCapacity": "1024",
+            "physxScene:gpuFoundLostPairsCapacity": "262144",
+            "physxScene:gpuHeapCapacity": "67108864",
+            "physxScene:gpuMaxDeformableSurfaceContacts": "1048576",
+            "physxScene:gpuMaxHairContacts": "1048576",
+            "physxScene:gpuMaxNumPartitions": "8",
+            "physxScene:gpuMaxParticleContacts": "1048576",
+            "physxScene:gpuMaxRigidContactCount": "524288",
+            "physxScene:gpuMaxRigidPatchCount": "81920",
+            "physxScene:gpuMaxSoftBodyContacts": "1048576",
+            "physxScene:gpuTempBufferCapacity": "16777216",
+            "physxScene:gpuTotalAggregatePairsCapacity": "1024",
+            "physxScene:invertCollisionGroupFilter": "False",
+            "physxScene:maxBiasCoefficient": "inf",
+            "physxScene:maxPositionIterationCount": "255",
+            "physxScene:maxVelocityIterationCount": "255",
+            "physxScene:minPositionIterationCount": "1",
+            "physxScene:minVelocityIterationCount": "0",
+            "physxScene:reportKinematicKinematicPairs": "False",
+            "physxScene:reportKinematicStaticPairs": "False",
+            "physxScene:solverType": "TGS",
+            "physxScene:timeStepsPerSecond": "200",
+            "physxScene:updateType": "Synchronous"
+          }
+        },
+        "framework_source_commit": "5a2cf9ee53a47ab0f41e83c92d752a84a471e16c",
+        "frozen_source_root": "/data20t/embodied/zkj/inter-nav-policy-v143-20261030",
+        "publisher": "NVIDIA Isaac Lab",
+        "not_unitree_factory_policy": true,
+        "policy_sha256": "f2aa77bf0349c10ec2a00071162e37123d0cf80f3447c3989c17a618e1b24ad2",
+        "initial_20s_complete": true,
+        "initial_idle_maximum_sampled_tilt_deg": 18.692717619058314,
+        "initial_idle_stop": {
+          "valid": false,
+          "window_seconds": 0.3999999999999986,
+          "window_long_enough": true,
+          "goal_error_m": 0.03149901127961959,
+          "goal_within_tolerance": true,
+          "linear_xy_quiet": true,
+          "vertical_quiet": true,
+          "angular_quiet": true,
+          "tilt_quiet": false,
+          "position_stable": true,
+          "height_stable": true,
+          "tilt_stable": true
+        },
+        "yaw_retention": [
+          {
+            "begin_s": 20.0,
+            "end_s": 26.0,
+            "direction": 1.0,
+            "maximum_progress_deg": 27.933593089046063,
+            "retained_progress_deg": 12.5585997688252,
+            "rollback_deg": 15.374993320220865,
+            "hold_stop": {
+              "valid": true,
+              "window_seconds": 0.3999999999999986,
+              "window_long_enough": true,
+              "goal_error_m": 0.028820407797545793,
+              "goal_within_tolerance": true,
+              "linear_xy_quiet": true,
+              "vertical_quiet": true,
+              "angular_quiet": true,
+              "tilt_quiet": true,
+              "position_stable": true,
+              "height_stable": true,
+              "tilt_stable": true
+            }
+          },
+          {
+            "begin_s": 26.0,
+            "end_s": 32.0,
+            "direction": -1.0,
+            "maximum_progress_deg": 28.499495076350012,
+            "retained_progress_deg": 12.016694259721326,
+            "rollback_deg": 16.48280081662869,
+            "hold_stop": {
+              "valid": false,
+              "window_seconds": 0.3999999999999986,
+              "window_long_enough": true,
+              "goal_error_m": 0.02118093764357997,
+              "goal_within_tolerance": true,
+              "linear_xy_quiet": true,
+              "vertical_quiet": true,
+              "angular_quiet": true,
+              "tilt_quiet": false,
+              "position_stable": true,
+              "height_stable": true,
+              "tilt_stable": true
+            }
+          }
+        ],
+        "final_stop": {
+          "valid": true,
+          "window_seconds": 0.3999999999999986,
+          "window_long_enough": true,
+          "goal_error_m": 0.0,
+          "goal_within_tolerance": true,
+          "linear_xy_quiet": true,
+          "vertical_quiet": true,
+          "angular_quiet": true,
+          "tilt_quiet": true,
+          "position_stable": true,
+          "height_stable": true,
+          "tilt_stable": true
+        }
+      }
+    }
+  ],
+  "v143_source": {
+    "supervisor_pid": 307198,
+    "diagnostic_only": true,
+    "queued_after": "v142 T04 terminal state, then shared simulation admission lock",
+    "harness_sha256": "6e0271d84ee0027129e57c9f519b781b6ce48fa9b6ddd64e236274f91698f07e",
+    "conditions": "Same 1cm floor, canonical model, GPU physics, 50/200Hz, no hold; compare only checkpoint",
+    "reference_policy_sha256": "f2aa77bf0349c10ec2a00071162e37123d0cf80f3447c3989c17a618e1b24ad2",
+    "source_worktree": "/data20t/embodied/zkj/inter-nav-policy-v143-20261030",
+    "source_commit": "5a2cf9ee53a47ab0f41e83c92d752a84a471e16c",
+    "pre_freeze_harness_sha256": "f9d054fb98327a9a02fff994d615a05deb6885a580bf1f757b156428ebe48a1e",
+    "frozen_before_first_trial": true,
+    "freeze_time_unix": 1793336841.9664965
+  },
+  "preparation_geometry": {
+    "diagnostic_only": true,
+    "frozen_map_not_physics": true,
+    "head_error_rad": -0.1654266465371954,
+    "reports": [
+      {
+        "name": "recorded",
+        "xy": [
+          11.5132055,
+          0.4486009
+        ],
+        "current_body_clear": false,
+        "backward": {
+          "prime_clear": false,
+          "arc_clear": false
+        },
+        "forward": {
+          "prime_clear": false,
+          "arc_clear": false
+        }
+      },
+      {
+        "name": "centered_same_x",
+        "xy": [
+          11.5132055,
+          0.2774849
+        ],
+        "current_body_clear": true,
+        "backward": {
+          "prime_clear": true,
+          "arc_clear": false
+        },
+        "forward": {
+          "prime_clear": true,
+          "arc_clear": false
+        }
+      },
+      {
+        "name": "centered_closer",
+        "xy": [
+          11.35,
+          0.2774849
+        ],
+        "current_body_clear": true,
+        "backward": {
+          "prime_clear": true,
+          "arc_clear": false
+        },
+        "forward": {
+          "prime_clear": false,
+          "arc_clear": false
+        }
+      },
+      {
+        "name": "anchor",
+        "xy": [
+          11.285,
+          0.2774849
+        ],
+        "current_body_clear": true,
+        "backward": {
+          "prime_clear": true,
+          "arc_clear": false
+        },
+        "forward": {
+          "prime_clear": false,
+          "arc_clear": false
+        }
+      }
+    ]
+  },
+  "unit_tests": {
+    "passed": 709,
+    "deselected": 1,
+    "red_failures": 6,
+    "source_hashes": {
+      "grutopia_extension/interactive_navigation/push_aside_skill.py": "da9fc22a26cc06387e5dc6f8cdaa5c02a8e1698d11cf0fa9804d59dfe5ff168a",
+      "tests/test_push_aside_skill.py": "d1375a48bb102ec9604ef1f963d500bdec46ad5a109f6005f19f7c05e01e2c6f",
+      "tests/test_contact_preparation_settling.py": "89adf5845ee1d5dc3d33fc3a7f5a218afbcc9c42319557e76dfb7d5aa9352481"
+    },
+    "physical_validation": "near-box original-scale scene diagnostic pending; original task validation still required"
+  },
+  "near_box_diagnostic": {
+    "diagnostic_only": true,
+    "original_task_accepted": false,
+    "source_commit": "c87c96d4bed0d22be71aa92dc779cf2c487f3ced",
+    "supervisor_pid": 322560,
+    "worktree": "/data20t/embodied/zkj/inter-nav-near-b06-v145-20261030",
+    "output": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v145-t04-near-box-diagnostic-try1",
+    "start_override": [
+      11.1,
+      -0.55
+    ],
+    "goal": [
+      10.3,
+      1.75
+    ],
+    "policy": "original rough7850",
+    "physics_backend": "gpu_dynamics",
+    "stationary_joint_hold": false,
+    "scope_cap_gib": 24,
+    "same_scene_scale_floor_maps_health_video": true
+  }
+}
