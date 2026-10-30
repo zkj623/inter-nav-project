@@ -1062,6 +1062,12 @@ def main():
                         action,sub_reached,iteration_tracking=subnavigation(command.navigation_goal,p,heading,current,planner.control_time)
                         if iteration_tracking.get('failed'):
                             skill._fail(ctx,iteration_tracking['failed'])
+                    else:
+                        # A later visit to the same staging point is a new
+                        # navigation attempt. Do not charge alignment/contact
+                        # time to it or retain the previous route/arrival latch.
+                        subtracker=None;subtarget=None;sub_started=None
+                        sub_arrival.reset()
                     if step%200==0:event('skill_feedback',step=step,state=command.state,position=p.tolist(),
                         box=list(by_id[plan.box_id].xy) if plan.box_id in by_id else None,command=action['move_by_speed'],
                         requested_command=list(command.velocity),retry=skill.retries,**skill.feedback(ctx))
