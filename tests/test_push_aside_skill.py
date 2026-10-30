@@ -177,7 +177,8 @@ def test_safe_standoff_stops_longitudinal_chasing_before_lateral_alignment():
 
 
 def test_standoff_outside_safe_interval_still_requires_longitudinal_motion():
-    skill,ctx=alignment_context('align_longitudinal',gap=.55)
+    skill,ctx=alignment_context('align_longitudinal',gap=.65)
+    assert .65>skill.config.max_engage_standoff
     command=skill.step(ctx)
     assert command.state=='align_longitudinal' and command.velocity[0]>0.
 
@@ -240,7 +241,8 @@ def test_reuse_rejects_unobserved_alignment_corridor():
 
 
 def test_longitudinal_drift_brakes_before_switching_from_sidestep():
-    skill,ctx=alignment_context('align_lateral',gap=.65,lateral=.12)
+    skill,ctx=alignment_context('align_lateral',gap=.70,lateral=.12)
+    assert .70>skill.config.max_engage_standoff+.05
     ctx.body_velocity=np.array([0.,.3,0.]);ctx.limiter.command=np.array([0.,.35,0.])
     command=skill.step(ctx)
     assert command.state=='settle_alignment' and command.velocity==(0.,0.,0.)
@@ -347,7 +349,7 @@ def test_coarse_turn_hands_off_to_centering_without_unnecessary_stationary_trim(
     assert skill.retries==0  # checked centering starts without another idle dwell
 
 
-@pytest.mark.parametrize('gap',[.15,.55])
+@pytest.mark.parametrize('gap',[.15,.65])
 def test_completed_turn_cannot_skip_an_unsafe_longitudinal_standoff(gap):
     skill,ctx=alignment_context('turn_at_stage',gap=gap,lateral=.12,heading=.11)
     skill.turn=NS(update=lambda *args:None,failed=False)
@@ -371,6 +373,9 @@ def test_unfinished_turn_does_not_handoff_even_at_a_safe_standoff():
 
 def test_final_contact_still_requires_heading_tolerance_and_uses_checked_trim():
     skill,ctx=alignment_context('settle_contact',gap=.46,lateral=0.,heading=.12)
+    command=skill.step(ctx)
+    assert command.state=='settle_contact' and command.velocity==(0.,0.,0.)
+    ctx.now+=.41
     command=skill.step(ctx)
     assert command.state=='refine_heading' and command.velocity==(0.,0.,0.)
     assert command.events[-1]['reason']=='contact_heading_outside_tolerance'
@@ -499,4 +504,6 @@ def test_body_already_on_centerline_is_not_moved_to_compensate_an_unfinished_yaw
     ctx.now+=.31
     assert skill.step(ctx).state=='settle_contact'
     ctx.now+=.01
-    assert skill.step(ctx).state=='refine_heading'  # actual heading condition still enforced
+    assert skill.step(ctx).state=='settle_contact'
+    ctx.now+=.41
+    assert skill.step(ctx).state=='refine_heading'  # actual heading condition still enforced after a complete stop

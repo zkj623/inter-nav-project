@@ -321,7 +321,7 @@ class PushAsideSkill:
         # The caller already established a measured stop. Reuse it when the
         # actual standoff is safe instead of adding another stationary dwell.
         gap,_,_=self._box_frame(ctx)
-        safe=(.20<=gap<=self.config.front_gap+.125 and
+        safe=(.20<=gap<=self.config.max_engage_standoff and
             body_motion_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.))
         return 'align_lateral' if safe else 'align_longitudinal'
 
@@ -524,7 +524,7 @@ class PushAsideSkill:
             if self.state=='align_longitudinal':
                 # Use the same measured nose standoff interval as final contact
                 # validation. Do not chase a nominal anchor inside a safe band.
-                if .20<=gap<=self.config.front_gap+.125 and body_motion_clear(
+                if .20<=gap<=self.config.max_engage_standoff and body_motion_clear(
                         ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.):
                     if self._quiet(ctx):self._transition('align_lateral',ctx,'safe_standoff_reached')
                     return self._output()
@@ -537,7 +537,7 @@ class PushAsideSkill:
             if self.state=='align_lateral':
                 # A long sidestep may drift longitudinally. Brake and correct
                 # the standoff before resuming lateral work outside its band.
-                if gap<.20 or gap>self.config.front_gap+.175:
+                if gap<.20 or gap>self.config.max_engage_standoff+.05:
                     self._transition('settle_alignment',ctx,'standoff_drift_during_sidestep')
                     return self._output()
                 # The validated anchor is a BODY pose at push_heading.
@@ -551,10 +551,24 @@ class PushAsideSkill:
                 if done:self._transition('settle_contact',ctx)
                 return self._output(command)
             ready=self._contact_ready(ctx)
-            if ready and self._quiet(ctx,.4):
+            # Geometry observed while coasting is not a settled preparation
+            # pose. Finish braking before selecting any heading/translation
+            # correction, so a trim does not spend its travel budget on drift.
+            if not self._quiet(ctx,.4):return self._output()
+            if ready:
                 if self._recovered_passage_effect(ctx,along):return self._output()
                 self.engage_box_position=np.asarray(ctx.box.xy).copy()
                 self._transition('engage',ctx);return self._output()
+            if gap<.20 or gap>self.config.max_engage_standoff+.05:
+                self._transition('align_longitudinal',ctx,'settled_standoff_outside_preparation_band')
+                return self._output()
+            body_lateral=abs(float(np.dot(np.asarray(ctx.box.xy)-np.asarray(ctx.position[:2]),self.tangent)))
+            if body_lateral>self.config.preparation_face_offset_max:
+                # Correct a large sidestep overshoot before trying a fine
+                # turn next to the jamb. The actual 3D face gate still decides
+                # when deliberate contact is permitted.
+                self._transition('align_lateral',ctx,'settled_lateral_overshoot')
+                return self._output()
             if abs(yaw_error)>self.config.yaw_tolerance:
                 self._transition('refine_heading',ctx,'contact_heading_outside_tolerance')
                 return self._output()
