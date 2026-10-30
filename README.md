@@ -19,9 +19,9 @@ a text target such as `refrigerator` and walks up to the scanned object.
 原始 **T05 v127已完整验收通过**：B07实际侧推0.836m、在线确认并穿越新通路，最终停稳误差0.174m、全程最大倾角21.712°。同版T04已失败：推箱前转向失稳，最大倾角37.904°；历史T04 v119成功结果保留，不能据此声称新版T04或五组统一通过。当前正对照底层策略与物理配置，见 [失稳诊断](docs/go2_policy_physics_diagnosis.md)。
 通过的T05使用旧rough+匹配训练模型、显式支撑目标保持和原姿态恢复。五路完整视频、保持权限检查、证据及所需追加参数见 [T05结果与支撑目标保持](docs/go2_supported_idle_hold.md)。模型来源见 [策略对照](docs/go2_training_policy_candidate.md)，交接状态见 [HANDOFF](HANDOFF.md)。
 
-v146原始T04已实际向西侧推B06 0.670m，但补推停滞、重试耗尽，最终误差1.337m，未通过；五路完整25fps视频已校验。v147补齐最后一次部分推箱后的撤离和原效果确认，721项回归通过，正在从原始起点复跑T04，通过后再回归T05。未增加推箱机会、放宽30°/0.25m标准或更换policy。详见 [最新状态、视频和验证范围](docs/go2_final_push_release.md)。GPU配置见 [物理配置](docs/go2_policy_physics_diagnosis.md#v136候选原roughgpu物理不启用关节目标保持)。
+v147原始T04已完整验收通过：B06向西实际侧移0.671m，在线确认通路后实际穿越，最终停稳误差0.212m，全物理步最大倾角27.932°。五路6741帧/25fps/269.64秒视频、55份源码和本地SHA256均通过；没有采用近箱起点或较大角度备用候选。T05正在同一运行代码fdaf2aa下测试，两项任务尚未统一完成。详见 [当前结果、视频和证据](docs/go2_original_t04_v147.md)。
 
-以下是当前原始T04复跑的直接导航入口，包含实际使用的模型、policy和GPU物理参数。机器人参考资产的准备方法见 [模型准备](docs/go2_training_policy_candidate.md#获取资产和运行)。在实验分支 `codex/go2-online-smooth-20261027` 的仓库根目录执行：
+以下是原始任务的直接导航入口，以T04为例，包含实际使用的模型、policy和GPU物理参数。机器人参考资产的准备方法见 [模型准备](docs/go2_training_policy_candidate.md#获取资产和运行)。在实验分支 `codex/go2-online-smooth-20261027` 的仓库根目录执行：
 
 ```bash
 source /data20t/embodied/share/inter-nav/env.sh
@@ -55,7 +55,7 @@ go2_out="/data20t/embodied/zkj/inter-nav-results/go2-online-$(date +%Y%m%d-%H%M%
 实测更平稳的原 PD 控制版本；对应源码、视频及尚未通过的试验见下方在线导航说明。
 这不是同一套配置五组统一通过的声明。侧移与前后移动的请求分开配置：独立物理试验中
 0.25 m/s 纯侧移未形成有效迈步，当前侧移采用已测可起步的 0.35 m/s，并结合提前制动。
-持续侧移片段可跟踪该速度，但短距离纠偏和动作切换仍需改进；当前已加入受碰撞检查约束的平滑减速、必要时的航向精调和实测停稳窗口，同版T04物理验收仍未通过；T05 v127通过结果见本节开头。
+持续侧移片段可跟踪该速度，但短距离纠偏和动作切换仍需改进；当前已加入受碰撞检查约束的平滑减速、必要时的航向精调和实测停稳窗口，同版T04完整物理验收已通过，T05正在回归；T05 v127通过结果见本节开头。
 
 在线模式仅从输入目录读取仿真场景配置、箱子布局和任务坐标，不把 `navigation_grid.npz`、
 `original_metadata.json` 或 `passages.json` 交给规划器。箱子身份/尺寸/位姿仍是仿真检测接口，

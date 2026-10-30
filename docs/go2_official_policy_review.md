@@ -1,6 +1,6 @@
 # Go2 策略来源与宇树官方方案核查
 
-最新：v146原始T04实际侧推0.670m后因补推停滞而失败，v147正验证最后一次接触撤离。policy对照未支持直接换成已测NVIDIA候选；原始任务仍未完成。见 [当前结果与后续验证](go2_final_push_release.md)。
+最新：保留原rough7850权重的v147原始T04已完整通过，T05正在同版测试。已测NVIDIA候选仍未采用，较大角度备用候选也未用于本次结果；两项原始任务尚未统一完成。见 [当前结果与证据](go2_original_t04_v147.md)。
 
 核查日期：2026-10-30。下方为固定公开版本的宇树来源核查。NVIDIA Isaac Lab发布的Go2权重、部署差异和运行命令见 [Go2模型匹配与候选策略](go2_training_policy_candidate.md)；它不是宇树出厂策略。相同GPU部署下的v143短指令对照见 [当前policy对照](go2_contact_preparation_settling.md#参考policy对照)。没有启动宇树策略训练。
 
