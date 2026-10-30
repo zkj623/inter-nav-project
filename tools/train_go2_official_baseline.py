@@ -2,6 +2,8 @@
 from pathlib import Path
 import argparse
 import copy
+import faulthandler
+import signal
 import hashlib
 import importlib.metadata
 import json
@@ -22,6 +24,7 @@ p.add_argument('--native-lab', type=Path, required=True)
 p.add_argument('--robot-asset', type=Path, required=True)
 p.add_argument('--resume', type=Path)
 a = p.parse_args()
+faulthandler.register(signal.SIGUSR1, all_threads=True)
 assert a.num_envs >= 16 and a.iterations > 0
 a.output.mkdir(parents=True, exist_ok=False)
 for extension in ['omni.isaac.lab', 'omni.isaac.lab_assets', 'omni.isaac.lab_tasks']:
@@ -64,7 +67,7 @@ try:
     cfg.sim.device = f'cuda:{a.gpu}'
     cfg.sim.dt = .005
     cfg.decimation = 4
-    cfg.sim.render_interval = 1000000
+    cfg.sim.render_interval = cfg.decimation
     cfg.scene.robot.spawn.usd_path = str(a.robot_asset)
     cfg.scene.robot.init_state.pos = (0., 0., .41)
     cfg.scene.terrain.terrain_type = 'plane'
