@@ -21,34 +21,35 @@ a text target such as `refrigerator` and walks up to the scanned object.
 
 接触准备修改后的v145近箱诊断已完成侧推、实际穿越和停稳：B06沿推向移动0.634m，最终误差0.203m、最大倾角24.704°，五路25fps视频已校验。它改变了起点且选用了不同推向，不能作为原始T04通过；v146正从原始起点复跑T04，再回归T05。详见 [最新状态、视频和验证范围](docs/go2_contact_preparation_settling.md)。GPU候选追加参数见 [物理配置](docs/go2_policy_physics_diagnosis.md#v136候选原roughgpu物理不启用关节目标保持)。
 
-在实验分支 `codex/go2-online-smooth-20261027` 的仓库根目录执行：
+以下是当前原始T04复跑的直接导航入口，包含实际使用的模型、policy和GPU物理参数。机器人参考资产的准备方法见 [模型准备](docs/go2_training_policy_candidate.md#获取资产和运行)。在实验分支 `codex/go2-online-smooth-20261027` 的仓库根目录执行：
 
 ```bash
 source /data20t/embodied/share/inter-nav/env.sh
 export MALLOC_ARENA_MAX=2
 export PYTHONPATH="$PWD:$PYTHONPATH"
 go2_inputs=/data20t/embodied/zkj/inter-nav-results/go2-voronoi-heading-up-20261025/collision-corrected-inputs
+go2_reference=/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/official-policy-review-20261030/nvidia_isaaclab_4_5
 go2_out="/data20t/embodied/zkj/inter-nav-results/go2-online-$(date +%Y%m%d-%H%M%S)"
 "$ISAAC_PYTHON" -u grutopia/demo/go2_online_interactive_navigation.py \
   --benchmark-dir "$go2_inputs" --output "$go2_out" \
-  --task-ids T01,T02,T03,T04,T05 --gpu 1 --max-steps 40000 \
+  --task-ids T04 --gpu 1 --max-steps 40000 \
+  --policy-path /data20t/embodied/share/inter-nav/assets/robots/go2/policy/move_by_speed/rough_model_7850.pt \
+  --robot-usd "$go2_reference/go2_training_flattened.usdc" \
+  --robot-physics-profile isaaclab_training --physics-backend gpu_dynamics --actuator-mode explicit_dc \
   --floor-top .01 --map-source online --interaction-source ground_truth --path-controller continuous --navigation-attitude-recovery \
   --route-planner voronoi --navigation-heading path \
-  --roadmap-shape circle --route-clearance .30 --navigation-half-width .22 \
-  --voronoi-clearance-weight .30 \
+  --roadmap-shape circle --route-clearance .30 --navigation-half-width .22 --voronoi-clearance-weight .30 \
   --global-map-hz 1 --local-map-hz 10 --local-map-radius 3 \
   --push-start-speed .60 --push-max-speed .95 --turn-speed 1.0 --contact-centering-speed .25 --contact-lateral-speed .35 \
   --contact-yaw-tolerance .10 --contact-front-gap .35 \
-  --record-video --material-mode simple \
+  --record-video --record-every 1 --material-mode simple \
   --third-person-height 1.35 --third-person-forward .25 --third-person-fov 100
 ```
 
-`--task-ids T04` 可单独运行一组。完整视频为 `<输出目录>/T04/video/combined.mp4`，
+将 `--task-ids T04` 改为 `--task-ids T05` 并使用新输出目录，可运行另一原始任务；GPU编号按空闲设备选择。入口也支持T01–T05的逗号分隔列表，当前同版原始任务验收仍按T04、T05分别启动。完整视频为 `<输出目录>/T04/video/combined.mp4`，
 地图灰色为未观测区域，绿色起点和红色目标始终标在请求坐标。
 上方命令采用无纹理录像；需要材质时改为 `--material-mode preview`。不录像的诊断可去掉 `--record-video`。
-无纹理版本按单任务运行：当前队列要求 48 GiB 可用内存持续 60 秒和 14 GiB 空闲显存，持有串行锁直到录像导出与检查完成，再启动下一组；可用内存持续低于 16 GiB 时停止本任务。
-这一资源门槛依据 [6 次完整无纹理测试的内存高水位](docs/data/go2_simple_memory_admission_20261029.json)（最高 19.01 GiB）重新评估，替代先前允许并发场景的 80 GiB 门槛；进程峰值不包含独立视频编码器和缓存，48 GiB 留有额外余量。此门槛不用于开启材质或多个仿真并发。
-另有 [24GiB硬上限的完整场景试跑模式](docs/go2_capped_memory.md)，按56GiB主机可用内存准入（包含共享负载波动余量）并禁用交换分区；它使用相同导航代码，资源失败仍会停止并保留失败记录。
+当前自动实验队列通过 [资源监督模式](docs/go2_capped_memory.md) 设置24GiB进程组硬上限和零swap，要求主机可用内存至少56GiB持续60秒、空闲显存至少14GiB，并持有共享串行锁直到录像导出与检查完成。上方是导航入口命令，自动准入和资源保护由监督脚本另行执行。此前内存测量保留在 [历史记录](docs/data/go2_simple_memory_admission_20261029.json)。
 
 上方命令是当前交互控制的复测配置。已验收的普通导航中，T01 采用 DC 控制，T02/T03 保留
 实测更平稳的原 PD 控制版本；对应源码、视频及尚未通过的试验见下方在线导航说明。
