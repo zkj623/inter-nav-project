@@ -160,6 +160,10 @@ try:
                 'mean_reward': statistics.mean(locs['rewbuffer']) if locs['rewbuffer'] else None,
                 'mean_episode_steps': statistics.mean(locs['lenbuffer']) if locs['lenbuffer'] else None,
                 'losses': {k: float(v) for k, v in locs['loss_dict'].items()},
+                'episode_metrics': {key: float(torch.mean(torch.cat([
+                    torch.as_tensor(item[key], device=self.device).reshape(-1)
+                    for item in locs['ep_infos'] if key in item])))
+                    for key in (locs['ep_infos'][0] if locs['ep_infos'] else [])},
                 'command_range': dict(vars(env.command_manager.get_term('base_velocity').cfg.ranges)),
                 'training_only': True, 'original_task_accepted': False}
             assert all(math.isfinite(v) for v in metrics['losses'].values())
@@ -182,6 +186,20 @@ try:
     export = torch.jit.script(copy.deepcopy(runner.alg.policy.actor).cpu())
     export_path = a.output / 'actor.pt'
     export.save(str(export_path))
+    # Plain deterministic actor checkpoint for the existing navigation loader.
+    deployment_checkpoint = a.output / 'actor_checkpoint.pt'
+    torch.save({'model_state_dict': {'actor.' + key: value.detach().cpu()
+                for key, value in runner.alg.policy.actor.state_dict().items()},
+                'observation_profile': 'unitree_go2_45', 'empirical_normalization': False}, deployment_checkpoint)
+    contract['actor_sha256'] = hashlib.sha256(export_path.read_bytes()).hexdigest()
+    contract['actor_checkpoint_sha256'] = hashlib.sha256(deployment_checkpoint.read_bytes()).hexdigest()
+    contract['observation_profile'] = 'unitree_go2_45'
+    contract['observation_order'] = ['base_ang_vel', 'projected_gravity', 'velocity_commands',
+                                      'joint_pos_rel', 'joint_vel_rel', 'last_action']
+    contract['observation_scales'] = [.2, 1., 1., 1., .05, 1.]
+    contract['observation_clip_before_scale'] = [-100., 100.]
+    contract['empirical_normalization'] = False
+    write_json('deployment_contract.json', contract)
     with torch.inference_mode():
         test = torch.zeros((2, 45))
         error = float(torch.max(torch.abs(export(test) - runner.alg.policy.actor(test.to(runner.device)).cpu())))
