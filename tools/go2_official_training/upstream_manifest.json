@@ -1,0 +1,52 @@
+{
+  "upstream_repository": "https://github.com/unitreerobotics/unitree_rl_lab",
+  "upstream_commit": "4960b84732b0c2ec593dccbfe963fda1bcd7b1e3",
+  "source_files": [
+    {
+      "upstream_path": "source/unitree_rl_lab/unitree_rl_lab/tasks/locomotion/robots/go2/velocity_env_cfg.py",
+      "upstream_git_blob": "7496d7678b6324e6213be72aae9446281daee659",
+      "upstream_sha256": "56859832148dacc724ddba3954a7684b99a43560e4fde561f6361b9daa051b56",
+      "adapted_path": "env_cfg.py"
+    },
+    {
+      "upstream_path": "source/unitree_rl_lab/unitree_rl_lab/tasks/locomotion/mdp/commands/velocity_command.py",
+      "upstream_git_blob": "38f425ce5a2a4cb056021bcb77b3e6011b10a9d9",
+      "upstream_sha256": "87358cad63a01f6131fa4ba9bbbe0a177cfcb03f142fb3ac74fd356df57cc042",
+      "adapted_path": "mdp/commands.py"
+    },
+    {
+      "upstream_path": "source/unitree_rl_lab/unitree_rl_lab/tasks/locomotion/mdp/curriculums.py",
+      "upstream_git_blob": "05b3e51ae7751d040a2a884bd159084d831007dd",
+      "upstream_sha256": "a4a0898863a0ac5d50eb8e754d06a2b006ec943aaa18fddfca89c2a922bfd436",
+      "adapted_path": "mdp/curriculums.py"
+    },
+    {
+      "upstream_path": "source/unitree_rl_lab/unitree_rl_lab/tasks/locomotion/mdp/rewards.py",
+      "upstream_git_blob": "95ddd8a7e62e0d5ec69c548b8892b3f9413529ff",
+      "upstream_sha256": "8a41249e85997414f759c56b990ebd8a9289f7d98c47e2fc70f54180e86d4ad3",
+      "adapted_path": "mdp/rewards.py"
+    },
+    {
+      "upstream_path": "source/unitree_rl_lab/unitree_rl_lab/tasks/locomotion/mdp/observations.py",
+      "upstream_git_blob": "b1df0d4cd68b2974330ab4bbb070ded106e805ff",
+      "upstream_sha256": "93be6a6361e53b17a9ebbc1654dabe47720a5a5d584c2252c08f2a47c62fef8a",
+      "adapted_path": "mdp/observations.py"
+    },
+    {
+      "upstream_path": "source/unitree_rl_lab/unitree_rl_lab/tasks/locomotion/mdp/__init__.py",
+      "upstream_git_blob": "a0032054cc6511a94acf7557c658dd49048625a2",
+      "upstream_sha256": "2b61e4b16274bdad8174e7a11f49a6cde647b015b0acbe0c0861bd9c0b935546",
+      "adapted_path": "mdp/__init__.py"
+    }
+  ],
+  "official_pretrained_policy": false,
+  "adaptations": [
+    "Isaac Lab 2.x imports use equivalent 1.4 namespace; ray_alignment yaw uses attach_yaw_only.",
+    "Use unchanged canonical Go2 USD and Lab DCMotor 25/0.5, 23.5 Nm, 30 rad/s matching navigation deployment instead of Unitree Go2HV curve.",
+    "Flat floor at z=0.01; remove unused height scanner, textures and terrain curriculum. Actor remains the official 45-dimensional observation.",
+    "Retain official reward terms, command curriculum and domain randomization; observation joint_effort reads applied_torque in Lab 1.4.",
+    "Lab 1.4 lacks action-term clip; wrapper clamps incoming policy actions to the upstream +/-100 limits.",
+    "Training bad-orientation termination tightened to 30 degrees; deployment startup and full navigation acceptance remain separate.",
+    "Training resets are RL episodes only, never navigation rollout teleports."
+  ]
+}
