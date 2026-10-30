@@ -512,12 +512,14 @@
       }
     ],
     "navigation_accepted": false,
-    "usable_pulses": [
+    "historical_3s_passing_pulses": [
       "pulse055_positive",
       "pulse060_positive",
       "pulse055_negative",
       "pulse060_negative"
-    ]
+    ],
+    "adoptable_pulses_after_full_integration": [],
+    "interpretation": "Historical 3-second endpoint only; subsequent full settling invalidated the positive-direction inference."
   },
   "candidate": {
     "candidate_commit": "699fcb2f059ee99581565057e0e76e8577a3ff0c",
@@ -531,8 +533,10 @@
       "grutopia_extension/interactive_navigation/push_aside_skill.py": "ee385be040c586027ef32ff8567e914ec5cc6955531149caf6f00cd616bdf240",
       "tests/test_acknowledged_yaw_step.py": "9e9cd35ae32c93f22e5f3b5cc211f2bab1f87211ab5057528b99b16c0234c70e"
     },
-    "physical_integration_complete": false,
-    "original_tasks_accepted": false
+    "physical_integration_complete": true,
+    "original_tasks_accepted": false,
+    "physical_integration_passed": false,
+    "rejection": "Full measured-stop integration timed out despite the transient 3-second result."
   },
   "integration_launch": {
     "supervisor_pid": 711338,
@@ -542,5 +546,1033 @@
     "swap_max_gib": 0,
     "original_task_accepted": false,
     "models_changed": false
+  },
+  "latest_status": {
+    "checked_date": "2026-10-30",
+    "original_pair_complete": false,
+    "runtime_controller_commit": "fbcaa14be1f8f79eb8d5deb3c45df20b8083e06a",
+    "v152_candidate_status": "rejected_after_full_physical_integration",
+    "v151_short_window_sufficient_for_adoption": false,
+    "full_scene_run_active_at_update": false,
+    "official_policy_training_started": false
+  },
+  "v152_full_integration_result": {
+    "diagnostic_only": true,
+    "original_task_accepted": false,
+    "controller_case_passed": false,
+    "label": "integrated_positive",
+    "reason": "heading_timeout",
+    "prefix_matches_tolerance": true,
+    "prefix_comparison": {
+      "maximum": {
+        "position_m": 0.0,
+        "orientation_deg": 3.818191820832845e-06,
+        "yaw_rad": 0.0,
+        "motor_target_rad": 0.0
+      },
+      "final": {
+        "position_m": 0.0,
+        "orientation_deg": 2.4148365394514667e-06,
+        "yaw_rad": 0.0,
+        "motor_target_rad": 0.0
+      }
+    },
+    "final_heading_error_rad": 0.06416115367843345,
+    "translation_after_takeover_m": 0.01077258367773776,
+    "final_stop": {
+      "valid": true,
+      "window_seconds": 0.3999999910593033,
+      "window_long_enough": true,
+      "goal_error_m": 0.01077258367773776,
+      "goal_within_tolerance": true,
+      "linear_xy_quiet": true,
+      "vertical_quiet": true,
+      "angular_quiet": true,
+      "tilt_quiet": true,
+      "position_stable": true,
+      "height_stable": true,
+      "tilt_stable": true
+    },
+    "initial_heading_rad": -0.13971915878774235,
+    "evaluation_goal_heading_rad": 0.0,
+    "mirrored_goal": false,
+    "retained_heading_change_rad": 0.07555800510930855,
+    "peak_policy_yaw_request_rad_s": 0.550000011920929,
+    "maximum_tilt_deg": 18.91766128847918,
+    "trim_and_hold_max_tilt_deg": 4.853181014368948,
+    "minimum_height_m": 0.37789762020111084,
+    "all_physics_samples": 18336,
+    "runtime_source_commit": "699fcb2f059ee99581565057e0e76e8577a3ff0c",
+    "benchmark_sha256": "901b06a25facb6e3a9311dcf2789081271c6f7107329ce78130298bcc1c86abc",
+    "input_sha256": "d895014e6408bad61c1a855ee4b59b0719325ead9c6f5a0692158109dd811334",
+    "policy_sha256": "d435f46dcf2d614cad28e21e033b34d6036d079924e1746530a36f2fba2315bd",
+    "scope": "recorded command history and integrated heading controller; flat physics and unavailable translation arcs; no original scene navigation",
+    "arc_fallback": "translation arc candidates suppressed to reproduce the recorded unavailability; yaw checks unchanged",
+    "yaw_step_count": 3,
+    "last_yaw_step": {
+      "direction": 1.0,
+      "policy_speed_rad_s": 0.55,
+      "actual_policy_yaw_rad_s": 0.550000011920929,
+      "elapsed_seconds": 0.3799999915063381,
+      "heading_excursion_rad": 0.09620291105935896,
+      "acknowledged_seconds": 0.04999999888241291,
+      "input_complete": true,
+      "failure": null
+    },
+    "limits": {
+      "aim_rad": 0.05,
+      "settled_heading_rad": 0.1,
+      "translation_m": 0.25,
+      "all_physics_tilt_deg": 30.0,
+      "preparation_tilt_deg": 18.0,
+      "trim_seconds": 20.0
+    }
+  },
+  "v153_full_settling_result": {
+    "state": "finished",
+    "time_unix": 1793368014.5535498,
+    "diagnostic_only": true,
+    "outcomes": [
+      {
+        "label": "pulse055_hold004_positive",
+        "exit_code": 0,
+        "resource_stop": false,
+        "scope_cap_verified": true,
+        "peak_scope_gib": 3.7136383056640625,
+        "failure": null,
+        "summary": {
+          "calibration_only": true,
+          "pulse_peak_rad_s": 0.55,
+          "pulse_peak_hold_seconds": 0.04,
+          "full_stop_assessed": true,
+          "full_stop_goal_passed": false,
+          "full_stop_detail": {
+            "heading_error_rad": 0.1461296006984787,
+            "best_error_rad": 0.010088640133171456,
+            "translation_from_origin_m": 0.0013849606397328578,
+            "arc_enabled": false,
+            "mode": "heading_trim_brake",
+            "aiming_tolerance_rad": 0.05,
+            "settled_tolerance_rad": 0.1,
+            "travel_budget_exhausted": false,
+            "body_motion_safe": true,
+            "applied_command": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "settling_yaw_drift_rad": 0.011895829133932168,
+            "predicted_outward_error_rad": 0.15568858198297786
+          },
+          "settling_rule": "original HeadingTrimControl 1.2-second stop and 0.015-rad drift gate, not a fixed 3-second snapshot",
+          "retained_change_toward_requested_direction_rad": -0.0064947639391079726,
+          "diagnostic_only": true,
+          "original_task_accepted": false,
+          "controller_case_passed": false,
+          "label": "pulse055_hold004_positive",
+          "reason": "settled_heading_outside_tolerance",
+          "prefix_matches_tolerance": true,
+          "prefix_comparison": {
+            "maximum": {
+              "position_m": 0.0,
+              "orientation_deg": 3.818191820832845e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            },
+            "final": {
+              "position_m": 0.0,
+              "orientation_deg": 2.4148365394514667e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            }
+          },
+          "final_heading_error_rad": 0.1462139227268504,
+          "translation_after_takeover_m": 0.0033353581508497507,
+          "final_stop": {
+            "valid": true,
+            "window_seconds": 0.3999999910593033,
+            "window_long_enough": true,
+            "goal_error_m": 0.0033353581508497507,
+            "goal_within_tolerance": true,
+            "linear_xy_quiet": true,
+            "vertical_quiet": true,
+            "angular_quiet": true,
+            "tilt_quiet": true,
+            "position_stable": true,
+            "height_stable": true,
+            "tilt_stable": true
+          },
+          "initial_heading_rad": -0.13971915878774235,
+          "evaluation_goal_heading_rad": 8.326672684688674e-17,
+          "mirrored_goal": false,
+          "retained_heading_change_rad": -0.0064947639391079726,
+          "peak_policy_yaw_request_rad_s": 0.550000011920929,
+          "maximum_tilt_deg": 18.91766128847918,
+          "trim_and_hold_max_tilt_deg": 4.850071175517556,
+          "minimum_height_m": 0.37789762020111084,
+          "all_physics_samples": 15944,
+          "runtime_source_commit": "fbcaa14be1f8f79eb8d5deb3c45df20b8083e06a",
+          "benchmark_sha256": "b16db8322685d3aed1c0d5bf56bccbd45c4cb4e4dbaed044b5656e592dad5757",
+          "input_sha256": "d895014e6408bad61c1a855ee4b59b0719325ead9c6f5a0692158109dd811334",
+          "policy_sha256": "d435f46dcf2d614cad28e21e033b34d6036d079924e1746530a36f2fba2315bd",
+          "scope": "flat-floor recorded command history and one bounded yaw pulse evaluated by the full original settling state machine; no original scene navigation",
+          "arc_fallback": "disabled for this diagnostic; real source trace reported arc_unavailable",
+          "limits": {
+            "aim_rad": 0.05,
+            "settled_heading_rad": 0.1,
+            "translation_m": 0.25,
+            "all_physics_tilt_deg": 30.0,
+            "preparation_tilt_deg": 18.0,
+            "trim_seconds": 20.0
+          }
+        }
+      },
+      {
+        "label": "pulse060_hold004_positive",
+        "exit_code": 0,
+        "resource_stop": false,
+        "scope_cap_verified": true,
+        "peak_scope_gib": 3.6891708374023438,
+        "failure": null,
+        "summary": {
+          "calibration_only": true,
+          "pulse_peak_rad_s": 0.6,
+          "pulse_peak_hold_seconds": 0.04,
+          "full_stop_assessed": true,
+          "full_stop_goal_passed": false,
+          "full_stop_detail": {
+            "heading_error_rad": 0.14041502155297225,
+            "best_error_rad": 0.0037650832026363545,
+            "translation_from_origin_m": 0.0010795245939451861,
+            "arc_enabled": false,
+            "mode": "heading_trim_brake",
+            "aiming_tolerance_rad": 0.05,
+            "settled_tolerance_rad": 0.1,
+            "travel_budget_exhausted": false,
+            "body_motion_safe": true,
+            "applied_command": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "settling_yaw_drift_rad": 0.013633603244869619,
+            "predicted_outward_error_rad": 0.15123560778730338
+          },
+          "settling_rule": "original HeadingTrimControl 1.2-second stop and 0.015-rad drift gate, not a fixed 3-second snapshot",
+          "retained_change_toward_requested_direction_rad": -0.0007900038191603898,
+          "diagnostic_only": true,
+          "original_task_accepted": false,
+          "controller_case_passed": false,
+          "label": "pulse060_hold004_positive",
+          "reason": "settled_heading_outside_tolerance",
+          "prefix_matches_tolerance": true,
+          "prefix_comparison": {
+            "maximum": {
+              "position_m": 0.0,
+              "orientation_deg": 3.818191820832845e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            },
+            "final": {
+              "position_m": 0.0,
+              "orientation_deg": 2.4148365394514667e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            }
+          },
+          "final_heading_error_rad": 0.14050916260690283,
+          "translation_after_takeover_m": 0.003793560950572303,
+          "final_stop": {
+            "valid": true,
+            "window_seconds": 0.3999999910593033,
+            "window_long_enough": true,
+            "goal_error_m": 0.003793560950572303,
+            "goal_within_tolerance": true,
+            "linear_xy_quiet": true,
+            "vertical_quiet": true,
+            "angular_quiet": true,
+            "tilt_quiet": true,
+            "position_stable": true,
+            "height_stable": true,
+            "tilt_stable": true
+          },
+          "initial_heading_rad": -0.13971915878774235,
+          "evaluation_goal_heading_rad": 8.326672684688674e-17,
+          "mirrored_goal": false,
+          "retained_heading_change_rad": -0.0007900038191603898,
+          "peak_policy_yaw_request_rad_s": 0.6000000238418579,
+          "maximum_tilt_deg": 18.91766128847918,
+          "trim_and_hold_max_tilt_deg": 4.786000319102456,
+          "minimum_height_m": 0.37789762020111084,
+          "all_physics_samples": 15958,
+          "runtime_source_commit": "fbcaa14be1f8f79eb8d5deb3c45df20b8083e06a",
+          "benchmark_sha256": "b16db8322685d3aed1c0d5bf56bccbd45c4cb4e4dbaed044b5656e592dad5757",
+          "input_sha256": "d895014e6408bad61c1a855ee4b59b0719325ead9c6f5a0692158109dd811334",
+          "policy_sha256": "d435f46dcf2d614cad28e21e033b34d6036d079924e1746530a36f2fba2315bd",
+          "scope": "flat-floor recorded command history and one bounded yaw pulse evaluated by the full original settling state machine; no original scene navigation",
+          "arc_fallback": "disabled for this diagnostic; real source trace reported arc_unavailable",
+          "limits": {
+            "aim_rad": 0.05,
+            "settled_heading_rad": 0.1,
+            "translation_m": 0.25,
+            "all_physics_tilt_deg": 30.0,
+            "preparation_tilt_deg": 18.0,
+            "trim_seconds": 20.0
+          }
+        }
+      },
+      {
+        "label": "pulse060_hold015_positive",
+        "exit_code": 0,
+        "resource_stop": false,
+        "scope_cap_verified": true,
+        "peak_scope_gib": 3.7122154235839844,
+        "failure": null,
+        "summary": {
+          "calibration_only": true,
+          "pulse_peak_rad_s": 0.6,
+          "pulse_peak_hold_seconds": 0.15,
+          "full_stop_assessed": true,
+          "full_stop_goal_passed": false,
+          "full_stop_detail": {
+            "heading_error_rad": 0.1475391746844008,
+            "best_error_rad": 0.004495831413165341,
+            "translation_from_origin_m": 0.0025442358968812114,
+            "arc_enabled": false,
+            "mode": "heading_trim_brake",
+            "aiming_tolerance_rad": 0.05,
+            "settled_tolerance_rad": 0.1,
+            "travel_budget_exhausted": false,
+            "body_motion_safe": true,
+            "applied_command": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "settling_yaw_drift_rad": 0.011321108102600785,
+            "predicted_outward_error_rad": 0.15651286070894743
+          },
+          "settling_rule": "original HeadingTrimControl 1.2-second stop and 0.015-rad drift gate, not a fixed 3-second snapshot",
+          "retained_change_toward_requested_direction_rad": -0.007898482330905843,
+          "diagnostic_only": true,
+          "original_task_accepted": false,
+          "controller_case_passed": false,
+          "label": "pulse060_hold015_positive",
+          "reason": "settled_heading_outside_tolerance",
+          "prefix_matches_tolerance": true,
+          "prefix_comparison": {
+            "maximum": {
+              "position_m": 0.0,
+              "orientation_deg": 3.818191820832845e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            },
+            "final": {
+              "position_m": 0.0,
+              "orientation_deg": 2.4148365394514667e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            }
+          },
+          "final_heading_error_rad": 0.14761764111864828,
+          "translation_after_takeover_m": 0.003170053917032929,
+          "final_stop": {
+            "valid": true,
+            "window_seconds": 0.3999999910593033,
+            "window_long_enough": true,
+            "goal_error_m": 0.003170053917032929,
+            "goal_within_tolerance": true,
+            "linear_xy_quiet": true,
+            "vertical_quiet": true,
+            "angular_quiet": true,
+            "tilt_quiet": true,
+            "position_stable": true,
+            "height_stable": true,
+            "tilt_stable": true
+          },
+          "initial_heading_rad": -0.13971915878774235,
+          "evaluation_goal_heading_rad": 8.326672684688674e-17,
+          "mirrored_goal": false,
+          "retained_heading_change_rad": -0.007898482330905843,
+          "peak_policy_yaw_request_rad_s": 0.6000000238418579,
+          "maximum_tilt_deg": 18.91766128847918,
+          "trim_and_hold_max_tilt_deg": 4.869482680273341,
+          "minimum_height_m": 0.37789762020111084,
+          "all_physics_samples": 16435,
+          "runtime_source_commit": "fbcaa14be1f8f79eb8d5deb3c45df20b8083e06a",
+          "benchmark_sha256": "b16db8322685d3aed1c0d5bf56bccbd45c4cb4e4dbaed044b5656e592dad5757",
+          "input_sha256": "d895014e6408bad61c1a855ee4b59b0719325ead9c6f5a0692158109dd811334",
+          "policy_sha256": "d435f46dcf2d614cad28e21e033b34d6036d079924e1746530a36f2fba2315bd",
+          "scope": "flat-floor recorded command history and one bounded yaw pulse evaluated by the full original settling state machine; no original scene navigation",
+          "arc_fallback": "disabled for this diagnostic; real source trace reported arc_unavailable",
+          "limits": {
+            "aim_rad": 0.05,
+            "settled_heading_rad": 0.1,
+            "translation_m": 0.25,
+            "all_physics_tilt_deg": 30.0,
+            "preparation_tilt_deg": 18.0,
+            "trim_seconds": 20.0
+          }
+        }
+      },
+      {
+        "label": "pulse060_hold004_negative",
+        "exit_code": 0,
+        "resource_stop": false,
+        "scope_cap_verified": true,
+        "peak_scope_gib": 3.7219696044921875,
+        "failure": null,
+        "summary": {
+          "calibration_only": true,
+          "pulse_peak_rad_s": 0.6,
+          "pulse_peak_hold_seconds": 0.04,
+          "full_stop_assessed": true,
+          "full_stop_goal_passed": true,
+          "full_stop_detail": {
+            "heading_error_rad": -0.07144749732428002,
+            "best_error_rad": 0.0002965721820289424,
+            "translation_from_origin_m": 0.004204858692104946,
+            "arc_enabled": false,
+            "mode": "heading_trim_brake",
+            "aiming_tolerance_rad": 0.05,
+            "settled_tolerance_rad": 0.1,
+            "travel_budget_exhausted": false,
+            "body_motion_safe": true,
+            "applied_command": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "settling_yaw_drift_rad": 0.01405588650605516,
+            "predicted_outward_error_rad": 0.08132424214594769
+          },
+          "settling_rule": "original HeadingTrimControl 1.2-second stop and 0.015-rad drift gate, not a fixed 3-second snapshot",
+          "retained_change_toward_requested_direction_rad": 0.06822671200749086,
+          "diagnostic_only": true,
+          "original_task_accepted": false,
+          "controller_case_passed": true,
+          "label": "pulse060_hold004_negative",
+          "reason": "pulse_completed_full_stop",
+          "prefix_matches_tolerance": true,
+          "prefix_comparison": {
+            "maximum": {
+              "position_m": 0.0,
+              "orientation_deg": 3.818191820832845e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            },
+            "final": {
+              "position_m": 0.0,
+              "orientation_deg": 2.4148365394514667e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            }
+          },
+          "final_heading_error_rad": 0.07149244678025157,
+          "translation_after_takeover_m": 0.0016265292537001287,
+          "final_stop": {
+            "valid": true,
+            "window_seconds": 0.3999999910593033,
+            "window_long_enough": true,
+            "goal_error_m": 0.0016265292537001287,
+            "goal_within_tolerance": true,
+            "linear_xy_quiet": true,
+            "vertical_quiet": true,
+            "angular_quiet": true,
+            "tilt_quiet": true,
+            "position_stable": true,
+            "height_stable": true,
+            "tilt_stable": true
+          },
+          "initial_heading_rad": -0.13971915878774235,
+          "evaluation_goal_heading_rad": -0.27943831757548476,
+          "mirrored_goal": true,
+          "retained_heading_change_rad": -0.06822671200749086,
+          "peak_policy_yaw_request_rad_s": 0.6000000238418579,
+          "maximum_tilt_deg": 18.91766128847918,
+          "trim_and_hold_max_tilt_deg": 7.1406379301420015,
+          "minimum_height_m": 0.37789762020111084,
+          "all_physics_samples": 15273,
+          "runtime_source_commit": "fbcaa14be1f8f79eb8d5deb3c45df20b8083e06a",
+          "benchmark_sha256": "b16db8322685d3aed1c0d5bf56bccbd45c4cb4e4dbaed044b5656e592dad5757",
+          "input_sha256": "d895014e6408bad61c1a855ee4b59b0719325ead9c6f5a0692158109dd811334",
+          "policy_sha256": "d435f46dcf2d614cad28e21e033b34d6036d079924e1746530a36f2fba2315bd",
+          "scope": "flat-floor recorded command history and one bounded yaw pulse evaluated by the full original settling state machine; no original scene navigation",
+          "arc_fallback": "disabled for this diagnostic; real source trace reported arc_unavailable",
+          "limits": {
+            "aim_rad": 0.05,
+            "settled_heading_rad": 0.1,
+            "translation_m": 0.25,
+            "all_physics_tilt_deg": 30.0,
+            "preparation_tilt_deg": 18.0,
+            "trim_seconds": 20.0
+          }
+        }
+      },
+      {
+        "label": "pulse060_hold015_negative",
+        "exit_code": 0,
+        "resource_stop": false,
+        "scope_cap_verified": true,
+        "peak_scope_gib": 3.7251319885253906,
+        "failure": null,
+        "summary": {
+          "calibration_only": true,
+          "pulse_peak_rad_s": 0.6,
+          "pulse_peak_hold_seconds": 0.15,
+          "full_stop_assessed": true,
+          "full_stop_goal_passed": true,
+          "full_stop_detail": {
+            "heading_error_rad": -0.07735899652080924,
+            "best_error_rad": 0.008416167778565242,
+            "translation_from_origin_m": 0.0036904594074970566,
+            "arc_enabled": false,
+            "mode": "heading_trim_brake",
+            "aiming_tolerance_rad": 0.05,
+            "settled_tolerance_rad": 0.1,
+            "travel_budget_exhausted": false,
+            "body_motion_safe": true,
+            "applied_command": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "settling_yaw_drift_rad": 0.011420384352422097,
+            "predicted_outward_error_rad": 0.0859898701562205
+          },
+          "settling_rule": "original HeadingTrimControl 1.2-second stop and 0.015-rad drift gate, not a fixed 3-second snapshot",
+          "retained_change_toward_requested_direction_rad": 0.06232102935710726,
+          "diagnostic_only": true,
+          "original_task_accepted": false,
+          "controller_case_passed": true,
+          "label": "pulse060_hold015_negative",
+          "reason": "pulse_completed_full_stop",
+          "prefix_matches_tolerance": true,
+          "prefix_comparison": {
+            "maximum": {
+              "position_m": 0.0,
+              "orientation_deg": 3.818191820832845e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            },
+            "final": {
+              "position_m": 0.0,
+              "orientation_deg": 2.4148365394514667e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            }
+          },
+          "final_heading_error_rad": 0.07739812943063518,
+          "translation_after_takeover_m": 0.0013651518063254615,
+          "final_stop": {
+            "valid": true,
+            "window_seconds": 0.3999999910593033,
+            "window_long_enough": true,
+            "goal_error_m": 0.0013651518063254615,
+            "goal_within_tolerance": true,
+            "linear_xy_quiet": true,
+            "vertical_quiet": true,
+            "angular_quiet": true,
+            "tilt_quiet": true,
+            "position_stable": true,
+            "height_stable": true,
+            "tilt_stable": true
+          },
+          "initial_heading_rad": -0.13971915878774235,
+          "evaluation_goal_heading_rad": -0.27943831757548476,
+          "mirrored_goal": true,
+          "retained_heading_change_rad": -0.06232102935710726,
+          "peak_policy_yaw_request_rad_s": 0.6000000238418579,
+          "maximum_tilt_deg": 18.91766128847918,
+          "trim_and_hold_max_tilt_deg": 7.271170280088972,
+          "minimum_height_m": 0.37789762020111084,
+          "all_physics_samples": 15553,
+          "runtime_source_commit": "fbcaa14be1f8f79eb8d5deb3c45df20b8083e06a",
+          "benchmark_sha256": "b16db8322685d3aed1c0d5bf56bccbd45c4cb4e4dbaed044b5656e592dad5757",
+          "input_sha256": "d895014e6408bad61c1a855ee4b59b0719325ead9c6f5a0692158109dd811334",
+          "policy_sha256": "d435f46dcf2d614cad28e21e033b34d6036d079924e1746530a36f2fba2315bd",
+          "scope": "flat-floor recorded command history and one bounded yaw pulse evaluated by the full original settling state machine; no original scene navigation",
+          "arc_fallback": "disabled for this diagnostic; real source trace reported arc_unavailable",
+          "limits": {
+            "aim_rad": 0.05,
+            "settled_heading_rad": 0.1,
+            "translation_m": 0.25,
+            "all_physics_tilt_deg": 30.0,
+            "preparation_tilt_deg": 18.0,
+            "trim_seconds": 20.0
+          }
+        }
+      }
+    ],
+    "navigation_accepted": false,
+    "usable_pulses": [
+      "pulse060_hold004_negative",
+      "pulse060_hold015_negative"
+    ]
+  },
+  "v154_full_settling_result": {
+    "state": "finished",
+    "time_unix": 1793370005.119983,
+    "diagnostic_only": true,
+    "outcomes": [
+      {
+        "label": "pulse065_hold004_positive",
+        "exit_code": 0,
+        "resource_stop": false,
+        "scope_cap_verified": true,
+        "peak_scope_gib": 3.7446022033691406,
+        "failure": null,
+        "summary": {
+          "calibration_only": true,
+          "pulse_peak_rad_s": 0.65,
+          "pulse_peak_hold_seconds": 0.04,
+          "full_stop_assessed": true,
+          "full_stop_goal_passed": false,
+          "full_stop_detail": {
+            "heading_error_rad": 0.14656409878276122,
+            "best_error_rad": 0.012539251504545046,
+            "translation_from_origin_m": 0.0018819037541470164,
+            "arc_enabled": false,
+            "mode": "heading_trim_brake",
+            "aiming_tolerance_rad": 0.05,
+            "settled_tolerance_rad": 0.1,
+            "travel_budget_exhausted": false,
+            "body_motion_safe": true,
+            "applied_command": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "settling_yaw_drift_rad": 0.011722189065714428,
+            "predicted_outward_error_rad": 0.15621350403867496
+          },
+          "settling_rule": "original HeadingTrimControl 1.2-second stop and 0.015-rad drift gate, not a fixed 3-second snapshot",
+          "retained_change_toward_requested_direction_rad": -0.006929660786910485,
+          "diagnostic_only": true,
+          "original_task_accepted": false,
+          "controller_case_passed": false,
+          "label": "pulse065_hold004_positive",
+          "reason": "settled_heading_outside_tolerance",
+          "prefix_matches_tolerance": true,
+          "prefix_comparison": {
+            "maximum": {
+              "position_m": 0.0,
+              "orientation_deg": 3.818191820832845e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            },
+            "final": {
+              "position_m": 0.0,
+              "orientation_deg": 2.4148365394514667e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            }
+          },
+          "final_heading_error_rad": 0.14664881957465292,
+          "translation_after_takeover_m": 0.003245687158026443,
+          "final_stop": {
+            "valid": true,
+            "window_seconds": 0.3999999910593033,
+            "window_long_enough": true,
+            "goal_error_m": 0.003245687158026443,
+            "goal_within_tolerance": true,
+            "linear_xy_quiet": true,
+            "vertical_quiet": true,
+            "angular_quiet": true,
+            "tilt_quiet": true,
+            "position_stable": true,
+            "height_stable": true,
+            "tilt_stable": true
+          },
+          "initial_heading_rad": -0.13971915878774235,
+          "evaluation_goal_heading_rad": 8.326672684688674e-17,
+          "mirrored_goal": false,
+          "retained_heading_change_rad": -0.006929660786910485,
+          "peak_policy_yaw_request_rad_s": 0.6499999761581421,
+          "maximum_tilt_deg": 18.91766128847918,
+          "trim_and_hold_max_tilt_deg": 4.858584277499442,
+          "minimum_height_m": 0.37789762020111084,
+          "all_physics_samples": 16320,
+          "runtime_source_commit": "fbcaa14be1f8f79eb8d5deb3c45df20b8083e06a",
+          "benchmark_sha256": "19684025c7af0c798f04dc9a80c6d604aa9a9fcf81e64358e2abd37a8e0b327b",
+          "input_sha256": "d895014e6408bad61c1a855ee4b59b0719325ead9c6f5a0692158109dd811334",
+          "policy_sha256": "d435f46dcf2d614cad28e21e033b34d6036d079924e1746530a36f2fba2315bd",
+          "scope": "flat-floor recorded command history and one bounded yaw pulse evaluated by the full original settling state machine; no original scene navigation",
+          "arc_fallback": "disabled for this diagnostic; real source trace reported arc_unavailable",
+          "limits": {
+            "aim_rad": 0.05,
+            "settled_heading_rad": 0.1,
+            "translation_m": 0.25,
+            "all_physics_tilt_deg": 30.0,
+            "preparation_tilt_deg": 18.0,
+            "trim_seconds": 20.0
+          }
+        }
+      },
+      {
+        "label": "pulse065_hold015_positive",
+        "exit_code": 0,
+        "resource_stop": false,
+        "scope_cap_verified": true,
+        "peak_scope_gib": 3.7247962951660156,
+        "failure": null,
+        "summary": {
+          "calibration_only": true,
+          "pulse_peak_rad_s": 0.65,
+          "pulse_peak_hold_seconds": 0.15,
+          "full_stop_assessed": true,
+          "full_stop_goal_passed": false,
+          "full_stop_detail": {
+            "heading_error_rad": 0.13933753515372427,
+            "best_error_rad": 0.003167814324048557,
+            "translation_from_origin_m": 0.0024223418687995793,
+            "arc_enabled": false,
+            "mode": "heading_trim_brake",
+            "aiming_tolerance_rad": 0.05,
+            "settled_tolerance_rad": 0.1,
+            "travel_budget_exhausted": false,
+            "body_motion_safe": true,
+            "applied_command": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "settling_yaw_drift_rad": 0.014017906893920351,
+            "predicted_outward_error_rad": 0.15083461082319172
+          },
+          "settling_rule": "original HeadingTrimControl 1.2-second stop and 0.015-rad drift gate, not a fixed 3-second snapshot",
+          "retained_change_toward_requested_direction_rad": 0.00028426816283300127,
+          "diagnostic_only": true,
+          "original_task_accepted": false,
+          "controller_case_passed": false,
+          "label": "pulse065_hold015_positive",
+          "reason": "settled_heading_outside_tolerance",
+          "prefix_matches_tolerance": true,
+          "prefix_comparison": {
+            "maximum": {
+              "position_m": 0.0,
+              "orientation_deg": 3.818191820832845e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            },
+            "final": {
+              "position_m": 0.0,
+              "orientation_deg": 2.4148365394514667e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            }
+          },
+          "final_heading_error_rad": 0.13943489062490944,
+          "translation_after_takeover_m": 0.0038118146906640908,
+          "final_stop": {
+            "valid": true,
+            "window_seconds": 0.3999999910593033,
+            "window_long_enough": true,
+            "goal_error_m": 0.0038118146906640908,
+            "goal_within_tolerance": true,
+            "linear_xy_quiet": true,
+            "vertical_quiet": true,
+            "angular_quiet": true,
+            "tilt_quiet": true,
+            "position_stable": true,
+            "height_stable": true,
+            "tilt_stable": true
+          },
+          "initial_heading_rad": -0.13971915878774235,
+          "evaluation_goal_heading_rad": 8.326672684688674e-17,
+          "mirrored_goal": false,
+          "retained_heading_change_rad": 0.00028426816283300127,
+          "peak_policy_yaw_request_rad_s": 0.6499999761581421,
+          "maximum_tilt_deg": 18.91766128847918,
+          "trim_and_hold_max_tilt_deg": 4.773705951951646,
+          "minimum_height_m": 0.37789762020111084,
+          "all_physics_samples": 16550,
+          "runtime_source_commit": "fbcaa14be1f8f79eb8d5deb3c45df20b8083e06a",
+          "benchmark_sha256": "19684025c7af0c798f04dc9a80c6d604aa9a9fcf81e64358e2abd37a8e0b327b",
+          "input_sha256": "d895014e6408bad61c1a855ee4b59b0719325ead9c6f5a0692158109dd811334",
+          "policy_sha256": "d435f46dcf2d614cad28e21e033b34d6036d079924e1746530a36f2fba2315bd",
+          "scope": "flat-floor recorded command history and one bounded yaw pulse evaluated by the full original settling state machine; no original scene navigation",
+          "arc_fallback": "disabled for this diagnostic; real source trace reported arc_unavailable",
+          "limits": {
+            "aim_rad": 0.05,
+            "settled_heading_rad": 0.1,
+            "translation_m": 0.25,
+            "all_physics_tilt_deg": 30.0,
+            "preparation_tilt_deg": 18.0,
+            "trim_seconds": 20.0
+          }
+        }
+      },
+      {
+        "label": "pulse065_hold040_positive",
+        "exit_code": 0,
+        "resource_stop": false,
+        "scope_cap_verified": true,
+        "peak_scope_gib": 3.7016563415527344,
+        "failure": null,
+        "summary": {
+          "calibration_only": true,
+          "pulse_peak_rad_s": 0.65,
+          "pulse_peak_hold_seconds": 0.4,
+          "full_stop_assessed": true,
+          "full_stop_goal_passed": false,
+          "full_stop_detail": {
+            "heading_error_rad": -0.2524074615359577,
+            "best_error_rad": 0.1876076505190829,
+            "translation_from_origin_m": 0.42479166507605515,
+            "arc_enabled": false,
+            "mode": "heading_trim_brake",
+            "aiming_tolerance_rad": 0.05,
+            "settled_tolerance_rad": 0.1,
+            "travel_budget_exhausted": true,
+            "body_motion_safe": true,
+            "applied_command": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "settling_yaw_drift_rad": 0.012657828063053156,
+            "predicted_outward_error_rad": 0.2524074615359577
+          },
+          "settling_rule": "original HeadingTrimControl 1.2-second stop and 0.015-rad drift gate, not a fixed 3-second snapshot",
+          "retained_change_toward_requested_direction_rad": 0.39203153483952624,
+          "diagnostic_only": true,
+          "original_task_accepted": false,
+          "controller_case_passed": false,
+          "label": "pulse065_hold040_positive",
+          "reason": "settled_heading_outside_tolerance",
+          "prefix_matches_tolerance": true,
+          "prefix_comparison": {
+            "maximum": {
+              "position_m": 0.0,
+              "orientation_deg": 3.818191820832845e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            },
+            "final": {
+              "position_m": 0.0,
+              "orientation_deg": 2.4148365394514667e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            }
+          },
+          "final_heading_error_rad": 0.2523123760517838,
+          "translation_after_takeover_m": 0.43730229538656046,
+          "final_stop": {
+            "valid": false,
+            "window_seconds": 0.3999999910593033,
+            "window_long_enough": true,
+            "goal_error_m": 0.43730229538656046,
+            "goal_within_tolerance": false,
+            "linear_xy_quiet": true,
+            "vertical_quiet": true,
+            "angular_quiet": true,
+            "tilt_quiet": true,
+            "position_stable": true,
+            "height_stable": true,
+            "tilt_stable": true
+          },
+          "initial_heading_rad": -0.13971915878774235,
+          "evaluation_goal_heading_rad": 8.326672684688674e-17,
+          "mirrored_goal": false,
+          "retained_heading_change_rad": 0.39203153483952624,
+          "peak_policy_yaw_request_rad_s": 0.6499999761581421,
+          "maximum_tilt_deg": 18.91766128847918,
+          "trim_and_hold_max_tilt_deg": 15.529998110512624,
+          "minimum_height_m": 0.37789762020111084,
+          "all_physics_samples": 17667,
+          "runtime_source_commit": "fbcaa14be1f8f79eb8d5deb3c45df20b8083e06a",
+          "benchmark_sha256": "19684025c7af0c798f04dc9a80c6d604aa9a9fcf81e64358e2abd37a8e0b327b",
+          "input_sha256": "d895014e6408bad61c1a855ee4b59b0719325ead9c6f5a0692158109dd811334",
+          "policy_sha256": "d435f46dcf2d614cad28e21e033b34d6036d079924e1746530a36f2fba2315bd",
+          "scope": "flat-floor recorded command history and one bounded yaw pulse evaluated by the full original settling state machine; no original scene navigation",
+          "arc_fallback": "disabled for this diagnostic; real source trace reported arc_unavailable",
+          "limits": {
+            "aim_rad": 0.05,
+            "settled_heading_rad": 0.1,
+            "translation_m": 0.25,
+            "all_physics_tilt_deg": 30.0,
+            "preparation_tilt_deg": 18.0,
+            "trim_seconds": 20.0
+          }
+        }
+      },
+      {
+        "label": "pulse060_hold040_positive",
+        "exit_code": 0,
+        "resource_stop": false,
+        "scope_cap_verified": true,
+        "peak_scope_gib": 3.750244140625,
+        "failure": null,
+        "summary": {
+          "calibration_only": true,
+          "pulse_peak_rad_s": 0.6,
+          "pulse_peak_hold_seconds": 0.4,
+          "full_stop_assessed": false,
+          "full_stop_goal_passed": false,
+          "full_stop_detail": null,
+          "settling_rule": "original HeadingTrimControl 1.2-second stop and 0.015-rad drift gate, not a fixed 3-second snapshot",
+          "retained_change_toward_requested_direction_rad": 0.4150334106313571,
+          "diagnostic_only": true,
+          "original_task_accepted": false,
+          "controller_case_passed": false,
+          "label": "pulse060_hold040_positive",
+          "reason": "pulse_timeout",
+          "prefix_matches_tolerance": true,
+          "prefix_comparison": {
+            "maximum": {
+              "position_m": 0.0,
+              "orientation_deg": 3.818191820832845e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            },
+            "final": {
+              "position_m": 0.0,
+              "orientation_deg": 2.4148365394514667e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            }
+          },
+          "final_heading_error_rad": 0.2753142518436147,
+          "translation_after_takeover_m": 0.6299067406507695,
+          "final_stop": {
+            "valid": false,
+            "window_seconds": 0.3999999910593033,
+            "window_long_enough": true,
+            "goal_error_m": 0.6299067406507695,
+            "goal_within_tolerance": false,
+            "linear_xy_quiet": true,
+            "vertical_quiet": true,
+            "angular_quiet": true,
+            "tilt_quiet": true,
+            "position_stable": true,
+            "height_stable": true,
+            "tilt_stable": true
+          },
+          "initial_heading_rad": -0.13971915878774235,
+          "evaluation_goal_heading_rad": 8.326672684688674e-17,
+          "mirrored_goal": false,
+          "retained_heading_change_rad": 0.4150334106313571,
+          "peak_policy_yaw_request_rad_s": 0.6000000238418579,
+          "maximum_tilt_deg": 18.91766128847918,
+          "trim_and_hold_max_tilt_deg": 13.958427637143666,
+          "minimum_height_m": 0.37789762020111084,
+          "all_physics_samples": 17734,
+          "runtime_source_commit": "fbcaa14be1f8f79eb8d5deb3c45df20b8083e06a",
+          "benchmark_sha256": "19684025c7af0c798f04dc9a80c6d604aa9a9fcf81e64358e2abd37a8e0b327b",
+          "input_sha256": "d895014e6408bad61c1a855ee4b59b0719325ead9c6f5a0692158109dd811334",
+          "policy_sha256": "d435f46dcf2d614cad28e21e033b34d6036d079924e1746530a36f2fba2315bd",
+          "scope": "flat-floor recorded command history and one bounded yaw pulse evaluated by the full original settling state machine; no original scene navigation",
+          "arc_fallback": "disabled for this diagnostic; real source trace reported arc_unavailable",
+          "limits": {
+            "aim_rad": 0.05,
+            "settled_heading_rad": 0.1,
+            "translation_m": 0.25,
+            "all_physics_tilt_deg": 30.0,
+            "preparation_tilt_deg": 18.0,
+            "trim_seconds": 20.0
+          }
+        }
+      }
+    ],
+    "navigation_accepted": false,
+    "usable_pulses": []
+  },
+  "v154_trace_audit": {
+    "diagnostic_only": true,
+    "original_pair_complete": false,
+    "runtime_controller_commit": "fbcaa14be1f8f79eb8d5deb3c45df20b8083e06a",
+    "measurement_scope": "Maximum position displacement across every recorded control row after takeover; not claimed to be all-physics position sampling. Tilt comes from all-physics summary.",
+    "cases": [
+      {
+        "label": "pulse060_hold040_positive",
+        "diagnostic_only": true,
+        "controller_case_passed": false,
+        "reason": "pulse_timeout",
+        "final_error_deg": 15.774344670440966,
+        "full_stop_assessed": false,
+        "full_stop_goal_passed": false,
+        "final_displacement_m": 0.6299067406507695,
+        "maximum_recorded_displacement_after_takeover_m": 0.6489913823491155,
+        "maximum_displacement_time_s": 78.69499824102968,
+        "maximum_recorded_displacement_after_pulse_origin_m": 0.6474791635242672,
+        "first_translation_budget_violation_time_s": 76.51999828964472,
+        "translation_budget_passed": false,
+        "trim_max_tilt_deg_all_physics": 13.958427637143666,
+        "post_takeover_control_rows": 2501,
+        "trace_sha256": "77ef66979fe5fa2e8cdda918f3507f9ffefe753fb0e1419c8cbafb14d53816d7",
+        "summary_sha256": "1d9b34328a787548ec7c9c59c250020b16c20aa28fdbf9084a233261b31b3bac"
+      },
+      {
+        "label": "pulse065_hold004_positive",
+        "diagnostic_only": true,
+        "controller_case_passed": false,
+        "reason": "settled_heading_outside_tolerance",
+        "final_error_deg": 8.402358432203105,
+        "full_stop_assessed": true,
+        "full_stop_goal_passed": false,
+        "final_displacement_m": 0.003245687158026443,
+        "maximum_recorded_displacement_after_takeover_m": 0.022385973654893723,
+        "maximum_displacement_time_s": 72.87999837100506,
+        "maximum_recorded_displacement_after_pulse_origin_m": 0.019011714972376012,
+        "first_translation_budget_violation_time_s": null,
+        "translation_budget_passed": true,
+        "trim_max_tilt_deg_all_physics": 4.858584277499442,
+        "post_takeover_control_rows": 1617,
+        "trace_sha256": "c3c1cde247b8b20eb0e1703b328b673e7c33d89ed87a56fa3153ad221a7e3c30",
+        "summary_sha256": "be6f8b29b4abd28046a1f1373a80f93b6fabeaf8bd76cc1ff7603cede8ded07b"
+      },
+      {
+        "label": "pulse065_hold015_positive",
+        "diagnostic_only": true,
+        "controller_case_passed": false,
+        "reason": "settled_heading_outside_tolerance",
+        "final_error_deg": 7.98903074967556,
+        "full_stop_assessed": true,
+        "full_stop_goal_passed": false,
+        "final_displacement_m": 0.0038118146906640908,
+        "maximum_recorded_displacement_after_takeover_m": 0.03235052802307784,
+        "maximum_displacement_time_s": 73.18499836418778,
+        "maximum_recorded_displacement_after_pulse_origin_m": 0.029077001452768182,
+        "first_translation_budget_violation_time_s": null,
+        "translation_budget_passed": true,
+        "trim_max_tilt_deg_all_physics": 4.773705951951646,
+        "post_takeover_control_rows": 1761,
+        "trace_sha256": "98f95dca8e16a3ac03e7033173afe82113985bcd380bda154bab440eec3544c2",
+        "summary_sha256": "cba9c5c3168bb8b8326e1253effff419b0e1b6696f702c0806194df6f9da7dc8"
+      },
+      {
+        "label": "pulse065_hold040_positive",
+        "diagnostic_only": true,
+        "controller_case_passed": false,
+        "reason": "settled_heading_outside_tolerance",
+        "final_error_deg": 14.456434266684917,
+        "full_stop_assessed": true,
+        "full_stop_goal_passed": false,
+        "final_displacement_m": 0.43730229538656046,
+        "maximum_recorded_displacement_after_takeover_m": 0.4494569284223639,
+        "maximum_displacement_time_s": 76.67999828606844,
+        "maximum_recorded_displacement_after_pulse_origin_m": 0.44779736184592095,
+        "first_translation_budget_violation_time_s": 75.46999831311405,
+        "translation_budget_passed": false,
+        "trim_max_tilt_deg_all_physics": 15.529998110512624,
+        "post_takeover_control_rows": 2459,
+        "trace_sha256": "eebde01e751ecc1ea8228ac2e940d5fd31d1057f9a8b9b8659cb274262ec35ca",
+        "summary_sha256": "93bd6566a16b084c2ded03692ccfc32c4c43cbc57ed519ab1689b87571729f23"
+      }
+    ],
+    "adoptable_cases": []
+  },
+  "disproved_inband_forecast_hypothesis": {
+    "diagnostic_only": true,
+    "actual_heading_inside_band_when_new_correction_allowed": [],
+    "count": 0
+  },
+  "diagnostic_archive_v150_v153_sha256": "b6368fdd29b14e30779f0ea77e61a2088ea0c435f9a34aa799c47e9883c5f3ee",
+  "diagnostic_archive_v154": {
+    "filename": "yaw-response-v154-20261030.tar.gz",
+    "sha256": "e757d6145028811078019d88c764ab88635225d8db2c67f9a73faa59faeabe96",
+    "size": 8428400,
+    "file_count": 58
   }
 }

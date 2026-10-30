@@ -1,8 +1,16 @@
 # Go2 策略来源与宇树官方方案核查
 
-最新：仍使用原第三方rough7850，v147 T04完整通过、v149 T05仍未通过。当前已复现微调回退，并在验证基于实际policy输入确认的有界短转候选；没有替换为宇树出厂策略或已测NVIDIA权重。见 [最新诊断与验证范围](go2_yaw_step_diagnostics.md)。
+最新：仍使用原第三方rough7850，v147 T04完整通过、v149 T05仍未通过。当前已复现微调回摆；有界短转候选已经完整停稳验证失败并被拒绝，v154四例补充诊断也全部失败；没有替换为宇树出厂策略或已测NVIDIA权重。见 [最新诊断与验证范围](go2_yaw_step_diagnostics.md)。
 
 核查日期：2026-10-30。下方为固定公开版本的宇树来源核查。NVIDIA Isaac Lab发布的Go2权重、部署差异和运行命令见 [Go2模型匹配与候选策略](go2_training_policy_candidate.md)；它不是宇树出厂策略。相同GPU部署下的v143短指令对照见 [当前policy对照](go2_contact_preparation_settling.md#参考policy对照)。没有启动宇树策略训练。
+
+## 本轮复核与建议
+
+2026-10-30再次读取下表两个固定版本的完整Git树和Release列表，并核对RL Lab的[Go2部署配置](https://github.com/unitreerobotics/unitree_rl_lab/blob/4960b84732b0c2ec593dccbfe963fda1bcd7b1e3/deploy/robots/go2/config/config.yaml)、[训练配置](https://github.com/unitreerobotics/unitree_rl_lab/blob/4960b84732b0c2ec593dccbfe963fda1bcd7b1e3/source/unitree_rl_lab/unitree_rl_lab/tasks/locomotion/robots/go2/velocity_env_cfg.py)及README，结论未变：所查来源没有附带Go2预训练权重。完整树、源文件哈希及核查范围见[复核清单](data/go2_official_policy_recheck_v154.json)。
+
+建议开辟替代policy对照路线，优先考虑基于官方RL Lab训练并适配。当前主要剩余证据是低速转向与停稳后的回摆；更换前先做相同命令历史和完整停稳的短动作对照，再做真实推箱接触及原始T05/T04。现有NVIDIA参考候选在当前部署的静止倾角18.69°已超过15°启动标准，没有采用。官方框架本身不保证推箱稳定，尤其Go2配置会惩罚头部等非预期接触，需要专门验收接触工况。
+
+这次完成的是来源和兼容性核查，以及失败诊断归档；没有启动官方策略训练、升级共享环境或替换生产权重。
 
 ## 当前策略
 
