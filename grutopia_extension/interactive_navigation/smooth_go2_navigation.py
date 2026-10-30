@@ -162,7 +162,17 @@ class SmoothExplorationTracker(ExplorationPathTracker):
             approach_error=(math.atan2(to_corner[1],to_corner[0])-heading+math.pi)%(2*math.pi)-math.pi
             future_heading=math.atan2(segment[1],segment[0])
             future_error=(future_heading-heading+math.pi)%(2*math.pi)-math.pi
-            if (np.linalg.norm(to_corner)<.28 and np.linalg.norm(segment)>.08
+            corner_distance=float(np.linalg.norm(to_corner))
+            corner_in_range=corner_distance<.28
+            if not corner_in_range and corner_distance<self.velocity_lookahead_distance:
+                # The full body may be unable to reach the waypoint's .28m
+                # acceptance disk. If the normal approach is blocked, use
+                # the existing lookahead to prepare its outgoing heading;
+                # staging still checks the complete body and known space.
+                normal_horizon=.60+float(np.linalg.norm(desired[:2]))/(2*self.limiter.linear_acceleration)
+                corner_in_range=not body_motion_clear(planner,boxes,position,heading,
+                    desired[0],desired[2],horizon=normal_horizon,lateral=desired[1])
+            if (corner_in_range and np.linalg.norm(segment)>.08
                     and abs(approach_error)<.35 and abs(future_error)>.35):
                 # A short fallback carrot can point straight at the near
                 # waypoint while the body must turn for the outgoing segment.
@@ -170,6 +180,7 @@ class SmoothExplorationTracker(ExplorationPathTracker):
                 # unchecked shortcut across the corner.
                 corner_heading=future_heading;target_heading=heading+future_error
                 state['blocked_corner_heading_rad']=float(future_heading)
+                state['blocked_corner_distance_m']=corner_distance
         stage_error=(target_heading-heading+math.pi)%(2*math.pi)-math.pi
         # A slow, blended turn near an endpoint can leave the rough policy
         # leaning without a full stride (T05 v77). Finish this turn from a
