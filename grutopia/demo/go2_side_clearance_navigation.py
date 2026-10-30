@@ -378,6 +378,7 @@ def main():
                 'contact_centering_axes':'lateral correction before longitudinal approach',
                 'heading_trim_yaw_step':{**YawStepPulse.configuration(),'eligible_observation_profile':'unitree_go2_45'},
                 'corrective_lateral_step':ContactTranslationStep.configuration(),
+                'observed_retreat_speeds_mps':{'legacy':.20,'unitree_go2_45':PushAsideConfig().reverse_speed},
                 'live_control_config':str(args.control_config) if args.control_config else None,
                 'third_person_offset':[args.third_person_forward,0.,args.third_person_height],'third_person_pitch_degrees':90,
                 'third_person_fov_degrees':args.third_person_fov,

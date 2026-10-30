@@ -226,7 +226,7 @@ def safe_contact_retreat(planner, boxes, position, heading, direction, required_
     return None
 
 
-def observed_contact_retreat(planner, boxes, position, heading, direction, limiter, now):
+def observed_contact_retreat(planner, boxes, position, heading, direction, limiter, now, *, speed=.20):
     """Take a bounded observed step when the full withdrawal is still unknown.
 
     Include the contact box: its existing footprint overlap may decrease but
@@ -234,6 +234,7 @@ def observed_contact_retreat(planner, boxes, position, heading, direction, limit
     The caller keeps sensing and recomputes the remaining withdrawal.
     """
     from grutopia_extension.interactive_navigation.go2_voronoi_navigation import body_translation_recovery_clear
+    if not np.isfinite(speed) or speed<=0.:raise ValueError('Retreat speed must be finite and positive')
     position=np.asarray(position[:2],float);direction=np.asarray(direction,float)
     direction/=max(np.linalg.norm(direction),1e-9)
     c,s=np.cos(heading),np.sin(heading);rotation=np.array([[c,-s],[s,c]])
@@ -247,7 +248,7 @@ def observed_contact_retreat(planner, boxes, position, heading, direction, limit
     for unit in candidates:
         unit=unit/max(np.linalg.norm(unit),1e-9)
         if float(np.dot(unit,-direction))<.75:continue
-        velocity=.20*unit;target=position+velocity*.9
+        velocity=float(speed)*unit;target=position+velocity*.9
         if not body_translation_recovery_clear(planner,boxes,position,heading,target,require_clear_end=False):continue
         request=np.array([*(rotation.T@velocity),0.])
         applied=request if limiter is None else limiter.preview(request,now)

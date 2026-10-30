@@ -726,7 +726,10 @@ class PushAsideSkill:
             target_gap=self.config.front_gap if self.release_reason!='side_parked' else self.config.front_gap+.25
             if gap>=target_gap or withdrawn>=self.config.release_distance:
                 self._transition('settle_after_retreat',ctx);return self._output()
-            answer=observed_contact_retreat(ctx.planner,ctx.boxes,ctx.position,ctx.heading,self.direction,ctx.limiter,ctx.now)
+            # The verified Unitree profile uses the same configured reverse
+            # speed as preparation. Legacy callers retain the 0.20 default.
+            retreat_options=({'speed':self.config.reverse_speed} if getattr(ctx,'policy_command',None) is not None else {})
+            answer=observed_contact_retreat(ctx.planner,ctx.boxes,ctx.position,ctx.heading,self.direction,ctx.limiter,ctx.now,**retreat_options)
             if answer is not None:
                 self.settled_since=None
                 return self._output(answer[0])
