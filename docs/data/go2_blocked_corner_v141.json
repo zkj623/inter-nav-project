@@ -1,0 +1,211 @@
+{
+  "navigation_accepted": false,
+  "runtime_commit": "5a2cf9ee53a47ab0f41e83c92d752a84a471e16c",
+  "v140_archive": {
+    "run": "recognition-skill-v140-t04-ground-truth-try1",
+    "task": "T04",
+    "operator_stopped_prefix": true,
+    "video_sha256_match": {
+      "combined.mp4": true,
+      "map_topdown.mp4": true,
+      "pointcloud_map.mp4": true,
+      "robot_rgb.mp4": true,
+      "third_person.mp4": true
+    },
+    "media_valid": true,
+    "source_valid": true,
+    "visual_task_valid": false,
+    "actual_passage_valid": false,
+    "navigation_success": false,
+    "termination_reason": "stop_requested",
+    "steps": 10849,
+    "error_m": 5.88484153234743,
+    "max_tilt_degrees": 27.931621377725524,
+    "frames": 2225,
+    "duration_s": 89.0,
+    "selected_box_displacements": [],
+    "full_task_accepted": false
+  },
+  "v140_stop_diagnosis": {
+    "reason": "corner_outside_fixed_advance_radius_with_ineffective_safe_speed",
+    "operator_stopped_prefix": true,
+    "navigation_accepted": false,
+    "pid_verified": 294135,
+    "source_commit": "a0f59eb9fe82cdee611e051b87f4daf339255ce4",
+    "simulation_window_s": [
+      70.92999841459095,
+      90.92999796755612
+    ],
+    "maximum_displacement_from_window_start_m": 4.274381400264932e-05,
+    "new_observed_cells": 0,
+    "phase_counts": {
+      "explore_navigate": 2501
+    },
+    "current_corner": [
+      5.075,
+      -0.5249999999999995
+    ],
+    "distance_to_corner_m": 0.2984267225172493,
+    "preserve_original_task": true,
+    "next_action": "Replay the blocked corner and allow checked outgoing-heading preparation within the existing lookahead only when the normal approach cannot execute."
+  },
+  "before": {
+    "diagnostic_only": true,
+    "frozen_pose_not_physical": true,
+    "state_step": 8800,
+    "position": [
+      4.83201789855957,
+      -0.351746529340744
+    ],
+    "heading": -0.6214441890888177,
+    "corner": [
+      5.075,
+      -0.5249999999999995
+    ],
+    "following": [
+      5.375,
+      -0.5249999999999995
+    ],
+    "corner_distance_m": 0.2984243065098499,
+    "outgoing_heading": 0.0,
+    "ordinary_desired_motion_clear": false,
+    "action": {
+      "move_by_speed": [
+        0.11410100302566013,
+        0.0002299439811958872,
+        0.0036483109280528226
+      ]
+    },
+    "tracking": {
+      "target": [
+        5.075,
+        -0.5249999999999995
+      ],
+      "recovering_buffer": false,
+      "needs_replan": false,
+      "planned_heading": null,
+      "controller": "continuous_exploration_velocity",
+      "desired_command": [
+        0.4999989729808587,
+        0.0010134190083692523,
+        0.0036483109280528226
+      ],
+      "applied_command": [
+        0.11410100302566013,
+        0.0002299439811958872,
+        0.0036483109280528226
+      ],
+      "heading_error_rad": 0.0020268394044737903,
+      "body_sweep_clear": true,
+      "body_motion_safe": true,
+      "blocked_ticks": 0
+    },
+    "snapshot_map_sha256": "823648ed4301d93d8ca54f6837995505df9de331452579a5457765af7b880cef"
+  },
+  "after": {
+    "diagnostic_only": true,
+    "frozen_pose_not_physical": true,
+    "state_step": 8800,
+    "position": [
+      4.83201789855957,
+      -0.351746529340744
+    ],
+    "heading": -0.6214441890888177,
+    "corner": [
+      5.075,
+      -0.5249999999999995
+    ],
+    "following": [
+      5.375,
+      -0.5249999999999995
+    ],
+    "corner_distance_m": 0.2984243065098499,
+    "outgoing_heading": 0.0,
+    "ordinary_desired_motion_clear": false,
+    "action": {
+      "move_by_speed": [
+        0.10370101486519397,
+        0.00021597001449776793,
+        0.0
+      ]
+    },
+    "tracking": {
+      "target": [
+        4.710062126024155,
+        -0.26441503705250813
+      ],
+      "recovering_buffer": true,
+      "needs_replan": false,
+      "planned_heading": null,
+      "controller": "continuous_staging_move",
+      "blocked_corner_heading_rad": 0.0,
+      "blocked_corner_distance_m": 0.2984243065098499,
+      "local_staging": true,
+      "target_heading_rad": 1.1102230246251565e-16,
+      "staging_phase": "staging_move",
+      "turn_placement_radius_m": 0.025,
+      "turn_placement_ready": false,
+      "turn_placement_latched": false,
+      "desired_command": [
+        -0.22500000000000048,
+        -2.914335439641036e-16,
+        0.0
+      ],
+      "applied_command": [
+        0.10370101486519397,
+        0.00021597001449776793,
+        0.0
+      ],
+      "heading_error_rad": 0.0020268394044737903,
+      "body_sweep_clear": true,
+      "body_motion_safe": true,
+      "blocked_ticks": 0
+    },
+    "snapshot_map_sha256": "823648ed4301d93d8ca54f6837995505df9de331452579a5457765af7b880cef"
+  },
+  "tests": {
+    "tests_passed": 702,
+    "deselected": 1,
+    "frozen_corner_replay_passed": true,
+    "source_hashes": {
+      "grutopia_extension/interactive_navigation/smooth_go2_navigation.py": "7da58d6579eafcc2f51b383424259cd44188423bfa0d3f9808155199861b0ae3",
+      "tests/test_blocked_corner_lookahead.py": "bfd8d9a525524f02a343737e5a4524f8b2ea080f40faa752c7c6c5209c03870e",
+      "tests/data/t04_blocked_corner_v140.npz": "0552b3634b42e441946ab08299b6f8cc3aae2f2ada09bb407813be79fd35567d",
+      "tests/data/t04_blocked_corner_v140.json": "74729775ad3b8cf6b182daddce93dc3268c07506afdd2e09d832e2ea2806a16a"
+    },
+    "test_log_sha256": "3f087e43370651dd347c3fbc8bc20133f99ed182b053126f471efd1dc2773dd3",
+    "physical_validation": "original T04/T05 full scene pending; no new standalone policy benchmark claimed"
+  },
+  "full_scene_queue": [
+    {
+      "task": "T04",
+      "source_commit": "5a2cf9ee53a47ab0f41e83c92d752a84a471e16c",
+      "supervisor_pid": 301028,
+      "worktree": "/data20t/embodied/zkj/inter-nav-run-t04-v142-20261030",
+      "output": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v142-t04-ground-truth-try1",
+      "predecessor": "702 checks and frozen-map replay; full scene is new physical validation",
+      "policy": "original rough7850",
+      "physics_backend": "gpu_dynamics",
+      "stationary_joint_hold": false,
+      "navigation_attitude_recovery": true,
+      "scope_cap_gib": 24,
+      "serial": true,
+      "same_original_goals_scene_maps_health_and_video": true
+    },
+    {
+      "task": "T05",
+      "source_commit": "5a2cf9ee53a47ab0f41e83c92d752a84a471e16c",
+      "supervisor_pid": 301039,
+      "worktree": "/data20t/embodied/zkj/inter-nav-run-t05-v142-20261030",
+      "output": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v142-t05-ground-truth-try1",
+      "predecessor": "v142 T04 full acceptance",
+      "policy": "original rough7850",
+      "physics_backend": "gpu_dynamics",
+      "stationary_joint_hold": false,
+      "navigation_attitude_recovery": true,
+      "scope_cap_gib": 24,
+      "serial": true,
+      "same_original_goals_scene_maps_health_and_video": true
+    }
+  ]
+}
