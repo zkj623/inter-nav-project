@@ -1,0 +1,237 @@
+{
+  "original_pair_complete": false,
+  "autonomous_success_unproven": true,
+  "runtime_commit": "c4854f34293e7b4fc694e750c34d5392e214b39c",
+  "v173_archive": {
+    "run": "recognition-skill-v173-t05-ground-truth-try1",
+    "task": "T05",
+    "operator_stopped_prefix": true,
+    "video_sha256_match": {
+      "combined.mp4": true,
+      "map_topdown.mp4": true,
+      "pointcloud_map.mp4": true,
+      "robot_rgb.mp4": true,
+      "third_person.mp4": true
+    },
+    "media_valid": true,
+    "source_valid": true,
+    "visual_task_valid": false,
+    "actual_passage_valid": false,
+    "navigation_success": false,
+    "termination_reason": "stop_requested",
+    "steps": 21711,
+    "error_m": 0.22943744986848055,
+    "max_tilt_degrees": 2.7285276321252305,
+    "frames": 4398,
+    "duration_s": 175.92,
+    "selected_box_displacements": [
+      {
+        "object_id": "B07",
+        "world_displacement_m": 0.8400584565134922,
+        "along_planned_push_m": 0.8393712043762207
+      }
+    ],
+    "policy_artifact_checks": {
+      "actor_checkpoint.pt": true,
+      "deployment_contract.json": true,
+      "model_and_contract_match": true
+    },
+    "policy_artifacts_valid": true,
+    "full_task_accepted": false
+  },
+  "v173_audit": {
+    "supplemental_completion_audit": true,
+    "task": "T05",
+    "run": "recognition-skill-v173-t05-ground-truth-try1",
+    "valid": false,
+    "checks": {
+      "task_reports_success": false,
+      "not_operator_stopped": false,
+      "original_coordinates": true,
+      "scene_scale_one": true,
+      "robot_scale_one": true,
+      "floor_one_cm": true,
+      "final_measured_error_below_025": true,
+      "no_teleports_flag": true,
+      "recorded_health_valid": true,
+      "startup_gate_below_15": true,
+      "model_contract_valid": true,
+      "original_robot_geometry": true,
+      "canonical_asset_hash": true,
+      "physics_gpu_and_200hz": true,
+      "explicit_dc": true,
+      "online_map_cadence": true,
+      "ground_truth_box_mode": true,
+      "full_five_stream_recording": true,
+      "source_version_valid": true,
+      "source_snapshot_hashes": true,
+      "expected_commit": true,
+      "expected_policy": true,
+      "video_qa": false,
+      "visual_skill_qa": false,
+      "actual_passage_qa": false,
+      "initial_map_empty": true,
+      "no_prior_reads": true,
+      "exactly_five_videos": true,
+      "all_streams_complete_25fps": true,
+      "policy_artifacts": true,
+      "new_controller_source_included": true,
+      "raw_all_physics_coverage": true,
+      "raw_all_physics_health": true,
+      "raw_startup_tilt_below_15": true,
+      "no_large_physics_pose_jump": true,
+      "policy_50hz_cadence": true,
+      "physical_push_fresh_map_then_traversal": true
+    },
+    "effects": [
+      {
+        "object_id": "B07",
+        "fresh_after_last_box_motion": true,
+        "confirming_observation_time_s": 101.40999773330986,
+        "last_box_motion_time_s": 95.80999785847962,
+        "box_visible_at_confirmation": true,
+        "side_parked": true,
+        "push_is_sideways": true,
+        "actual_push_over_025": true,
+        "contact_impulse_samples": 1458,
+        "valid_crossings_after_confirmation": [
+          149.10499666724354
+        ],
+        "valid": true
+      }
+    ],
+    "policy_artifacts": {
+      "actor_checkpoint.pt": true,
+      "deployment_contract.json": true,
+      "hash_matches_model": true
+    },
+    "source_commit": "e86fed5173d4efbd20ccdcb92aac1e2c54024129",
+    "policy_sha256": "8862682da34ebb090a2e56f39254af430d5645f20cb5e3e104c72a4720671db8",
+    "raw_physics": {
+      "rows": 35824,
+      "expected_rows": 35824,
+      "maximum_tilt_deg": 2.7285275330621857,
+      "startup_maximum_tilt_deg": 1.6814821648911846,
+      "minimum_height_m": 0.32549214363098145,
+      "maximum_planar_step_m": 0.0029611865546517917
+    },
+    "videos_sha256": {
+      "robot_rgb.mp4": "bbeebc010b614c382b759ed63c6e2b361d20e7e71d01747c3f1fb3e9734599aa",
+      "third_person.mp4": "6ddff7e794484075e37c41c8ae374967613fc89a599d6731acb80858bbfcbd93",
+      "map_topdown.mp4": "d7573c14eb23179dcca72e550a86091054612742791f10017d9ebb3ca8958ebe",
+      "combined.mp4": "d6a092ae279d846542ec1189e7f3adf8bd656034fa68c22e12472ae4ca0ca5c4",
+      "pointcloud_map.mp4": "3af543552fe6924bd41214cab8ab952d17df9f71995cfdfbd07eb80ffd6892b3"
+    },
+    "missing_timestamp_proofs_require_review": false
+  },
+  "v173_operator_stop": {
+    "operator_stopped_prefix": true,
+    "original_task_accepted": false,
+    "reason": "Robot is within requested 0.25 m goal range, but the controller only starts final measured settling below a hardcoded 0.20 m. The checked ~0.147 m/s request stalls at ~0.22 m. Fix consistent goal admission and rerun; do not accept an operator stop as autonomous completion.",
+    "requested_goal": [
+      3.3,
+      1.4
+    ],
+    "requested_final_tolerance_m": 0.25,
+    "existing_settling_trigger_m": 0.2,
+    "error_before_operator_stop_m": 0.22008145059532289,
+    "last_simulation_time_s": 177.8099960256368,
+    "last_position": [
+      3.3077661991119385,
+      1.1800556182861328,
+      0.33416876196861267
+    ],
+    "window_s": 3.999999910593033,
+    "maximum_position_excursion_m": 0.00018785039034077664,
+    "mean_measured_xy_speed_mps": 0.00044186628093515097,
+    "mean_policy_command": [
+      0.14677360326706054,
+      0.0006916775668370807,
+      0.008482482354946717
+    ],
+    "actual_crossing_requires_final_audit": true,
+    "code_changed_during_run": false,
+    "stop_method": "existing STOP file and normal five-video finalization"
+  },
+  "goal_admission_review": {
+    "diagnostic_only": true,
+    "original_task_accepted": false,
+    "snapshot": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/v173-t05-live-snapshots/step-021600",
+    "snapshot_time_s": 176.90999604575336,
+    "position": [
+      3.3077762126922607,
+      1.180076003074646,
+      0.33417609333992004
+    ],
+    "requested_goal": [
+      3.3,
+      1.4
+    ],
+    "error_m": 0.22006143212171086,
+    "old_geometric_trigger": false,
+    "new_geometric_trigger": true,
+    "goal_cell_free_under_unchanged_check": true,
+    "phase_permits_goal_settling": true,
+    "independently_verified_crossing": true,
+    "new_settling_admission_passes_all_original_conditions": true,
+    "map_npz_sha256": "9f5551ad5e7074fc7c685e6dfe03ede13579532d0ca5c314070aa00c7debee34",
+    "final_stopped_error_after_operator_stop_m": 0.22943744986848055,
+    "note": "Predicate review only; operator-stopped v173 remains unaccepted and the new source still needs autonomous full-task validation."
+  },
+  "candidate": {
+    "candidate_commit": "c4854f34293e7b4fc694e750c34d5392e214b39c",
+    "source_root": "/data20t/embodied/zkj/inter-nav-goal-tolerance-v174-20261031",
+    "tests_passed": 804,
+    "deselected": 1,
+    "goal_tolerance_m": 0.25,
+    "autonomous_original_task_success_unproven": true,
+    "original_pair_complete": false
+  },
+  "v175_t04_launch": {
+    "task": "T04",
+    "source_commit": "c4854f34293e7b4fc694e750c34d5392e214b39c",
+    "supervisor_pid": 1110755,
+    "snapshot_observer_pid": 1110756,
+    "worktree": "/data20t/embodied/zkj/inter-nav-run-t04-v175-20261031",
+    "policy_sha256": "8862682da34ebb090a2e56f39254af430d5645f20cb5e3e104c72a4720671db8",
+    "start_override": null,
+    "original_start": [
+      2.11,
+      -0.78
+    ],
+    "original_goal": [
+      10.3,
+      1.75
+    ],
+    "scope_cap_gib": 24,
+    "swap_max_gib": 0,
+    "map_source": "online",
+    "global_local_map_hz": [
+      1,
+      10
+    ],
+    "purpose": "automatic original-task validation with consistent 0.25 m goal trigger and final stopped error; T04 first, then T05",
+    "floor_top_m": 0.01,
+    "original_task_accepted": false,
+    "same_version_pair_complete": false
+  },
+  "status_at_documentation": {
+    "state": "running",
+    "time_unix": 1793397784.2878397,
+    "attempt": 1,
+    "pid": 1110842,
+    "output": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v175-t04-ground-truth-try1",
+    "launch": {
+      "gpu": 2,
+      "free_mib": 23838,
+      "available_ram_gib": 214.94307708740234,
+      "stable_seconds": 60.42506794491783,
+      "minimum_ram_gib": 56.0,
+      "time_unix": 1793397784.244656,
+      "serial_task_runs": true,
+      "admission_policy": "v175-capped-admission-policy.json",
+      "scope_memory_max_gib": 24,
+      "scope_swap_max_gib": 0
+    }
+  }
+}
