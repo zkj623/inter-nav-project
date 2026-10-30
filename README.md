@@ -19,7 +19,7 @@ a text target such as `refrigerator` and walks up to the scanned object.
 原始 **T05 v127已完整验收通过**：B07实际侧推0.836m、在线确认并穿越新通路，最终停稳误差0.174m、全程最大倾角21.712°。同版T04已失败：推箱前转向失稳，最大倾角37.904°；历史T04 v119成功结果保留，不能据此声称新版T04或五组统一通过。当前正对照底层策略与物理配置，见 [失稳诊断](docs/go2_policy_physics_diagnosis.md)。
 通过的T05使用旧rough+匹配训练模型、显式支撑目标保持和原姿态恢复。五路完整视频、保持权限检查、证据及所需追加参数见 [T05结果与支撑目标保持](docs/go2_supported_idle_hold.md)。模型来源见 [策略对照](docs/go2_training_policy_candidate.md)，交接状态见 [HANDOFF](HANDOFF.md)。
 
-GPU配置的v137 T04在转向就位的栅格边界停滞，已保存并校验失败前缀，未完成推箱；T05未启动。正在验证半栅格就位余量修复，详见 [最新诊断与视频路径](docs/go2_turn_placement_slack.md)。GPU候选追加参数见 [物理配置](docs/go2_policy_physics_diagnosis.md#v136候选原roughgpu物理不启用关节目标保持)。
+v137 T04的就位边界停滞已定位，失败前缀完整保留。进入/退出采用不同条件的修复已通过699项检查及四组物理对照，v140正按原始任务排队复跑，尚未验收成功。详见 [修复、证据与视频路径](docs/go2_turn_placement_slack.md)。GPU候选追加参数见 [物理配置](docs/go2_policy_physics_diagnosis.md#v136候选原roughgpu物理不启用关节目标保持)。
 
 在实验分支 `codex/go2-online-smooth-20261027` 的仓库根目录执行：
 

@@ -1,0 +1,1203 @@
+{
+  "diagnostic_only": true,
+  "navigation_accepted": false,
+  "runtime_commit": "a0f59eb9fe82cdee611e051b87f4daf339255ce4",
+  "v138": [
+    {
+      "label": "legacy",
+      "exit_code": 0,
+      "resource_stop": false,
+      "scope_cap_verified": true,
+      "peak_scope_gib": 3.844165802001953,
+      "failure": null,
+      "summary": {
+        "diagnostic_only": true,
+        "navigation_accepted": false,
+        "label": "legacy",
+        "actual_physics": {
+          "requested_backend": "gpu_dynamics",
+          "scene_path": "/physicsScene",
+          "device": "cpu",
+          "cached_use_gpu_sim": false,
+          "use_gpu_pipeline": false,
+          "gpu_dynamics": true,
+          "broadphase": "GPU",
+          "solver": "TGS",
+          "scene_attributes": {
+            "physics:gravityDirection": "(0, 0, 0)",
+            "physics:gravityMagnitude": "-inf",
+            "physxScene:bounceThreshold": "0.0",
+            "physxScene:broadphaseType": "GPU",
+            "physxScene:collisionSystem": "PCM",
+            "physxScene:enableCCD": "False",
+            "physxScene:enableEnhancedDeterminism": "False",
+            "physxScene:enableExternalForcesEveryIteration": "False",
+            "physxScene:enableGPUDynamics": "True",
+            "physxScene:enableResidualReporting": "False",
+            "physxScene:enableSceneQuerySupport": "True",
+            "physxScene:enableStabilization": "False",
+            "physxScene:frictionCorrelationDistance": "0.02500000037252903",
+            "physxScene:frictionOffsetThreshold": "0.03999999910593033",
+            "physxScene:frictionType": "patch",
+            "physxScene:gpuCollisionStackSize": "67108864",
+            "physxScene:gpuFoundLostAggregatePairsCapacity": "1024",
+            "physxScene:gpuFoundLostPairsCapacity": "262144",
+            "physxScene:gpuHeapCapacity": "67108864",
+            "physxScene:gpuMaxDeformableSurfaceContacts": "1048576",
+            "physxScene:gpuMaxHairContacts": "1048576",
+            "physxScene:gpuMaxNumPartitions": "8",
+            "physxScene:gpuMaxParticleContacts": "1048576",
+            "physxScene:gpuMaxRigidContactCount": "524288",
+            "physxScene:gpuMaxRigidPatchCount": "81920",
+            "physxScene:gpuMaxSoftBodyContacts": "1048576",
+            "physxScene:gpuTempBufferCapacity": "16777216",
+            "physxScene:gpuTotalAggregatePairsCapacity": "1024",
+            "physxScene:invertCollisionGroupFilter": "False",
+            "physxScene:maxBiasCoefficient": "inf",
+            "physxScene:maxPositionIterationCount": "255",
+            "physxScene:maxVelocityIterationCount": "255",
+            "physxScene:minPositionIterationCount": "1",
+            "physxScene:minVelocityIterationCount": "0",
+            "physxScene:reportKinematicKinematicPairs": "False",
+            "physxScene:reportKinematicStaticPairs": "False",
+            "physxScene:solverType": "TGS",
+            "physxScene:timeStepsPerSecond": "200",
+            "physxScene:updateType": "Synchronous"
+          },
+          "integration_source_sha256": "8cc61b877951db3223bfbc5396e752fbbb9a218c47abe972e6addd8240fe4708"
+        },
+        "cases": [
+          {
+            "case": "t04_stalled_positive",
+            "reason": "completed",
+            "healthy": true,
+            "stage_completed": true,
+            "final_stop_valid": true,
+            "maximum_tilt_deg": 21.386233153852498,
+            "minimum_height_m": 0.3394947648048401,
+            "restart_displacement_m": 0.905770480632782,
+            "stationary_hold_report": null,
+            "contact_permission_violation": false,
+            "physical_steps": 6046,
+            "policy_inferences": 1512,
+            "fixture_path": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/t04_staging_start_v127.npz",
+            "fixture_sha256": "b4a93386b28461e9ae61638381dc0f670d075cf50809f9663f132597274d7113",
+            "stationary_hold_disabled": true,
+            "forced_stalled_precondition": true,
+            "prime_ticks": 0,
+            "arc_ticks": 148,
+            "navigation_attitude_recovery": {
+              "episodes": 1,
+              "total_hold_ticks": 100,
+              "failed": false,
+              "trigger_degrees": 18.0,
+              "release_degrees": 10.0,
+              "stable_plateau_max_degrees": 15.0,
+              "minimum_hold_ticks": 100,
+              "stable_window_ticks": 50,
+              "maximum_hold_ticks": 750
+            },
+            "recovery_events": [
+              {
+                "time_s": 5.294999881647527,
+                "state": "hold",
+                "tilt_degrees": 18.702480922664705,
+                "started": true,
+                "episode": 1,
+                "hold_ticks": 1,
+                "settled": false,
+                "stable_attitude_plateau": false
+              },
+              {
+                "time_s": 6.084999863989651,
+                "state": "released",
+                "tilt_degrees": 2.1934952255924136,
+                "started": false,
+                "episode": 1,
+                "hold_ticks": 100,
+                "settled": true,
+                "stable_attitude_plateau": false
+              }
+            ],
+            "all_checks_passed": true,
+            "diagnostic_only": true
+          },
+          {
+            "case": "t05_original_heading",
+            "reason": "completed",
+            "healthy": true,
+            "stage_completed": true,
+            "final_stop_valid": true,
+            "maximum_tilt_deg": 19.15056644871607,
+            "minimum_height_m": 0.36833637952804565,
+            "restart_displacement_m": 0.8109805583953857,
+            "stationary_hold_report": null,
+            "contact_permission_violation": false,
+            "physical_steps": 5825,
+            "policy_inferences": 1457,
+            "fixture_path": "/data20t/embodied/zkj/inter-nav-visual-skill-20261028/tests/data/t05_staging_boundary_v119.npz",
+            "fixture_sha256": "85a776853903c42c657cadda48a52ec5fd59bee5a5dee136ef014048e923e899",
+            "stationary_hold_disabled": true,
+            "forced_stalled_precondition": false,
+            "prime_ticks": 0,
+            "arc_ticks": 0,
+            "navigation_attitude_recovery": {
+              "episodes": 0,
+              "total_hold_ticks": 0,
+              "failed": false,
+              "trigger_degrees": 18.0,
+              "release_degrees": 10.0,
+              "stable_plateau_max_degrees": 15.0,
+              "minimum_hold_ticks": 100,
+              "stable_window_ticks": 50,
+              "maximum_hold_ticks": 750
+            },
+            "recovery_events": [],
+            "all_checks_passed": true,
+            "diagnostic_only": true
+          },
+          {
+            "case": "t05_reselected_heading",
+            "reason": "completed",
+            "healthy": true,
+            "stage_completed": true,
+            "final_stop_valid": true,
+            "maximum_tilt_deg": 20.58672958920203,
+            "minimum_height_m": 0.3661274313926697,
+            "restart_displacement_m": 0.8422215580940247,
+            "stationary_hold_report": null,
+            "contact_permission_violation": false,
+            "physical_steps": 7214,
+            "policy_inferences": 1804,
+            "fixture_path": "/data20t/embodied/zkj/inter-nav-visual-skill-20261028/tests/data/t05_staging_boundary_v119.npz",
+            "fixture_sha256": "85a776853903c42c657cadda48a52ec5fd59bee5a5dee136ef014048e923e899",
+            "stationary_hold_disabled": true,
+            "forced_stalled_precondition": false,
+            "prime_ticks": 0,
+            "arc_ticks": 0,
+            "navigation_attitude_recovery": {
+              "episodes": 2,
+              "total_hold_ticks": 432,
+              "failed": false,
+              "trigger_degrees": 18.0,
+              "release_degrees": 10.0,
+              "stable_plateau_max_degrees": 15.0,
+              "minimum_hold_ticks": 100,
+              "stable_window_ticks": 50,
+              "maximum_hold_ticks": 750
+            },
+            "recovery_events": [
+              {
+                "time_s": 8.47999981045723,
+                "state": "hold",
+                "tilt_degrees": 18.245041020143514,
+                "started": true,
+                "episode": 1,
+                "hold_ticks": 1,
+                "settled": false,
+                "stable_attitude_plateau": false
+              },
+              {
+                "time_s": 9.324999791570008,
+                "state": "released",
+                "tilt_degrees": 4.413197605135583,
+                "started": false,
+                "episode": 1,
+                "hold_ticks": 107,
+                "settled": true,
+                "stable_attitude_plateau": false
+              },
+              {
+                "time_s": 10.094999774359167,
+                "state": "hold",
+                "tilt_degrees": 18.022441122624112,
+                "started": true,
+                "episode": 2,
+                "hold_ticks": 1,
+                "settled": false,
+                "stable_attitude_plateau": false
+              },
+              {
+                "time_s": 12.684999716468155,
+                "state": "released",
+                "tilt_degrees": 2.2389337458135894,
+                "started": false,
+                "episode": 2,
+                "hold_ticks": 325,
+                "settled": true,
+                "stable_attitude_plateau": false
+              }
+            ],
+            "all_checks_passed": true,
+            "diagnostic_only": true
+          },
+          {
+            "case": "t04_cell_boundary",
+            "reason": "completed",
+            "healthy": true,
+            "stage_completed": true,
+            "final_stop_valid": false,
+            "maximum_tilt_deg": 17.42808831443292,
+            "minimum_height_m": 0.3360050916671753,
+            "restart_displacement_m": 0.9280875325202942,
+            "stationary_hold_report": null,
+            "contact_permission_violation": false,
+            "physical_steps": 8464,
+            "policy_inferences": 2116,
+            "fixture_path": "/data20t/embodied/zkj/inter-nav-visual-skill-20261028/tests/data/t04_staging_cell_boundary_v137.npz",
+            "fixture_sha256": "81e10b953a5a40658b2d8819965bb6c8f664be6716ee6a3e435f310c8ed426e0",
+            "stationary_hold_disabled": true,
+            "forced_stalled_precondition": false,
+            "prime_ticks": 0,
+            "arc_ticks": 661,
+            "navigation_attitude_recovery": {
+              "episodes": 0,
+              "total_hold_ticks": 0,
+              "failed": false,
+              "trigger_degrees": 18.0,
+              "release_degrees": 10.0,
+              "stable_plateau_max_degrees": 15.0,
+              "minimum_hold_ticks": 100,
+              "stable_window_ticks": 50,
+              "maximum_hold_ticks": 750
+            },
+            "recovery_events": [],
+            "all_checks_passed": false,
+            "diagnostic_only": true
+          }
+        ],
+        "all_cases_healthy_and_stopped": false
+      }
+    },
+    {
+      "label": "half_cell",
+      "exit_code": 0,
+      "resource_stop": false,
+      "scope_cap_verified": true,
+      "peak_scope_gib": 3.6539039611816406,
+      "failure": null,
+      "summary": {
+        "diagnostic_only": true,
+        "navigation_accepted": false,
+        "label": "half_cell",
+        "actual_physics": {
+          "requested_backend": "gpu_dynamics",
+          "scene_path": "/physicsScene",
+          "device": "cpu",
+          "cached_use_gpu_sim": false,
+          "use_gpu_pipeline": false,
+          "gpu_dynamics": true,
+          "broadphase": "GPU",
+          "solver": "TGS",
+          "scene_attributes": {
+            "physics:gravityDirection": "(0, 0, 0)",
+            "physics:gravityMagnitude": "-inf",
+            "physxScene:bounceThreshold": "0.0",
+            "physxScene:broadphaseType": "GPU",
+            "physxScene:collisionSystem": "PCM",
+            "physxScene:enableCCD": "False",
+            "physxScene:enableEnhancedDeterminism": "False",
+            "physxScene:enableExternalForcesEveryIteration": "False",
+            "physxScene:enableGPUDynamics": "True",
+            "physxScene:enableResidualReporting": "False",
+            "physxScene:enableSceneQuerySupport": "True",
+            "physxScene:enableStabilization": "False",
+            "physxScene:frictionCorrelationDistance": "0.02500000037252903",
+            "physxScene:frictionOffsetThreshold": "0.03999999910593033",
+            "physxScene:frictionType": "patch",
+            "physxScene:gpuCollisionStackSize": "67108864",
+            "physxScene:gpuFoundLostAggregatePairsCapacity": "1024",
+            "physxScene:gpuFoundLostPairsCapacity": "262144",
+            "physxScene:gpuHeapCapacity": "67108864",
+            "physxScene:gpuMaxDeformableSurfaceContacts": "1048576",
+            "physxScene:gpuMaxHairContacts": "1048576",
+            "physxScene:gpuMaxNumPartitions": "8",
+            "physxScene:gpuMaxParticleContacts": "1048576",
+            "physxScene:gpuMaxRigidContactCount": "524288",
+            "physxScene:gpuMaxRigidPatchCount": "81920",
+            "physxScene:gpuMaxSoftBodyContacts": "1048576",
+            "physxScene:gpuTempBufferCapacity": "16777216",
+            "physxScene:gpuTotalAggregatePairsCapacity": "1024",
+            "physxScene:invertCollisionGroupFilter": "False",
+            "physxScene:maxBiasCoefficient": "inf",
+            "physxScene:maxPositionIterationCount": "255",
+            "physxScene:maxVelocityIterationCount": "255",
+            "physxScene:minPositionIterationCount": "1",
+            "physxScene:minVelocityIterationCount": "0",
+            "physxScene:reportKinematicKinematicPairs": "False",
+            "physxScene:reportKinematicStaticPairs": "False",
+            "physxScene:solverType": "TGS",
+            "physxScene:timeStepsPerSecond": "200",
+            "physxScene:updateType": "Synchronous"
+          },
+          "integration_source_sha256": "8cc61b877951db3223bfbc5396e752fbbb9a218c47abe972e6addd8240fe4708"
+        },
+        "cases": [
+          {
+            "case": "t04_stalled_positive",
+            "reason": "completed",
+            "healthy": true,
+            "stage_completed": true,
+            "final_stop_valid": true,
+            "maximum_tilt_deg": 19.177077017722635,
+            "minimum_height_m": 0.36349961161613464,
+            "restart_displacement_m": 0.8575489521026611,
+            "stationary_hold_report": null,
+            "contact_permission_violation": false,
+            "physical_steps": 6436,
+            "policy_inferences": 1609,
+            "fixture_path": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/t04_staging_start_v127.npz",
+            "fixture_sha256": "b4a93386b28461e9ae61638381dc0f670d075cf50809f9663f132597274d7113",
+            "stationary_hold_disabled": true,
+            "forced_stalled_precondition": true,
+            "prime_ticks": 0,
+            "arc_ticks": 297,
+            "navigation_attitude_recovery": {
+              "episodes": 1,
+              "total_hold_ticks": 100,
+              "failed": false,
+              "trigger_degrees": 18.0,
+              "release_degrees": 10.0,
+              "stable_plateau_max_degrees": 15.0,
+              "minimum_hold_ticks": 100,
+              "stable_window_ticks": 50,
+              "maximum_hold_ticks": 750
+            },
+            "recovery_events": [
+              {
+                "time_s": 8.28499981481582,
+                "state": "hold",
+                "tilt_degrees": 18.080500325108456,
+                "started": true,
+                "episode": 1,
+                "hold_ticks": 1,
+                "settled": false,
+                "stable_attitude_plateau": false
+              },
+              {
+                "time_s": 9.079999797046185,
+                "state": "released",
+                "tilt_degrees": 0.15453764291031669,
+                "started": false,
+                "episode": 1,
+                "hold_ticks": 100,
+                "settled": true,
+                "stable_attitude_plateau": false
+              }
+            ],
+            "all_checks_passed": true,
+            "diagnostic_only": true
+          },
+          {
+            "case": "t05_original_heading",
+            "reason": "completed",
+            "healthy": true,
+            "stage_completed": true,
+            "final_stop_valid": true,
+            "maximum_tilt_deg": 19.62401890270521,
+            "minimum_height_m": 0.3668366074562073,
+            "restart_displacement_m": 0.8372080326080322,
+            "stationary_hold_report": null,
+            "contact_permission_violation": false,
+            "physical_steps": 6025,
+            "policy_inferences": 1507,
+            "fixture_path": "/data20t/embodied/zkj/inter-nav-visual-skill-20261028/tests/data/t05_staging_boundary_v119.npz",
+            "fixture_sha256": "85a776853903c42c657cadda48a52ec5fd59bee5a5dee136ef014048e923e899",
+            "stationary_hold_disabled": true,
+            "forced_stalled_precondition": false,
+            "prime_ticks": 0,
+            "arc_ticks": 0,
+            "navigation_attitude_recovery": {
+              "episodes": 0,
+              "total_hold_ticks": 0,
+              "failed": false,
+              "trigger_degrees": 18.0,
+              "release_degrees": 10.0,
+              "stable_plateau_max_degrees": 15.0,
+              "minimum_hold_ticks": 100,
+              "stable_window_ticks": 50,
+              "maximum_hold_ticks": 750
+            },
+            "recovery_events": [],
+            "all_checks_passed": true,
+            "diagnostic_only": true
+          },
+          {
+            "case": "t05_reselected_heading",
+            "reason": "completed",
+            "healthy": true,
+            "stage_completed": true,
+            "final_stop_valid": true,
+            "maximum_tilt_deg": 22.426389722925638,
+            "minimum_height_m": 0.3604525029659271,
+            "restart_displacement_m": 0.8691719770431519,
+            "stationary_hold_report": null,
+            "contact_permission_violation": false,
+            "physical_steps": 7078,
+            "policy_inferences": 1770,
+            "fixture_path": "/data20t/embodied/zkj/inter-nav-visual-skill-20261028/tests/data/t05_staging_boundary_v119.npz",
+            "fixture_sha256": "85a776853903c42c657cadda48a52ec5fd59bee5a5dee136ef014048e923e899",
+            "stationary_hold_disabled": true,
+            "forced_stalled_precondition": false,
+            "prime_ticks": 0,
+            "arc_ticks": 0,
+            "navigation_attitude_recovery": {
+              "episodes": 1,
+              "total_hold_ticks": 111,
+              "failed": false,
+              "trigger_degrees": 18.0,
+              "release_degrees": 10.0,
+              "stable_plateau_max_degrees": 15.0,
+              "minimum_hold_ticks": 100,
+              "stable_window_ticks": 50,
+              "maximum_hold_ticks": 750
+            },
+            "recovery_events": [
+              {
+                "time_s": 9.48499978799373,
+                "state": "hold",
+                "tilt_degrees": 18.17905364914773,
+                "started": true,
+                "episode": 1,
+                "hold_ticks": 1,
+                "settled": false,
+                "stable_attitude_plateau": false
+              },
+              {
+                "time_s": 10.364999768324196,
+                "state": "released",
+                "tilt_degrees": 7.181017482210979,
+                "started": false,
+                "episode": 1,
+                "hold_ticks": 111,
+                "settled": true,
+                "stable_attitude_plateau": false
+              }
+            ],
+            "all_checks_passed": true,
+            "diagnostic_only": true
+          },
+          {
+            "case": "t04_cell_boundary",
+            "reason": "staging_failed",
+            "healthy": true,
+            "stage_completed": false,
+            "final_stop_valid": false,
+            "maximum_tilt_deg": 22.22952467845285,
+            "minimum_height_m": 0.3512580990791321,
+            "restart_displacement_m": 0.0,
+            "stationary_hold_report": null,
+            "contact_permission_violation": false,
+            "physical_steps": 6947,
+            "policy_inferences": 1737,
+            "fixture_path": "/data20t/embodied/zkj/inter-nav-visual-skill-20261028/tests/data/t04_staging_cell_boundary_v137.npz",
+            "fixture_sha256": "81e10b953a5a40658b2d8819965bb6c8f664be6716ee6a3e435f310c8ed426e0",
+            "stationary_hold_disabled": true,
+            "forced_stalled_precondition": false,
+            "prime_ticks": 0,
+            "arc_ticks": 0,
+            "navigation_attitude_recovery": {
+              "episodes": 1,
+              "total_hold_ticks": 526,
+              "failed": false,
+              "trigger_degrees": 18.0,
+              "release_degrees": 10.0,
+              "stable_plateau_max_degrees": 15.0,
+              "minimum_hold_ticks": 100,
+              "stable_window_ticks": 50,
+              "maximum_hold_ticks": 750
+            },
+            "recovery_events": [
+              {
+                "time_s": 7.509999832138419,
+                "state": "hold",
+                "tilt_degrees": 18.30702446006825,
+                "started": true,
+                "episode": 1,
+                "hold_ticks": 1,
+                "settled": false,
+                "stable_attitude_plateau": false
+              },
+              {
+                "time_s": 11.709999738261104,
+                "state": "released",
+                "tilt_degrees": 7.14500313228857,
+                "started": false,
+                "episode": 1,
+                "hold_ticks": 526,
+                "settled": true,
+                "stable_attitude_plateau": false
+              }
+            ],
+            "all_checks_passed": false,
+            "diagnostic_only": true
+          }
+        ],
+        "all_cases_healthy_and_stopped": false
+      }
+    }
+  ],
+  "v139": {
+    "label": "latched",
+    "exit_code": 0,
+    "resource_stop": false,
+    "scope_cap_verified": true,
+    "peak_scope_gib": 3.7535667419433594,
+    "failure": null,
+    "summary": {
+      "diagnostic_only": true,
+      "navigation_accepted": false,
+      "label": "latched",
+      "actual_physics": {
+        "requested_backend": "gpu_dynamics",
+        "scene_path": "/physicsScene",
+        "device": "cpu",
+        "cached_use_gpu_sim": false,
+        "use_gpu_pipeline": false,
+        "gpu_dynamics": true,
+        "broadphase": "GPU",
+        "solver": "TGS",
+        "scene_attributes": {
+          "physics:gravityDirection": "(0, 0, 0)",
+          "physics:gravityMagnitude": "-inf",
+          "physxScene:bounceThreshold": "0.0",
+          "physxScene:broadphaseType": "GPU",
+          "physxScene:collisionSystem": "PCM",
+          "physxScene:enableCCD": "False",
+          "physxScene:enableEnhancedDeterminism": "False",
+          "physxScene:enableExternalForcesEveryIteration": "False",
+          "physxScene:enableGPUDynamics": "True",
+          "physxScene:enableResidualReporting": "False",
+          "physxScene:enableSceneQuerySupport": "True",
+          "physxScene:enableStabilization": "False",
+          "physxScene:frictionCorrelationDistance": "0.02500000037252903",
+          "physxScene:frictionOffsetThreshold": "0.03999999910593033",
+          "physxScene:frictionType": "patch",
+          "physxScene:gpuCollisionStackSize": "67108864",
+          "physxScene:gpuFoundLostAggregatePairsCapacity": "1024",
+          "physxScene:gpuFoundLostPairsCapacity": "262144",
+          "physxScene:gpuHeapCapacity": "67108864",
+          "physxScene:gpuMaxDeformableSurfaceContacts": "1048576",
+          "physxScene:gpuMaxHairContacts": "1048576",
+          "physxScene:gpuMaxNumPartitions": "8",
+          "physxScene:gpuMaxParticleContacts": "1048576",
+          "physxScene:gpuMaxRigidContactCount": "524288",
+          "physxScene:gpuMaxRigidPatchCount": "81920",
+          "physxScene:gpuMaxSoftBodyContacts": "1048576",
+          "physxScene:gpuTempBufferCapacity": "16777216",
+          "physxScene:gpuTotalAggregatePairsCapacity": "1024",
+          "physxScene:invertCollisionGroupFilter": "False",
+          "physxScene:maxBiasCoefficient": "inf",
+          "physxScene:maxPositionIterationCount": "255",
+          "physxScene:maxVelocityIterationCount": "255",
+          "physxScene:minPositionIterationCount": "1",
+          "physxScene:minVelocityIterationCount": "0",
+          "physxScene:reportKinematicKinematicPairs": "False",
+          "physxScene:reportKinematicStaticPairs": "False",
+          "physxScene:solverType": "TGS",
+          "physxScene:timeStepsPerSecond": "200",
+          "physxScene:updateType": "Synchronous"
+        },
+        "integration_source_sha256": "8cc61b877951db3223bfbc5396e752fbbb9a218c47abe972e6addd8240fe4708"
+      },
+      "cases": [
+        {
+          "case": "t04_stalled_positive",
+          "reason": "completed",
+          "healthy": true,
+          "stage_completed": true,
+          "final_stop_valid": true,
+          "maximum_tilt_deg": 19.177077017722635,
+          "minimum_height_m": 0.36349961161613464,
+          "restart_displacement_m": 0.8575489521026611,
+          "stationary_hold_report": null,
+          "contact_permission_violation": false,
+          "physical_steps": 6436,
+          "policy_inferences": 1609,
+          "fixture_path": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/t04_staging_start_v127.npz",
+          "fixture_sha256": "b4a93386b28461e9ae61638381dc0f670d075cf50809f9663f132597274d7113",
+          "stationary_hold_disabled": true,
+          "forced_stalled_precondition": true,
+          "prime_ticks": 0,
+          "arc_ticks": 297,
+          "navigation_attitude_recovery": {
+            "episodes": 1,
+            "total_hold_ticks": 100,
+            "failed": false,
+            "trigger_degrees": 18.0,
+            "release_degrees": 10.0,
+            "stable_plateau_max_degrees": 15.0,
+            "minimum_hold_ticks": 100,
+            "stable_window_ticks": 50,
+            "maximum_hold_ticks": 750
+          },
+          "recovery_events": [
+            {
+              "time_s": 8.28499981481582,
+              "state": "hold",
+              "tilt_degrees": 18.080500325108456,
+              "started": true,
+              "episode": 1,
+              "hold_ticks": 1,
+              "settled": false,
+              "stable_attitude_plateau": false
+            },
+            {
+              "time_s": 9.079999797046185,
+              "state": "released",
+              "tilt_degrees": 0.15453764291031669,
+              "started": false,
+              "episode": 1,
+              "hold_ticks": 100,
+              "settled": true,
+              "stable_attitude_plateau": false
+            }
+          ],
+          "all_checks_passed": true,
+          "diagnostic_only": true
+        },
+        {
+          "case": "t05_original_heading",
+          "reason": "completed",
+          "healthy": true,
+          "stage_completed": true,
+          "final_stop_valid": true,
+          "maximum_tilt_deg": 19.62401890270521,
+          "minimum_height_m": 0.3668366074562073,
+          "restart_displacement_m": 0.8372080326080322,
+          "stationary_hold_report": null,
+          "contact_permission_violation": false,
+          "physical_steps": 6025,
+          "policy_inferences": 1507,
+          "fixture_path": "/data20t/embodied/zkj/inter-nav-visual-skill-20261028/tests/data/t05_staging_boundary_v119.npz",
+          "fixture_sha256": "85a776853903c42c657cadda48a52ec5fd59bee5a5dee136ef014048e923e899",
+          "stationary_hold_disabled": true,
+          "forced_stalled_precondition": false,
+          "prime_ticks": 0,
+          "arc_ticks": 0,
+          "navigation_attitude_recovery": {
+            "episodes": 0,
+            "total_hold_ticks": 0,
+            "failed": false,
+            "trigger_degrees": 18.0,
+            "release_degrees": 10.0,
+            "stable_plateau_max_degrees": 15.0,
+            "minimum_hold_ticks": 100,
+            "stable_window_ticks": 50,
+            "maximum_hold_ticks": 750
+          },
+          "recovery_events": [],
+          "all_checks_passed": true,
+          "diagnostic_only": true
+        },
+        {
+          "case": "t05_reselected_heading",
+          "reason": "completed",
+          "healthy": true,
+          "stage_completed": true,
+          "final_stop_valid": true,
+          "maximum_tilt_deg": 22.426389722925638,
+          "minimum_height_m": 0.3604525029659271,
+          "restart_displacement_m": 0.8691719770431519,
+          "stationary_hold_report": null,
+          "contact_permission_violation": false,
+          "physical_steps": 7078,
+          "policy_inferences": 1770,
+          "fixture_path": "/data20t/embodied/zkj/inter-nav-visual-skill-20261028/tests/data/t05_staging_boundary_v119.npz",
+          "fixture_sha256": "85a776853903c42c657cadda48a52ec5fd59bee5a5dee136ef014048e923e899",
+          "stationary_hold_disabled": true,
+          "forced_stalled_precondition": false,
+          "prime_ticks": 0,
+          "arc_ticks": 0,
+          "navigation_attitude_recovery": {
+            "episodes": 1,
+            "total_hold_ticks": 111,
+            "failed": false,
+            "trigger_degrees": 18.0,
+            "release_degrees": 10.0,
+            "stable_plateau_max_degrees": 15.0,
+            "minimum_hold_ticks": 100,
+            "stable_window_ticks": 50,
+            "maximum_hold_ticks": 750
+          },
+          "recovery_events": [
+            {
+              "time_s": 9.48499978799373,
+              "state": "hold",
+              "tilt_degrees": 18.17905364914773,
+              "started": true,
+              "episode": 1,
+              "hold_ticks": 1,
+              "settled": false,
+              "stable_attitude_plateau": false
+            },
+            {
+              "time_s": 10.364999768324196,
+              "state": "released",
+              "tilt_degrees": 7.181017482210979,
+              "started": false,
+              "episode": 1,
+              "hold_ticks": 111,
+              "settled": true,
+              "stable_attitude_plateau": false
+            }
+          ],
+          "all_checks_passed": true,
+          "diagnostic_only": true
+        },
+        {
+          "case": "t04_cell_boundary",
+          "reason": "completed",
+          "healthy": true,
+          "stage_completed": true,
+          "final_stop_valid": true,
+          "maximum_tilt_deg": 22.22952467845285,
+          "minimum_height_m": 0.3512580990791321,
+          "restart_displacement_m": 0.9712280631065369,
+          "stationary_hold_report": null,
+          "contact_permission_violation": false,
+          "physical_steps": 8291,
+          "policy_inferences": 2073,
+          "fixture_path": "/data20t/embodied/zkj/inter-nav-visual-skill-20261028/tests/data/t04_staging_cell_boundary_v137.npz",
+          "fixture_sha256": "81e10b953a5a40658b2d8819965bb6c8f664be6716ee6a3e435f310c8ed426e0",
+          "stationary_hold_disabled": true,
+          "forced_stalled_precondition": false,
+          "prime_ticks": 0,
+          "arc_ticks": 0,
+          "navigation_attitude_recovery": {
+            "episodes": 1,
+            "total_hold_ticks": 526,
+            "failed": false,
+            "trigger_degrees": 18.0,
+            "release_degrees": 10.0,
+            "stable_plateau_max_degrees": 15.0,
+            "minimum_hold_ticks": 100,
+            "stable_window_ticks": 50,
+            "maximum_hold_ticks": 750
+          },
+          "recovery_events": [
+            {
+              "time_s": 7.509999832138419,
+              "state": "hold",
+              "tilt_degrees": 18.30702446006825,
+              "started": true,
+              "episode": 1,
+              "hold_ticks": 1,
+              "settled": false,
+              "stable_attitude_plateau": false
+            },
+            {
+              "time_s": 11.709999738261104,
+              "state": "released",
+              "tilt_degrees": 7.14500313228857,
+              "started": false,
+              "episode": 1,
+              "hold_ticks": 526,
+              "settled": true,
+              "stable_attitude_plateau": false
+            }
+          ],
+          "all_checks_passed": true,
+          "diagnostic_only": true
+        }
+      ],
+      "all_cases_healthy_and_stopped": true
+    }
+  },
+  "model_contract": {
+    "policy_path": "/data20t/embodied/share/inter-nav/assets/robots/go2/policy/move_by_speed/rough_model_7850.pt",
+    "policy_sha256": "d435f46dcf2d614cad28e21e033b34d6036d079924e1746530a36f2fba2315bd",
+    "policy_observation_dim": 235,
+    "requested_robot_asset": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/official-policy-review-20261030/nvidia_isaaclab_4_5/go2_training_flattened.usdc",
+    "resolved_robot_asset": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/official-policy-review-20261030/nvidia_isaaclab_4_5/go2_training_flattened.usdc",
+    "actual_asset_references": [
+      "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/official-policy-review-20261030/nvidia_isaaclab_4_5/go2_training_flattened.usdc"
+    ],
+    "robot_asset_sha256": "75958c8286d2dfdf7617108a685110ac831dfc47f2546e71a8cc2ccaecbd83a5",
+    "physics_profile": "isaaclab_training",
+    "actuator_mode": "explicit_dc",
+    "robot_scale": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "stationary_joint_hold": false,
+    "stationary_hold_config": null,
+    "body_count": 19,
+    "body_names": [
+      "base",
+      "FL_hip",
+      "FR_hip",
+      "Head_upper",
+      "RL_hip",
+      "RR_hip",
+      "FL_thigh",
+      "FR_thigh",
+      "Head_lower",
+      "RL_thigh",
+      "RR_thigh",
+      "FL_calf",
+      "FR_calf",
+      "RL_calf",
+      "RR_calf",
+      "FL_foot",
+      "FR_foot",
+      "RL_foot",
+      "RR_foot"
+    ],
+    "body_masses": [
+      [
+        6.9210004806518555,
+        0.6779999732971191,
+        0.6779999732971191,
+        0.0010000000474974513,
+        0.6779999732971191,
+        0.6779999732971191,
+        1.1519999504089355,
+        1.1519999504089355,
+        0.0010000000474974513,
+        1.1519999504089355,
+        1.1519999504089355,
+        0.15399999916553497,
+        0.15399999916553497,
+        0.15399999916553497,
+        0.15399999916553497,
+        0.03999999910593033,
+        0.03999999910593033,
+        0.03999999910593033,
+        0.03999999910593033
+      ]
+    ],
+    "total_mass_kg": 15.01900016865693,
+    "collider_count": 27,
+    "solver_position_iterations": [
+      4
+    ],
+    "solver_velocity_iterations": [
+      0
+    ],
+    "self_collisions": [
+      0
+    ],
+    "native_joint_max_velocities": [
+      [
+        30.0,
+        30.0,
+        30.0,
+        30.0,
+        30.0,
+        30.0,
+        30.0,
+        30.0,
+        30.0,
+        30.0,
+        30.0,
+        30.0
+      ]
+    ],
+    "native_joint_friction": [
+      [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    ],
+    "native_gains": [
+      [
+        [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      [
+        [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      ]
+    ],
+    "shape_material_properties": [
+      [
+        [
+          0.5,
+          0.5,
+          0.0
+        ],
+        [
+          0.5,
+          0.5,
+          0.0
+        ],
+        [
+          0.5,
+          0.5,
+          0.0
+        ],
+        [
+          0.5,
+          0.5,
+          0.0
+        ],
+        [
+          0.5,
+          0.5,
+          0.0
+        ],
+        [
+          0.5,
+          0.5,
+          0.0
+        ],
+        [
+          0.5,
+          0.5,
+          0.0
+        ],
+        [
+          0.5,
+          0.5,
+          0.0
+        ],
+        [
+          0.5,
+          0.5,
+          0.0
+        ],
+        [
+          0.5,
+          0.5,
+          0.0
+        ],
+        [
+          0.5,
+          0.5,
+          0.0
+        ],
+        [
+          0.800000011920929,
+          0.6000000238418579,
+          0.0
+        ],
+        [
+          0.800000011920929,
+          0.6000000238418579,
+          0.0
+        ],
+        [
+          0.800000011920929,
+          0.6000000238418579,
+          0.0
+        ],
+        [
+          0.800000011920929,
+          0.6000000238418579,
+          0.0
+        ],
+        [
+          0.800000011920929,
+          0.6000000238418579,
+          0.0
+        ],
+        [
+          0.800000011920929,
+          0.6000000238418579,
+          0.0
+        ],
+        [
+          0.800000011920929,
+          0.6000000238418579,
+          0.0
+        ],
+        [
+          0.800000011920929,
+          0.6000000238418579,
+          0.0
+        ],
+        [
+          0.800000011920929,
+          0.6000000238418579,
+          0.0
+        ],
+        [
+          0.800000011920929,
+          0.6000000238418579,
+          0.0
+        ],
+        [
+          0.800000011920929,
+          0.6000000238418579,
+          0.0
+        ],
+        [
+          0.800000011920929,
+          0.6000000238418579,
+          0.0
+        ],
+        [
+          0.800000011920929,
+          0.6000000238418579,
+          0.0
+        ],
+        [
+          0.800000011920929,
+          0.6000000238418579,
+          0.0
+        ],
+        [
+          0.800000011920929,
+          0.6000000238418579,
+          0.0
+        ],
+        [
+          0.800000011920929,
+          0.6000000238418579,
+          0.0
+        ]
+      ]
+    ],
+    "leg_materials": {
+      "FL_calf": {
+        "static": 0.800000011920929,
+        "dynamic": 0.6000000238418579,
+        "combine": "multiply"
+      },
+      "FR_calf": {
+        "static": 0.800000011920929,
+        "dynamic": 0.6000000238418579,
+        "combine": "multiply"
+      },
+      "RL_calf": {
+        "static": 0.800000011920929,
+        "dynamic": 0.6000000238418579,
+        "combine": "multiply"
+      },
+      "RR_calf": {
+        "static": 0.800000011920929,
+        "dynamic": 0.6000000238418579,
+        "combine": "multiply"
+      },
+      "FL_foot": {
+        "static": 0.800000011920929,
+        "dynamic": 0.6000000238418579,
+        "combine": "multiply"
+      },
+      "FR_foot": {
+        "static": 0.800000011920929,
+        "dynamic": 0.6000000238418579,
+        "combine": "multiply"
+      },
+      "RL_foot": {
+        "static": 0.800000011920929,
+        "dynamic": 0.6000000238418579,
+        "combine": "multiply"
+      },
+      "RR_foot": {
+        "static": 0.800000011920929,
+        "dynamic": 0.6000000238418579,
+        "combine": "multiply"
+      }
+    },
+    "max_angular_velocity_degrees_per_s": 1000.0,
+    "max_linear_velocity_mps": 1000.0,
+    "training_contract_checks": {
+      "profile_selected": true,
+      "explicit_dc": true,
+      "original_scale": true,
+      "nineteen_bodies": true,
+      "intended_mass": true,
+      "all_colliders_present": true,
+      "requested_asset_used": true,
+      "source_hash_recorded": true,
+      "native_speed_limits": true,
+      "native_drives_off": true,
+      "joint_friction_zero": true,
+      "solver_position": true,
+      "solver_velocity": true,
+      "self_collision_off": true,
+      "rigid_angular_limit": true,
+      "rigid_linear_limit": true,
+      "eight_leg_materials": true
+    },
+    "training_contract_valid": true,
+    "diagnostic_only": true,
+    "physical_environment": "flat floor; saved map constrains commands; no MV7 prior injected into a task",
+    "staging_source_sha256": "aa558c1094b6992ecb9d1d9f3af98ec8e9928dbedb2ddfae6d37e0dcce48eff4",
+    "fixture_sha256": "85a776853903c42c657cadda48a52ec5fd59bee5a5dee136ef014048e923e899",
+    "harness_sha256": "894b4e6f7496dfb79489f2094a6b86cded76f6ae9042789257bd4247ca5f2ac8",
+    "diagnostic_profile": "latched",
+    "production_navigation_attitude_recovery": true,
+    "stationary_hold_source_sha256": "1fb56a3b444232aaa0135c596c2dfb2bf63310678ff21b13d8d3d6e76148e644",
+    "controller_source_sha256": "400e57b047e79962ecaf51887f5e887e859b6630b88642fa71833853b12d42c8",
+    "placement_variant": "latched",
+    "current_turn_response_sha256": "1ab90ca0997a5ec01162cfd04a934b094b6834babb4d053ca5cede863aa24a7a",
+    "effective_staging_source_sha256": "aa558c1094b6992ecb9d1d9f3af98ec8e9928dbedb2ddfae6d37e0dcce48eff4",
+    "turn_placement_source_sha256": "ee11912fbb8db2d48456f49a6f2e2a709af7299a685cd476c6bb9b87988b4505"
+  },
+  "tests": {
+    "passed": 699,
+    "deselected": 1,
+    "excluded": "test_g1_third_person_is_close_and_elevated",
+    "v139_red_failures": 1
+  },
+  "full_scene_queue": [
+    {
+      "task": "T04",
+      "source_commit": "a0f59eb9fe82cdee611e051b87f4daf339255ce4",
+      "supervisor_pid": 294054,
+      "worktree": "/data20t/embodied/zkj/inter-nav-run-t04-v140-20261030",
+      "output": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v140-t04-ground-truth-try1",
+      "predecessor": "v139 four physical cases",
+      "policy": "original rough7850",
+      "physics_backend": "gpu_dynamics",
+      "stationary_joint_hold": false,
+      "navigation_attitude_recovery": true,
+      "scope_cap_gib": 24,
+      "serial": true,
+      "same_original_goals_scene_maps_health_and_video": true
+    },
+    {
+      "task": "T05",
+      "source_commit": "a0f59eb9fe82cdee611e051b87f4daf339255ce4",
+      "supervisor_pid": 294065,
+      "worktree": "/data20t/embodied/zkj/inter-nav-run-t05-v140-20261030",
+      "output": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v140-t05-ground-truth-try1",
+      "predecessor": "v140 T04 full acceptance",
+      "policy": "original rough7850",
+      "physics_backend": "gpu_dynamics",
+      "stationary_joint_hold": false,
+      "navigation_attitude_recovery": true,
+      "scope_cap_gib": 24,
+      "serial": true,
+      "same_original_goals_scene_maps_health_and_video": true
+    }
+  ]
+}
