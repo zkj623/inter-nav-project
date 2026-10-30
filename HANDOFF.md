@@ -1,6 +1,16 @@
 # HANDOFF
 
-## 当前：v170 推箱退出成功，后续斜向转向准备停滞
+## 当前：v173 原始 T05 验证斜向转向准备启动补偿
+
+运行源码 e86fed5173d4efbd20ccdcb92aac1e2c54024129；权重仍为 8862682da34ebb090a2e56f39254af430d5645f20cb5e3e104c72a4720671db8。794 项回归通过，1 项既有 G1 相机测试未运行。仅验证过的 45 维策略在实际平移输入已送达、低速度及不足 1 cm 位移持续 1.5 秒后，按原方向提高主分量至 0.35 m/s，范数不超过 0.50。原加速度、地图/机身/实测制动检查、预测零速与 20 秒/1.2 m 上限保留。
+
+v172 隔离回放原物理前缀完全匹配，但首个转向准备目标不一致，finished_incomplete，configured 未运行；不能接受为物理验证，也不要运行其归档通过脚本。改由完整在线任务 v173 直接验证候选，不能降低最终验收条件。v173 启动记录 v173-t05.launch.json，监督 1100067、观察器 1100068（核查实时 PID），工作树 inter-nav-run-t05-v173-20261031，输出 recognition-skill-v173-t05-ground-truth-try1，实时状态 recognition-skill-v173-t05-ground-truth.status.json。
+
+T05 原始 [13.6,-0.4] 到 [3.3,1.4]，原尺寸、1 cm 地面、未知地图 1/10 Hz、GT 交互资格和 LiDAR 几何、五路 25 fps、30°/15°/0.25 m、24 GiB/零 swap/56 GiB 稳定准入及共享串行锁不变。只用同一 e86fed5 配置的完整 T05 通过结果，才能运行 v173 T04。queue_original_unitree_v173.py 已由 prepare_direct_original_v173.py 重建，保留全部真实任务/媒体/本地/补充审计门槛；旧 prepare_original_unitree_v173.py 的隔离回放门槛已弃用，不要重新生成覆盖当前队列。
+
+监测实际导航和 staging_translation_assist_active 字段。候选未有物理成功声明。完成后照常运行 archive_original_task.py、本地哈希和 audit_original_completion.py，T05 通过后上传 v173-t05-local-archive-verification.json 并生成 completion-audits/v173-t05.json，再启动同版 T04。见[候选说明](docs/go2_post_push_staging.md)。以下为历史。
+
+## 历史：v170 推箱退出成功，后续斜向转向准备停滞
 
 v170 T05 已停止并完成导出/检查，任务未通过，同版 T04 尚未启动。运行源码 696ba2ed9909a97d34f4d3daddf0598e7f8c615c，policy 8862682da34ebb090a2e56f39254af430d5645f20cb5e3e104c72a4720671db8。实际侧推 0.839371 m，退出后新观测确认时间 101.409998 s，最后箱子移动时间 95.809998 s；第 12162 步 skill 成功。原始物理记录 26267 行完整，最大倾角 2.728528°，非零箱子接触 1458 次。
 
