@@ -135,6 +135,7 @@ def main():
     from grutopia_extension.interactive_navigation.go2_rollout_health import Go2RolloutHealth
     from grutopia_extension.interactive_navigation.go2_actuation import physics_steps_per_command
     from grutopia_extension.interactive_navigation.go2_heading_trim import YawStepPulse,policy_feedback_for_heading_step
+    from grutopia_extension.interactive_navigation.go2_contact_translation_step import ContactTranslationStep
     from grutopia_extension.interactive_navigation.go2_passage_confirmation import observed_passage_routes
     from grutopia_extension.interactive_navigation.online_navigation_map import OnlineNavigationMap
     from grutopia_extension.interactive_navigation.online_navigation_decision import OnlineGoalSelector
@@ -227,6 +228,7 @@ def main():
         'grutopia_extension/interactive_navigation/go2_contact_control.py',
         'grutopia_extension/interactive_navigation/go2_contact_turn.py',
         'grutopia_extension/interactive_navigation/go2_heading_trim.py',
+        'grutopia_extension/interactive_navigation/go2_contact_translation_step.py',
         'grutopia_extension/interactive_navigation/go2_voronoi_navigation.py',
         'grutopia_extension/interactive_navigation/layered_navigation_map.py',
         'grutopia_extension/interactive_navigation/go2_rollout_health.py',
@@ -375,6 +377,7 @@ def main():
                 'contact_front_gap_m':args.contact_front_gap,'contact_braking_horizon_s':CONTACT_BRAKING_HORIZON_S,
                 'contact_centering_axes':'lateral correction before longitudinal approach',
                 'heading_trim_yaw_step':{**YawStepPulse.configuration(),'eligible_observation_profile':'unitree_go2_45'},
+                'corrective_lateral_step':ContactTranslationStep.configuration(),
                 'live_control_config':str(args.control_config) if args.control_config else None,
                 'third_person_offset':[args.third_person_forward,0.,args.third_person_height],'third_person_pitch_degrees':90,
                 'third_person_fov_degrees':args.third_person_fov,

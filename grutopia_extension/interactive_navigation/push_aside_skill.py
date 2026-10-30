@@ -19,6 +19,7 @@ from grutopia_extension.interactive_navigation.go2_passage_confirmation import o
 from grutopia_extension.interactive_navigation.go2_exploration_tracking import decision_buffer_recovery
 from grutopia_extension.interactive_navigation.smooth_go2_navigation import smooth_recovery_action
 from grutopia_extension.interactive_navigation.go2_heading_trim import HeadingTrimControl
+from grutopia_extension.interactive_navigation.go2_contact_translation_step import ContactTranslationStep
 
 
 def wrap(value):return (value+math.pi)%(2*math.pi)-math.pi
@@ -85,7 +86,7 @@ class PushAsideSkill:
         self.release_origin=None;self.release_reason=None;self.certificate=None
         self.last_verify=-1e9;self.observation_moves=0;self.used_stages=[]
         self.progress_mark=None;self.progress_since=None;self.max_tilt=0.
-        self.terminal_release_reason=None
+        self.terminal_release_reason=None;self.lateral_step=None
         self.reason='';self.status='running';self.recovery_from_contact=False;self.box_velocity=0.;self.last_box_time=None;self.push_brakes=0
         self.release_pose_recoveries=0;self.release_recovery_tracker=None;self.release_recovery_target=None
         self.preparation_recoveries=0;self.recovery_tracker=None;self.recovery_target=None;self.next_stage_probe=-1e9;self.heading_trim=None
@@ -93,7 +94,7 @@ class PushAsideSkill:
     def _transition(self,state,ctx,reason=''):
         self.events.append({'skill':self.spec.name,'object_id':self.plan.box_id,'from':self.state,
             'to':state,'reason':reason,'time_s':float(ctx.now),'retry':self.retries})
-        self.state=state;self.state_since=ctx.now;self.settled_since=None;self.translation_braking=False
+        self.state=state;self.state_since=ctx.now;self.settled_since=None;self.translation_braking=False;self.lateral_step=None
         if state=='refine_heading':self.heading_trim=HeadingTrimControl(self.push_heading,min(self.config.alignment_yaw_tolerance,self.config.yaw_tolerance),acceptance_tolerance=self.config.yaw_tolerance)
         self.progress_mark=np.asarray(ctx.position[:2]).copy();self.progress_since=ctx.now
 
@@ -243,6 +244,16 @@ class PushAsideSkill:
         self.events[-1].update(recovery_source_state=recovery_source,recovery_from_contact=self.recovery_from_contact,
             terminal_release=self.terminal_release_reason is not None)
         return self._output()
+
+    def _start_corrective_lateral_step(self,ctx):
+        # The runner supplies policy_command only for a loader-validated 45D
+        # Unitree profile. Legacy profiles keep their established behavior.
+        error=float(np.dot(np.asarray(ctx.box.xy)-np.asarray(ctx.position[:2]),self.tangent))
+        if (getattr(ctx,'policy_command',None) is None or
+                abs(self.config.lateral_speed-ContactTranslationStep.SPEED)>1e-6 or
+                abs(error)<=self.config.alignment_tolerance):return
+        self.lateral_step=ContactTranslationStep(ctx.position,self.tangent*np.sign(error),ctx.now)
+        self.events[-1]['corrective_lateral_step']=ContactTranslationStep.configuration()
 
     def _translation(self,ctx,target,axis,speed,tolerance):
         delta=np.asarray(target)-np.asarray(ctx.position[:2]);error=float(np.dot(delta,axis))
@@ -530,7 +541,7 @@ class PushAsideSkill:
             if abs(yaw_error)>.18:return self._retry(ctx,'heading_drift_during_alignment')
             if ctx.now-self.state_since>self.config.max_alignment_seconds:return self._retry(ctx,'alignment_timeout')
             actual_ready=self._contact_ready(ctx)
-            if self.state!='settle_contact' and actual_ready:
+            if self.state!='settle_contact' and actual_ready and self.lateral_step is None:
                 self._transition('settle_contact',ctx,'actual_contact_pose_ready')
                 self.events[-1].update(nose_gap_m=gap,nose_lateral_error_m=lateral,
                     contact_face_center_offset_cap_m=self.config.preparation_face_offset_max,
@@ -562,6 +573,27 @@ class PushAsideSkill:
                 # final contact still validates the actual nose and heading.
                 body_lateral=float(np.dot(np.asarray(ctx.box.xy)-np.asarray(ctx.position[:2]),self.tangent))
                 body_target=np.asarray(ctx.position[:2])+self.tangent*body_lateral
+                if self.lateral_step is not None:
+                    # The outer face band can be entered by a temporary body
+                    # lean. Finish bounded input delivery or reach the inner
+                    # centerline band, then re-evaluate the original quiet gate.
+                    if abs(body_lateral)<self.config.alignment_tolerance:
+                        self._transition('settle_contact',ctx,'lateral_inner_alignment_observed')
+                        return self._output()
+                    world,detail=self.lateral_step.update(ctx.position,ctx.heading,
+                        getattr(ctx,'policy_command',None),ctx.now)
+                    if self.lateral_step.failed:return self._retry(ctx,self.lateral_step.failed)
+                    if self.lateral_step.complete:
+                        self._transition('settle_contact',ctx,'lateral_input_delivered')
+                        self.events[-1]['lateral_step']=detail
+                        return self._output()
+                    c,s=math.cos(ctx.heading),math.sin(ctx.heading);rot=np.array([[c,-s],[s,c]])
+                    request=[*(rot.T@world),contact_heading_hold(yaw_error,ctx.yaw_rate)]
+                    # No endpoint-shortened horizon: the map must permit the
+                    # requested input under the full existing motion check.
+                    command,_=checked_contact_turn_command(request,ctx.position,ctx.heading,
+                        ctx.planner,ctx.boxes,ctx.limiter,ctx.now)
+                    return self._output(command)
                 command,done=self._translation(ctx,body_target,self.tangent,self.config.lateral_speed,self.config.alignment_tolerance)
                 if done:self._transition('settle_contact',ctx)
                 return self._output(command)
@@ -583,11 +615,14 @@ class PushAsideSkill:
                 # turn next to the jamb. The actual 3D face gate still decides
                 # when deliberate contact is permitted.
                 self._transition('align_lateral',ctx,'settled_lateral_overshoot')
+                self._start_corrective_lateral_step(ctx)
                 return self._output()
             if abs(yaw_error)>self.config.yaw_tolerance:
                 self._transition('refine_heading',ctx,'contact_heading_outside_tolerance')
                 return self._output()
-            if not self._contact_face_clear(ctx):self._transition('align_lateral',ctx)
+            if not self._contact_face_clear(ctx):
+                self._transition('align_lateral',ctx)
+                self._start_corrective_lateral_step(ctx)
             elif gap>self.config.max_engage_standoff or gap<.20:self._transition('align_longitudinal',ctx)
             return self._output()
         if self.state in ['engage','push','settle_push_progress','brake_after_push'] and along>self.plan.push_distance+.25:
