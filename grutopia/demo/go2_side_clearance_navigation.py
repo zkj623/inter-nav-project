@@ -141,7 +141,7 @@ def main():
     from grutopia_extension.interactive_navigation.online_navigation_map import OnlineNavigationMap
     from grutopia_extension.interactive_navigation.online_navigation_decision import OnlineGoalSelector
     from grutopia_extension.interactive_navigation.smooth_go2_navigation import SmoothExplorationTracker,VelocitySlewLimiter,smooth_recovery_action
-    from grutopia_extension.interactive_navigation.go2_interaction_motion import navigation_recovery_enabled,MeasuredStopGate,ObservedSubgoalArrival,checked_skill_action
+    from grutopia_extension.interactive_navigation.go2_interaction_motion import navigation_recovery_enabled,MeasuredStopGate,ObservedSubgoalArrival,checked_skill_action,GO2_GOAL_TOLERANCE_M,goal_within_tolerance
     from grutopia_extension.interactive_navigation.go2_attitude_recovery import NavigationAttitudeRecovery
     from grutopia_extension.interactive_navigation.local_path_guidance import local_guidance_path
     from scipy.ndimage import distance_transform_edt
@@ -267,7 +267,7 @@ def main():
         shutil.copy2(repo/rel,target);manifest[rel]=hashlib.sha256((repo/rel).read_bytes()).hexdigest()
     (args.output/'source_manifest.json').write_text(json.dumps(manifest,indent=2))
     profile=replace(profile,start=(*tasks[0]['start'],spawn_height),goals=tuple((*t['goal'],floor_top+.32) for t in tasks),
-                    success_distance=.20)
+                    success_distance=GO2_GOAL_TOLERANCE_M)
     import torch
     # A single robot uses tiny batches; a large CPU thread pool adds latency.
     torch.set_num_threads(1)
@@ -388,6 +388,7 @@ def main():
                 'third_person_offset':[args.third_person_forward,0.,args.third_person_height],'third_person_pitch_degrees':90,
                 'third_person_fov_degrees':args.third_person_fov,
                 'global_map_hz':args.global_map_hz,'local_map_hz':args.local_map_hz,
+                'goal_tolerance_m':GO2_GOAL_TOLERANCE_M,
                 'local_map_radius_m':args.local_map_radius,
                 'third_person_orientation':'dog forward up, actual yaw following',
                 'route_planner':args.route_planner,'navigation_heading':args.navigation_heading,
@@ -623,7 +624,7 @@ def main():
                 results.append({**task,'success':False,'reason':'startup_unstable','position':p.tolist()});eventfile.close();continue
             task_health=Go2RolloutHealth(floor_top)
             component=PointNavigationComponent(PointNavigationConfig(goal=(*task['goal'],floor_top+.32),mapping=profile.mapping,
-                safe_base_height=floor_top+.32,fall_height=floor_top+.20,success_distance=.20,max_steps=args.max_steps,
+                safe_base_height=floor_top+.32,fall_height=floor_top+.20,success_distance=GO2_GOAL_TOLERANCE_M,max_steps=args.max_steps,
                 use_scene_graph=False,prefer_voronoi_paths=True))
             record_component=component
             map_class=OnlineNavigationMap if args.map_source=='online' else LayeredNavigationMap
@@ -788,7 +789,7 @@ def main():
                         action=observation_brake(p,heading,current,planner.control_time)
                         obs=tick(action);last_action=action;last_tracking=arrival;continue
                 navigation_goal=passage_guide.target if passage_guide is not None else task['goal']
-                if distance<.20 and crossed and phase in ['navigate','decide','cross_passage'] and not planner.blocked(current)[planner.cell(task['goal'])]:
+                if goal_within_tolerance(distance) and crossed and phase in ['navigate','decide','cross_passage'] and not planner.blocked(current)[planner.cell(task['goal'])]:
                     # Validate the pose after ALL stationary recording frames.
                     # Checking before an extra tail can report success even when
                     # the gait drifts outside the final goal tolerance afterwards.
@@ -813,7 +814,7 @@ def main():
                     crossed=completed_box is None or crossed_passage(np.array(obs['position']),np.array(obs['orientation']),completed_box)
                     settled_error=float(np.linalg.norm(np.array(obs['position'][:2])-task['goal']))
                     event('goal_settled',step=step,distance=settled_error,full_body_crossed=bool(crossed),measured_stopped=True)
-                    if settled_error<.25 and crossed:
+                    if goal_within_tolerance(settled_error) and crossed:
                         success=True;reason='goal_reached';break
                     # The observation changed during settling. Start the next
                     # control iteration from that fresh pose instead of stale p.
@@ -1105,7 +1106,7 @@ def main():
             final_tilt=math.degrees(math.acos(np.clip(1-2*(final_q[1]**2+final_q[2]**2),-1,1)))
             if success and (obs['position'][2]<floor_top+.20 or final_tilt>30):
                 success=False;reason='goal_pose_unstable'
-            if success and np.linalg.norm(np.array(obs['position'][:2])-task['goal'])>=.25:
+            if success and not goal_within_tolerance(np.linalg.norm(np.array(obs['position'][:2])-task['goal'])):
                 success=False;reason='goal_drifted_after_settling'
             result={**task,'success':success,'reason':reason,'steps':step+1,'push_count':push_count,
                 'final_position':list(map(float,obs['position'])),'goal_error_m':float(np.linalg.norm(np.array(obs['position'][:2])-task['goal'])),

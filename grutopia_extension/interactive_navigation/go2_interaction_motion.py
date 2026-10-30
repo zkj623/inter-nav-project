@@ -2,6 +2,15 @@
 import numpy as np
 
 
+GO2_GOAL_TOLERANCE_M=.25
+
+
+def goal_within_tolerance(distance):
+    """The requested geometric bound; measured stopping is checked separately."""
+    value=float(distance)
+    return bool(np.isfinite(value) and 0.<=value<GO2_GOAL_TOLERANCE_M)
+
+
 def navigation_recovery_enabled(phase,skill_state=None):
     return phase in {'navigate','approach','decide','cross_passage',
                      'inspect_navigate','inspect_turn','inspect_wait'} or (
