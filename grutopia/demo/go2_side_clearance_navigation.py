@@ -345,7 +345,10 @@ def main():
                 if prim:UsdGeom.Imageable(prim).MakeInvisible()
             light=UsdLux.DomeLight.Define(stage,'/World/Go2NavigationVideoDome');light.CreateIntensityAttr(900)
             print(json.dumps({'event':'video_camera_initialization','material_mode':args.material_mode}),flush=True)
-            first_camera=FollowingRobotCamera(resolution=(1280,736),offset=GO2_FIRST_PERSON_OFFSET,pitch_degrees=GO2_FIRST_PERSON_PITCH_DEGREES,
+            # Keep the recording lens behind the physical contact nose so
+            # pushing a tall carton cannot put the viewpoint inside it.
+            first_person_offset=(.20,GO2_FIRST_PERSON_OFFSET[1],GO2_FIRST_PERSON_OFFSET[2])
+            first_camera=FollowingRobotCamera(resolution=(1280,736),offset=first_person_offset,pitch_degrees=GO2_FIRST_PERSON_PITCH_DEGREES,
                 enable_depth=args.interaction_source=='vision',enable_point_cloud_image=args.interaction_source=='vision',enable_semantics=False,
                 enable_bounding_boxes=False,prim_path='/World/Go2TaskFirstCamera')
             third_camera=FollowingRobotCamera(resolution=(1280,736),offset=(args.third_person_forward,0.,args.third_person_height),pitch_degrees=90,
@@ -400,7 +403,7 @@ def main():
                 'voronoi_clearance_weight_m':args.voronoi_clearance_weight,
                 'local_collision_model':'actual_yaw_full_footprint_and_motion_sweep',
                 'ordinary_forward_speed_law':'exploration_cosine_squared',
-                'first_person_offset':list(GO2_FIRST_PERSON_OFFSET),
+                'first_person_offset':list(first_person_offset),
                 'first_person_pitch_degrees':GO2_FIRST_PERSON_PITCH_DEGREES,
                 'episode_start':'after initialization standby, before the first decision',
                 'episode_end':'after success/failure and final stationary frames'},indent=2))
