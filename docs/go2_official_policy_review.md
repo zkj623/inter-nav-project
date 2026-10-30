@@ -1,6 +1,6 @@
 # Go2 策略来源与宇树官方方案核查
 
-最新：仍使用原第三方rough7850，v147 T04完整通过、v149 T05仍未通过。当前已复现微调回摆；有界短转候选已经完整停稳验证失败并被拒绝，v154四例补充诊断也全部失败；没有替换为宇树出厂策略或已测NVIDIA权重。见 [最新诊断与验证范围](go2_yaw_step_diagnostics.md)。
+最新2026-10-30：新策略训练、接口和有界输入诊断已完成，原始T05 v160正在复测，同版T04尚未启动。正向微调仍接近误差上限，完整证据和当前配置见[部署与原任务验证](go2_unitree_deployment.md)。下方保留此前来源核查和转向诊断历史，不能作为当前成功声明。
 
 核查日期：2026-10-30。下方为固定公开版本的宇树来源核查。NVIDIA Isaac Lab发布的Go2权重、部署差异和运行命令见 [Go2模型匹配与候选策略](go2_training_policy_candidate.md)；它不是宇树出厂策略。相同GPU部署下的v143短指令对照见 [当前policy对照](go2_contact_preparation_settling.md#参考policy对照)。已启动基于官方配置的隔离训练，当前进度和命令见[训练说明](go2_official_training.md)。
 
@@ -12,9 +12,9 @@
 
 来源复核后已进一步完成32环境训练管线检查，并启动1024环境、2000轮的第一阶段训练。尚未升级共享环境或替换生产权重，结果和边界见[训练说明](go2_official_training.md)。
 
-## 当前策略
+## 原有第三方策略
 
-当前 `rough_model_7850.pt` 来自第三方 [Zhefan-Xu/isaac-go2-ros2](https://github.com/Zhefan-Xu/isaac-go2-ros2/tree/isaacsim-4.5/ckpts/unitree_go2)，不是宇树官方发布的预训练模型。实际文件6881323字节，SHA256为 `d435f46dcf2d614cad28e21e033b34d6036d079924e1746530a36f2fba2315bd`，与仓库下载器声明一致。
+原有 `rough_model_7850.pt` 来自第三方 [Zhefan-Xu/isaac-go2-ros2](https://github.com/Zhefan-Xu/isaac-go2-ros2/tree/isaacsim-4.5/ckpts/unitree_go2)，不是宇树官方发布的预训练模型。实际文件6881323字节，SHA256为 `d435f46dcf2d614cad28e21e033b34d6036d079924e1746530a36f2fba2315bd`，与仓库下载器声明一致。
 
 它采用235维输入（48维本体状态加187维高度）、12维动作、0.25动作尺度。当前运行使用50 Hz推理和200 Hz显式电机控制。实测表明持续行进和侧移可以跟踪，但启停及小幅调整仍会出现显著姿态波动；上层恢复停稳检查也存在独立缺陷，不能只凭失败视频归因于权重。
 
