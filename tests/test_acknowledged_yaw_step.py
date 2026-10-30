@@ -127,8 +127,9 @@ def test_runner_context_copies_actual_policy_input_not_requested_velocity():
         and isinstance(n.func,ast.Name) and n.func.id=='SkillContext']
     assert len(calls)==1
     actual=np.array([0.,0.,.1]);requested=np.array([0.,0.,.55])
-    ctrl=NS(body_lin_vel=np.zeros(3),body_ang_vel=np.zeros(3),policy_command=actual)
-    names={'SkillContext':SkillContext,'planner':NS(control_time=1.),'p':np.array([0.,0.,.41]),'heading':0.,
+    ctrl=NS(body_lin_vel=np.zeros(3),body_ang_vel=np.zeros(3),policy_command=actual,
+        observation_dim=45,policy=NS(go2_deployment_contract={'observation_profile':'unitree_go2_45'}))
+    names={'SkillContext':SkillContext,'policy_feedback_for_heading_step':module.policy_feedback_for_heading_step,'planner':NS(control_time=1.),'p':np.array([0.,0.,.41]),'heading':0.,
         'robot':NS(_go2_locomotion_control=ctrl),'tilt':0.,'task_health':NS(healthy=True),
         'by_id':{'B1':None},'plan':NS(box_id='B1'),'current':[],'layers':None,
         'smooth_limiter':NS(command=requested),'sub_reached':False,'q':np.array([1.,0.,0.,0.])}
