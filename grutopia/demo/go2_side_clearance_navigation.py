@@ -136,6 +136,7 @@ def main():
     from grutopia_extension.interactive_navigation.go2_actuation import physics_steps_per_command
     from grutopia_extension.interactive_navigation.go2_heading_trim import YawStepPulse,policy_feedback_for_heading_step
     from grutopia_extension.interactive_navigation.go2_contact_translation_step import ContactTranslationStep
+    from grutopia_extension.interactive_navigation.local_staging_control import StagingTranslationAssist
     from grutopia_extension.interactive_navigation.go2_passage_confirmation import observed_passage_routes
     from grutopia_extension.interactive_navigation.online_navigation_map import OnlineNavigationMap
     from grutopia_extension.interactive_navigation.online_navigation_decision import OnlineGoalSelector
@@ -382,6 +383,7 @@ def main():
                 'heading_trim_yaw_step':{**YawStepPulse.configuration(),'eligible_observation_profile':'unitree_go2_45'},
                 'corrective_lateral_step':ContactTranslationStep.configuration(),
                 'observed_retreat_speeds_mps':{'legacy':.20,'unitree_go2_45':PushAsideConfig().reverse_speed},
+                'staging_translation_start_assist':StagingTranslationAssist.configuration(),
                 'live_control_config':str(args.control_config) if args.control_config else None,
                 'third_person_offset':[args.third_person_forward,0.,args.third_person_height],'third_person_pitch_degrees':90,
                 'third_person_fov_degrees':args.third_person_fov,
@@ -479,6 +481,7 @@ def main():
                 motion_tilt=math.degrees(math.acos(np.clip(1-2*(motion_q[1]**2+motion_q[2]**2),-1.,1.)))
                 smooth_limiter.observe([*controller.body_lin_vel[:2],controller.body_ang_vel[2]],now,
                     body_state=(observation['position'],controller.body_lin_vel,controller.body_ang_vel,motion_tilt))
+                smooth_limiter.policy_command=policy_feedback_for_heading_step(controller)
             if layers is not None:
                 now=robot._go2_locomotion_control._simulation_time()
                 now=float(now) if now is not None else layers.now+.008

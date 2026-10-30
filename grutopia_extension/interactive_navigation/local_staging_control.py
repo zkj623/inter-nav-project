@@ -43,6 +43,47 @@ class StagingYawRate:
         return sign*(.6 if self.cruising else 1.)
 
 
+class StagingTranslationAssist:
+    """Start a verified gait only after an actually delivered move stalls.
+
+    This changes the requested speed, before the existing acceleration,
+    full-body and measured-momentum checks. Predictive braking stays zero.
+    """
+    STALL_SECONDS=1.5
+    PROGRESS_M=.01
+    MIN_COMPONENT_MPS=.35
+    MAX_SPEED_MPS=.50
+
+    def __init__(self):
+        self.anchor=None;self.stalled_since=None;self.active=False
+
+    @classmethod
+    def configuration(cls):
+        return {'eligible_observation_profile':'unitree_go2_45',
+                'requires_actual_policy_feedback':True,'stall_seconds':cls.STALL_SECONDS,
+                'progress_m':cls.PROGRESS_M,'minimum_active_component_mps':cls.MIN_COMPONENT_MPS,
+                'maximum_norm_mps':cls.MAX_SPEED_MPS,'existing_braking_and_collision_checks_retained':True}
+
+    def speed(self,requested,body_direction,position,limiter,now):
+        feedback=getattr(limiter,'policy_command',None)
+        if feedback is None:
+            self.anchor=None;self.stalled_since=None;self.active=False
+            return requested
+        position=np.asarray(position[:2],float)
+        effective_request=(np.linalg.norm(np.asarray(feedback)[:2])>.10 and abs(float(feedback[2]))<.06)
+        quiet=(np.linalg.norm(limiter.measured[:2])<.02 and abs(limiter.measured[2])<.06)
+        if requested<=0. or not effective_request or not quiet:
+            self.anchor=None;self.stalled_since=None
+        elif self.anchor is None or np.linalg.norm(position-self.anchor)>self.PROGRESS_M:
+            self.anchor=position.copy();self.stalled_since=float(now)
+        elif now-self.stalled_since>=self.STALL_SECONDS:
+            self.active=True
+        component=float(np.max(np.abs(body_direction)))
+        if self.active and requested>0. and component>1e-8:
+            return min(self.MAX_SPEED_MPS,max(requested,self.MIN_COMPONENT_MPS/component))
+        return requested
+
+
 class LocalStagingControl:
     def __init__(self,position,heading,goal_heading,planner,boxes,now):
         self.origin=np.asarray(position[:2],float).copy();self.started=now
@@ -53,6 +94,7 @@ class LocalStagingControl:
         self.turn_response=TurnResponseAssist()
         self.yaw_rate=StagingYawRate()
         self.placement_latched=False
+        self.translation_assist=StagingTranslationAssist()
 
     def update(self,position,heading,planner,boxes,limiter,now):
         position=np.asarray(position[:2],float)
@@ -109,6 +151,9 @@ class LocalStagingControl:
                 stopping_distance=max(0.,toward)*(.65 if sideways else .30)+.015
                 speed=(0. if toward>.06 and distance<stopping_distance else
                        float(np.clip(1.5*distance-.6*toward,minimum,maximum)))
+                speed=self.translation_assist.speed(speed,body_direction,position,limiter,now)
+                state.update(staging_translation_assist_active=self.translation_assist.active,
+                             staging_requested_speed_mps=float(speed))
                 world=direction*speed
                 command=np.array([c*world[0]+s*world[1],-s*world[0]+c*world[1],0.])
                 return command,{**state,'target':self.target.tolist(),'staging_phase':self.phase}

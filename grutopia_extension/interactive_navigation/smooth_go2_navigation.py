@@ -18,6 +18,7 @@ class VelocitySlewLimiter:
         self.linear_acceleration=linear_acceleration;self.yaw_acceleration=yaw_acceleration
         self.command=np.zeros(3);self.last_time=None
         self.measured=np.zeros(3);self.measurement_time=None;self.body_state=None
+        self.policy_command=None  # Populated only by the validated 45D runtime adapter.
         self.staging=None;self.progress_position=None;self.progress_time=None
         self.recovery_gate=RecoveryMotionGate()
     def clear_guidance(self,position,now):
