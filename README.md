@@ -16,7 +16,7 @@ a text target such as `refrigerator` and walks up to the scanned object.
 墙体地图由在线 LiDAR 建立，目标尚不可达时沿 Voronoi 路线探索可达边界。
 全局层 1 Hz 更新，局部层 10 Hz 更新，箱子移开后的空间需要新射线确认才会通行。
 在线模式默认使用固定 200 Hz 物理步长的 DC 电机控制、50 Hz Go2 policy 和 25 fps 录像。
-**当前原始任务尚未统一完成。** 基于宇树官方配置的Go2自行训练策略已完成第一阶段，45维接口和仅针对新策略的有界转向输入通过诊断；原始T05 v160已启动，同版T04尚未启动。正向微调误差仍接近允许上限，不能把诊断通过当作任务成功。[新策略验证、证据与当前复测](docs/go2_unitree_deployment.md)及[训练命令](docs/go2_official_training.md)见此。旧v147 T04的[完整成功记录](docs/go2_original_t04_v147.md)保留，但不能与新版本混合验收。
+**当前原始任务尚未统一完成。** 新policy的v160 T05行走姿态较稳，但在低速探索路点停滞，未推箱或到达目标；失败前缀五路录像已本地核验。已补上“安全指令没有产生实测进展”的失败反馈，765项回归通过，原始T05 v162正在复测，同版T04尚未启动。[停滞证据、修复与录像](docs/go2_execution_stall.md)、[新策略验证](docs/go2_unitree_deployment.md)和[训练命令](docs/go2_official_training.md)见此。
 
 历史原始 **T05 v127已完整验收通过**：B07实际侧推0.836m、在线确认并穿越新通路，最终停稳误差0.174m、全程最大倾角21.712°。同版T04已失败：推箱前转向失稳，最大倾角37.904°；历史T04 v119成功结果保留，不能据此声称新版T04或五组统一通过。当前正对照底层策略与物理配置，见 [失稳诊断](docs/go2_policy_physics_diagnosis.md)。
 通过的T05使用旧rough+匹配训练模型、显式支撑目标保持和原姿态恢复。五路完整视频、保持权限检查、证据及所需追加参数见 [T05结果与支撑目标保持](docs/go2_supported_idle_hold.md)。模型来源见 [策略对照](docs/go2_training_policy_candidate.md)，交接状态见 [HANDOFF](HANDOFF.md)。
@@ -29,7 +29,7 @@ export MALLOC_ARENA_MAX=2
 export PYTHONPATH="$PWD:$PYTHONPATH"
 go2_inputs=/data20t/embodied/zkj/inter-nav-results/go2-voronoi-heading-up-20261025/collision-corrected-inputs
 go2_reference=/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/official-policy-review-20261030/nvidia_isaaclab_4_5
-go2_policy_root=/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/candidate-policy-v160
+go2_policy_root=/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/candidate-policy-v162
 go2_out="/data20t/embodied/zkj/inter-nav-results/go2-online-$(date +%Y%m%d-%H%M%S)"
 "$ISAAC_PYTHON" -u grutopia/demo/go2_online_interactive_navigation.py \
   --benchmark-dir "$go2_inputs" --output "$go2_out" \
@@ -56,7 +56,7 @@ go2_out="/data20t/embodied/zkj/inter-nav-results/go2-online-$(date +%Y%m%d-%H%M%
 实测更平稳的原 PD 控制版本；对应源码、视频及尚未通过的试验见下方在线导航说明。
 这不是同一套配置五组统一通过的声明。侧移与前后移动的请求分开配置：旧rough策略的独立物理试验中
 0.25 m/s 纯侧移未形成有效迈步，当前侧移采用已测可起步的 0.35 m/s，并结合提前制动。
-持续侧移片段可跟踪该速度，但短距离纠偏和动作切换仍需改进；当前已加入受碰撞检查约束的平滑减速、必要时的航向精调和实测停稳窗口，v147的T04已通过，v149的T05仍失败，旧rough上的有界短转候选已拒绝；新45维策略的候选另经完整停稳及额外保持验证，正在v160原始T05复测；T05 v127为历史结果。
+持续侧移片段可跟踪该速度，但短距离纠偏和动作切换仍需改进；当前已加入受碰撞检查约束的平滑减速、必要时的航向精调和实测停稳窗口，v147的T04已通过，v149的T05仍失败，旧rough上的有界短转候选已拒绝；新45维策略的候选另经完整停稳及额外保持验证，当前在v162原始T05复测；T05 v127为历史结果。
 
 在线模式仅从输入目录读取仿真场景配置、箱子布局和任务坐标，不把 `navigation_grid.npz`、
 `original_metadata.json` 或 `passages.json` 交给规划器。箱子身份/尺寸/位姿仍是仿真检测接口，
