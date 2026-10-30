@@ -1,0 +1,675 @@
+{
+  "original_pair_complete": false,
+  "failed_v162": {
+    "run": "recognition-skill-v162-t05-ground-truth-try1",
+    "task": "T05",
+    "operator_stopped_prefix": true,
+    "video_sha256_match": {
+      "combined.mp4": true,
+      "map_topdown.mp4": true,
+      "pointcloud_map.mp4": true,
+      "robot_rgb.mp4": true,
+      "third_person.mp4": true
+    },
+    "media_valid": true,
+    "source_valid": true,
+    "visual_task_valid": false,
+    "actual_passage_valid": false,
+    "navigation_success": false,
+    "termination_reason": "stop_requested",
+    "steps": 16017,
+    "error_m": 1.659135731561723,
+    "max_tilt_degrees": 2.7285276321252305,
+    "frames": 3259,
+    "duration_s": 130.36,
+    "selected_box_displacements": [
+      {
+        "object_id": "B07",
+        "world_displacement_m": 2.9802322387695312e-08,
+        "along_planned_push_m": 0.0
+      }
+    ],
+    "policy_artifact_checks": {
+      "actor_checkpoint.pt": true,
+      "deployment_contract.json": true,
+      "model_and_contract_match": true
+    },
+    "policy_artifacts_valid": true,
+    "full_task_accepted": false
+  },
+  "stop_reason": {
+    "operator_stopped_prefix": true,
+    "original_task_accepted": false,
+    "reason": "Contact alignment repeatedly brakes on a transient pose before an effective lateral command is delivered.",
+    "last_simulation_time_s": 132.2699970435351,
+    "recent_window_s": 15,
+    "recent_switches": 37,
+    "net_xy_motion_m": 0.004116785509343919,
+    "recent_phases": {
+      "skill_settle_contact": 1330,
+      "skill_align_lateral": 546
+    },
+    "peak_actual_lateral_request_mps": 0.14621762931346893,
+    "remaining_push_m": 0.8499999999999999,
+    "policy_changed_during_run": false,
+    "stop_method": "existing STOP file; preserve the recorded prefix and normal video finalization",
+    "replay_input": "v163-contact-alignment-replay-input.json"
+  },
+  "calibration": {
+    "state": "finished",
+    "time_unix": 1793379031.6147761,
+    "diagnostic_only": true,
+    "outcomes": [
+      {
+        "label": "positive040",
+        "exit_code": 0,
+        "resource_stop": false,
+        "scope_cap_verified": true,
+        "peak_scope_gib": 3.8241539001464844,
+        "failure": null,
+        "summary": {
+          "calibration_only": true,
+          "diagnostic_only": true,
+          "original_task_accepted": false,
+          "label": "positive040",
+          "reason": "delivered_and_held",
+          "lateral_pulse_passed": true,
+          "prefix_exact": true,
+          "prefix_matches_tolerance": true,
+          "prefix_maximum_errors": {
+            "position_m": 0.0,
+            "orientation_deg": 3.4150945850063755e-06,
+            "yaw_rad": 0.0,
+            "motor_target_rad": 0.0
+          },
+          "delivered": true,
+          "final_stop_passed": true,
+          "retained_lateral_change_m": 0.07963325083255768,
+          "final_y_error_m": 0.021234408020973206,
+          "final_heading_error_rad": 0.001744901502044982,
+          "maximum_translation_all_physics_m": 0.09790155638647777,
+          "maximum_foreaft_all_physics_m": 0.011254072189331055,
+          "post_maximum_tilt_deg": 1.8102708876531737,
+          "maximum_tilt_deg": 2.7285275330621857,
+          "physics_samples": 19193,
+          "policy_sha256": "8862682da34ebb090a2e56f39254af430d5645f20cb5e3e104c72a4720671db8",
+          "benchmark_sha256": "847f208bc4eb344186f0e46d4135f353033061cdf820128001f1319fe6ab33a2",
+          "input_sha256": "47492e93c302ebf91d2e53966a1dc7f994faeb4c41aa048d419e62b0142238ba",
+          "scope": "Exact recorded physical prefix followed by a bounded 0.35 m/s lateral command held for 0.04 s after actual input acknowledgement, then 10 s zero hold. No production skill or original task acceptance."
+        }
+      },
+      {
+        "label": "negative040",
+        "exit_code": 0,
+        "resource_stop": false,
+        "scope_cap_verified": true,
+        "peak_scope_gib": 3.7651214599609375,
+        "failure": null,
+        "summary": {
+          "calibration_only": true,
+          "diagnostic_only": true,
+          "original_task_accepted": false,
+          "label": "negative040",
+          "reason": "delivered_and_held",
+          "lateral_pulse_passed": true,
+          "prefix_exact": true,
+          "prefix_matches_tolerance": true,
+          "prefix_maximum_errors": {
+            "position_m": 0.0,
+            "orientation_deg": 3.4150945850063755e-06,
+            "yaw_rad": 0.0,
+            "motor_target_rad": 0.0
+          },
+          "delivered": true,
+          "final_stop_passed": true,
+          "retained_lateral_change_m": 0.05621188133955002,
+          "final_y_error_m": 0.044655777513980865,
+          "final_heading_error_rad": 0.020446593708480343,
+          "maximum_translation_all_physics_m": 0.07132801429857567,
+          "maximum_foreaft_all_physics_m": 0.009328126907348633,
+          "post_maximum_tilt_deg": 1.755082132486724,
+          "maximum_tilt_deg": 2.7285275330621857,
+          "physics_samples": 19193,
+          "policy_sha256": "8862682da34ebb090a2e56f39254af430d5645f20cb5e3e104c72a4720671db8",
+          "benchmark_sha256": "847f208bc4eb344186f0e46d4135f353033061cdf820128001f1319fe6ab33a2",
+          "input_sha256": "47492e93c302ebf91d2e53966a1dc7f994faeb4c41aa048d419e62b0142238ba",
+          "scope": "Exact recorded physical prefix followed by a bounded 0.35 m/s lateral command held for 0.04 s after actual input acknowledgement, then 10 s zero hold. No production skill or original task acceptance."
+        }
+      }
+    ],
+    "navigation_accepted": false,
+    "passed_lateral_calibrations": [
+      "positive040",
+      "negative040"
+    ]
+  },
+  "calibration_archive": {
+    "archive": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/lateral-replay-v163b-evidence.tar.gz",
+    "sha256": "b7ce558ddb9ec522ee2e36603eca379e84e381a42a4c73de0395a5a74fa90cd3",
+    "bytes": 6703553,
+    "files": 28,
+    "original_tasks_accepted": false
+  },
+  "baseline_integration": {
+    "diagnostic_only": true,
+    "original_task_accepted": false,
+    "label": "baseline",
+    "reason": "alignment_probe_timeout",
+    "prefix_exact": true,
+    "prefix_maximum_errors": {
+      "position_m": 0.0,
+      "orientation_deg": 3.4150945850063755e-06,
+      "yaw_rad": 0.0,
+      "motor_target_rad": 0.0
+    },
+    "baseline_loop_reproduced": true,
+    "alignment_integration_passed": false,
+    "engage_transition_reached": false,
+    "contact_ready_after_extra_10s": false,
+    "measured_stop_after_extra_10s": false,
+    "maximum_translation_all_physics_m": 0.010204996374192544,
+    "maximum_foreaft_all_physics_m": 0.0016646385192871094,
+    "post_maximum_tilt_deg": 1.1362743774038337,
+    "final_position": [
+      2.245112180709839,
+      0.1221640333533287,
+      0.3345423638820648
+    ],
+    "final_heading_rad": -0.020306358338405852,
+    "contact_frame": [
+      0.3017775323416288,
+      0.10057854152058329,
+      0.020306357348085946
+    ],
+    "transitions": [
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "settle_contact",
+        "to": "align_lateral",
+        "reason": "settled_lateral_overshoot",
+        "time_s": 106.62499761674553,
+        "retry": 0
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "align_lateral",
+        "to": "settle_contact",
+        "reason": "actual_contact_pose_ready",
+        "time_s": 106.85499761160463,
+        "retry": 0,
+        "nose_gap_m": 0.2999450377527498,
+        "nose_lateral_error_m": 0.10073154610642343,
+        "contact_face_center_offset_cap_m": 0.1,
+        "contact_face_margin_m": 0.04
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "settle_contact",
+        "to": "align_lateral",
+        "reason": "settled_lateral_overshoot",
+        "time_s": 107.44999759830534,
+        "retry": 0
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "align_lateral",
+        "to": "settle_contact",
+        "reason": "actual_contact_pose_ready",
+        "time_s": 107.67999759316444,
+        "retry": 0,
+        "nose_gap_m": 0.29987939707683325,
+        "nose_lateral_error_m": 0.10066498983929006,
+        "contact_face_center_offset_cap_m": 0.1,
+        "contact_face_margin_m": 0.04
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "settle_contact",
+        "to": "align_lateral",
+        "reason": "settled_lateral_overshoot",
+        "time_s": 108.26499758008868,
+        "retry": 0
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "align_lateral",
+        "to": "settle_contact",
+        "reason": "actual_contact_pose_ready",
+        "time_s": 108.49499757494777,
+        "retry": 0,
+        "nose_gap_m": 0.29994049814730267,
+        "nose_lateral_error_m": 0.10073564782326858,
+        "contact_face_center_offset_cap_m": 0.1,
+        "contact_face_margin_m": 0.04
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "settle_contact",
+        "to": "align_lateral",
+        "reason": "settled_lateral_overshoot",
+        "time_s": 109.08999756164849,
+        "retry": 0
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "align_lateral",
+        "to": "settle_contact",
+        "reason": "actual_contact_pose_ready",
+        "time_s": 109.31999755650759,
+        "retry": 0,
+        "nose_gap_m": 0.2998868930725414,
+        "nose_lateral_error_m": 0.1006662943867616,
+        "contact_face_center_offset_cap_m": 0.1,
+        "contact_face_margin_m": 0.04
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "settle_contact",
+        "to": "align_lateral",
+        "reason": "settled_lateral_overshoot",
+        "time_s": 109.90499754343182,
+        "retry": 0
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "align_lateral",
+        "to": "settle_contact",
+        "reason": "actual_contact_pose_ready",
+        "time_s": 110.13499753829092,
+        "retry": 0,
+        "nose_gap_m": 0.2999431747170232,
+        "nose_lateral_error_m": 0.10073106488246449,
+        "contact_face_center_offset_cap_m": 0.1,
+        "contact_face_margin_m": 0.04
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "settle_contact",
+        "to": "align_lateral",
+        "reason": "settled_lateral_overshoot",
+        "time_s": 110.72999752499163,
+        "retry": 0
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "align_lateral",
+        "to": "settle_contact",
+        "reason": "actual_contact_pose_ready",
+        "time_s": 110.95999751985073,
+        "retry": 0,
+        "nose_gap_m": 0.29989054966007284,
+        "nose_lateral_error_m": 0.10068049730490157,
+        "contact_face_center_offset_cap_m": 0.1,
+        "contact_face_margin_m": 0.04
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "settle_contact",
+        "to": "align_lateral",
+        "reason": "settled_lateral_overshoot",
+        "time_s": 111.54499750677496,
+        "retry": 0
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "align_lateral",
+        "to": "settle_contact",
+        "reason": "actual_contact_pose_ready",
+        "time_s": 111.77499750163406,
+        "retry": 0,
+        "nose_gap_m": 0.2999477317531685,
+        "nose_lateral_error_m": 0.10074735839493468,
+        "contact_face_center_offset_cap_m": 0.1,
+        "contact_face_margin_m": 0.04
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "settle_contact",
+        "to": "align_lateral",
+        "reason": "settled_lateral_overshoot",
+        "time_s": 112.36999748833477,
+        "retry": 0
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "align_lateral",
+        "to": "settle_contact",
+        "reason": "actual_contact_pose_ready",
+        "time_s": 112.59999748319387,
+        "retry": 0,
+        "nose_gap_m": 0.2998833047825678,
+        "nose_lateral_error_m": 0.10068627743214531,
+        "contact_face_center_offset_cap_m": 0.1,
+        "contact_face_margin_m": 0.04
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "settle_contact",
+        "to": "align_lateral",
+        "reason": "settled_lateral_overshoot",
+        "time_s": 113.1849974701181,
+        "retry": 0
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "align_lateral",
+        "to": "settle_contact",
+        "reason": "actual_contact_pose_ready",
+        "time_s": 113.4149974649772,
+        "retry": 0,
+        "nose_gap_m": 0.29995323549084346,
+        "nose_lateral_error_m": 0.10076425726411202,
+        "contact_face_center_offset_cap_m": 0.1,
+        "contact_face_margin_m": 0.04
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "settle_contact",
+        "to": "align_lateral",
+        "reason": "settled_lateral_overshoot",
+        "time_s": 114.00999745167792,
+        "retry": 0
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "align_lateral",
+        "to": "settle_contact",
+        "reason": "actual_contact_pose_ready",
+        "time_s": 114.23999744653702,
+        "retry": 0,
+        "nose_gap_m": 0.29988418162761726,
+        "nose_lateral_error_m": 0.10069672307304443,
+        "contact_face_center_offset_cap_m": 0.1,
+        "contact_face_margin_m": 0.04
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "settle_contact",
+        "to": "align_lateral",
+        "reason": "settled_lateral_overshoot",
+        "time_s": 114.82499743346125,
+        "retry": 0
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "align_lateral",
+        "to": "settle_contact",
+        "reason": "actual_contact_pose_ready",
+        "time_s": 115.05499742832035,
+        "retry": 0,
+        "nose_gap_m": 0.2999532342044973,
+        "nose_lateral_error_m": 0.10077682238491495,
+        "contact_face_center_offset_cap_m": 0.1,
+        "contact_face_margin_m": 0.04
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "settle_contact",
+        "to": "align_lateral",
+        "reason": "settled_lateral_overshoot",
+        "time_s": 115.64999741502106,
+        "retry": 0
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "align_lateral",
+        "to": "settle_contact",
+        "reason": "actual_contact_pose_ready",
+        "time_s": 115.87999740988016,
+        "retry": 0,
+        "nose_gap_m": 0.29988312405475553,
+        "nose_lateral_error_m": 0.1007078245259256,
+        "contact_face_center_offset_cap_m": 0.1,
+        "contact_face_margin_m": 0.04
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "settle_contact",
+        "to": "align_lateral",
+        "reason": "settled_lateral_overshoot",
+        "time_s": 116.46499739680439,
+        "retry": 0
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "align_lateral",
+        "to": "settle_contact",
+        "reason": "actual_contact_pose_ready",
+        "time_s": 116.69499739166349,
+        "retry": 0,
+        "nose_gap_m": 0.29994010726257186,
+        "nose_lateral_error_m": 0.10078072483338335,
+        "contact_face_center_offset_cap_m": 0.1,
+        "contact_face_margin_m": 0.04
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "settle_contact",
+        "to": "align_lateral",
+        "reason": "settled_lateral_overshoot",
+        "time_s": 117.2899973783642,
+        "retry": 0
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "align_lateral",
+        "to": "settle_contact",
+        "reason": "actual_contact_pose_ready",
+        "time_s": 117.5199973732233,
+        "retry": 0,
+        "nose_gap_m": 0.2998928889824842,
+        "nose_lateral_error_m": 0.1007214759926054,
+        "contact_face_center_offset_cap_m": 0.1,
+        "contact_face_margin_m": 0.04
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "settle_contact",
+        "to": "align_lateral",
+        "reason": "settled_lateral_overshoot",
+        "time_s": 118.10499736014754,
+        "retry": 0
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "align_lateral",
+        "to": "settle_contact",
+        "reason": "actual_contact_pose_ready",
+        "time_s": 118.34499735478312,
+        "retry": 0,
+        "nose_gap_m": 0.3000265334014654,
+        "nose_lateral_error_m": 0.1003640913140657,
+        "contact_face_center_offset_cap_m": 0.1,
+        "contact_face_margin_m": 0.04
+      }
+    ],
+    "post_reference_compared_cycles": 1500,
+    "post_reference_maximum_errors": {
+      "position_m": 2.8411306913072413e-05,
+      "command_difference": 0.0003270117108620241,
+      "motor_target_difference": 0.0010813474655151367
+    },
+    "map_snapshot": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/v162-t05-live-snapshots/step-012800",
+    "snapshot_age_at_takeover_s": 0.1149999974295497,
+    "physical_state_never_overwritten_after_replay": true,
+    "policy_sha256": "8862682da34ebb090a2e56f39254af430d5645f20cb5e3e104c72a4720671db8",
+    "source_sha256": "ab9d2caa1a3ded76be67d887f6359f137b7335bd56219efe713b810e8aef3534",
+    "scope": "Production PushAsideSkill and checked_skill_action, recorded physical prefix and prior online map; stop at verified engagement preparation, no box push or original task claim."
+  },
+  "candidate_integration": {
+    "diagnostic_only": true,
+    "original_task_accepted": false,
+    "label": "committed",
+    "reason": "measured_contact_pose_ready",
+    "prefix_exact": true,
+    "prefix_maximum_errors": {
+      "position_m": 0.0,
+      "orientation_deg": 3.4150945850063755e-06,
+      "yaw_rad": 0.0,
+      "motor_target_rad": 0.0
+    },
+    "baseline_loop_reproduced": false,
+    "alignment_integration_passed": true,
+    "engage_transition_reached": true,
+    "contact_ready_after_extra_10s": true,
+    "measured_stop_after_extra_10s": true,
+    "maximum_translation_all_physics_m": 0.07220343526044629,
+    "maximum_foreaft_all_physics_m": 0.006940364837646484,
+    "post_maximum_tilt_deg": 1.930294687328665,
+    "final_position": [
+      2.2449910640716553,
+      0.1700444221496582,
+      0.33616939187049866
+    ],
+    "final_heading_rad": -0.03960090742029876,
+    "contact_frame": [
+      0.3020893382978687,
+      0.059062398863229254,
+      0.039600905944021214
+    ],
+    "transitions": [
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "settle_contact",
+        "to": "align_lateral",
+        "reason": "settled_lateral_overshoot",
+        "time_s": 106.62499761674553,
+        "retry": 0,
+        "corrective_lateral_step": {
+          "world_speed_mps": 0.35,
+          "acknowledged_hold_seconds": 0.04,
+          "input_timeout_seconds": 3.0,
+          "maximum_translation_m": 0.25,
+          "eligible_observation_profile": "unitree_go2_45",
+          "settled_contact_gate_unchanged": true
+        }
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "align_lateral",
+        "to": "settle_contact",
+        "reason": "lateral_inner_alignment_observed",
+        "time_s": 107.55999759584665,
+        "retry": 0
+      },
+      {
+        "skill": "push_aside",
+        "object_id": "B07",
+        "from": "settle_contact",
+        "to": "engage",
+        "reason": "",
+        "time_s": 108.26499758008868,
+        "retry": 0
+      }
+    ],
+    "post_reference_compared_cycles": 0,
+    "post_reference_maximum_errors": null,
+    "map_snapshot": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/v162-t05-live-snapshots/step-012800",
+    "snapshot_age_at_takeover_s": 0.1149999974295497,
+    "physical_state_never_overwritten_after_replay": true,
+    "policy_sha256": "8862682da34ebb090a2e56f39254af430d5645f20cb5e3e104c72a4720671db8",
+    "source_sha256": "ab9d2caa1a3ded76be67d887f6359f137b7335bd56219efe713b810e8aef3534",
+    "scope": "Production PushAsideSkill and checked_skill_action, recorded physical prefix and prior online map; stop at verified engagement preparation, no box push or original task claim."
+  },
+  "candidate": {
+    "supervisor_pid": 822875,
+    "candidate_commit": "a3123f5baa4ebd99064c40b8327c04a5d847b649",
+    "tests_passed": 776,
+    "deselected": 1,
+    "diagnostic_only": true,
+    "original_tasks_accepted": false,
+    "benchmark_sha256": "ab9d2caa1a3ded76be67d887f6359f137b7335bd56219efe713b810e8aef3534",
+    "physical_integration_complete": true,
+    "source_hashes": {
+      "grutopia/demo/go2_side_clearance_navigation.py": "f4404abf517e7e4f7e0a44fa48e36c2669b52c108903b52006a00ded2682f2cf",
+      "grutopia_extension/interactive_navigation/push_aside_skill.py": "8083d6867d7950f0db48bf0d70f31677426523ee30b95bf0da3dc1819228e231",
+      "grutopia_extension/interactive_navigation/go2_contact_translation_step.py": "1914e804cef22cf2d480919edfcfe9806734d18a7cbb748ec69062b64e033fd8",
+      "tests/test_contact_translation_step.py": "f7cda4d26eaa4f1cbf88afb6f241917a1672235e2f1258b0e0536d6114d95b78"
+    },
+    "physical_integration_passed": true
+  },
+  "integration_archive": {
+    "filename": "contact-step-v164-evidence.tar.gz",
+    "sha256": "47757fd88bdd99d06aa14caef1175f2b4b98a37bc1ee794c17a3a97482a945b2",
+    "bytes": 8644727,
+    "files": 29
+  },
+  "v165_launch": {
+    "task": "T05",
+    "source_commit": "a3123f5baa4ebd99064c40b8327c04a5d847b649",
+    "supervisor_pid": 828339,
+    "snapshot_observer_pid": 828340,
+    "worktree": "/data20t/embodied/zkj/inter-nav-run-t05-v165-20261030",
+    "policy_sha256": "8862682da34ebb090a2e56f39254af430d5645f20cb5e3e104c72a4720671db8",
+    "start_override": null,
+    "original_start": [
+      13.6,
+      -0.4
+    ],
+    "original_goal": [
+      3.3,
+      1.4
+    ],
+    "scope_cap_gib": 24,
+    "swap_max_gib": 0,
+    "map_source": "online",
+    "global_local_map_hz": [
+      1,
+      10
+    ],
+    "floor_top_m": 0.01,
+    "original_task_accepted": false,
+    "same_version_pair_complete": false
+  },
+  "v165_status_at_documentation": {
+    "state": "running",
+    "time_unix": 1793380531.0000803,
+    "attempt": 1,
+    "pid": 828645,
+    "output": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v165-t05-ground-truth-try1",
+    "launch": {
+      "gpu": 2,
+      "free_mib": 23838,
+      "available_ram_gib": 215.09370803833008,
+      "stable_seconds": 60.38043931312859,
+      "minimum_ram_gib": 56.0,
+      "time_unix": 1793380530.9601643,
+      "serial_task_runs": true,
+      "admission_policy": "v165-capped-admission-policy.json",
+      "scope_memory_max_gib": 24,
+      "scope_swap_max_gib": 0
+    }
+  }
+}
