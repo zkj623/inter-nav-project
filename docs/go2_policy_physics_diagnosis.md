@@ -1,5 +1,25 @@
 # Go2失稳：策略与物理后端对照
 
+## v136候选：原rough，GPU物理，不启用关节目标保持
+
+v134相同GPU物理下，开启保持的旧rough只通过1/3，flat通过2/3。v135关闭额外保持后，旧rough的三个就位/转向/启停案例全部通过，全物理步最大倾角分别为21.386234°、19.150566°、20.586730°，最终均满足实测停稳；两次保持相关失败不再出现。没有更换权重、修改PD/DC电机参数或扩大30°界限。
+
+这说明物理后端与保持逻辑的组合值得优先验证，不代表当前policy在所有场景都稳定。原始T04/T05仍需完整推箱复跑；短测的保存几何不作为在线导航先验地图。证据：[GPU与无保持对照](data/go2_gpu_raw_candidate_v136.json)。
+
+已加入显式`--physics-backend gpu_dynamics`。默认`default`保留原World配置；GPU选项在`env.reset()`之前启用GPU dynamics/GPU broadphase并关闭CCD，保留原CPU/NumPy数据读取。复位后检查实际场景开关，未生效则报错。每次完整任务保存`physics_contract.json`，并写入机器人/录像配置；源码快照增加物理配置模块，共55份。691项回归检查通过，1项既有G1相机检查未运行。v136真实物理集成检查仍需通过后才能进入原始场景。
+
+在README完整命令后追加以下候选参数，先选择单一任务`--task-ids T04`，其后再回归T05；候选运行不添加`--stationary-joint-hold`。该开关仍保留给历史T05复现。
+
+```bash
+--physics-backend gpu_dynamics \
+--policy-path /data20t/embodied/share/inter-nav/assets/robots/go2/policy/move_by_speed/rough_model_7850.pt \
+--robot-usd /data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/official-policy-review-20261030/nvidia_isaaclab_4_5/go2_training_flattened.usdc \
+--robot-physics-profile isaaclab_training --actuator-mode explicit_dc
+```
+
+上面是追加参数，不是独立shell命令。完整场景采用24GiB硬上限、零swap、56GiB主机准入和共享串行锁。
+
+
 更新：2026-10-30。**尚未解决全部任务：T05 v127通过，T04 v127失败。**
 
 ## 完整任务状态

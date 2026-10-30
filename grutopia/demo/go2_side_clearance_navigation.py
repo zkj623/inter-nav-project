@@ -22,6 +22,7 @@ def main():
     parser.add_argument('--policy-path',type=Path,help='Explicit Go2 RSL-RL checkpoint; actor shape is validated')
     parser.add_argument('--robot-usd',type=Path,help='Explicit Go2 asset; valid referenced USDs are honored')
     parser.add_argument('--robot-physics-profile',choices=['legacy','isaaclab_training'],default='legacy')
+    parser.add_argument('--physics-backend',choices=['default','gpu_dynamics'],default='default',help='Explicit global PhysX backend; GPU dynamics retains CPU data readback')
     parser.add_argument('--stationary-joint-hold',action='store_true',help='Hold supported joint targets after a measured free-space stop; blend back into walking')
     parser.add_argument('--max-steps',type=int,default=30000)
     parser.add_argument('--preflight-only',action='store_true')
@@ -237,6 +238,7 @@ def main():
         'grutopia_extension/interactive_navigation/smooth_go2_navigation.py',
         'grutopia_extension/interactive_navigation/go2_recovery_settling.py',
         'grutopia_extension/interactive_navigation/go2_model_contract.py',
+        'grutopia_extension/interactive_navigation/go2_physics_backend.py',
         'grutopia_extension/interactive_navigation/go2_stationary_hold.py',
         'grutopia_extension/interactive_navigation/local_staging_control.py',
         'grutopia_extension/interactive_navigation/go2_turn_response.py',
@@ -289,7 +291,13 @@ def main():
     env=None;results=[];recorder=None;camera_trace=None
     try:
         import_extensions(('controllers','objects','robots','sensors','tasks'))
-        env=Env(runtime);obs,_=env.reset()
+        from grutopia_extension.interactive_navigation.go2_physics_backend import configure_go2_physics_backend,collect_go2_physics_contract
+        env=Env(runtime)
+        physics_context=env.runner._world.get_physics_context()
+        configure_go2_physics_backend(physics_context,args.physics_backend)
+        obs,_=env.reset()
+        physics_contract=collect_go2_physics_contract(physics_context,args.physics_backend)
+        (args.output/'physics_contract.json').write_text(json.dumps(physics_contract,indent=2))
         from omni.isaac.core.utils.stage import get_current_stage
         from omni.isaac.core.prims import RigidPrim
         from pxr import Usd,UsdGeom,UsdPhysics,UsdShade,Gf,Sdf
@@ -321,6 +329,7 @@ def main():
         model_contract=collect_model_contract(robot,config.policy_path,requested_robot_asset,args.robot_physics_profile)
         if args.robot_physics_profile=='isaaclab_training':validate_training_model_contract(model_contract)
         if model_contract['stationary_joint_hold']!=args.stationary_joint_hold:raise RuntimeError('Stationary hold configuration was not propagated')
+        model_contract['scene_physics']=physics_contract
         (args.output/'robot_model_contract.json').write_text(json.dumps(model_contract,indent=2))
         first_camera=third_camera=None;recording_enabled=False;recording_tick=0;record_phase='start';record_component=None;task_health=None
         if args.record_video or args.interaction_source=='vision':
@@ -342,6 +351,7 @@ def main():
             (args.output/'recording_config.json').write_text(json.dumps({
                 'recognition_required':args.interaction_source=='vision','interaction_source':args.interaction_source,
                 'interaction_skill':'push_aside/1.0',
+                'scene_physics':physics_contract,
                 'policy_path':model_contract['policy_path'],'policy_sha256':model_contract['policy_sha256'],
                 'robot_physics_profile':args.robot_physics_profile,'resolved_robot_asset':model_contract['resolved_robot_asset'],
                 'full_task_recording':bool(args.record_video),'capture':'every rendered observation','fps':25,

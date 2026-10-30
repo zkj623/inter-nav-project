@@ -19,6 +19,8 @@ a text target such as `refrigerator` and walks up to the scanned object.
 原始 **T05 v127已完整验收通过**：B07实际侧推0.836m、在线确认并穿越新通路，最终停稳误差0.174m、全程最大倾角21.712°。同版T04已失败：推箱前转向失稳，最大倾角37.904°；历史T04 v119成功结果保留，不能据此声称新版T04或五组统一通过。当前正对照底层策略与物理配置，见 [失稳诊断](docs/go2_policy_physics_diagnosis.md)。
 通过的T05使用旧rough+匹配训练模型、显式支撑目标保持和原姿态恢复。五路完整视频、保持权限检查、证据及所需追加参数见 [T05结果与支撑目标保持](docs/go2_supported_idle_hold.md)。模型来源见 [策略对照](docs/go2_training_policy_candidate.md)，交接状态见 [HANDOFF](HANDOFF.md)。
 
+新候选保留原rough权重，启用GPU物理并关闭额外关节目标保持，三组转向/启停短测通过；完整任务尚待回归。候选追加参数与验收范围见 [GPU物理配置](docs/go2_policy_physics_diagnosis.md#v136候选原roughgpu物理不启用关节目标保持)。
+
 在实验分支 `codex/go2-online-smooth-20261027` 的仓库根目录执行：
 
 ```bash
@@ -52,7 +54,7 @@ go2_out="/data20t/embodied/zkj/inter-nav-results/go2-online-$(date +%Y%m%d-%H%M%
 实测更平稳的原 PD 控制版本；对应源码、视频及尚未通过的试验见下方在线导航说明。
 这不是同一套配置五组统一通过的声明。侧移与前后移动的请求分开配置：独立物理试验中
 0.25 m/s 纯侧移未形成有效迈步，当前侧移采用已测可起步的 0.35 m/s，并结合提前制动。
-持续侧移片段可跟踪该速度，但短距离纠偏和动作切换仍需改进；当前已加入受碰撞检查约束的平滑减速、必要时的航向精调和实测停稳窗口，T04/T05 物理验收尚未通过。
+持续侧移片段可跟踪该速度，但短距离纠偏和动作切换仍需改进；当前已加入受碰撞检查约束的平滑减速、必要时的航向精调和实测停稳窗口，同版T04物理验收仍未通过；T05 v127通过结果见本节开头。
 
 在线模式仅从输入目录读取仿真场景配置、箱子布局和任务坐标，不把 `navigation_grid.npz`、
 `original_metadata.json` 或 `passages.json` 交给规划器。箱子身份/尺寸/位姿仍是仿真检测接口，

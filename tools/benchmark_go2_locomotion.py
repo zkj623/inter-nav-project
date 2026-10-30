@@ -21,6 +21,7 @@ p.add_argument('--policy',type=Path,required=True);p.add_argument('--label',requ
 p.add_argument('--command-profile',choices=['slew','direct'],default='slew')
 p.add_argument('--robot-asset',type=Path)
 p.add_argument('--physics-profile',choices=['legacy','isaaclab_training'],default='isaaclab_training')
+p.add_argument('--physics-backend',choices=['default','gpu_dynamics'],default='default')
 p.add_argument('--case-ids',help='Comma-separated subset; default runs all ten scripts')
 a=p.parse_args();a.output.mkdir(exist_ok=False);torch.set_num_threads(1)
 cases={
@@ -53,12 +54,19 @@ robot_asset=Path(cfg.task_config.episodes[0].robots[0].usd_path)
 runtime=runner.SimulatorRuntime(config_class=cfg,headless=True,active_gpu=a.gpu,physics_gpu=a.gpu);env=None
 try:
     runner.import_extensions(('controllers','objects','robots','sensors','tasks'))
-    env=runner.Env(runtime);env.reset()
+    from grutopia_extension.interactive_navigation.go2_physics_backend import configure_go2_physics_backend,collect_go2_physics_contract
+    env=runner.Env(runtime)
+    physics_context=env.runner._world.get_physics_context()
+    configure_go2_physics_backend(physics_context,a.physics_backend)
+    env.reset()
+    physics_contract=collect_go2_physics_contract(physics_context,a.physics_backend)
+    (a.output/'physics_contract.json').write_text(json.dumps(physics_contract,indent=2))
     robot=next(iter(next(iter(env.runner.current_tasks.values())).robots.values()));art=robot.isaac_robot;ctrl=robot._go2_locomotion_control
     view=art._articulation_view
     from grutopia_extension.interactive_navigation.go2_model_contract import collect_model_contract,validate_training_model_contract
     native=collect_model_contract(robot,str(a.policy),str(robot_asset),a.physics_profile)
     if a.physics_profile=='isaaclab_training':validate_training_model_contract(native)
+    native['scene_physics']=physics_contract
     (a.output/'robot_model_contract.json').write_text(json.dumps(native,indent=2,allow_nan=False))
     actual_assets=native['actual_asset_references']
     dependency=robot_asset.parent/'Props/instanceable_meshes.usd'
