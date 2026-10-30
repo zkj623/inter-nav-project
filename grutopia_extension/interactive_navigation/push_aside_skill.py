@@ -10,7 +10,7 @@ import numpy as np
 from grutopia_extension.interactive_navigation.interaction_skill import SkillSpec,SkillCommand
 from grutopia_extension.interactive_navigation.go2_contact_control import (
     ContactYawServo,contact_heading_hold,contact_face_lateral_allowance,observed_contact_face_clear,observed_contact_retreat,
-    push_centerline_velocity,push_completion_state,push_braking_distance)
+    push_centerline_velocity,push_completion_state,push_braking_distance,observed_release_braking_clear)
 from grutopia_extension.interactive_navigation.go2_contact_turn import ContactTurnControl,checked_contact_turn_command
 from grutopia_extension.interactive_navigation.go2_voronoi_navigation import (
     body_rotation_clear,body_translation_recovery_clear,body_motion_clear,
@@ -719,7 +719,11 @@ class PushAsideSkill:
         if self.state=='retreat':
             if ctx.now-self.last_release_probe>=.25:
                 self.last_release_probe=ctx.now
-                if self._observed_passage_effect(ctx,along):
+                # A barely clear moving pose can relax toward the box after
+                # braking. Keep a checked reserve for the verified 45D gait.
+                release_ready=(getattr(ctx,'policy_command',None) is None or
+                    observed_release_braking_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading))
+                if release_ready and self._observed_passage_effect(ctx,along):
                     self._transition('settle_released_corridor',ctx,'observed_corridor_and_free_release_pose')
                     return self._output()
             withdrawn=float(np.dot(self.release_origin-np.asarray(ctx.position[:2]),self.direction))

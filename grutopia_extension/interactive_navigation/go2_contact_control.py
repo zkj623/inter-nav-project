@@ -6,6 +6,17 @@ from grutopia_extension.interactive_navigation.mapping import AStarMapPlanner
 # Contact-pose stopping response is about 0.4 s of current speed. A 1 s
 # prediction cancelled small lateral requests before the rough gait stepped.
 CONTACT_BRAKING_HORIZON_S = .40
+# Reserve for measured post-withdrawal body relaxation before braking.
+# The ordinary footprint and every final stopped-pose check remain intact.
+CONTACT_RELEASE_BRAKING_MARGIN_M = .04
+
+
+def observed_release_braking_clear(planner, boxes, position, heading):
+    """Require observed body space around the pose before ending withdrawal."""
+    from grutopia_extension.interactive_navigation.go2_voronoi_navigation import body_motion_clear, body_rotation_clear
+    return (body_motion_clear(planner,boxes,position,heading,0.,0.,horizon=0.)
+            and body_rotation_clear(planner,boxes,position,heading,heading,
+                                    margin=CONTACT_RELEASE_BRAKING_MARGIN_M))
 
 
 def approach_alignment_ready(position, approach, planner, blocked, radius=.35):
