@@ -1,0 +1,546 @@
+{
+  "original_pair_complete_at_diagnostic_start": false,
+  "failed_original_t05": {
+    "run": "recognition-skill-v149-t05-ground-truth-try1",
+    "task": "T05",
+    "operator_stopped_prefix": false,
+    "video_sha256_match": {
+      "combined.mp4": true,
+      "map_topdown.mp4": true,
+      "pointcloud_map.mp4": true,
+      "robot_rgb.mp4": true,
+      "third_person.mp4": true
+    },
+    "media_valid": true,
+    "source_valid": true,
+    "visual_task_valid": false,
+    "actual_passage_valid": false,
+    "navigation_success": false,
+    "termination_reason": "push_aside:retry_limit:heading_drift_during_alignment",
+    "steps": 20692,
+    "error_m": 1.7021345517706081,
+    "max_tilt_degrees": 23.429688604106648,
+    "frames": 4194,
+    "duration_s": 167.76,
+    "selected_box_displacements": [
+      {
+        "object_id": "B07",
+        "world_displacement_m": 0.12290073255965617,
+        "along_planned_push_m": 0.12283015251159668
+      }
+    ],
+    "full_task_accepted": false
+  },
+  "replay_input_metadata": {
+    "diagnostic_only": true,
+    "not_original_task_acceptance": true,
+    "source_run": "recognition-skill-v149-t05-ground-truth-try1",
+    "source_commit": "fbcaa14be1f8f79eb8d5deb3c45df20b8083e06a",
+    "source_trace_sha256": "85cfe4915d13affd0324e39499cd60bee645e1a2e1f5200c0f74ed3d8f365ba0",
+    "source_root_trace_sha256": "889e4d357188b692a1d3d9cd60f2db0ebd2b98f675fcf0067a8aa0e675455d9b",
+    "source_contact_sha256": "2d8b30717b1f26d666ac40f4ff0eb17b5eccd68ddd2280878024faf18caff487",
+    "nonfloor_contacts_in_prefix": 0,
+    "contact_pairs_in_prefix": [
+      "/World/env_0/robots/go2/FL_calf | /World/env_0/objects/grscene_go2_floor",
+      "/World/env_0/robots/go2/FL_calf | /World/env_0/scene/BaseScene/Meshes/Base/ground/model_29fd271ebc8d8ec87ad4168d76380e79_0/Instance",
+      "/World/env_0/robots/go2/FL_foot | /World/env_0/objects/grscene_go2_floor",
+      "/World/env_0/robots/go2/FR_calf | /World/env_0/objects/grscene_go2_floor",
+      "/World/env_0/robots/go2/FR_calf | /World/env_0/scene/BaseScene/Meshes/Base/ground/model_29fd271ebc8d8ec87ad4168d76380e79_0/Instance",
+      "/World/env_0/robots/go2/FR_foot | /World/env_0/objects/grscene_go2_floor",
+      "/World/env_0/robots/go2/RL_calf | /World/env_0/objects/grscene_go2_floor",
+      "/World/env_0/robots/go2/RL_calf | /World/env_0/scene/BaseScene/Meshes/Base/ground/model_29fd271ebc8d8ec87ad4168d76380e79_0/Instance",
+      "/World/env_0/robots/go2/RL_foot | /World/env_0/objects/grscene_go2_floor",
+      "/World/env_0/robots/go2/RR_calf | /World/env_0/objects/grscene_go2_floor",
+      "/World/env_0/robots/go2/RR_calf | /World/env_0/scene/BaseScene/Meshes/Base/ground/model_29fd271ebc8d8ec87ad4168d76380e79_0/Instance",
+      "/World/env_0/robots/go2/RR_foot | /World/env_0/objects/grscene_go2_floor"
+    ],
+    "start": [
+      13.6,
+      -0.4,
+      0.41000000000000003
+    ],
+    "initial_heading_rad": 3.141592653589793,
+    "trim_goal_heading_rad": 0.0,
+    "cycle_count": 8583,
+    "physics_step_count": 13732,
+    "cutoff_time_s": 68.66999846510589
+  },
+  "baseline_and_rejected_change": {
+    "state": "candidate_rejected",
+    "time_unix": 1793363181.1849997,
+    "diagnostic_only": true,
+    "outcomes": [
+      {
+        "label": "baseline",
+        "exit_code": 0,
+        "resource_stop": false,
+        "scope_cap_verified": true,
+        "peak_scope_gib": 3.770519256591797,
+        "failure": null,
+        "summary": {
+          "diagnostic_only": true,
+          "original_task_accepted": false,
+          "controller_case_passed": false,
+          "label": "baseline",
+          "reason": "heading_timeout",
+          "prefix_matches_tolerance": true,
+          "prefix_comparison": {
+            "maximum": {
+              "position_m": 0.0,
+              "orientation_deg": 3.818191820832845e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            },
+            "final": {
+              "position_m": 0.0,
+              "orientation_deg": 2.4148365394514667e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            }
+          },
+          "baseline_failure_reproduced": true,
+          "final_heading_error_rad": 0.14475400423895168,
+          "translation_after_takeover_m": 0.0034505259561350876,
+          "final_stop": {
+            "valid": true,
+            "window_seconds": 0.3999999910593033,
+            "window_long_enough": true,
+            "goal_error_m": 0.0034505259561350876,
+            "goal_within_tolerance": true,
+            "linear_xy_quiet": true,
+            "vertical_quiet": true,
+            "angular_quiet": true,
+            "tilt_quiet": true,
+            "position_stable": true,
+            "height_stable": true,
+            "tilt_stable": true
+          },
+          "initial_heading_rad": -0.10989016614845953,
+          "evaluation_goal_heading_rad": 0.0,
+          "mirrored_goal": false,
+          "retained_heading_change_rad": -0.034863838090492205,
+          "peak_policy_yaw_request_rad_s": 0.3240000009536743,
+          "maximum_tilt_deg": 18.91766128847918,
+          "trim_and_hold_max_tilt_deg": 4.854880375742401,
+          "minimum_height_m": 0.37789762020111084,
+          "all_physics_samples": 18336,
+          "runtime_source_commit": "fbcaa14be1f8f79eb8d5deb3c45df20b8083e06a",
+          "benchmark_sha256": "5a75ee46ae75612a0f617c63e5a49cf1fe30d223d88a2e9f93a263fbb0dc91a3",
+          "input_sha256": "d895014e6408bad61c1a855ee4b59b0719325ead9c6f5a0692158109dd811334",
+          "policy_sha256": "d435f46dcf2d614cad28e21e033b34d6036d079924e1746530a36f2fba2315bd",
+          "scope": "flat-floor recorded command history followed by pure-yaw control; no original scene navigation",
+          "arc_fallback": "disabled for this diagnostic; real source trace reported arc_unavailable",
+          "limits": {
+            "aim_rad": 0.05,
+            "settled_heading_rad": 0.1,
+            "translation_m": 0.25,
+            "all_physics_tilt_deg": 30.0,
+            "preparation_tilt_deg": 18.0,
+            "trim_seconds": 20.0
+          }
+        }
+      },
+      {
+        "label": "no_rate_brake",
+        "exit_code": 0,
+        "resource_stop": false,
+        "scope_cap_verified": true,
+        "peak_scope_gib": 3.7561302185058594,
+        "failure": null,
+        "summary": {
+          "diagnostic_only": true,
+          "original_task_accepted": false,
+          "controller_case_passed": false,
+          "label": "no_rate_brake",
+          "reason": "heading_timeout",
+          "prefix_matches_tolerance": true,
+          "prefix_comparison": {
+            "maximum": {
+              "position_m": 0.0,
+              "orientation_deg": 3.818191820832845e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            },
+            "final": {
+              "position_m": 0.0,
+              "orientation_deg": 2.4148365394514667e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            }
+          },
+          "baseline_failure_reproduced": false,
+          "final_heading_error_rad": 0.13610410899999925,
+          "translation_after_takeover_m": 0.004148732651900967,
+          "final_stop": {
+            "valid": true,
+            "window_seconds": 0.3999999910593033,
+            "window_long_enough": true,
+            "goal_error_m": 0.004148732651900967,
+            "goal_within_tolerance": true,
+            "linear_xy_quiet": true,
+            "vertical_quiet": true,
+            "angular_quiet": true,
+            "tilt_quiet": true,
+            "position_stable": true,
+            "height_stable": true,
+            "tilt_stable": true
+          },
+          "initial_heading_rad": -0.10989016614845953,
+          "evaluation_goal_heading_rad": 0.0,
+          "mirrored_goal": false,
+          "retained_heading_change_rad": -0.026213942851539773,
+          "peak_policy_yaw_request_rad_s": 0.5141211152076721,
+          "maximum_tilt_deg": 18.91766128847918,
+          "trim_and_hold_max_tilt_deg": 4.7751158063410735,
+          "minimum_height_m": 0.37789762020111084,
+          "all_physics_samples": 18336,
+          "runtime_source_commit": "fbcaa14be1f8f79eb8d5deb3c45df20b8083e06a",
+          "benchmark_sha256": "5a75ee46ae75612a0f617c63e5a49cf1fe30d223d88a2e9f93a263fbb0dc91a3",
+          "input_sha256": "d895014e6408bad61c1a855ee4b59b0719325ead9c6f5a0692158109dd811334",
+          "policy_sha256": "d435f46dcf2d614cad28e21e033b34d6036d079924e1746530a36f2fba2315bd",
+          "scope": "flat-floor recorded command history followed by pure-yaw control; no original scene navigation",
+          "arc_fallback": "disabled for this diagnostic; real source trace reported arc_unavailable",
+          "limits": {
+            "aim_rad": 0.05,
+            "settled_heading_rad": 0.1,
+            "translation_m": 0.25,
+            "all_physics_tilt_deg": 30.0,
+            "preparation_tilt_deg": 18.0,
+            "trim_seconds": 20.0
+          }
+        }
+      }
+    ],
+    "navigation_accepted": false
+  },
+  "pulse_calibration": {
+    "state": "finished",
+    "time_unix": 1793364692.379556,
+    "diagnostic_only": true,
+    "outcomes": [
+      {
+        "label": "pulse055_positive",
+        "exit_code": 0,
+        "resource_stop": false,
+        "scope_cap_verified": true,
+        "peak_scope_gib": 3.7342376708984375,
+        "failure": null,
+        "summary": {
+          "calibration_only": true,
+          "pulse_peak_rad_s": 0.55,
+          "pulse_peak_hold_seconds": 0.04,
+          "retained_change_toward_requested_direction_rad": 0.07654718520888393,
+          "diagnostic_only": true,
+          "original_task_accepted": false,
+          "controller_case_passed": true,
+          "label": "pulse055_positive",
+          "reason": "pulse_completed",
+          "prefix_matches_tolerance": true,
+          "prefix_comparison": {
+            "maximum": {
+              "position_m": 0.0,
+              "orientation_deg": 3.818191820832845e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            },
+            "final": {
+              "position_m": 0.0,
+              "orientation_deg": 2.4148365394514667e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            }
+          },
+          "final_heading_error_rad": 0.06317197357885851,
+          "translation_after_takeover_m": 0.01090630532679935,
+          "final_stop": {
+            "valid": true,
+            "window_seconds": 0.3999999910593033,
+            "window_long_enough": true,
+            "goal_error_m": 0.01090630532679935,
+            "goal_within_tolerance": true,
+            "linear_xy_quiet": true,
+            "vertical_quiet": true,
+            "angular_quiet": true,
+            "tilt_quiet": true,
+            "position_stable": true,
+            "height_stable": true,
+            "tilt_stable": true
+          },
+          "initial_heading_rad": -0.13971915878774235,
+          "evaluation_goal_heading_rad": 8.326672684688674e-17,
+          "mirrored_goal": false,
+          "retained_heading_change_rad": 0.07654718520888393,
+          "peak_policy_yaw_request_rad_s": 0.550000011920929,
+          "maximum_tilt_deg": 18.91766128847918,
+          "trim_and_hold_max_tilt_deg": 4.765806620993145,
+          "minimum_height_m": 0.37789762020111084,
+          "all_physics_samples": 14888,
+          "runtime_source_commit": "fbcaa14be1f8f79eb8d5deb3c45df20b8083e06a",
+          "benchmark_sha256": "c02c7a21bf10bea1bd092a315cbb994be15a44ea9c47b77057fea0d1fac3f571",
+          "input_sha256": "d895014e6408bad61c1a855ee4b59b0719325ead9c6f5a0692158109dd811334",
+          "policy_sha256": "d435f46dcf2d614cad28e21e033b34d6036d079924e1746530a36f2fba2315bd",
+          "scope": "flat-floor recorded command history, measured settling, one bounded yaw pulse; no original scene navigation",
+          "arc_fallback": "disabled for this diagnostic; real source trace reported arc_unavailable",
+          "limits": {
+            "aim_rad": 0.05,
+            "settled_heading_rad": 0.1,
+            "translation_m": 0.25,
+            "all_physics_tilt_deg": 30.0,
+            "preparation_tilt_deg": 18.0,
+            "trim_seconds": 20.0
+          }
+        }
+      },
+      {
+        "label": "pulse060_positive",
+        "exit_code": 0,
+        "resource_stop": false,
+        "scope_cap_verified": true,
+        "peak_scope_gib": 3.732013702392578,
+        "failure": null,
+        "summary": {
+          "calibration_only": true,
+          "pulse_peak_rad_s": 0.6,
+          "pulse_peak_hold_seconds": 0.04,
+          "retained_change_toward_requested_direction_rad": 0.09242727393907257,
+          "diagnostic_only": true,
+          "original_task_accepted": false,
+          "controller_case_passed": true,
+          "label": "pulse060_positive",
+          "reason": "pulse_completed",
+          "prefix_matches_tolerance": true,
+          "prefix_comparison": {
+            "maximum": {
+              "position_m": 0.0,
+              "orientation_deg": 3.818191820832845e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            },
+            "final": {
+              "position_m": 0.0,
+              "orientation_deg": 2.4148365394514667e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            }
+          },
+          "final_heading_error_rad": 0.04729188484866986,
+          "translation_after_takeover_m": 0.01277577159217593,
+          "final_stop": {
+            "valid": true,
+            "window_seconds": 0.3999999910593033,
+            "window_long_enough": true,
+            "goal_error_m": 0.01277577159217593,
+            "goal_within_tolerance": true,
+            "linear_xy_quiet": true,
+            "vertical_quiet": true,
+            "angular_quiet": true,
+            "tilt_quiet": true,
+            "position_stable": true,
+            "height_stable": true,
+            "tilt_stable": true
+          },
+          "initial_heading_rad": -0.13971915878774235,
+          "evaluation_goal_heading_rad": 8.326672684688674e-17,
+          "mirrored_goal": false,
+          "retained_heading_change_rad": 0.09242727393907257,
+          "peak_policy_yaw_request_rad_s": 0.6000000238418579,
+          "maximum_tilt_deg": 18.91766128847918,
+          "trim_and_hold_max_tilt_deg": 4.765806620993145,
+          "minimum_height_m": 0.37789762020111084,
+          "all_physics_samples": 14896,
+          "runtime_source_commit": "fbcaa14be1f8f79eb8d5deb3c45df20b8083e06a",
+          "benchmark_sha256": "c02c7a21bf10bea1bd092a315cbb994be15a44ea9c47b77057fea0d1fac3f571",
+          "input_sha256": "d895014e6408bad61c1a855ee4b59b0719325ead9c6f5a0692158109dd811334",
+          "policy_sha256": "d435f46dcf2d614cad28e21e033b34d6036d079924e1746530a36f2fba2315bd",
+          "scope": "flat-floor recorded command history, measured settling, one bounded yaw pulse; no original scene navigation",
+          "arc_fallback": "disabled for this diagnostic; real source trace reported arc_unavailable",
+          "limits": {
+            "aim_rad": 0.05,
+            "settled_heading_rad": 0.1,
+            "translation_m": 0.25,
+            "all_physics_tilt_deg": 30.0,
+            "preparation_tilt_deg": 18.0,
+            "trim_seconds": 20.0
+          }
+        }
+      },
+      {
+        "label": "pulse055_negative",
+        "exit_code": 0,
+        "resource_stop": false,
+        "scope_cap_verified": true,
+        "peak_scope_gib": 3.7536163330078125,
+        "failure": null,
+        "summary": {
+          "calibration_only": true,
+          "pulse_peak_rad_s": 0.55,
+          "pulse_peak_hold_seconds": 0.04,
+          "retained_change_toward_requested_direction_rad": 0.0868305906218012,
+          "diagnostic_only": true,
+          "original_task_accepted": false,
+          "controller_case_passed": true,
+          "label": "pulse055_negative",
+          "reason": "pulse_completed",
+          "prefix_matches_tolerance": true,
+          "prefix_comparison": {
+            "maximum": {
+              "position_m": 0.0,
+              "orientation_deg": 3.818191820832845e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            },
+            "final": {
+              "position_m": 0.0,
+              "orientation_deg": 2.4148365394514667e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            }
+          },
+          "final_heading_error_rad": 0.05288856816594123,
+          "translation_after_takeover_m": 0.002774356252807964,
+          "final_stop": {
+            "valid": true,
+            "window_seconds": 0.3999999910593033,
+            "window_long_enough": true,
+            "goal_error_m": 0.002774356252807964,
+            "goal_within_tolerance": true,
+            "linear_xy_quiet": true,
+            "vertical_quiet": true,
+            "angular_quiet": true,
+            "tilt_quiet": true,
+            "position_stable": true,
+            "height_stable": true,
+            "tilt_stable": true
+          },
+          "initial_heading_rad": -0.13971915878774235,
+          "evaluation_goal_heading_rad": -0.27943831757548476,
+          "mirrored_goal": true,
+          "retained_heading_change_rad": -0.0868305906218012,
+          "peak_policy_yaw_request_rad_s": 0.550000011920929,
+          "maximum_tilt_deg": 18.91766128847918,
+          "trim_and_hold_max_tilt_deg": 6.998305489597437,
+          "minimum_height_m": 0.37789762020111084,
+          "all_physics_samples": 14888,
+          "runtime_source_commit": "fbcaa14be1f8f79eb8d5deb3c45df20b8083e06a",
+          "benchmark_sha256": "c02c7a21bf10bea1bd092a315cbb994be15a44ea9c47b77057fea0d1fac3f571",
+          "input_sha256": "d895014e6408bad61c1a855ee4b59b0719325ead9c6f5a0692158109dd811334",
+          "policy_sha256": "d435f46dcf2d614cad28e21e033b34d6036d079924e1746530a36f2fba2315bd",
+          "scope": "flat-floor recorded command history, measured settling, one bounded yaw pulse; no original scene navigation",
+          "arc_fallback": "disabled for this diagnostic; real source trace reported arc_unavailable",
+          "limits": {
+            "aim_rad": 0.05,
+            "settled_heading_rad": 0.1,
+            "translation_m": 0.25,
+            "all_physics_tilt_deg": 30.0,
+            "preparation_tilt_deg": 18.0,
+            "trim_seconds": 20.0
+          }
+        }
+      },
+      {
+        "label": "pulse060_negative",
+        "exit_code": 0,
+        "resource_stop": false,
+        "scope_cap_verified": true,
+        "peak_scope_gib": 3.7057647705078125,
+        "failure": null,
+        "summary": {
+          "calibration_only": true,
+          "pulse_peak_rad_s": 0.6,
+          "pulse_peak_hold_seconds": 0.04,
+          "retained_change_toward_requested_direction_rad": 0.09346746446758125,
+          "diagnostic_only": true,
+          "original_task_accepted": false,
+          "controller_case_passed": true,
+          "label": "pulse060_negative",
+          "reason": "pulse_completed",
+          "prefix_matches_tolerance": true,
+          "prefix_comparison": {
+            "maximum": {
+              "position_m": 0.0,
+              "orientation_deg": 3.818191820832845e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            },
+            "final": {
+              "position_m": 0.0,
+              "orientation_deg": 2.4148365394514667e-06,
+              "yaw_rad": 0.0,
+              "motor_target_rad": 0.0
+            }
+          },
+          "final_heading_error_rad": 0.046251694320161185,
+          "translation_after_takeover_m": 0.0031419455487162414,
+          "final_stop": {
+            "valid": true,
+            "window_seconds": 0.3999999910593033,
+            "window_long_enough": true,
+            "goal_error_m": 0.0031419455487162414,
+            "goal_within_tolerance": true,
+            "linear_xy_quiet": true,
+            "vertical_quiet": true,
+            "angular_quiet": true,
+            "tilt_quiet": true,
+            "position_stable": true,
+            "height_stable": true,
+            "tilt_stable": true
+          },
+          "initial_heading_rad": -0.13971915878774235,
+          "evaluation_goal_heading_rad": -0.27943831757548476,
+          "mirrored_goal": true,
+          "retained_heading_change_rad": -0.09346746446758125,
+          "peak_policy_yaw_request_rad_s": 0.6000000238418579,
+          "maximum_tilt_deg": 18.91766128847918,
+          "trim_and_hold_max_tilt_deg": 7.1406379301420015,
+          "minimum_height_m": 0.37789762020111084,
+          "all_physics_samples": 14896,
+          "runtime_source_commit": "fbcaa14be1f8f79eb8d5deb3c45df20b8083e06a",
+          "benchmark_sha256": "c02c7a21bf10bea1bd092a315cbb994be15a44ea9c47b77057fea0d1fac3f571",
+          "input_sha256": "d895014e6408bad61c1a855ee4b59b0719325ead9c6f5a0692158109dd811334",
+          "policy_sha256": "d435f46dcf2d614cad28e21e033b34d6036d079924e1746530a36f2fba2315bd",
+          "scope": "flat-floor recorded command history, measured settling, one bounded yaw pulse; no original scene navigation",
+          "arc_fallback": "disabled for this diagnostic; real source trace reported arc_unavailable",
+          "limits": {
+            "aim_rad": 0.05,
+            "settled_heading_rad": 0.1,
+            "translation_m": 0.25,
+            "all_physics_tilt_deg": 30.0,
+            "preparation_tilt_deg": 18.0,
+            "trim_seconds": 20.0
+          }
+        }
+      }
+    ],
+    "navigation_accepted": false,
+    "usable_pulses": [
+      "pulse055_positive",
+      "pulse060_positive",
+      "pulse055_negative",
+      "pulse060_negative"
+    ]
+  },
+  "candidate": {
+    "candidate_commit": "699fcb2f059ee99581565057e0e76e8577a3ff0c",
+    "candidate_worktree": "/data20t/embodied/zkj/inter-nav-yaw-step-v152-20261030",
+    "passed": 743,
+    "deselected": 1,
+    "source_hashes": {
+      "grutopia/demo/go2_side_clearance_navigation.py": "1beb143453ee5ccb6b6aed7d48ff29fa40bb4903756befb1920825348644df8f",
+      "grutopia_extension/interactive_navigation/go2_heading_trim.py": "fd0fee48efaf9f348e18800ffdfb7ab08912dca58ae1e2e3d5f826ae7e96a584",
+      "grutopia_extension/interactive_navigation/interaction_skill.py": "2eb3926f4a33acd81f08455d2f5478889d1557f2de8582a68c9e6b68b1337b35",
+      "grutopia_extension/interactive_navigation/push_aside_skill.py": "ee385be040c586027ef32ff8567e914ec5cc6955531149caf6f00cd616bdf240",
+      "tests/test_acknowledged_yaw_step.py": "9e9cd35ae32c93f22e5f3b5cc211f2bab1f87211ab5057528b99b16c0234c70e"
+    },
+    "physical_integration_complete": false,
+    "original_tasks_accepted": false
+  },
+  "integration_launch": {
+    "supervisor_pid": 711338,
+    "benchmark_sha256": "901b06a25facb6e3a9311dcf2789081271c6f7107329ce78130298bcc1c86abc",
+    "source_commit": "699fcb2f059ee99581565057e0e76e8577a3ff0c",
+    "scope_cap_gib": 8,
+    "swap_max_gib": 0,
+    "original_task_accepted": false,
+    "models_changed": false
+  }
+}

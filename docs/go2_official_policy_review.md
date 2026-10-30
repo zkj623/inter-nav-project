@@ -1,6 +1,6 @@
 # Go2 策略来源与宇树官方方案核查
 
-最新：保留原rough7850的v147原始T04已通过，T05随后因子导航访问状态问题失败。v149已修复状态清理并开始原始T05→T04验证，整体任务尚未完成。已测NVIDIA候选和较大角度备用候选均未采用。见 [当前修复与状态](go2_subnavigation_lifecycle.md)。
+最新：仍使用原第三方rough7850，v147 T04完整通过、v149 T05仍未通过。当前已复现微调回退，并在验证基于实际policy输入确认的有界短转候选；没有替换为宇树出厂策略或已测NVIDIA权重。见 [最新诊断与验证范围](go2_yaw_step_diagnostics.md)。
 
 核查日期：2026-10-30。下方为固定公开版本的宇树来源核查。NVIDIA Isaac Lab发布的Go2权重、部署差异和运行命令见 [Go2模型匹配与候选策略](go2_training_policy_candidate.md)；它不是宇树出厂策略。相同GPU部署下的v143短指令对照见 [当前policy对照](go2_contact_preparation_settling.md#参考policy对照)。没有启动宇树策略训练。
 
