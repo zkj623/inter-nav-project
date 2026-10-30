@@ -27,7 +27,8 @@ class OnlineGoalSelector:
         if not staging_failed and blocked_ticks<=30:return None
         self.reached_frontier(xy,observed_count)
         return {'frontier':list(map(float,xy[:2])),
-            'reason':'staging_failed' if staging_failed else 'controller_motion_blocked',
+            'reason':('staging_failed' if staging_failed else 'no_measured_translation'
+                      if tracking.get('execution_stalled') else 'controller_motion_blocked'),
             'controller':tracking.get('controller'),'blocked_ticks':blocked_ticks,
             'observed_count':int(observed_count)}
 

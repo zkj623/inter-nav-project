@@ -283,7 +283,19 @@ class SmoothExplorationTracker(ExplorationPathTracker):
         else:measured_clear=body_motion_clear(planner,boxes,position,heading,measured[0],measured[2],horizon=.25,lateral=measured[1])
         if (np.linalg.norm(measured[:2])>.10 or abs(measured[2])>.15) and not measured_clear:
             smoothed=np.zeros(3);clear=False;state['measured_braking_space_blocked']=True
-        stopped_by_check=(not clear) or state.get('needs_replan',False) or (np.linalg.norm(smoothed)<.02 and np.linalg.norm(desired)>.15)
+        # A safe, nonzero command is not proof of executable motion. In
+        # v160 the checked 0.14 m/s alternative left the policy stationary
+        # indefinitely, while blocked_ticks stayed zero. Reuse the existing
+        # frontier-failure handoff after measured progress has stalled.
+        # Intentional staging/observation holds retain their own lifecycle.
+        execution_stalled=(stalled and not self.staging_active
+            and not state.get('local_staging') and not state.get('observation_motion')
+            and not state.get('recovering_buffer')
+            and np.linalg.norm(desired[:2])>.05 and np.linalg.norm(smoothed[:2])>.02
+            and np.linalg.norm(measured[:2])<.02 and abs(measured[2])<.06)
+        if execution_stalled:
+            state.update(execution_stalled=True,progress_stall_seconds=float(now-self.limiter.progress_time))
+        stopped_by_check=(not clear) or state.get('needs_replan',False) or execution_stalled or (np.linalg.norm(smoothed)<.02 and np.linalg.norm(desired)>.15)
         self._blocked_ticks=self._blocked_ticks+1 if stopped_by_check else 0
         if self._blocked_ticks>30:state['needs_replan']=True
         self.limiter.accept(smoothed,now)
