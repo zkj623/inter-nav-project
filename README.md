@@ -16,7 +16,7 @@ a text target such as `refrigerator` and walks up to the scanned object.
 墙体地图由在线 LiDAR 建立，目标尚不可达时沿 Voronoi 路线探索可达边界。
 全局层 1 Hz 更新，局部层 10 Hz 更新，箱子移开后的空间需要新射线确认才会通行。
 在线模式默认使用固定 200 Hz 物理步长的 DC 电机控制、50 Hz 原 Go2 policy 和 25 fps 录像。
-**当前原始任务尚未统一完成。** v147 T04完整通过；v149 T05侧推B07 0.123 m后在对准阶段失败。v152短转候选虽通过743项回归，完整物理停稳验证失败，已拒绝；v153/v154诊断也未得到双向可用方案。当前控制器仍为`fbcaa14`，没有新的原始场景运行。详见[最新诊断](docs/go2_yaw_step_diagnostics.md)和[旧版T04完整记录](docs/go2_original_t04_v147.md)。宇树官方所查版本提供Go2训练/部署代码，但没有附带可直接替换的Go2权重；[官方策略复核与替换条件](docs/go2_official_policy_review.md)已更新，尚未启动新策略训练。
+**当前原始任务尚未统一完成。** v147 T04完整通过；v149 T05侧推B07 0.123 m后在对准阶段失败。v152短转候选虽通过743项回归，完整物理停稳验证失败，已拒绝；v153/v154诊断也未得到双向可用方案。当前控制器仍为`fbcaa14`，没有新的原始场景运行。详见[最新诊断](docs/go2_yaw_step_diagnostics.md)和[旧版T04完整记录](docs/go2_original_t04_v147.md)。宇树官方所查版本提供Go2训练/部署代码，但没有附带可直接替换的Go2权重；[官方策略复核与替换条件](docs/go2_official_policy_review.md)已更新。现已完成32环境训练管线检查，启动1024环境的第一阶段训练；[训练代码、运行命令与验收范围](docs/go2_official_training.md)见此。尚未替换导航policy。
 
 历史原始 **T05 v127已完整验收通过**：B07实际侧推0.836m、在线确认并穿越新通路，最终停稳误差0.174m、全程最大倾角21.712°。同版T04已失败：推箱前转向失稳，最大倾角37.904°；历史T04 v119成功结果保留，不能据此声称新版T04或五组统一通过。当前正对照底层策略与物理配置，见 [失稳诊断](docs/go2_policy_physics_diagnosis.md)。
 通过的T05使用旧rough+匹配训练模型、显式支撑目标保持和原姿态恢复。五路完整视频、保持权限检查、证据及所需追加参数见 [T05结果与支撑目标保持](docs/go2_supported_idle_hold.md)。模型来源见 [策略对照](docs/go2_training_policy_candidate.md)，交接状态见 [HANDOFF](HANDOFF.md)。
