@@ -750,10 +750,13 @@ class PushAsideSkill:
                     return self._output()
                 withdrawn=float(np.dot(self.release_origin-np.asarray(ctx.position[:2]),self.direction))
                 choice=body_axis_recovery_target(ctx.planner,ctx.boxes,ctx.position,ctx.heading,
-                    excluded=self.release_axis_attempts,maximum_distance=max(0.,self.config.release_distance-withdrawn))
+                    excluded=self.release_axis_attempts,maximum_distance=max(0.,self.config.release_distance-withdrawn),away_direction=-self.direction)
                 self.release_axis_pending=False;self.progress_mark=np.asarray(ctx.position[:2]).copy();self.progress_since=ctx.now
                 if choice is None:
                     self.release_recovery_diagnostic['reason']='no_safe_body_axis_alternative'
+                    self.events.append({'skill':self.spec.name,'object_id':self.plan.box_id,'from':self.state,'to':self.state,
+                        'reason':'no_safe_recovery_axis','time_s':float(ctx.now),'retry':self.retries,
+                        'attempted_axes':list(self.release_axis_attempts)})
                     return self._output()
                 tracker=ForwardExplorationPathTracker(ctx.position[:2],[tuple(self.task_goal)],guard_motion=False)
                 if not tracker.set_checked_buffer_target(ctx.position,ctx.heading,ctx.planner,ctx.boxes,choice['target']):
@@ -787,8 +790,14 @@ class PushAsideSkill:
             self.release_recovery_diagnostic['nominal_body_free']=bool(current_free)
             maneuver_active=(getattr(self.release_recovery_tracker,'_buffer_active',False)
                 or getattr(self.release_recovery_tracker,'_buffer_turn_target',None) is not None)
-            self.release_recovery_diagnostic['latched_maneuver_active']=bool(maneuver_active)
-            if current_free and not maneuver_active:
+            reserve_ready=(getattr(ctx,'policy_command',None) is not None and current_free
+                and observed_release_braking_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading))
+            self.release_recovery_diagnostic.update(latched_maneuver_active=bool(maneuver_active),release_reserve_ready=bool(reserve_ready))
+            # The recovery objective is observed clearance with reserve. A
+            # moving merely-free cell cannot finish it; a reserved free pose
+            # can brake and be rechecked without forcing a needless lateral
+            # correction to an arbitrary intermediate target cell.
+            if current_free and (not maneuver_active or reserve_ready):
                 measured=np.asarray(ctx.limiter.measured,float)
                 # A free present pose alone is insufficient while the base
                 # is still moving toward a wall. Keep the original measured

@@ -188,8 +188,8 @@ def calibrated_buffer_translation(planner,boxes,position,heading,target):
     return np.array([*(speed*body),0.])
 
 
-def body_axis_recovery_target(planner,boxes,position,heading,*,excluded=(),maximum_distance=.4):
-    """Prefer an executable body-axis escape after measured gait stalling.
+def body_axis_recovery_target(planner,boxes,position,heading,*,excluded=(),maximum_distance=.4,away_direction=None):
+    """Prefer body axes or a near-body-axis reverse push direction after stalling.
 
     Every candidate retains the original full-body recovery sweep, calibrated
     stride/braking space, all boxes/unknown cells and observed release reserve.
@@ -197,14 +197,26 @@ def body_axis_recovery_target(planner,boxes,position,heading,*,excluded=(),maxim
     """
     from grutopia_extension.interactive_navigation.go2_contact_control import observed_release_braking_clear
     forward=np.array([math.cos(heading),math.sin(heading)]);left=np.array([-forward[1],forward[0]])
-    for name,direction in [('backward',-forward),('left',left),('right',-left)]:
+    candidates=[('backward',-forward)]
+    if away_direction is not None:
+        away=np.asarray(away_direction,float).reshape(2);length=np.linalg.norm(away)
+        if np.isfinite(away).all() and length>1e-9:
+            away=away/length
+            if np.dot(away,-forward)>.75:candidates.append(('push_axis',away))
+    candidates.extend([('left',left),('right',-left)])
+    for name,direction in candidates:
         if name in excluded:continue
         for distance in [.20,.30,.15,.40]:
             if distance>maximum_distance+1e-9:continue
             target=np.asarray(position[:2],float)+distance*direction
             if not observed_release_braking_clear(planner,boxes,target,heading):continue
             command=calibrated_buffer_translation(planner,boxes,position,heading,target)
-            if command is not None:return {'axis':name,'target':target,'command':command,'distance_m':distance}
+            if command is None:continue
+            # The reverse push axis can differ slightly from the body axis;
+            # keep its secondary command small rather than reselecting the
+            # strongly coupled request that failed to initiate the gait.
+            if name=='push_axis' and (command[0]>=0 or abs(command[1])>.25*abs(command[0])):continue
+            return {'axis':name,'target':target,'command':command,'distance_m':distance}
     return None
 
 

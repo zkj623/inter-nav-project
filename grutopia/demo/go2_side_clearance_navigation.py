@@ -1071,6 +1071,14 @@ def main():
                         'skill_retry':skill.retries,'recognized_category':skill.permission.category,
                         'interaction_allowed':True,'interaction_source':skill.permission.source,'execution_state':command.state}
                     record_phase='skill_'+command.state
+                    recovery_events=[e for e in command.events if e.get('reason') in
+                        {'recovery_translation_stalled','measured_stall_select_body_axis','no_safe_recovery_axis'}]
+                    if recovery_events:
+                        snapshot=folder/'interaction'/plan.box_id/'recovery_snapshots'/f'step-{step:06d}'
+                        snapshot.mkdir(parents=True,exist_ok=True);layers.save(snapshot)
+                        (snapshot/'robot_state.json').write_text(json.dumps({'step':step,'time_s':planner.control_time,
+                            'position':p.tolist(),'orientation':q.tolist(),'events':recovery_events,
+                            'recovery_diagnostic':skill.release_recovery_diagnostic},indent=2))
                     action=checked_skill_action(command,ctx,forward_stop_feedback=args.forward_stop_feedback,
                         recovery_from_contact=getattr(skill,'recovery_from_contact',True));sub_reached=False
                     if command.navigation_goal is not None:
