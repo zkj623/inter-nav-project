@@ -1,16 +1,18 @@
 # HANDOFF
 
-## 当前：实测侧移诊断通过，v180 原始 T04 已提交
+## 当前：v184 退出恢复诊断通过，v185 原始 T04 已提交
 
-运行源码 `31e213fdc6d65b82be972285e8d90cd305fc6e2f`，基于 Unitree RL Lab 自训练策略 SHA 8862682da34ebb090a2e56f39254af430d5645f20cb5e3e104c72a4720671db8；不是出厂权重。818 项测试通过、1 项既有 G1 相机未运行。原始 T04 v180 从原起点提交，监督 1137465、观察器 1137466（须实时复查）。工作树 inter-nav-run-t04-v180-20261031，输出 recognition-skill-v180-t04-ground-truth-try1；同版 T05 尚未启动。
+固定运行源码 `7de455d332484856cb6b3bb01b8c60321c24d362`，828 项测试通过，1 项既有 G1 相机未运行。原始 T04 v185 已提交，监督 1183304、观察器 1183305（须实时复查），工作树 inter-nav-run-t04-v185-20261031，输出 recognition-skill-v185-t04-ground-truth-try1；同版 T05 尚未启动。
 
-v177 T04 已失败结束：反复确认输入但无有效保留位移，16261步、误差1.867281m、箱子位移0、最大倾角2.876289°。五路3308帧/25fps/132.32秒、源码、策略和本地哈希全部核验；仍是失败。
+v180 T04 的实测侧移修正有效，B06 实际侧推 0.898979m，最大倾角3.392892°；退出阶段127.055秒no_safe_observed_retreat，最终误差1.397173m，未到目标。25665原始物理步、五路3128帧/25fps/125.12秒、源码/策略/本地哈希完整，仍是失败。
 
-新 ContactTranslationStep 要求输入确认和实际有向进展同时成立，目标进展最多8cm，纠偏平移请求零角速度。原40ms输入确认、3秒/0.25m单步界限、完整机身/箱子/未知格、有限目标与独立0.8秒制动检查不变。v179完整重放原T04物理历史，恢复真实记录的控制边界但不覆盖物理状态；从更早的观测快照初始化地图后继续真实LiDAR更新。诊断在engage之前结束并额外停稳10秒，保留位移0.088971m、最大倾角1.647895°、接触准备和机身空间通过，2410原始物理步独立核验、82文件本地哈希一致。诊断不替代原任务。
+新候选包含两个修复：受阻后先0.4秒实测停稳再用已有安全恢复，保持6秒制动和180秒总技能期限，5秒无路径计时从受阻阶段开始；恢复后的成功判断也保留原4cm制动余量，不足时继续受检查的后退。v182仅余量不足，未计为通过。v184完整重放原T04物理历史并接管后退，没有物理状态覆盖；历史地图种子之后继续实际LiDAR更新。新停稳/恢复/补足余量路径均执行，额外保持10秒后机身、余量、停稳、通路及独立核验通过。诊断不是原始任务验收。
 
-继续按 queue_original_unitree_v180.py 固定源码先T04再T05，保留共享串行锁、24GiB/零swap、56GiB空闲内存持续60秒/GPU14GiB。原尺寸、1cm地面、初始空地图、1/10Hz、Voronoi与GT交互资格保留。T04结束后用 archive_original_task.py、audit_original_completion.py 核对实际推箱、新观测后穿越、自动goal_reached、最终停稳<0.25m、全部物理步<30°/启动<15°、五路完整25fps与本地哈希，之后再跑T05。不得把v173手动停止或旧源码结果计入同版成功。
+保持原坐标/尺寸/1cm地面/初始空地图/1和10Hz/Voronoi/GT资格及LiDAR几何，策略仍为8862682da34ebb090a2e56f39254af430d5645f20cb5e3e104c72a4720671db8的Unitree RL Lab自训练45维策略，不是出厂权重。先完成并核验T04，再运行 queue_original_unitree_v185.py --task T05。旧queue_original_unitree_v183.py未启动且其旧诊断未通过，不要执行。
 
-详见[实测侧移修复](docs/go2_measured_contact_progress.md)；BASE/v179-independent-audit.json、archive-v179-diagnostic-verification.json 保留诊断核验。目标仍未完成。
+原始任务仍需真实推箱、新观测后实际穿越、自动goal_reached、实测停稳<0.25m、所有物理步<30°/启动<15°、五路完整25fps和本地/源码/策略核验。使用 archive_original_task.py 与 audit_original_completion.py（expected-commit=7de455d332484856cb6b3bb01b8c60321c24d362）。两项同版完整通过并同步后才完成目标。
+
+见[退出恢复说明](docs/go2_withdrawal_recovery.md)。BASE/v184-independent-audit.json、archive-v184-diagnostic-verification.json 保留诊断核验。共享串行与资源保护不变。
 
 ## 历史：v175 先跑 T04，再用同版自动完成 T05
 
