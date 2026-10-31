@@ -89,6 +89,7 @@ class PushAsideSkill:
         self.terminal_release_reason=None;self.lateral_step=None
         self.reason='';self.status='running';self.recovery_from_contact=False;self.box_velocity=0.;self.last_box_time=None;self.push_brakes=0
         self.release_pose_recoveries=0;self.release_recovery_tracker=None;self.release_recovery_target=None
+        self.release_recovery_diagnostic=None
         self.preparation_recoveries=0;self.recovery_tracker=None;self.recovery_target=None;self.next_stage_probe=-1e9;self.heading_trim=None
 
     def _transition(self,state,ctx,reason=''):
@@ -733,24 +734,34 @@ class PushAsideSkill:
                 return self._retry(ctx,'released_corridor_not_settled')
             return self._output()
         if self.state=='recover_release_pose':
+            self.release_recovery_diagnostic={'time_s':float(ctx.now),'position':np.asarray(ctx.position).tolist(),
+                'heading_rad':float(ctx.heading),'previous_command':np.asarray(ctx.limiter.command).tolist(),
+                'filtered_measured':np.asarray(ctx.limiter.measured).tolist()}
             if ctx.now-self.state_since>self.config.max_preparation_recovery_seconds:
                 return self._fail(ctx,'release_pose_recovery_timeout')
             current_free=body_motion_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.)
+            self.release_recovery_diagnostic['nominal_body_free']=bool(current_free)
             if current_free:
                 measured=np.asarray(ctx.limiter.measured,float)
                 # A free present pose alone is insufficient while the base
                 # is still moving toward a wall. Keep the original measured
                 # stopping sweep, then settle and recheck the fresh map.
-                if body_motion_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,
-                        measured[0],measured[2],horizon=.8,lateral=measured[1]):
+                braking_clear=body_motion_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,
+                        measured[0],measured[2],horizon=.8,lateral=measured[1])
+                self.release_recovery_diagnostic.update(reason='nominal_body_free',measured_braking_clear=bool(braking_clear))
+                if braking_clear:
                     self.release_recovery_tracker=None;self.release_recovery_target=None
                     self._transition('settle_released_corridor',ctx,'release_body_space_recovered')
                 return self._output()
             action,tracking=self.release_recovery_tracker.action(ctx.position[:2],ctx.heading,ctx.planner,ctx.boxes)
-            if tracking.get('needs_replan') or not tracking.get('recovering_buffer'):return self._output()
+            self.release_recovery_diagnostic.update(tracker=dict(tracking),raw_action=dict(action))
+            if tracking.get('needs_replan') or not tracking.get('recovering_buffer'):
+                self.release_recovery_diagnostic['reason']='tracker_handoff_or_replan'
+                return self._output()
             self.release_recovery_target=np.asarray(tracking['target'][:2])
             action=smooth_recovery_action(action,ctx.position[:2],ctx.heading,ctx.planner,
-                ctx.boxes,ctx.limiter,ctx.now)
+                ctx.boxes,ctx.limiter,ctx.now,directional_translation=True)
+            self.release_recovery_diagnostic.update(reason='smoothed_recovery',smoothing=ctx.limiter.recovery_diagnostic)
             return self._output(action['move_by_speed'])
         if self.state=='settle_blocked_retreat':
             # A rejected withdrawal sample can arrive after several seconds

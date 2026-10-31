@@ -48,6 +48,35 @@ class VelocitySlewLimiter:
         planar=self.command[:2]+delta*min(1.,maximum/max(np.linalg.norm(delta),1e-9))
         yaw=self.command[2]+np.clip(target[2]-self.command[2],-self.yaw_acceleration*dt,self.yaw_acceleration*dt)
         return np.array([*planar,yaw])
+    def preview_directional_translation(self,target,now):
+        """Stay on the checked translation ray within the original slew ball.
+
+        Interpolating two body-frame vectors can bend the world-space ray
+        when the measured heading changes. Intersect the requested ray with
+        the same acceleration ball instead; fall back to the ordinary
+        preview when no forward point on that ray is reachable this tick.
+        The caller must still check the actual returned movement geometry.
+        """
+        target=np.asarray(target,float);ordinary=self.preview(target,now)
+        dt=.005 if self.last_time is None else max(.001,min(.1,float(now)-self.last_time))
+        budget=self.linear_acceleration*dt;speed=float(np.linalg.norm(target[:2]))
+        detail={'direction_preserved':False,'planar_acceleration_budget_mps':float(budget)}
+        if speed<1e-9:
+            detail['reason']='no_translation';return ordinary,detail
+        direction=target[:2]/speed;before=self.command[:2]
+        projection=float(np.dot(before,direction));perpendicular=before-projection*direction
+        perpendicular_squared=float(np.dot(perpendicular,perpendicular))
+        if perpendicular_squared>budget*budget:
+            detail['reason']='ray_outside_slew_ball';return ordinary,detail
+        reach=math.sqrt(max(0.,budget*budget-perpendicular_squared))
+        lower=max(0.,projection-reach);upper=projection+reach
+        if upper<0.:
+            detail['reason']='ray_behind_slew_ball';return ordinary,detail
+        value=float(np.clip(speed,lower,upper));command=ordinary.copy();command[:2]=direction*value
+        detail.update(direction_preserved=True,reason='checked_direction',
+            planar_command_change_mps=float(np.linalg.norm(command[:2]-before)))
+        return command,detail
+
     def accept(self,command,now):
         self.command=np.asarray(command,float).copy();self.last_time=float(now)
 
@@ -306,19 +335,34 @@ class SmoothExplorationTracker(ExplorationPathTracker):
         return {'move_by_speed':smoothed.tolist()},state
 
 
-def smooth_recovery_action(action,position,heading,planner,boxes,limiter,now):
-    """Preserve a geometry-checked recovery's rotation versus translation."""
+def smooth_recovery_action(action,position,heading,planner,boxes,limiter,now,*,directional_translation=False):
+    """Preserve a checked recovery's motion type and optionally its exact ray."""
     raw=np.asarray(action['move_by_speed'],float)
+    diagnostic={'time_s':float(now),'requested':raw.tolist(),
+        'previous_command':np.asarray(limiter.command,float).tolist(),
+        'measured':np.asarray(limiter.measured,float).tolist(),
+        'directional_translation_requested':bool(directional_translation)}
+    limiter.recovery_diagnostic=diagnostic
     raw=limiter.recovery_gate.filter(raw,limiter.measured,now,body_state=limiter.body_state,command=limiter.command)
-    if not np.any(raw):return {'move_by_speed':[0.,0.,0.]}
-    command=limiter.preview(raw,now)
+    diagnostic.update(gated_request=raw.tolist(),gate_mode=getattr(limiter.recovery_gate,'mode',None),
+        gate_settling=bool(getattr(limiter.recovery_gate,'settling',False)))
+    if not np.any(raw):
+        diagnostic['reason']='measured_stop_gate';return {'move_by_speed':[0.,0.,0.]}
+    if directional_translation and np.linalg.norm(raw[:2])>1e-8 and abs(raw[2])<1e-8:
+        command,detail=limiter.preview_directional_translation(raw,now);diagnostic['directional_preview']=detail
+    else:command=limiter.preview(raw,now)
     if abs(raw[2])>1e-8 and np.linalg.norm(raw[:2])<1e-8:
-        if np.linalg.norm(limiter.measured[:2])>.10:return {'move_by_speed':[0.,0.,0.]}
+        if np.linalg.norm(limiter.measured[:2])>.10:
+            diagnostic['reason']='translation_before_turn';return {'move_by_speed':[0.,0.,0.]}
         command[:2]=0.
         command[2]=math.copysign(min(abs(command[2]),abs(raw[2])),raw[2]) if command[2]*raw[2]>0 else 0.
+        diagnostic.update(reason='checked_rotation',applied=command.tolist())
         return {'move_by_speed':command.tolist()}
     command[2]=0.;c,s=math.cos(heading),math.sin(heading)
     world=np.array([c*command[0]-s*command[1],s*command[0]+c*command[1]])
-    if body_translation_recovery_clear(planner,boxes,position,heading,np.asarray(position[:2])+world*.5,require_clear_end=False):
-        return {'move_by_speed':command.tolist()}
+    endpoint=np.asarray(position[:2])+world*.5
+    safe=body_translation_recovery_clear(planner,boxes,position,heading,endpoint,require_clear_end=False)
+    diagnostic.update(preview=command.tolist(),checked_endpoint=endpoint.tolist(),sweep_safe=bool(safe),
+        reason='checked_translation' if safe else 'translation_sweep_blocked')
+    if safe:return {'move_by_speed':command.tolist()}
     return {'move_by_speed':[0.,0.,0.]}

@@ -505,6 +505,7 @@ def main():
                     'actuator_mode':args.actuator_mode,'physics_substeps':microsteps,'physical_commands':physical_commands,
                     'forward_stop_requested':bool(action.get('_forward_stop_request',False)),
                     'forward_stop_feedback':feedback_details,
+                    'release_recovery_diagnostic':getattr(skill,'release_recovery_diagnostic',None) if skill is not None else None,
                     'observed_cells':int(layers.observed.sum()) if hasattr(layers,'observed') else None})+'\n')
             if layers is not None:
                 recognized=recognition.poll()
