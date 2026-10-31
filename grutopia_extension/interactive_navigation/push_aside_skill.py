@@ -749,8 +749,12 @@ class PushAsideSkill:
                     self.release_recovery_diagnostic['reason']='axis_recovery_budget_exhausted'
                     return self._output()
                 withdrawn=float(np.dot(self.release_origin-np.asarray(ctx.position[:2]),self.direction))
+                # State replay reproduced a no-step state at .35 and gait
+                # at .45. Enable only after the native-policy measured stall
+                # and quiet gate; selection rechecks full stride/braking space.
+                reverse_speed=.45 if getattr(ctx,'policy_command',None) is not None else .35
                 choice=body_axis_recovery_target(ctx.planner,ctx.boxes,ctx.position,ctx.heading,
-                    excluded=self.release_axis_attempts,maximum_distance=max(0.,self.config.release_distance-withdrawn),away_direction=-self.direction)
+                    excluded=self.release_axis_attempts,maximum_distance=max(0.,self.config.release_distance-withdrawn),away_direction=-self.direction,reverse_speed=reverse_speed)
                 self.release_axis_pending=False;self.progress_mark=np.asarray(ctx.position[:2]).copy();self.progress_since=ctx.now
                 if choice is None:
                     self.release_recovery_diagnostic['reason']='no_safe_body_axis_alternative'
@@ -758,7 +762,7 @@ class PushAsideSkill:
                         'reason':'no_safe_recovery_axis','time_s':float(ctx.now),'retry':self.retries,
                         'attempted_axes':list(self.release_axis_attempts)})
                     return self._output()
-                tracker=ForwardExplorationPathTracker(ctx.position[:2],[tuple(self.task_goal)],guard_motion=False)
+                tracker=ForwardExplorationPathTracker(ctx.position[:2],[tuple(self.task_goal)],guard_motion=False,buffer_reverse_speed=choice['reverse_speed_mps'])
                 if not tracker.set_checked_buffer_target(ctx.position,ctx.heading,ctx.planner,ctx.boxes,choice['target']):
                     self.release_recovery_diagnostic['reason']='axis_target_changed_before_handoff'
                     return self._output()
@@ -767,8 +771,9 @@ class PushAsideSkill:
                 self.events.append({'skill':self.spec.name,'object_id':self.plan.box_id,'from':self.state,'to':self.state,
                     'reason':'measured_stall_select_body_axis','time_s':float(ctx.now),'retry':self.retries,
                     'axis':choice['axis'],'recovery_target':choice['target'].tolist(),'distance_m':choice['distance_m'],
+                    'reverse_speed_mps':choice['reverse_speed_mps'],'checked_initial_command':choice['command'].tolist(),
                     'release_pose_recovery':self.release_pose_recoveries,'original_recovery_started_at':float(self.state_since)})
-                self.release_recovery_diagnostic.update(reason='checked_body_axis_selected',axis=choice['axis'],target=choice['target'].tolist())
+                self.release_recovery_diagnostic.update(reason='checked_body_axis_selected',axis=choice['axis'],target=choice['target'].tolist(),reverse_speed_mps=choice['reverse_speed_mps'])
                 return self._output()
             if self.progress_mark is None or self.progress_since is None:
                 self.progress_mark=np.asarray(ctx.position[:2]).copy();self.progress_since=ctx.now

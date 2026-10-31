@@ -16,7 +16,7 @@ a text target such as `refrigerator` and walks up to the scanned object.
 墙体地图由在线 LiDAR 建立，目标尚不可达时沿 Voronoi 路线探索可达边界。
 全局层 1 Hz 更新，局部层 10 Hz 更新，箱子移开后的空间需要新射线确认才会通行。
 在线模式默认使用固定 200 Hz 物理步长的 DC 电机控制、50 Hz Go2 policy 和 25 fps 录像。
-**当前原始任务尚未统一完成。** v180 T04 已实际侧推 B06 约 0.90 m，但退出检查受阻时直接失败。新候选先实测停稳再调用已有安全恢复，并在恢复后保留原 4 cm 制动余量；828 项回归通过，v184 物理诊断及额外 10 秒保持检查通过。原始 T04 v185 已提交完整复跑，同版 T05 尚未启动。见[退出恢复与证据](docs/go2_withdrawal_recovery.md)、[统一25cm到点标准](docs/go2_goal_tolerance.md)和[训练说明](docs/go2_official_training.md)。
+**当前原始任务尚未统一完成。** v193完整复现T04推箱后退让超时，并记录全部policy状态。空地状态复现显示0.35m/s不能启动、0.45m/s可恢复步态；候选仅在实测停滞并停稳后使用经完整步幅/制动检查的0.45m/s反向请求，原始任务待复测。见[推箱后步态启动与证据](docs/go2_post_push_gait_recovery.md)、[统一25cm到点标准](docs/go2_goal_tolerance.md)和[训练说明](docs/go2_official_training.md)。
 
 历史原始 **T05 v127已完整验收通过**：B07实际侧推0.836m、在线确认并穿越新通路，最终停稳误差0.174m、全程最大倾角21.712°。同版T04已失败：推箱前转向失稳，最大倾角37.904°；历史T04 v119成功结果保留，不能据此声称新版T04或五组统一通过。当前正对照底层策略与物理配置，见 [失稳诊断](docs/go2_policy_physics_diagnosis.md)。
 通过的T05使用旧rough+匹配训练模型、显式支撑目标保持和原姿态恢复。五路完整视频、保持权限检查、证据及所需追加参数见 [T05结果与支撑目标保持](docs/go2_supported_idle_hold.md)。模型来源见 [策略对照](docs/go2_training_policy_candidate.md)，交接状态见 [HANDOFF](HANDOFF.md)。

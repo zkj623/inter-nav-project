@@ -168,17 +168,30 @@ def decision_recovery_required(planner, boxes, position, heading, tracker=None):
     return bool(navigation_body_blocked(planner, boxes, heading)[planner.cell(position)])
 
 
-def calibrated_buffer_translation(planner,boxes,position,heading,target):
+def _recovery_reverse_speed(value):
+    value=float(value)
+    if not math.isfinite(value) or not .35<=value<=.45:
+        raise ValueError('Recovery reverse speed must be between .35 and .45 m/s')
+    return value
+
+
+def calibrated_buffer_translation(planner,boxes,position,heading,target,*,reverse_speed=.35):
     """A reachable free pose must also admit an effective, stoppable stride."""
+    reverse_speed=_recovery_reverse_speed(reverse_speed)
     delta=np.asarray(target[:2],float)-np.asarray(position[:2],float)
     distance=float(np.linalg.norm(delta))
     if distance<.02 or not body_translation_recovery_clear(planner,boxes,position,heading,target):return None
     c,s=math.cos(heading),math.sin(heading)
     body=np.array([c*delta[0]+s*delta[1],-s*delta[0]+c*delta[1]])/distance
+    speed_cap=.40
     if abs(body[1])>abs(body[0]):speed=.35/max(abs(body[1]),1e-9)
-    elif body[0]<0:speed=.35/max(abs(body[0]),1e-9)
+    elif body[0]<0:
+        speed=reverse_speed/max(abs(body[0]),1e-9)
+        # Only a post-stall caller opts into .45. Preserve the small secondary
+        # component of its checked ray, and reserve its larger stopping sweep.
+        if reverse_speed>.35:speed_cap=max(.40,1.05*reverse_speed)
     else:speed=.25/max(abs(body[0]),1e-9)
-    speed=min(.40,speed)
+    speed=min(speed_cap,speed)
     # Reserve gait response plus slew-limited braking beyond a short target.
     # Do not force the policy into a no-step command just because this ray is
     # too short; the caller will select another observed escape direction.
@@ -188,12 +201,13 @@ def calibrated_buffer_translation(planner,boxes,position,heading,target):
     return np.array([*(speed*body),0.])
 
 
-def body_axis_recovery_target(planner,boxes,position,heading,*,excluded=(),maximum_distance=.4,away_direction=None):
+def body_axis_recovery_target(planner,boxes,position,heading,*,excluded=(),maximum_distance=.4,away_direction=None,reverse_speed=.35):
     """Prefer body axes or a near-body-axis reverse push direction after stalling.
 
     Every candidate retains the original full-body recovery sweep, calibrated
     stride/braking space, all boxes/unknown cells and observed release reserve.
-    This chooses a different movement primitive, not a higher command limit.
+    The caller may request the validated post-stall reverse speed; its
+    larger stride and braking space is checked before accepting a primitive.
     """
     from grutopia_extension.interactive_navigation.go2_contact_control import observed_release_braking_clear
     forward=np.array([math.cos(heading),math.sin(heading)]);left=np.array([-forward[1],forward[0]])
@@ -210,21 +224,22 @@ def body_axis_recovery_target(planner,boxes,position,heading,*,excluded=(),maxim
             if distance>maximum_distance+1e-9:continue
             target=np.asarray(position[:2],float)+distance*direction
             if not observed_release_braking_clear(planner,boxes,target,heading):continue
-            command=calibrated_buffer_translation(planner,boxes,position,heading,target)
+            command=calibrated_buffer_translation(planner,boxes,position,heading,target,reverse_speed=reverse_speed)
             if command is None:continue
             # The reverse push axis can differ slightly from the body axis;
             # keep its secondary command small rather than reselecting the
             # strongly coupled request that failed to initiate the gait.
             if name=='push_axis' and (command[0]>=0 or abs(command[1])>.25*abs(command[0])):continue
-            return {'axis':name,'target':target,'command':command,'distance_m':distance}
+            return {'axis':name,'target':target,'command':command,'distance_m':distance,'reverse_speed_mps':float(reverse_speed)}
     return None
 
 
 class ForwardExplorationPathTracker(ExplorationPathTracker):
     """Use the exploration carrot/yaw law, facing the path before walking."""
-    def __init__(self,start,path,lookahead=.55,guard_motion=True):
+    def __init__(self,start,path,lookahead=.55,guard_motion=True,buffer_reverse_speed=.35):
         super().__init__(start,path,lookahead=lookahead,fixed_heading=None)
         self.guard_motion=guard_motion
+        self.buffer_reverse_speed=_recovery_reverse_speed(buffer_reverse_speed)
         self._buffer_replan=False
         self._buffer_active=False;self._buffer_target=None
         self._turn_ramp_ticks=0;self._turn_ramp_sign=0.
@@ -234,8 +249,12 @@ class ForwardExplorationPathTracker(ExplorationPathTracker):
         self._buffer_turn_target=None
         self._buffer_turn_blocked_since=None
 
+    def _checked_buffer_command(self,planner,boxes,position,heading,target):
+        return calibrated_buffer_translation(planner,boxes,position,heading,target,
+            reverse_speed=getattr(self,'buffer_reverse_speed',.35))
+
     def set_checked_buffer_target(self,position,heading,planner,boxes,target):
-        if calibrated_buffer_translation(planner,boxes,position,heading,target) is None:return False
+        if self._checked_buffer_command(planner,boxes,position,heading,target) is None:return False
         self._buffer_target=np.asarray(target[:2],float).copy();self._buffer_active=True
         self._buffer_turn_target=None;self._buffer_turn_blocked_since=None
         self._heading_recovery=False;self._buffer_replan=False;self._corner_maneuver=None
@@ -326,7 +345,7 @@ class ForwardExplorationPathTracker(ExplorationPathTracker):
             candidate=np.array([planner.limits[0][0]+(col+.5)*planner.resolution,
                 planner.limits[1][0]+(row+.5)*planner.resolution])
             if self._buffer_target is None or combined[planner.cell(self._buffer_target)]:self._buffer_target=candidate
-            if getattr(planner,'layered_local_control',False) and calibrated_buffer_translation(planner,boxes,position,heading,self._buffer_target) is None:
+            if getattr(planner,'layered_local_control',False) and self._checked_buffer_command(planner,boxes,position,heading,self._buffer_target) is None:
                 # The old recovery checked only the centre ray and could drag
                 # a paw through furniture on its way to a free destination.
                 r,c=cell;span=int(1./planner.resolution)
@@ -339,7 +358,7 @@ class ForwardExplorationPathTracker(ExplorationPathTracker):
                         if safe[rr,cc]:candidates.append(np.array([planner.limits[0][0]+(cc+.5)*planner.resolution,
                             planner.limits[1][0]+(rr+.5)*planner.resolution]))
                 candidates.sort(key=lambda point:np.linalg.norm(point-np.asarray(position[:2])))
-                target=next((point for point in candidates[:100] if calibrated_buffer_translation(
+                target=next((point for point in candidates[:100] if self._checked_buffer_command(
                     planner,boxes,position,heading,point) is not None),None)
                 if target is None:
                     goal=np.asarray(self._planned_path[-1][:2])
@@ -373,11 +392,12 @@ class ForwardExplorationPathTracker(ExplorationPathTracker):
             c,s=math.cos(heading),math.sin(heading)
             command=[float(c*world[0]+s*world[1]),float(-s*world[0]+c*world[1]),0.]
             if getattr(planner,'layered_local_control',False):
-                calibrated=calibrated_buffer_translation(planner,boxes,position,heading,target)
+                calibrated=self._checked_buffer_command(planner,boxes,position,heading,target)
                 if calibrated is None:
                     self._buffer_active=False;self._buffer_target=None
                     return {'move_by_speed':[0.,0.,0.]},{**state,'needs_replan':True}
                 command=calibrated.tolist();state['calibrated_buffer_motion']=True
+                state['buffer_reverse_speed_mps']=getattr(self,'buffer_reverse_speed',.35)
             return {'move_by_speed':command},state
         action,state=super().action(position,heading,planner,boxes)
         state['controller']='exploration_carrot_and_path_heading'
