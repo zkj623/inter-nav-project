@@ -62,7 +62,7 @@ class ForwardStopFeedback:
 
 def skill_has_active_contact(state, recovery_from_contact=True):
     """Do not confuse a navigation/preparation stop with box-contact braking."""
-    return state in {'engage','push','settle_push_progress','brake_after_push'} or (
+    return state in {'engage','push','settle_push_progress','brake_after_push','settle_blocked_retreat'} or (
         state=='brake_for_recovery' and bool(recovery_from_contact))
 
 

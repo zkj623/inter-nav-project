@@ -42,7 +42,7 @@ def test_small_push_can_escape_observed_overlap_after_a_measured_stop():
     assert .02<along<.03
     assert not body_motion_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.)
     assert observed_contact_retreat(ctx.planner,ctx.boxes,ctx.position,ctx.heading,skill.direction,ctx.limiter,ctx.now) is None
-    assert skill.step(ctx).state=='retreat'
+    assert skill.step(ctx).state=='settle_blocked_retreat'
     ctx.now+=.41;ctx.layers.last_local=ctx.now
     command=skill.step(ctx)
     assert command.state=='recover_release_pose' and command.status=='running' and command.certificate is None
@@ -63,10 +63,10 @@ def test_short_push_does_not_bypass_the_other_contact_recovery_gates(missing):
     if missing=='motion':skill.last_box_motion_time=None
     if missing=='budget':skill.release_pose_recoveries=skill.config.max_retries
     if missing=='safe_exit':ctx.planner.free[:]=False;ctx.planner.box_free[:]=False
-    assert skill.step(ctx).state=='retreat'
+    assert skill.step(ctx).state=='settle_blocked_retreat'
     ctx.now+=.41
     if missing!='fresh_scan':ctx.layers.last_local=ctx.now
-    assert skill.step(ctx).state=='retreat'
+    assert skill.step(ctx).state=='settle_blocked_retreat'
 
 
 def test_short_push_neither_certifies_a_passage_nor_enters_normal_post_push_release():

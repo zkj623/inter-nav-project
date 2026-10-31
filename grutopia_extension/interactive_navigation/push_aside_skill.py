@@ -739,6 +739,27 @@ class PushAsideSkill:
             action=smooth_recovery_action(action,ctx.position[:2],ctx.heading,ctx.planner,
                 ctx.boxes,ctx.limiter,ctx.now)
             return self._output(action['move_by_speed'])
+        if self.state=='settle_blocked_retreat':
+            # A rejected withdrawal sample can arrive after several seconds
+            # of real retreat. Brake before asking the existing overlap
+            # recovery to move; its measured-stop prerequisite must get an
+            # opportunity to become true. Keep all geometry/momentum checks.
+            if self._quiet(ctx,.4,max_tilt=18.):
+                if self._begin_release_pose_recovery(ctx,along,blocked_contact=True):
+                    return self._output()
+                options=({'speed':self.config.reverse_speed} if getattr(ctx,'policy_command',None) is not None else {})
+                answer=observed_contact_retreat(ctx.planner,ctx.boxes,ctx.position,ctx.heading,
+                    self.direction,ctx.limiter,ctx.now,**options)
+                if answer is not None:
+                    self._transition('retreat',ctx,'retry_withdrawal_after_measured_stop')
+                    return self._output()
+                # Count an unavailable recovery from this actual blocked
+                # episode, rather than from the start of successful motion.
+                if ctx.now-self.state_since>5:
+                    return self._fail(ctx,'no_safe_observed_retreat')
+            elif ctx.now-self.state_since>self.config.max_push_braking_seconds:
+                return self._fail(ctx,'blocked_retreat_not_settled')
+            return self._output()
         if self.state=='retreat':
             if ctx.now-self.last_release_probe>=.25:
                 self.last_release_probe=ctx.now
@@ -762,7 +783,10 @@ class PushAsideSkill:
                 return self._output(answer[0])
             if self._quiet(ctx,.4,max_tilt=18.) and self._begin_release_pose_recovery(ctx,along,blocked_contact=True):
                 return self._output()
-            if ctx.now-self.state_since>5:return self._fail(ctx,'no_safe_observed_retreat')
+            self._transition('settle_blocked_retreat',ctx,'withdrawal_motion_check_blocked')
+            # Preserve an already quiet first sample in the new settling
+            # phase; moving samples cannot start this measured hold.
+            self._quiet(ctx,.4,max_tilt=18.)
             return self._output()
         if self.state=='settle_after_retreat':
             if self._quiet(ctx,.4,max_tilt=18.):

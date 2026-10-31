@@ -34,7 +34,7 @@ def scenario():
 def test_actual_blocked_contact_pose_can_use_existing_checked_turn_after_stopping():
     skill,ctx=scenario();free=ctx.planner.free.copy();observed=ctx.planner.planning_observed.copy()
     assert skill._box_frame(ctx)[0]<skill.config.front_contact_reach+.02
-    assert skill.step(ctx).state=='retreat'
+    assert skill.step(ctx).state=='settle_blocked_retreat'
     ctx.now+=.41;ctx.layers.last_local=ctx.now
     command=skill.step(ctx)
     assert command.state=='recover_release_pose' and command.certificate is None
@@ -54,10 +54,10 @@ def test_blocked_contact_recovery_requires_stop_and_fresh_visible_geometry(missi
     if missing=='visible':ctx.layers.visible_box_ids=[]
     if missing=='new_scan':skill.last_box_motion_time=11.
     if missing=='fresh_scan':ctx.layers.last_local=9.
-    assert skill.step(ctx).state=='retreat'
+    assert skill.step(ctx).state=='settle_blocked_retreat'
     ctx.now+=.41
     if missing!='fresh_scan':ctx.layers.last_local=ctx.now
-    assert skill.step(ctx).state=='retreat'
+    assert skill.step(ctx).state=='settle_blocked_retreat'
 
 
 def test_turning_out_of_overlap_still_requires_new_settling_and_passage_proof():
