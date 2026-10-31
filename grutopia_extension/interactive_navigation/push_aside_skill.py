@@ -349,6 +349,11 @@ class PushAsideSkill:
                 elif hasattr(layers,'passage_observation_hint'):del layers.passage_observation_hint
 
     def _recovered_passage_effect(self,ctx,along):
+        # A recovered nominal footprint must retain the same observed
+        # braking reserve required by the direct withdrawal path.
+        if (getattr(ctx,'policy_command',None) is not None and
+                not observed_release_braking_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading)):
+            return False
         proof=self._observed_passage_effect(ctx,along,commit=True)
         if not proof:return False
         self.certificate=proof;self.status='succeeded';self.reason='observed_passage_created'
@@ -711,6 +716,14 @@ class PushAsideSkill:
             return self._output()
         if self.state=='settle_released_corridor':
             if self._quiet(ctx,.4,max_tilt=18.):
+                if (getattr(ctx,'policy_command',None) is not None and
+                        not observed_release_braking_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading)):
+                    # The existing checked withdrawal can add the missing
+                    # room. Do not certify or stay latched at its first free
+                    # cell, and do not alter the box/unknown occupancy.
+                    self.last_release_probe=ctx.now
+                    self._transition('retreat',ctx,'stopped_release_pose_needs_braking_reserve')
+                    return self._output()
                 if self._recovered_passage_effect(ctx,along):return self._output()
                 if self._begin_release_pose_recovery(ctx,along):return self._output()
                 self.last_release_probe=ctx.now
