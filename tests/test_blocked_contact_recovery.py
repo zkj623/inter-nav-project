@@ -66,4 +66,7 @@ def test_turning_out_of_overlap_still_requires_new_settling_and_passage_proof():
     ctx.heading=skill.release_recovery_tracker._buffer_turn_target;ctx.now+=.1
     assert body_motion_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.)
     result=skill.step(ctx)
+    # The tracker first acknowledges the completed latched turn.
+    assert result.state=='recover_release_pose' and result.velocity==(0.,0.,0.)
+    ctx.now+=.01;result=skill.step(ctx)
     assert result.state=='settle_released_corridor' and result.status=='running' and result.certificate is None

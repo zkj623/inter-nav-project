@@ -14,7 +14,7 @@ from grutopia_extension.interactive_navigation.go2_contact_control import (
 from grutopia_extension.interactive_navigation.go2_contact_turn import ContactTurnControl,checked_contact_turn_command,checked_contact_step_command
 from grutopia_extension.interactive_navigation.go2_voronoi_navigation import (
     body_rotation_clear,body_translation_recovery_clear,body_motion_clear,
-    ForwardExplorationPathTracker,navigation_body_blocked)
+    ForwardExplorationPathTracker,navigation_body_blocked,body_axis_recovery_target)
 from grutopia_extension.interactive_navigation.go2_passage_confirmation import observed_passage_routes
 from grutopia_extension.interactive_navigation.go2_exploration_tracking import decision_buffer_recovery
 from grutopia_extension.interactive_navigation.smooth_go2_navigation import smooth_recovery_action
@@ -90,12 +90,14 @@ class PushAsideSkill:
         self.reason='';self.status='running';self.recovery_from_contact=False;self.box_velocity=0.;self.last_box_time=None;self.push_brakes=0
         self.release_pose_recoveries=0;self.release_recovery_tracker=None;self.release_recovery_target=None
         self.release_recovery_diagnostic=None
+        self.release_axis_attempts=[];self.release_axis_pending=False
         self.preparation_recoveries=0;self.recovery_tracker=None;self.recovery_target=None;self.next_stage_probe=-1e9;self.heading_trim=None
 
     def _transition(self,state,ctx,reason=''):
         self.events.append({'skill':self.spec.name,'object_id':self.plan.box_id,'from':self.state,
             'to':state,'reason':reason,'time_s':float(ctx.now),'retry':self.retries})
         self.state=state;self.state_since=ctx.now;self.settled_since=None;self.translation_braking=False;self.lateral_step=None
+        if state=='recover_release_pose':self.release_axis_attempts=[];self.release_axis_pending=False
         if state=='refine_heading':self.heading_trim=HeadingTrimControl(self.push_heading,min(self.config.alignment_yaw_tolerance,self.config.yaw_tolerance),acceptance_tolerance=self.config.yaw_tolerance)
         self.progress_mark=np.asarray(ctx.position[:2]).copy();self.progress_since=ctx.now
 
@@ -739,9 +741,54 @@ class PushAsideSkill:
                 'filtered_measured':np.asarray(ctx.limiter.measured).tolist()}
             if ctx.now-self.state_since>self.config.max_preparation_recovery_seconds:
                 return self._fail(ctx,'release_pose_recovery_timeout')
+            if self.release_axis_pending:
+                self.release_recovery_diagnostic.update(reason='waiting_for_axis_recovery_stop',attempted_axes=list(self.release_axis_attempts))
+                if not self._quiet(ctx,.4,max_tilt=18.):return self._output()
+                if self.release_pose_recoveries>=self.config.max_retries:
+                    self.release_axis_pending=False
+                    self.release_recovery_diagnostic['reason']='axis_recovery_budget_exhausted'
+                    return self._output()
+                withdrawn=float(np.dot(self.release_origin-np.asarray(ctx.position[:2]),self.direction))
+                choice=body_axis_recovery_target(ctx.planner,ctx.boxes,ctx.position,ctx.heading,
+                    excluded=self.release_axis_attempts,maximum_distance=max(0.,self.config.release_distance-withdrawn))
+                self.release_axis_pending=False;self.progress_mark=np.asarray(ctx.position[:2]).copy();self.progress_since=ctx.now
+                if choice is None:
+                    self.release_recovery_diagnostic['reason']='no_safe_body_axis_alternative'
+                    return self._output()
+                tracker=ForwardExplorationPathTracker(ctx.position[:2],[tuple(self.task_goal)],guard_motion=False)
+                if not tracker.set_checked_buffer_target(ctx.position,ctx.heading,ctx.planner,ctx.boxes,choice['target']):
+                    self.release_recovery_diagnostic['reason']='axis_target_changed_before_handoff'
+                    return self._output()
+                self.release_axis_attempts.append(choice['axis']);self.release_pose_recoveries+=1
+                self.release_recovery_tracker=tracker;self.release_recovery_target=choice['target'].copy()
+                self.events.append({'skill':self.spec.name,'object_id':self.plan.box_id,'from':self.state,'to':self.state,
+                    'reason':'measured_stall_select_body_axis','time_s':float(ctx.now),'retry':self.retries,
+                    'axis':choice['axis'],'recovery_target':choice['target'].tolist(),'distance_m':choice['distance_m'],
+                    'release_pose_recovery':self.release_pose_recoveries,'original_recovery_started_at':float(self.state_since)})
+                self.release_recovery_diagnostic.update(reason='checked_body_axis_selected',axis=choice['axis'],target=choice['target'].tolist())
+                return self._output()
+            if self.progress_mark is None or self.progress_since is None:
+                self.progress_mark=np.asarray(ctx.position[:2]).copy();self.progress_since=ctx.now
+            if np.linalg.norm(np.asarray(ctx.position[:2])-self.progress_mark)>=.025:
+                self.progress_mark=np.asarray(ctx.position[:2]).copy();self.progress_since=ctx.now
+            translating=(getattr(self.release_recovery_tracker,'_buffer_active',False)
+                and getattr(self.release_recovery_tracker,'_buffer_turn_target',None) is None)
+            if (getattr(ctx,'policy_command',None) is not None and translating
+                    and self.release_pose_recoveries<self.config.max_retries and ctx.now-self.progress_since>=1.5
+                    and np.linalg.norm(ctx.body_velocity[:2])<.03 and np.linalg.norm(ctx.limiter.command[:2])>.20):
+                self.release_axis_pending=True;self.settled_since=None
+                self.release_recovery_diagnostic['reason']='stop_after_measured_translation_stall'
+                self.events.append({'skill':self.spec.name,'object_id':self.plan.box_id,'from':self.state,'to':self.state,
+                    'reason':'recovery_translation_stalled','time_s':float(ctx.now),'retry':self.retries,
+                    'progress_m':float(np.linalg.norm(np.asarray(ctx.position[:2])-self.progress_mark)),
+                    'stall_seconds':float(ctx.now-self.progress_since),'original_recovery_started_at':float(self.state_since)})
+                return self._output()
             current_free=body_motion_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.)
             self.release_recovery_diagnostic['nominal_body_free']=bool(current_free)
-            if current_free:
+            maneuver_active=(getattr(self.release_recovery_tracker,'_buffer_active',False)
+                or getattr(self.release_recovery_tracker,'_buffer_turn_target',None) is not None)
+            self.release_recovery_diagnostic['latched_maneuver_active']=bool(maneuver_active)
+            if current_free and not maneuver_active:
                 measured=np.asarray(ctx.limiter.measured,float)
                 # A free present pose alone is insufficient while the base
                 # is still moving toward a wall. Keep the original measured

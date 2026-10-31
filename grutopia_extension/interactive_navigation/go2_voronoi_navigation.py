@@ -188,6 +188,26 @@ def calibrated_buffer_translation(planner,boxes,position,heading,target):
     return np.array([*(speed*body),0.])
 
 
+def body_axis_recovery_target(planner,boxes,position,heading,*,excluded=(),maximum_distance=.4):
+    """Prefer an executable body-axis escape after measured gait stalling.
+
+    Every candidate retains the original full-body recovery sweep, calibrated
+    stride/braking space, all boxes/unknown cells and observed release reserve.
+    This chooses a different movement primitive, not a higher command limit.
+    """
+    from grutopia_extension.interactive_navigation.go2_contact_control import observed_release_braking_clear
+    forward=np.array([math.cos(heading),math.sin(heading)]);left=np.array([-forward[1],forward[0]])
+    for name,direction in [('backward',-forward),('left',left),('right',-left)]:
+        if name in excluded:continue
+        for distance in [.20,.30,.15,.40]:
+            if distance>maximum_distance+1e-9:continue
+            target=np.asarray(position[:2],float)+distance*direction
+            if not observed_release_braking_clear(planner,boxes,target,heading):continue
+            command=calibrated_buffer_translation(planner,boxes,position,heading,target)
+            if command is not None:return {'axis':name,'target':target,'command':command,'distance_m':distance}
+    return None
+
+
 class ForwardExplorationPathTracker(ExplorationPathTracker):
     """Use the exploration carrot/yaw law, facing the path before walking."""
     def __init__(self,start,path,lookahead=.55,guard_motion=True):
@@ -201,6 +221,14 @@ class ForwardExplorationPathTracker(ExplorationPathTracker):
         self._corner_maneuver=None
         self._buffer_turn_target=None
         self._buffer_turn_blocked_since=None
+
+    def set_checked_buffer_target(self,position,heading,planner,boxes,target):
+        if calibrated_buffer_translation(planner,boxes,position,heading,target) is None:return False
+        self._buffer_target=np.asarray(target[:2],float).copy();self._buffer_active=True
+        self._buffer_turn_target=None;self._buffer_turn_blocked_since=None
+        self._heading_recovery=False;self._buffer_replan=False;self._corner_maneuver=None
+        self._turn_ramp_ticks=0;self._turn_ramp_sign=0.
+        return True
 
     def action(self,position,heading,planner,boxes):
         planner.robot_heading=heading

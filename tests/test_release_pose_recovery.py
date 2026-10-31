@@ -100,6 +100,9 @@ def test_recovery_requires_new_settling_and_effect_confirmation():
     ctx.position=np.array([*skill.release_recovery_target,.423]);ctx.now+=.1
     assert body_motion_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.)
     result=skill.step(ctx)
+    # Reaching the checked target releases the tracker before the settle handoff.
+    assert result.state=='recover_release_pose' and result.velocity==(0.,0.,0.)
+    ctx.now+=.01;result=skill.step(ctx)
     assert result.state=='settle_released_corridor' and result.status=='running'
     assert result.velocity==(0.,0.,0.) and result.certificate is None
     ctx.now+=.01
