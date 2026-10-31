@@ -252,8 +252,9 @@ class PushAsideSkill:
         if (getattr(ctx,'policy_command',None) is None or
                 abs(self.config.lateral_speed-ContactTranslationStep.SPEED)>1e-6 or
                 abs(error)<=self.config.alignment_tolerance):return
-        self.lateral_step=ContactTranslationStep(ctx.position,self.tangent*np.sign(error),ctx.now)
-        self.events[-1]['corrective_lateral_step']=ContactTranslationStep.configuration()
+        required=min(ContactTranslationStep.TARGET_PROGRESS_CAP,max(0.,abs(error)-self.config.alignment_tolerance))
+        self.lateral_step=ContactTranslationStep(ctx.position,self.tangent*np.sign(error),ctx.now,minimum_progress_m=required)
+        self.events[-1]['corrective_lateral_step']={**ContactTranslationStep.configuration(),'minimum_progress_m':required}
 
     def _translation(self,ctx,target,axis,speed,tolerance):
         delta=np.asarray(target)-np.asarray(ctx.position[:2]);error=float(np.dot(delta,axis))
@@ -603,11 +604,14 @@ class PushAsideSkill:
                         getattr(ctx,'policy_command',None),ctx.now)
                     if self.lateral_step.failed:return self._retry(ctx,self.lateral_step.failed)
                     if self.lateral_step.complete:
-                        self._transition('settle_contact',ctx,'lateral_input_delivered')
+                        self._transition('settle_contact',ctx,'lateral_measured_step_complete')
                         self.events[-1]['lateral_step']=detail
                         return self._output()
                     c,s=math.cos(ctx.heading),math.sin(ctx.heading);rot=np.array([[c,-s],[s,c]])
-                    request=[*(rot.T@world),contact_heading_hold(yaw_error,ctx.yaw_rate)]
+                    # Keep this bounded correction translational. Actual yaw
+                    # momentum is still checked, and the original stopped
+                    # heading/face gates decide whether contact may begin.
+                    request=[*(rot.T@world),0.]
                     command,_,mode=checked_contact_step_command(request,ctx.position,ctx.heading,
                         ctx.planner,ctx.boxes,ctx.limiter,ctx.now,target_position=body_target)
                     self.lateral_step.last_motion_check=mode

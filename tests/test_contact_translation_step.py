@@ -70,12 +70,16 @@ def test_inner_position_can_brake_but_cannot_skip_measured_settling():
     assert skill.step(ctx).state=='engage'
 
 
-def test_delivered_input_alone_does_not_certify_contact_pose():
+def test_delivered_input_alone_does_not_finish_a_measured_contact_step():
     skill,ctx=corrective_context();ctx.policy_command=np.array([0.,.35,0.])
     ctx.now+=.1;assert skill.step(ctx).state=='align_lateral'
     ctx.now+=.041;command=skill.step(ctx)
+    assert command.state=='align_lateral' and command.certificate is None
+    assert skill.lateral_step.input_acknowledged and not skill.lateral_step.complete
+    ctx.position[1]+=.08;ctx.now+=.1;command=skill.step(ctx)
     assert command.state=='settle_contact' and command.certificate is None
-    assert not skill._contact_ready(ctx)
+    ctx.body_velocity[1]=.20;ctx.now+=.1
+    assert skill.step(ctx).state=='settle_contact'
 
 
 def test_legacy_profile_retains_previous_contact_handoff():
