@@ -16,10 +16,10 @@ a text target such as `refrigerator` and walks up to the scanned object.
 墙体地图由在线 LiDAR 建立，目标尚不可达时沿 Voronoi 路线探索可达边界。
 全局层 1 Hz 更新，局部层 10 Hz 更新，箱子移开后的空间需要新射线确认才会通行。
 在线模式默认使用固定 200 Hz 物理步长的 DC 电机控制、50 Hz Go2 policy 和 25 fps 录像。
-**T04 v196 已通过整场功能检查；T05及最终录像仍待验收。** 原尺寸Go2在空地图上探索，真实侧推B06约0.899m，新LiDAR确认后穿越通路，自动停稳误差0.236m，全物理步最大倾角3.393°。运行代码为`3765930`，858项回归通过；只有实测退让停滞并停稳后才使用完整步幅/制动检查的0.45m/s反向请求。当前T04结果不含录像，同版T05正在复测。见[恢复实现与最新证据](docs/go2_post_push_gait_recovery.md)和[统一25cm到点标准](docs/go2_goal_tolerance.md)。
+**原始T04、T05同版完整录像均已通过验收。** 两场都真实侧推箱子，利用新LiDAR确认并穿越新通路，再自动停稳于0.25m以内；各有五路完整25fps视频，全部物理步小于30°、启动小于15°，源码/策略/本地视频哈希和关键画面检查通过。运行代码固定为`3765930`，858项回归通过。见[最终结果、视频位置与核验记录](docs/go2_original_tasks_v197.md)及[恢复实现](docs/go2_post_push_gait_recovery.md)。
 
-历史原始 **T05 v127已完整验收通过**：B07实际侧推0.836m、在线确认并穿越新通路，最终停稳误差0.174m、全程最大倾角21.712°。同版T04已失败：推箱前转向失稳，最大倾角37.904°；历史T04 v119成功结果保留，不能据此声称新版T04或五组统一通过。当前正对照底层策略与物理配置，见 [失稳诊断](docs/go2_policy_physics_diagnosis.md)。
-通过的T05使用旧rough+匹配训练模型、显式支撑目标保持和原姿态恢复。五路完整视频、保持权限检查、证据及所需追加参数见 [T05结果与支撑目标保持](docs/go2_supported_idle_hold.md)。模型来源见 [策略对照](docs/go2_training_policy_candidate.md)，交接状态见 [HANDOFF](HANDOFF.md)。
+历史T05 v127与T04 v119保留为不同版本的复现记录；当前验收以v197的两项同版完整录像为准。旧版本的策略与物理问题见[历史诊断](docs/go2_policy_physics_diagnosis.md)。
+历史v127采用旧rough策略和支撑目标保持。本次v197使用自训练Unitree45策略与explicit_dc，详细配置见[当前结果](docs/go2_original_tasks_v197.md)和[HANDOFF](HANDOFF.md)。
 
 以下是原始任务的直接导航入口，以T04为例，包含实际使用的模型、policy和GPU物理参数。机器人参考资产的准备方法见 [模型准备](docs/go2_training_policy_candidate.md#获取资产和运行)。在实验分支 `codex/go2-online-smooth-20261027` 的仓库根目录执行：
 
@@ -29,7 +29,7 @@ export MALLOC_ARENA_MAX=2
 export PYTHONPATH="$PWD:$PYTHONPATH"
 go2_inputs=/data20t/embodied/zkj/inter-nav-results/go2-voronoi-heading-up-20261025/collision-corrected-inputs
 go2_reference=/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/official-policy-review-20261030/nvidia_isaaclab_4_5
-go2_policy_root=/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/candidate-policy-v196
+go2_policy_root=/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/candidate-policy-v197
 go2_out="/data20t/embodied/zkj/inter-nav-results/go2-online-$(date +%Y%m%d-%H%M%S)"
 "$ISAAC_PYTHON" -u grutopia/demo/go2_online_interactive_navigation.py \
   --benchmark-dir "$go2_inputs" --output "$go2_out" \
