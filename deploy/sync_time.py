@@ -1,4 +1,4 @@
-"""Orin clock alignment to odometry; optional bounded continuous slewing."""
+"""Legacy Orin wall-clock maintenance; not needed by run.py/view.py/record.py."""
 import argparse
 import fcntl
 import math
@@ -184,7 +184,7 @@ def main():
     if args.watch:
         watch(robot, args.interval)
     else:
-        print('仅一次性检查/校时；长时间运行请使用 --watch。未设置 RTC，未验证运动安全。')
+        print('仅检查/维护系统日期；当前 run.py 不依赖本工具或 --watch。未设置 RTC，未验证运动安全。')
     return 0
 
 

@@ -120,8 +120,14 @@ def run_live(args, config):
             sensors = DemoSensors(session)
         else:
             topic = args.rgb_topic or robot['rgb_topic']
+            print('正在采样传感器时间参照（约 3 秒）；不修改 Orin 系统时间。', flush=True)
             sensors = RosSensors(robot, session.rgb if args.camera == 'ros' else None,
                                  topic if args.camera == 'ros' else None)
+            timebase = getattr(sensors, 'timebase', None)
+            if timebase is not None:
+                session.event('time_reference_initialized', **timebase.metadata)
+                print('时间参照已固定：共用启动收包偏差，额外预留 50 ms；无需单独运行 sync_time.py。'
+                      '这是相对延迟监控，启动前已有的共同固定延迟仍未知。', flush=True)
             if args.camera == 'sdk' and robot['camera_mode'] != 'rgbd':
                 video = SdkVideo(session.frames, robot['network_interface'], 2.)
             elif args.camera == 'none':

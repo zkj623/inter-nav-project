@@ -4,6 +4,7 @@ import time
 import numpy as np
 from .localization import PoseContinuity, PoseHistory, camera_cloud, multiply, transform, quaternion
 from .observation import Snapshot, normalize
+from .timebase import SourceTimeBridge
 
 
 def decode_image(message):
@@ -70,6 +71,16 @@ class RosSensors:
         self.config, self.rclpy, self.Time = config, rclpy, Time
         rclpy.init()
         self.node = rclpy.create_node('inter_nav_deploy')
+        try:
+            if self.node.get_parameter('use_sim_time').value:
+                raise ValueError('Real-robot sensor input does not support use_sim_time')
+            self.timebase = self._bootstrap_timebase(Odometry, PointCloud2, qos_profile_sensor_data)
+        except BaseException:
+            try:
+                self.node.destroy_node()
+            finally:
+                rclpy.shutdown()
+            raise
         self.buffer = Buffer()
         self.listener = TransformListener(self.buffer, self.node)
         self.lock = threading.Lock()
@@ -106,6 +117,44 @@ class RosSensors:
         self.thread = threading.Thread(target=rclpy.spin, args=(self.node,), daemon=True)
         self.thread.start()
 
+    def _bootstrap_timebase(self, odometry_type, cloud_type, qos):
+        """Estimate one shared relative reference before exposing observations.
+
+        This replaces the old sync_time.py receipt estimate, without writing
+        CLOCK_REALTIME. A steady common transport delay remains unobservable.
+        Never repeat this estimate while a run is active.
+        """
+        samples = {'odom': [], 'lidar': []}
+        subscriptions = []
+        def receive(kind):
+            def callback(message):
+                receipt = time.monotonic_ns()
+                stamp = message.header.stamp
+                if not 0 <= stamp.nanosec < 1_000_000_000:
+                    raise ValueError('ROS timestamp invalid during startup')
+                samples[kind].append((receipt, stamp.sec*1_000_000_000 + stamp.nanosec))
+            return callback
+        try:
+            for kind, cls in (('odom', odometry_type), ('lidar', cloud_type)):
+                subscriptions.append(self.node.create_subscription(
+                    cls, self.config[kind+'_topic'], receive(kind), qos))
+            deadline = time.monotonic()+5.
+            while time.monotonic() < deadline:
+                self.rclpy.spin_once(self.node, timeout_sec=.05)
+                odom = samples['odom']
+                if len(odom) >= 2 and odom[-1][0]-odom[0][0] >= 3_000_000_000:
+                    break
+            now_ns = time.monotonic_ns()
+            for kind, values in samples.items():
+                if self.node.count_publishers(self.config[kind+'_topic']) != 1:
+                    raise ValueError(f'{kind}: startup requires exactly one publisher')
+                if not values or (now_ns-values[-1][0])*1e-9 > self.config['max_data_age_s']:
+                    raise ValueError(f'{kind}: no recent data during time-reference initialization')
+            return SourceTimeBridge.from_samples(samples, max_age_s=self.config['max_data_age_s'])
+        finally:
+            for subscription in subscriptions:
+                self.node.destroy_subscription(subscription)
+
     @property
     def last_error(self):
         errors = getattr(self, '_errors', {}).copy()
@@ -129,15 +178,10 @@ class RosSensors:
 
     def _stamp(self, message):
         stamp = message.header.stamp
-        seconds = stamp.sec + stamp.nanosec*1e-9
-        age = self.node.get_clock().now().nanoseconds*1e-9 - seconds
-        if seconds <= 0:
+        if not 0 <= stamp.nanosec < 1_000_000_000:
             raise ValueError('ROS timestamp invalid')
-        if age < -.05:
-            raise ValueError(f'ROS clock mismatch: message ahead of Orin by {-age*1000:.1f} ms (limit 50 ms); use sync_time.py --watch before run')
-        if age > self.config['max_data_age_s']:
-            raise ValueError(f'ROS timestamp stale: age={age*1000:.1f} ms, limit={self.config["max_data_age_s"]*1000:.0f} ms; check clocks and receive delay')
-        return stamp.sec*1_000_000_000 + stamp.nanosec, time.monotonic()-max(0, age)
+        seq = stamp.sec*1_000_000_000 + stamp.nanosec
+        return seq, self.timebase.captured_at(seq, time.monotonic_ns(), self.config['max_data_age_s'])
 
     def _tf(self, frame, stamp):
         if not frame:

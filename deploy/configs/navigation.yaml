@@ -5,9 +5,14 @@ mapping:
   grid_resolution: 0.1
   voxel_size: 0.1
   voxel_clear_observations: 3  # clear old geometry only after measured free rays in three scans
+  # Keep a 2D navigation map; clear measured obstacles only at the ray's height.
+  lidar_height_resolution: 0.1
   robot_radius: 0.30
   obstacle_inflation_radius: 0.40
-  obstacle_height: [0.15, 1.6]
+  # 2026-11-03: operator-selected standing Go2 navigation band, ground-relative.
+  # This is a trial clearance setting, not an independently measured body envelope.
+  obstacle_height: [0.15, 0.63]
+  # Keep higher scene geometry visible even when it does not block navigation.
   point_height: [-0.1, 2.0]
   safe_recovery_y_limits: [-9.5, 9.5]
   sticky_free_scale: 0.25

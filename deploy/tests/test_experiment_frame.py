@@ -126,8 +126,12 @@ def test_recording_and_session_packet_keep_transform_without_rebasing_replay(tmp
 def test_live_entrypoint_rebases_before_map_boundary_check(monkeypatch):
     from deploy.app import keyboard, runtime, session
     from deploy.robot import sensors
+    from deploy.robot.timebase import SourceTimeBridge
     from deploy.tests.test_robot_inputs import sensor, odometry, cloud
     source = sensor()
+    clock_samples = [(10_000_000_000+i*100_000_000, 1_800_000_000_000_000_000+i*100_000_000)
+                     for i in range(31)]
+    source.timebase = SourceTimeBridge.from_samples({'odom': clock_samples, 'lidar': clock_samples})
     message = odometry(1_000_000_000, 30.)
     message.pose.pose.position.y = 40.
     message.pose.pose.orientation.w = message.pose.pose.orientation.z = np.sqrt(.5)
@@ -156,6 +160,10 @@ def test_live_entrypoint_rebases_before_map_boundary_check(monkeypatch):
     assert summary['map_created'] and summary['planning_frame'] == 'experiment'
     assert summary['coordinate_transform']['origin_source_m'][:2] == [30., 40.]
     batch = sessions[0].batch(0, 0)
+    clock_events = [e for e in batch['events'] if e['event'] == 'time_reference_initialized']
+    assert len(clock_events) == 1
+    assert clock_events[0]['unknown_baseline_delay']
+    assert not clock_events[0]['absolute_age_verified']
     assert len([e for e in batch['events'] if e['event'] == 'coordinate_frame_initialized']) == 1
     snap, scene = decode_packet(batch['frames'][0]['packet'])
     assert scene['ready'] and snap.planning_frame == 'experiment'

@@ -66,6 +66,7 @@ def run(config, duration, output):
                        robot['camera_info_topic']: 'sensor_msgs/msg/CameraInfo'})
     report = {
         'read_only': True, 'hardware_validated': False, 'duration_s': duration,
+        'age_reference': 'local_ros_wall_clock_minus_source_stamp; not run.py relative age',
         'python': sys.version, 'executable': sys.executable,
         'platform': platform.platform(), 'architecture': platform.machine(),
         'environment': {k: os.environ.get(k) for k in (
@@ -73,6 +74,7 @@ def run(config, duration, output):
             'CYCLONEDDS_URI', 'AMENT_PREFIX_PATH', 'PYTHONPATH')},
         'topics': {}, 'local_interfaces': {},
         'limitations': ['Receipt is not global localization or motion acceptance.',
+                       'age_s/stale_messages/future_messages compare wall dates, not the run.py startup-relative time reference.',
                        'DDS errors before deserialization may never reach callbacks. Save stderr separately.',
                        'Local interface hashes do not establish publisher compatibility; compare on publisher host.',
                        'Front video uses validated raw CDR envelopes; a compatibility layout is not the declared ROS schema.',

@@ -39,7 +39,16 @@ class MappingConfig:
     unknown_cost: float = 1.75
     max_lidar_rays: int = 900
     allow_lidar_free_only_rays: bool = True
+    # Optional measured-height obstacle support. Free projection remains 2D,
+    # but a ray can only weaken obstacle evidence at the height it crossed.
+    # None preserves the original simulation mapping policy.
+    lidar_height_resolution: Optional[float] = None
     lidar_free_height_layers: int = 1
+    # Multi-height clearing requires all layers in the same scan by default.
+    # Larger windows explicitly accumulate across updates, NOT elapsed time:
+    # partial evidence can survive a long pause with no incoming scans.
+    # Evidence is consumed after use and reset on any new obstacle hit.
+    lidar_free_height_window_frames: int = 1
     # Azimuth resolution of the flattened top-down lidar scan (0.5 degrees).
     lidar_scan_bins: int = 720
     max_voxel_points_per_update: int = 5000
@@ -71,8 +80,15 @@ class MappingConfig:
             raise ValueError('mapping sample limits and graph_stride must be positive')
         if self.lidar_scan_bins <= 0:
             raise ValueError('lidar_scan_bins must be positive')
-        if self.lidar_free_height_layers <= 0:
-            raise ValueError('lidar_free_height_layers must be positive')
+        for name in ('lidar_free_height_layers', 'lidar_free_height_window_frames'):
+            if type(getattr(self, name)) is not int or getattr(self, name) <= 0:
+                raise ValueError(f'{name} must be a positive integer')
+        if self.lidar_height_resolution is not None:
+            if (not np.isfinite(self.lidar_height_resolution)
+                    or self.lidar_height_resolution <= 0):
+                raise ValueError('lidar_height_resolution must be finite and positive')
+            if self.lidar_free_height_layers != 1:
+                raise ValueError('Choose measured-height evidence or full-column layers, not both')
         if type(self.voxel_clear_observations) is not int or self.voxel_clear_observations < 0:
             raise ValueError('voxel_clear_observations must be a nonnegative integer')
         if self.obstacle_height[0] >= self.obstacle_height[1]:
@@ -320,10 +336,18 @@ class OccupancyGridMap:
         self.log_odds = np.zeros((height, width), dtype=np.float32)
         self.observed = np.zeros((height, width), dtype=bool)
         self.static_occupied = np.zeros((height, width), dtype=bool)
+        self._height_evidence = None
+        self._column_evidence = self.log_odds
+        if config.lidar_height_resolution is not None:
+            levels = int(np.ceil((config.obstacle_height[1] - config.obstacle_height[0])
+                                 / config.lidar_height_resolution))
+            self._height_evidence = np.zeros((levels, height, width), dtype=np.float32)
+            self._column_evidence = np.zeros_like(self.log_odds)
         self._lidar_free_height_seen = (
-            np.zeros((config.lidar_free_height_layers, height, width), dtype=bool)
+            np.zeros((config.lidar_free_height_layers, height, width), dtype=np.int64)
             if config.lidar_free_height_layers > 1 else None
         )
+        self._lidar_frame = 0
         self.revision = 0
 
     def update_lidar(self, origin: Vector3, points: np.ndarray, max_range: float):
@@ -332,10 +356,14 @@ class OccupancyGridMap:
         The 3D frame is projected into a 2D scan per azimuth bin: the nearest
         return inside the obstacle height band becomes that direction's
         obstacle endpoint, cells before it become free, and cells behind it
-        stay unknown. Optional multi-height mode keeps vertical channels
-        separate and requires free evidence from every configured layer.
+        stay unknown. Optional multi-height mode retains every valid obstacle
+        endpoint, keeps vertical channels separate, and requires recent free
+        evidence from every configured layer for each free update. Optional
+        measured-height evidence instead separates projected ground coverage
+        from obstacle support at the actual hit/ray heights.
         """
 
+        self._lidar_frame += 1
         points = _points_array(points)
         if len(points) == 0:
             return
@@ -364,15 +392,16 @@ class OccupancyGridMap:
         # A single free-height layer selects the simpler projected-2D-scan
         # behavior: one nearest in-band return per azimuth. With multiple
         # layers, keep vertical LiDAR channels separate so each layer has its
-        # own visibility evidence. The Go2 LiDAR uses 5 degree vertical
-        # sampling, so quantize measured elevation to retain those channels.
+        # own visibility evidence. Five-degree elevation bins are a bounded
+        # processing approximation, not an assertion about the sensor model.
         scan_bins = min(self.config.lidar_scan_bins, self.config.max_lidar_rays)
         bins = (
             (np.arctan2(deltas[:, 1], deltas[:, 0]) + np.pi)
             / (2.0 * np.pi)
             * scan_bins
         ).astype(int) % scan_bins
-        if self.config.lidar_free_height_layers > 1:
+        measured_heights = self._height_evidence is not None
+        if self.config.lidar_free_height_layers > 1 or measured_heights:
             elevations = np.rad2deg(np.arctan2(deltas[:, 2], horizontal))
             elevation_bins = np.rint(elevations / 5.0).astype(int)
         else:
@@ -403,23 +432,41 @@ class OccupancyGridMap:
         # Each vertical channel has its own nearest obstacle. A return in one
         # channel must not hide valid free-space rays in another channel.
         nearest_obstacle: Dict[Tuple[int, int], int] = {}
-        farthest_seen: Dict[Tuple[int, int], int] = {}
+        clearing_endpoint: Dict[Tuple[int, int], int] = {}
+        boundary = min if self._lidar_free_height_seen is not None or measured_heights else max
         for key, indices in ray_groups.items():
             nearest = [index for index in indices if in_band[index]]
             if nearest:
                 nearest_obstacle[key] = min(nearest, key=lambda index: horizontal[index])
-            farthest_seen[key] = max(indices, key=lambda index: horizontal[index])
+            clearing_endpoint[key] = boundary(indices, key=lambda index: horizontal[index])
 
         frame_free = set()
         frame_occupied = set()
+        height_hits, height_free = set(), set()
+        if self._lidar_free_height_seen is not None or measured_heights:
+            # A measured hit is evidence even when another height/range in
+            # this angular bin supplies the conservative clearing ray.
+            # Ray sampling limits free-space work, never drops real hits.
+            for index in np.flatnonzero(in_band):
+                cell = self.world_to_cell(points[index, :2])
+                if cell is not None:
+                    frame_occupied.add(cell)
+                    if measured_heights:
+                        height_hits.add((self._height_bin(points[index, 2]), *cell))
         frame_free_layers = (
             [set() for _ in range(self.config.lidar_free_height_layers)]
             if self._lidar_free_height_seen is not None else None
         )
-        if self.config.allow_lidar_free_only_rays:
+        if frame_free_layers is not None or measured_heights:
+            selected = (
+                (index if in_band[index] else None, index)
+                for index in clearing_endpoint.values()
+                if self.config.allow_lidar_free_only_rays or in_band[index]
+            )
+        elif self.config.allow_lidar_free_only_rays:
             selected = (
                 (nearest_obstacle.get(key), seen_index)
-                for key, seen_index in farthest_seen.items()
+                for key, seen_index in clearing_endpoint.items()
             )
         else:
             selected = ((index, index) for index in nearest_obstacle.values())
@@ -437,13 +484,22 @@ class OccupancyGridMap:
             else:
                 free_cells = ray[:-1]
                 frame_occupied.add(ray[-1])
-            if frame_free_layers is None:
+            if frame_free_layers is None and not measured_heights:
                 frame_free.update(free_cells)
-            else:
+            if frame_free_layers is not None or measured_heights:
                 for ray_index, cell in enumerate(free_cells):
                     fraction = ray_index / max(1, len(ray) - 1)
                     ray_height = origin_array[2] + fraction * (endpoint[2] - origin_array[2])
+                    # A return above the navigation envelope may still be
+                    # displayed, but its overhead ray cannot certify a route
+                    # underneath. Measured ground/low rays can observe free
+                    # floor without requiring clearance of unused upper layers.
+                    if measured_heights and self.config.point_height[0] <= ray_height <= max_height:
+                        frame_free.add(cell)
                     if ray_height < min_height or ray_height > max_height:
+                        continue
+                    if measured_heights:
+                        height_free.add((self._height_bin(ray_height), *cell))
                         continue
                     layer = min(
                         int((ray_height - min_height) / (max_height - min_height)
@@ -456,21 +512,35 @@ class OccupancyGridMap:
             for layer, cells in enumerate(frame_free_layers):
                 for cell in cells:
                     if self.in_bounds(cell):
-                        self._lidar_free_height_seen[layer, cell[0], cell[1]] = True
+                        self._lidar_free_height_seen[layer, cell[0], cell[1]] = self._lidar_frame
             candidates = set().union(*frame_free_layers)
+            oldest = max(1, self._lidar_frame - self.config.lidar_free_height_window_frames + 1)
             frame_free = {
                 cell for cell in candidates
                 if self.in_bounds(cell)
-                and self._lidar_free_height_seen[:, cell[0], cell[1]].all()
+                and (self._lidar_free_height_seen[:, cell[0], cell[1]] >= oldest).all()
             }
 
         # Rays in one frame are correlated observations, not independent
-        # evidence. Count each cell once; an endpoint hit takes precedence
-        # over other rays crossing the same discretized cell.
+        # evidence. Count each cell once; endpoint hits take precedence at
+        # their own height, while other heights can clear independently.
+        # The planar baseline still gives whole-cell hits precedence.
+        if measured_heights:
+            for key in height_free - height_hits:
+                self._add_height(key, -self.config.free_update)
+            for key in height_hits:
+                self._add_height(key, self.config.occupied_update)
         for cell in frame_free - frame_occupied:
-            self._add(cell, -self.config.free_update)
+            self._add(cell, -self.config.free_update, project=not measured_heights)
+            if self._lidar_free_height_seen is not None:
+                self._lidar_free_height_seen[:, cell[0], cell[1]] = 0
         for cell in frame_occupied:
-            self._add(cell, self.config.occupied_update)
+            if measured_heights:
+                self.observed[cell] = True
+            else:
+                self._add(cell, self.config.occupied_update)
+        if measured_heights:
+            self._project_height_cells(frame_free | frame_occupied)
 
         # The sensor origin is not the base/footprint center. The runtime
         # clears the actual robot footprint separately; clearing a robot-size
@@ -506,6 +576,9 @@ class OccupancyGridMap:
         )
         if isolated.any():
             self.log_odds[isolated] = 0.0
+            if self._height_evidence is not None:
+                self._column_evidence[isolated] = 0.0
+                self._height_evidence[:, isolated] = 0.0
             self.revision += 1
 
     def update_obstacle_points(self, points: np.ndarray):
@@ -520,11 +593,19 @@ class OccupancyGridMap:
             indices = np.linspace(0, len(points) - 1, self.config.max_voxel_points_per_update, dtype=int)
             points = points[indices]
         updated = False
+        height_hits = set()
         for point in points:
             cell = self.world_to_cell(point[:2])
             if cell is not None:
-                self._add(cell, self.config.occupied_update)
+                if self._height_evidence is not None:
+                    height_hits.add((self._height_bin(point[2]), *cell))
+                else:
+                    self._add(cell, self.config.occupied_update)
                 updated = True
+        for key in height_hits:
+            self._add_height(key, self.config.occupied_update)
+            self._project_height(key[1:])
+            self.observed[key[1:]] = True
         if updated:
             self.revision += 1
 
@@ -543,6 +624,10 @@ class OccupancyGridMap:
                     if self.static_occupied[cell]:
                         continue
                     free_log_odds = min(self.log_odds[cell], -self.config.free_update)
+                    if self._height_evidence is not None:
+                        changed |= bool(self._height_evidence[:, cell[0], cell[1]].any())
+                        self._height_evidence[:, cell[0], cell[1]] = 0.0
+                        self._column_evidence[cell] = free_log_odds
                     if free_log_odds != self.log_odds[cell] or not self.observed[cell]:
                         changed = True
                         self.log_odds[cell] = free_log_odds
@@ -561,8 +646,13 @@ class OccupancyGridMap:
                     continue
                 cell = (center[0] + row_offset, center[1] + col_offset)
                 if self.in_bounds(cell):
-                    self.log_odds[cell] = np.clip(self.log_odds[cell] + evidence, -4.0, 4.0)
+                    if self._height_evidence is not None:
+                        self._add(cell, evidence)
+                    else:
+                        self.log_odds[cell] = np.clip(self.log_odds[cell] + evidence, -4.0, 4.0)
                     self.observed[cell] = True
+                    if evidence > 0 and self._lidar_free_height_seen is not None:
+                        self._lidar_free_height_seen[:, cell[0], cell[1]] = 0
         self.revision += 1
 
     def mark_box_occupied(
@@ -598,6 +688,9 @@ class OccupancyGridMap:
             self.log_odds[row_min : row_max + 1, col_min : col_max + 1],
             evidence,
         )
+        if self._height_evidence is not None:
+            self._column_evidence[row_min : row_max + 1, col_min : col_max + 1] = np.maximum(
+                self._column_evidence[row_min : row_max + 1, col_min : col_max + 1], evidence)
         self.static_occupied[row_min : row_max + 1, col_min : col_max + 1] = True
         self.observed[row_min : row_max + 1, col_min : col_max + 1] = True
         self.revision += 1
@@ -644,17 +737,48 @@ class OccupancyGridMap:
     def in_bounds(self, cell: GridCell) -> bool:
         return 0 <= cell[0] < self.log_odds.shape[0] and 0 <= cell[1] < self.log_odds.shape[1]
 
-    def _add(self, cell: GridCell, value: float):
+    def _height_bin(self, height: float) -> int:
+        return min(int((height - self.config.obstacle_height[0]) / self.config.lidar_height_resolution),
+                   self._height_evidence.shape[0] - 1)
+
+    def _add_height(self, key, value: float):
+        if value < 0 and self.static_occupied[key[1:]]:
+            return
+        previous = self._height_evidence[key]
+        if value < 0 and previous >= self.config.sticky_occupied_threshold:
+            value *= self.config.sticky_free_scale
+        # Zero means no remaining obstacle support, not proof the whole
+        # vertical column is empty. Only measured projected rays mark free.
+        self._height_evidence[key] = max(0.0, min(4.0, previous + value))
+
+    def _project_height(self, cell: GridCell):
+        supported = float(self._height_evidence[:, cell[0], cell[1]].max())
+        base = self._column_evidence[cell]
+        self.log_odds[cell] = max(base, supported) if supported > 0 else base
+
+    def _project_height_cells(self, cells):
+        if not cells:
+            return
+        rows, cols = np.asarray(tuple(cells), dtype=int).T
+        supported = self._height_evidence[:, rows, cols].max(axis=0)
+        base = self._column_evidence[rows, cols]
+        self.log_odds[rows, cols] = np.where(supported > 0, np.maximum(base, supported), base)
+
+    def _add(self, cell: GridCell, value: float, *, project=True):
         if not self.in_bounds(cell):
             return
         if value < 0 and self.static_occupied[cell]:
             return
-        if value < 0 and self.log_odds[cell] >= self.config.sticky_occupied_threshold:
+        if value > 0 and self._lidar_free_height_seen is not None:
+            self._lidar_free_height_seen[:, cell[0], cell[1]] = 0
+        if value < 0 and self._column_evidence[cell] >= self.config.sticky_occupied_threshold:
             value *= self.config.sticky_free_scale
         # This is one scalar per cell, often thousands of calls per scan.
         # Avoid NumPy's array-dispatch overhead without changing the evidence.
-        updated = self.log_odds[cell] + value
-        self.log_odds[cell] = -4.0 if updated < -4.0 else 4.0 if updated > 4.0 else updated
+        updated = self._column_evidence[cell] + value
+        self._column_evidence[cell] = -4.0 if updated < -4.0 else 4.0 if updated > 4.0 else updated
+        if self._height_evidence is not None and project:
+            self._project_height(cell)
         self.observed[cell] = True
 
 
