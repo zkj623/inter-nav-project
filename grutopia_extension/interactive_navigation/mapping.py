@@ -349,6 +349,7 @@ class OccupancyGridMap:
         )
         self._lidar_frame = 0
         self.revision = 0
+        self._inflation_cache = None
 
     def update_lidar(self, origin: Vector3, points: np.ndarray, max_range: float):
         """Update occupancy from a lidar frame via a top-down virtual scan.
@@ -702,10 +703,19 @@ class OccupancyGridMap:
         dynamic_occupied = (self.log_odds >= self.config.occupied_threshold) & ~self.static_occupied
         inflation_radius = self.config.obstacle_inflation_radius or self.config.robot_radius
         static_radius = self.config.static_obstacle_inflation_radius or inflation_radius
-        return self._inflate(dynamic_occupied, inflation_radius) | self._inflate(
-            self.static_occupied,
-            static_radius,
-        )
+        parameters = (self.config.grid_resolution, inflation_radius, static_radius)
+        cached = self._inflation_cache
+        # Public evidence arrays can also be edited by callers without changing
+        # revision. Compare the actual masks, including changes across thresholds.
+        if (cached is None or cached[0] != parameters
+                or not np.array_equal(cached[1], dynamic_occupied)
+                or not np.array_equal(cached[2], self.static_occupied)):
+            inflated = (self._inflate(dynamic_occupied, inflation_radius)
+                        | self._inflate(self.static_occupied, static_radius))
+            cached = self._inflation_cache = (
+                parameters, dynamic_occupied, self.static_occupied.copy(), inflated)
+        # Callers historically received a writable, independent mask.
+        return cached[3].copy()
 
     def _inflate(self, occupied: np.ndarray, radius: float) -> np.ndarray:
         if not occupied.any():
@@ -1165,8 +1175,11 @@ class FusedMap:
         'door_frame_latch': 0.18,
     }
 
-    def __init__(self, config: MappingConfig = MappingConfig()):
+    def __init__(self, config: MappingConfig = MappingConfig(), *, maintain_voxels: bool = True):
         self.config = config
+        # Geometry-only deployments may maintain display voxels in another
+        # process. Occupancy always consumes the original sensor points.
+        self.maintain_voxels = maintain_voxels
         self.voxels = VoxelPointCloudMap(config)
         self.occupancy = OccupancyGridMap(config)
         self.scene_graph = SceneGraphMap(config)
@@ -1182,8 +1195,9 @@ class FusedMap:
         points = _points_array(points)
         if len(points) == 0:
             return
-        self.voxels.clear_lidar_free_space(origin, points, max_range)
-        self.voxels.update(points, step=step, source='lidar')
+        if self.maintain_voxels:
+            self.voxels.clear_lidar_free_space(origin, points, max_range)
+            self.voxels.update(points, step=step, source='lidar')
         self.occupancy.update_lidar(origin, points, max_range=max_range)
         self.lidar_frames += 1
         self.lidar_points += len(points)
@@ -1203,7 +1217,8 @@ class FusedMap:
         points = _points_array(points)
         if len(points) == 0:
             return
-        self.voxels.update(points, colors=colors, step=step, source='rgb')
+        if self.maintain_voxels:
+            self.voxels.update(points, colors=colors, step=step, source='rgb')
         if update_occupancy:
             if origin is not None and clear_free_space:
                 self.occupancy.update_lidar(origin, points, max_range=max_range)

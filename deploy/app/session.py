@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import base64
 import io
 import json
+import multiprocessing as mp
 import queue
 import threading
 import time
@@ -17,7 +18,8 @@ import requests
 
 from deploy.recording.recorder import pack, unpack, json_value, provenance
 from deploy.robot.observation import Snapshot
-from deploy.visualization.scene import SceneCapture, map_payload
+from deploy.visualization.scene import SceneCapture
+from deploy.visualization.worker import process_frames
 from deploy.visualization.sources import LatestFrames, jpeg_from_bgr
 
 
@@ -55,13 +57,24 @@ class _RecordedFrame:
 
 
 class Session:
-    def __init__(self, config, repo, port=8765, demo=False, mode='live_observe_only', frame_limit=4, event_limit=4096):
+    def __init__(self, config, repo, port=8765, demo=False, mode='live_observe_only', frame_limit=4, event_limit=4096,
+                 separate_cloud=False):
         self.info = {'session_id': uuid4().hex, 'started_at': datetime.now(timezone.utc).isoformat(),
-                     'config': config, 'provenance': provenance(repo), 'mode': mode, 'demo': demo}
+                     'config': config, 'provenance': provenance(repo), 'mode': mode, 'demo': demo,
+                     'separate_cloud': separate_cloud}
         self.lock = threading.Lock()
         self.frames = LatestFrames(stale_after=1., demo=demo)
-        self.capture = SceneCapture()
-        self.pending = queue.Queue(maxsize=1)
+        self.separate_cloud = separate_cloud
+        self.capture = SceneCapture(include_cloud=not separate_cloud)
+        context = mp.get_context('spawn')
+        self.pending = context.Queue(maxsize=4)
+        self.rendered, output = context.Pipe(duplex=False)
+        self.renderer = context.Process(target=process_frames,
+                                        args=(self.pending, output, config['navigation']['mapping'], separate_cloud),
+                                        name='go2-visualization', daemon=True)
+        self.last_scan = None
+        self.cloud_input_dropped = 0
+        self.render_failure = None
         self.frames_ring, self.events_ring = deque(maxlen=frame_limit), deque(maxlen=event_limit)
         self.frame_id = self.event_id = self.dropped = 0
         self.unpublished_frames = 0
@@ -78,9 +91,22 @@ class Session:
         self.summary = None
         self.closing = False
         self.publication_closed = False
-        self.worker_stop = threading.Event()
         self.server = self._server(port)  # Bind BEFORE ROS/SDK/motion startup.
-        self.worker = threading.Thread(target=self._encode_loop, daemon=True)
+        try:
+            self.renderer.start()
+            output.close()  # One writer: child death must deliver EOF to the collector.
+            if not self.rendered.poll(10.):
+                raise RuntimeError('Visualization process did not initialize')
+            ready = self.rendered.recv()
+            if not ready.get('ready'):
+                raise RuntimeError(f'Visualization startup failed: {ready}')
+        except BaseException:
+            output.close()
+            self._stop_renderer()
+            self.server.server_close()
+            self._close_channels()
+            raise
+        self.worker = threading.Thread(target=self._collect_frames, daemon=True)
         self.http = threading.Thread(target=self.server.serve_forever, kwargs={'poll_interval': .1}, daemon=True)
         self.worker.start()
         self.http.start()
@@ -112,7 +138,7 @@ class Session:
                            'map_ready': map_ready, 'result': result}
         return True
 
-    def update(self, snapshot, tasks, motion, error=None):
+    def update(self, snapshot, tasks, motion, error=None, *, decision_duration_s=None):
         if not self.set_status(tasks.state, tasks.mode, motion, error=error,
                                map_ready=tasks.map_ready, result=tasks.result):
             return
@@ -121,30 +147,55 @@ class Session:
             if self.closing:
                 return
             self.input_times = (snapshot.pose_at, snapshot.lidar_at) if snapshot is not None else None
-        if snapshot is None or now-self.last_publish < self.publish_interval:
+        if snapshot is None:
             return
-        self.last_publish = now
-        with self.lock:
-            if self.pending.full():
-                try:
-                    self.pending.get_nowait()
-                    self.unpublished_frames -= 1
-                    self.dropped += 1
-                except queue.Empty:
-                    pass
+        lidar = snapshot.observation['sensors']['lidar']
+        scan = None
+        if (self.separate_cloud and snapshot.geometry_calibrated
+                and lidar['physics_step'] == tasks.last_lidar and lidar['physics_step'] != self.last_scan):
+            self.last_scan = lidar['physics_step']
+            scan = dict(lidar, captured_at=snapshot.lidar_at, step=snapshot.sequence)
+        publish = now-self.last_publish >= self.publish_interval
+        if not publish and scan is None:
+            return
         try:
-            # Mutable planner arrays are copied only on their owning thread.
-            scene = self.capture.capture(snapshot, tasks)
+            # Copy the mutable navigation map on its owner; 3D work stays in
+            # the display process. Every accepted scan is offered, not just 5 Hz frames.
+            scene = self.capture.capture(snapshot, tasks) if publish else None
+            if publish:
+                self.last_publish = now
+                scene['status'] = dict(self.status)
+                scene['decision_duration_s'] = decision_duration_s
             captured = time.monotonic()
+            packet = dict(scan=scan, snapshot=snapshot if publish else None, scene=scene,
+                          queued_at=captured, capture_ms=(captured-now)*1000)
             with self.lock:
                 if not self.closing:
-                    self.pending.put_nowait((snapshot, scene, captured, (captured-now)*1000))
-                    self.unpublished_frames += 1
+                    if self.render_failure:
+                        self._discard(packet)
+                        return
+                    try:
+                        self.pending.put_nowait(packet)
+                    except queue.Full:
+                        # Even get_nowait can wait for a partially serialized
+                        # pipe payload. Only the display process consumes this
+                        # bounded queue; navigation never drains it to make room.
+                        self._discard(packet)
+                        return
+                    self.unpublished_frames += int(publish)
         except Exception as exc:
             with self.lock:
                 if not self.publication_closed:
                     self.frames.error('session', exc)
-                    self.dropped += 1
+                    self.dropped += int(publish)
+                    self.cloud_input_dropped += int(scan is not None)
+
+    def _discard(self, packet):
+        # Caller holds the session lock. Scan loss and published-frame loss
+        # have separate meanings for a recorded experiment.
+        frame = packet['scene'] is not None
+        self.dropped += int(frame)
+        self.cloud_input_dropped += int(packet['scan'] is not None)
 
     def rgb(self, rgba, captured_at=None, source='ROS RGB'):
         payload = {'jpeg': jpeg_from_bgr(rgba[..., :3][..., ::-1]),
@@ -154,58 +205,60 @@ class Session:
             if not self.publication_closed:
                 self.frames.put('rgb', payload, captured_at)
 
-    def _encode_loop(self):
-        while not self.worker_stop.is_set() or not self.pending.empty():
+    def _collect_frames(self):
+        while not self.publication_closed:
             try:
-                snapshot, scene, queued_at, capture_ms = self.pending.get(timeout=.1)
-            except queue.Empty:
+                if not self.rendered.poll(.1):
+                    continue
+                result = self.rendered.recv()
+            except (EOFError, OSError) as error:
+                if not self.publication_closed:
+                    self.render_failure = f'Visualization process disconnected: {type(error).__name__}'
+                    self.frames.error('session', self.render_failure)
+                    self.event('visualization_error', reason=self.render_failure)
+                return
+            if result is None:
+                return
+            if 'error' in result:
+                with self.lock:
+                    if self.publication_closed:
+                        return
+                    self.dropped += int(result['frame_dropped'])
+                    self.unpublished_frames -= int(result['frame_dropped'])
+                    self.cloud_input_dropped += int(result['cloud_failed'])
+                    self.frames.error('session', result['error'])
+                self.event('visualization_error', reason=result['error'])
                 continue
             try:
-                encoding_started = time.monotonic()
-                map_image = map_payload(scene)
-                lidar = snapshot.observation['sensors']['lidar']
-                points = scene['points'] if scene['ready'] else lidar['pointcloud']
-                if len(points) > 12000:
-                    points = points[np.linspace(0, len(points)-1, 12000, dtype=int)]
-                display_count = scene['voxel_count'] if scene['ready'] else len(lidar['pointcloud'])
-                map_at = scene['updated_at'] if scene['ready'] else snapshot.lidar_at
-                cloud_payload = {'points': np.round(np.asarray(points, dtype=float), 3).tolist(),
-                                         'count': display_count, 'frame': snapshot.planning_frame,
-                                         'display_count': len(points), 'accumulated': bool(scene['ready']),
-                                         'stamp': map_at, 'source_age': None,
-                                         'ground_relative_z': snapshot.geometry_calibrated,
-                                         'kind': '累计建图点云' if scene['ready'] else '当前原始点云（未建图）'}
-                w, x, y, z = snapshot.observation['orientation']
-                pose_payload = {'position': snapshot.observation['position'].tolist(),
-                                        'yaw': float(np.arctan2(2*(w*z+x*y), 1-2*(y*y+z*z))),
-                                        'frame': snapshot.planning_frame, 'stamp': snapshot.pose_at,
-                                        'source_age': None}
-                camera = snapshot.observation['sensors'].get('camera')
-                if camera is not None:
-                    self.rgb(camera['rgba'], snapshot.camera_at, 'ROS RGB-D colour')
-                with self.lock:
-                    if self.publication_closed:
-                        return
-                    self.frames.put('cloud', cloud_payload, map_at)
-                    self.frames.put('pose', pose_payload, snapshot.pose_at)
-                    self.map, self.map_at = map_image, map_at
-                    self.published_at = time.monotonic()
-                    self.publish_times.append(self.published_at)
-                    self.timings = {'capture_ms': capture_ms, 'queue_ms': (encoding_started-queued_at)*1000,
-                                    'encode_ms': (self.published_at-encoding_started)*1000}
-                    self.unpublished_frames -= 1
-                    self.frame_id += 1
-                    self.frames_ring.append(_RecordedFrame(
-                        self.frame_id, snapshot, scene, self.frames.snapshot(), map_image))
-                with self.frames.lock:
-                    self.frames.errors.pop('session', None)
+                self._publish_frame(result)
             except Exception as error:
-                with self.lock:
-                    if self.publication_closed:
-                        return
-                    self.frames.error('session', error)
-                    self.unpublished_frames -= 1
-                    self.dropped += 1
+                if not self.publication_closed:
+                    self.render_failure = f'Visualization publication failed: {error}'
+                    self.frames.error('session', self.render_failure)
+                    self.event('visualization_error', reason=self.render_failure)
+                return
+
+    def _publish_frame(self, result):
+        snapshot, scene = result['snapshot'], result['scene']
+        with self.lock:
+            if self.publication_closed:
+                return
+            self.frames.put('cloud', result['cloud'], result['cloud']['stamp'])
+            self.frames.put('pose', result['pose'], snapshot.pose_at)
+            if result['rgb'] is not None:
+                self.frames.put('rgb', result['rgb'], snapshot.camera_at)
+            self.map, self.map_at = result['map'], scene['updated_at'] if scene['ready'] else snapshot.lidar_at
+            self.published_at = time.monotonic()
+            self.publish_times.append(self.published_at)
+            self.timings = dict(result['timings'], delivery_ms=(self.published_at-result['finished_at'])*1000)
+            scene['performance'] = dict(self.timings)
+            scene['cloud_input_dropped'] = self.cloud_input_dropped
+            self.unpublished_frames -= 1
+            self.frame_id += 1
+            self.frames_ring.append(_RecordedFrame(
+                self.frame_id, snapshot, scene, self.frames.snapshot(), self.map))
+            with self.frames.lock:
+                self.frames.errors.pop('session', None)
 
     def display(self):
         now = time.monotonic()
@@ -222,6 +275,7 @@ class Session:
             measured_fps = ((len(self.publish_times)-1)/(self.publish_times[-1]-self.publish_times[0])
                             if len(self.publish_times) > 1 else 0.)
             performance = dict(self.timings, display_fps=measured_fps, input_ages_s=input_ages,
+                               cloud_input_dropped=self.cloud_input_dropped,
                                input_stale=input_stale,
                                display_age_s=None if self.published_at is None else now-self.published_at)
         return dict(frames, session_id=self.info['session_id'], sequence=sequence,
@@ -236,7 +290,8 @@ class Session:
                     'events': [p for p in self.events_ring if p['event_id'] > after_event],
                     'frame_gap': max(0, oldest_frame-after_frame-1),
                     'event_gap': max(0, oldest_event-after_event-1),
-                    'producer_dropped': self.dropped, 'summary': self.summary}
+                    'producer_dropped': self.dropped, 'cloud_input_dropped': self.cloud_input_dropped,
+                    'summary': self.summary}
         # Recording compression is demand-driven and outside the display lock.
         # An unused recorder must not delay every live visual frame.
         return dict(result, frames=[frame.payload() for frame in result['frames']])
@@ -287,24 +342,50 @@ class Session:
             if self.closing:
                 return
             self.closing = True
-        self.worker_stop.set()
-        self.worker.join(timeout=drain_timeout)
+        deadline = time.monotonic()+drain_timeout
+        try:
+            self.pending.put(None, timeout=max(0., deadline-time.monotonic()))
+        except queue.Full:
+            pass
+        self.worker.join(timeout=max(0., deadline-time.monotonic()))
+        self.renderer.join(timeout=max(0., deadline-time.monotonic()))
         with self.lock:
-            drained = not self.worker.is_alive()
+            drained = (not self.worker.is_alive() and self.renderer.exitcode == 0
+                       and self.render_failure is None and self.unpublished_frames == 0)
             self.publication_closed = True
             if not drained:
                 self.dropped += self.unpublished_frames
                 self.unpublished_frames = 0
                 summary = dict(summary, completed=False, telemetry_error='encoder did not finish')
             self.summary = dict(summary, telemetry_complete=drained,
+                                cloud_input_dropped=self.cloud_input_dropped,
+                                cloud_history_complete=drained and self.cloud_input_dropped == 0,
                                 final_frame_id=self.frame_id, final_event_id=self.event_id+1)
             self._append_event({'event': 'session_finished', 'at': time.monotonic(), 'summary': self.summary})
+        self._stop_renderer()
+        self.worker.join(timeout=1)
+        self._close_channels()
         # This is a bounded read-only drain window, not a guarantee for disconnected
         # or slow recorders. Their final cursors and gap counts disclose any loss.
         time.sleep(grace)
         self.server.shutdown()
         self.http.join(timeout=1)
         self.server.server_close()
+
+    def _close_channels(self):
+        self.pending.cancel_join_thread()
+        self.pending.close()
+        self.rendered.close()
+
+    def _stop_renderer(self):
+        if self.renderer.pid is None:
+            return
+        if self.renderer.is_alive():
+            self.renderer.terminate()
+        self.renderer.join(timeout=1)
+        if self.renderer.is_alive():
+            self.renderer.kill()
+            self.renderer.join(timeout=1)
 
 
 class SessionClient:

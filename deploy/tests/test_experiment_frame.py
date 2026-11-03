@@ -135,11 +135,15 @@ def test_live_entrypoint_rebases_before_map_boundary_check(monkeypatch):
     message = odometry(1_000_000_000, 30.)
     message.pose.pose.position.y = 40.
     message.pose.pose.orientation.w = message.pose.pose.orientation.z = np.sqrt(.5)
-    source._pose(message)
-    source._lidar(cloud(1_000_000_000))
-    source.lidar[1]['pointcloud'] = np.array([[30., 42., .7], [29., 42., .7]])
     source.close = lambda: None
-    monkeypatch.setattr(sensors, 'RosSensors', lambda *args: source)
+    def start_sensors(*args):
+        # Live ROS subscription starts after display-process initialization.
+        # Produce fresh messages at that same boundary in this fixture.
+        source._pose(message)
+        source._lidar(cloud(1_000_000_000))
+        source.lidar[1]['pointcloud'] = np.array([[30., 42., .7], [29., 42., .7]])
+        return source
+    monkeypatch.setattr(sensors, 'RosSensors', start_sensors)
     keys = deque([None, ('q', None)])
     monkeypatch.setattr(keyboard, 'Keyboard', lambda: SimpleNamespace(
         editing=None, poll=lambda: keys.popleft(), close=lambda: None))

@@ -11,11 +11,12 @@ from grutopia_extension.interactive_navigation.visual_observation import VisualO
 
 
 class Tasks:
-    def __init__(self, config, perception=None, scorer=None):
+    def __init__(self, config, perception=None, scorer=None, *, maintain_voxels=True):
         self.config, self.perception = config, perception
         self.scorer = scorer
         self.mapping_config = MappingConfig(**config['mapping'])
         self.component = self._point((0., 0., .3))
+        self.component.mapping.map.maintain_voxels = maintain_voxels
         self.mode, self.state = 'observe', 'observe'
         self.elapsed = 0.
         self.last_time = None
@@ -63,6 +64,8 @@ class Tasks:
     def start(self, mode, value, now):
         if mode not in ('navigate', 'explore'):
             raise ValueError('Unknown task')
+        if mode == 'explore' and not self.component.mapping.map.maintain_voxels:
+            raise ValueError('Exploration requires the full map; restart with RGB-D configured')
         if mode == 'navigate' and (len(value) != 3 or not np.isfinite(value).all()):
             raise ValueError('Goal must contain finite map coordinates')
         new = self._point(value) if mode == 'navigate' else self._explore(value)
@@ -123,6 +126,24 @@ class Tasks:
         self.state = 'fault'
         self.result = {'success': False, 'reason': reason}
 
+    def check_navigation_goal(self, goal):
+        """Check the requested cell; route planning remains in the original planner."""
+        if len(goal) < 2 or not all(math.isfinite(v) for v in goal[:2]):
+            raise ValueError('目标坐标必须为有限数值')
+        if not self.map_ready:
+            raise ValueError('导航地图尚未就绪，请先观察建图')
+        grid = self.component.mapping.navigation_occupancy
+        cell = grid.world_to_cell(goal[:2])
+        prefix = f'目标 ({goal[0]:.2f}, {goal[1]:.2f})'
+        if cell is None:
+            raise ValueError(f'{prefix} 超出地图范围')
+        if not grid.observed[cell]:
+            raise ValueError(f'{prefix} 尚未观测，请先观察该区域')
+        if grid.occupied_mask()[cell]:
+            raise ValueError(f'{prefix} 位于地图障碍内')
+        if grid.inflated_mask()[cell]:
+            raise ValueError(f'{prefix} 位于障碍膨胀区，当前地图净空不足')
+
     def update(self, snapshot, now):
         if not snapshot.geometry_calibrated:
             if self.state == 'active':
@@ -160,6 +181,8 @@ class Tasks:
             return None
         self.component.update(step, observation)
         self._accept_observation(observation, snapshot)
+        if self.mode == 'navigate':
+            self.check_navigation_goal(self.component.goal)
         result = self.component.evaluate(step, observation)
         if result.success and self.mode == 'explore' and not self.fresh_target_confirmed():
             # Retained semantic maps can guide a new task, but cannot prove a fresh find.
@@ -168,7 +191,13 @@ class Tasks:
             self.state = 'completed'
             self.result = result.as_event()
             return None
+        mapping = self.component.mapping
+        failures = mapping.planning_failures
         action = self.component.action(step, observation)
+        if self.mode == 'navigate' and mapping.planning_failures > failures:
+            # A zero action alone is not a failure (e.g. recovery or turning).
+            # Surface only a new error from the existing planner, not stale history.
+            raise ValueError(f'当前地图无法规划到目标：{mapping.last_planning_error}')
         if set(action) != {'move_by_speed'}:
             raise ValueError(f'Unsupported real-robot action: {list(action)}')
         return np.asarray(action['move_by_speed'], dtype=float)

@@ -154,14 +154,14 @@ def test_shutdown_freezes_final_cursors_even_if_renderer_finishes_late(monkeypat
     import deploy.app.session as module
     session = Session(load(), REPO, port=0, demo=True)
     started, release = threading.Event(), threading.Event()
-    original = module.map_payload
+    original = session._publish_frame
 
-    def slow_map(scene):
+    def slow_publish(result):
         started.set()
         assert release.wait(3)
-        return original(scene)
+        return original(result)
 
-    monkeypatch.setattr(module, 'map_payload', slow_map)
+    monkeypatch.setattr(session, '_publish_frame', slow_publish)
     try:
         tasks = Tasks(load()['navigation'])
         snapshot = DemoSensors(session).latest()

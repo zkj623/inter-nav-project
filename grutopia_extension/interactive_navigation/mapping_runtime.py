@@ -222,6 +222,7 @@ class MapNavigationRuntime:
         self._planned_paths = {}
         self._plan_history = []
         self.planning_failures = 0
+        self.last_planning_error = None
         self.replan_count = 0
         self.replan_reasons = {}
         self.last_replan = None
@@ -633,6 +634,7 @@ class MapNavigationRuntime:
                 self.last_planning_error = str(error)
                 self.planning_failures += 1
                 return ControllerCommand('move_by_speed', (0.0, 0.0, 0.0)).as_action()
+            self.last_planning_error = None
             self._planned_state = decision.state
             self._planned_goal = goal
             self._waypoint_index = 0
@@ -744,6 +746,7 @@ class MapNavigationRuntime:
 
     def invalidate_path(self):
         """Release an execution goal when its owner completes or abandons it."""
+        self.last_planning_error = None
         self._last_plan_used_direct = False
         self._planned_state = None
         self._planned_path = None

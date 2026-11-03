@@ -18,6 +18,8 @@ class NavigationController:
         self.stop_confirmed = None
         self.motion_error = None
         self.motion_detail = ''
+        self.decision_duration_s = None
+        self.task_error = None
 
     @property
     def motion_state(self):
@@ -44,6 +46,7 @@ class NavigationController:
 
     def pause(self, reason):
         if self.tasks.state == 'active':
+            self.task_error = reason
             self.tasks.pause()
             if self.motion:
                 self.motion.stop(reason)
@@ -59,6 +62,7 @@ class NavigationController:
                 self.tasks.pause()
             else:
                 self.tasks.cancel()
+                self.task_error = None
             return
         if key not in ('navigate', 'explore', 'r'):
             return
@@ -77,12 +81,15 @@ class NavigationController:
                 xy = tuple(float(item) for item in value.split(','))
                 if len(xy) != 2:
                     raise ValueError('目标格式为 x,y，例如 2.0,1.0')
+                self.tasks.check_navigation_goal(xy)
                 self.tasks.start('navigate', (*xy, float(snapshot.observation['position'][2])), now)
             elif key == 'explore':
                 if not value.strip():
                     raise ValueError('目标物品名称不能为空')
                 self.tasks.start('explore', value.replace('_', ' '), now)
             else:
+                if self.tasks.mode == 'navigate':
+                    self.tasks.check_navigation_goal(self.tasks.component.goal)
                 self.tasks.resume(now)
             # Wait in a non-running task state. arm() may receive the previous
             # stop's events while waiting for this request's acknowledgement.
@@ -93,19 +100,22 @@ class NavigationController:
             if not armed or self.motion.state != 'active':
                 raise ValueError(f'运动未启用：{self.motion.state}；原因={self.motion_detail or "未收到具体原因"}')
             self.tasks.resume(now)
+            self.task_error = None
             self.stop_confirmed = False
             if exploring:
                 self.perception_started = now
         except (ValueError, RuntimeError) as exc:
+            self.task_error = str(exc)
             self.pause(str(exc))
             print(str(exc), flush=True)
             self.session.event('task_rejected', reason=str(exc))
 
     def step(self, snapshot, now):
         """Validate this observation, update the original algorithm, queue at most one command."""
+        self.decision_duration_s = None
         if snapshot is None:
             self.pause('missing_sensor_data')
-            return None
+            return self.task_error
         try:
             exploring = self.tasks.state == 'active' and self.tasks.mode == 'explore'
             if snapshot.geometry_calibrated:
@@ -124,6 +134,7 @@ class NavigationController:
             decision_started = time.monotonic()
             velocity = self.tasks.update(snapshot, now)
             decision_duration = time.monotonic() - decision_started
+            self.decision_duration_s = decision_duration
             if self.perception:
                 delivery = self.perception.last_delivery
                 if delivery is not None and delivery is not self.last_perception_delivery:
@@ -136,14 +147,18 @@ class NavigationController:
                 if exploring:
                     expires = min(expires, snapshot.camera_at+self.robot['max_data_age_s'])
                 self.motion.submit(velocity, now, expires)
+                submitted_at = time.monotonic()
                 self.session.event('command_requested', generated_at=now, expires_at=expires,
                                    velocity=velocity, decision_duration_s=decision_duration,
+                                   submitted_at=submitted_at, remaining_valid_s=expires-submitted_at,
+                                   pose_age_at_submit=submitted_at-snapshot.pose_at,
+                                   lidar_age_at_submit=submitted_at-snapshot.lidar_at,
                                    delivery='queued_not_execution_ack')
             if previous_state == 'active' and self.tasks.state == 'completed':
                 if self.motion:
                     self.motion.stop('task_completed')
                 self.session.event('task_result', result=self.tasks.result)
-            return None
+            return self.task_error
         except (ValueError, RuntimeError) as exc:
             self.pause(str(exc))
             return str(exc)

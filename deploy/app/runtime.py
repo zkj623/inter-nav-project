@@ -98,7 +98,8 @@ def run_live(args, config):
     robot, nav, runtime = config['robot'], config['navigation'], config['runtime']
     control = runtime['control']
     reference = ExperimentFrame(0. if args.demo else robot['ground_z'])
-    session = Session(config, REPO, port=args.session_port, demo=args.demo,
+    separate_cloud = robot['camera_mode'] != 'rgbd'
+    session = Session(config, REPO, port=args.session_port, demo=args.demo, separate_cloud=separate_cloud,
                       mode='synthetic_demo' if args.demo else ('live_motion_enabled' if args.allow_motion else 'live_observe_only'))
     print(f'本轮会话：{session.info["session_id"]}；数据服务：{session.url}', flush=True)
     print('另开终端运行 python view.py 查看三幅图；python record.py 保存实验。', flush=True)
@@ -139,7 +140,7 @@ def run_live(args, config):
             perception = AsyncPerception(runtime['perception'])
         if perception and runtime['topology_scorer']['enabled']:
             scorer = AsyncScorer(runtime['topology_scorer'])
-        tasks = Tasks(nav, perception, scorer)
+        tasks = Tasks(nav, perception, scorer, maintain_voxels=not separate_cloud)
         if args.allow_motion:
             motion = MotionProcess(robot, control)
         keyboard = Keyboard() if not args.demo or sys.stdin.isatty() else None
@@ -183,7 +184,8 @@ def run_live(args, config):
             step_error = controller.step(snapshot, now)
             observation_error = observation_error or step_error
             current_error = sensors.last_error or observation_error
-            session.update(snapshot, tasks, motion.state if motion else 'disabled', current_error)
+            session.update(snapshot, tasks, motion.state if motion else 'disabled', current_error,
+                           decision_duration_s=controller.decision_duration_s)
             if now-last_status >= 2 and (keyboard is None or keyboard.editing is None):
                 print(f'状态={tasks.state} 任务={tasks.mode} 运动={motion.state if motion else "disabled"}'
                       f' 观测={"ready" if snapshot else "waiting"} 建图={tasks.map_ready} 最近错误={current_error}', flush=True)

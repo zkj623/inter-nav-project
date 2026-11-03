@@ -31,8 +31,9 @@ def display_points(voxel_map, limit=12000):
 
 
 class SceneCapture:
-    def __init__(self):
+    def __init__(self, include_cloud=True):
         self.trajectory = deque(maxlen=4000)
+        self.include_cloud = include_cloud
 
     def capture(self, snapshot, tasks):
         position = snapshot.observation['position'].copy()
@@ -54,13 +55,14 @@ class SceneCapture:
                       observed=grid.observed.copy(), occupied=grid.occupied_mask().copy(),
                       inflated=grid.inflated_mask().copy(), log_odds=grid.log_odds.copy(),
                       static=grid.static_occupied.copy(),
-                      points=display_points(runtime.map.voxels),
-                      voxel_count=runtime.map.voxels.voxel_count,
                       path=[list(p) for p in (runtime._planned_path or ())],
                       skeleton=[list(cell) for cell in topology.skeleton_cells] if topology else [],
                       frontiers=[list(f.centroid) for f in topology.frontiers] if topology else [],
                       objects=[{'position': list(n.position), 'label': n.label}
                                for n in runtime.map.scene_graph.object_nodes()][:40])
+        if self.include_cloud:
+            result.update(points=display_points(runtime.map.voxels),
+                          voxel_count=runtime.map.voxels.voxel_count)
         goal = getattr(tasks.component.config, 'goal', None)
         target = getattr(tasks.component, 'target_node', None)
         result['goal'] = list(target.position) if target is not None else (list(goal) if goal is not None and tasks.mode == 'navigate' else None)

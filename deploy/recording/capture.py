@@ -46,6 +46,7 @@ def record(url, output=None, wait=30.):
     session_mode = None
     frame_id = event_id = frame_gap = event_gap = 0
     producer_dropped = 0
+    cloud_input_dropped = 0
     final = None
     error = None
     reason = 'operator_stop'
@@ -75,6 +76,7 @@ def record(url, output=None, wait=30.):
             frame_gap += batch['frame_gap']
             event_gap += batch['event_gap']
             producer_dropped = batch['producer_dropped']
+            cloud_input_dropped = batch.get('cloud_input_dropped', 0)
             for event in batch['events']:
                 writer.event(event['event'], **{k: v for k, v in event.items() if k != 'event'})
                 event_id = event['event_id']
@@ -99,6 +101,8 @@ def record(url, output=None, wait=30.):
                    'session_id': session_id, 'run_summary': final, 'run_final_received': final is not None,
                    'missing_frames': frame_gap, 'missing_events': event_gap,
                    'producer_dropped': producer_dropped, 'last_frame': frame_id, 'last_event': event_id,
+                   'cloud_input_dropped': cloud_input_dropped,
+                   'cloud_history_complete': final.get('cloud_history_complete') if final else None,
                    'recording_complete': error is None and drained and has_data and frame_gap == event_gap == producer_dropped == 0,
                    'hardware_validated': False}
         try:

@@ -49,6 +49,7 @@ def control(tmp_path):
     snapshot = next(snapshots(make_fixture(tmp_path)))
     tasks, motion, events = Tasks(config['navigation']), Motion(), Events()
     controller = NavigationController(config, tasks, motion, events)
+    controller.step(snapshot, snapshot.captured_at)  # Observe/map before entering a goal, as in the console.
     return controller, snapshot, events
 
 
@@ -123,18 +124,27 @@ def test_command_expires_with_oldest_required_observation(control):
     assert expires == pytest.approx(snapshot.lidar_at+controller.robot['max_data_age_s'])
 
 
-def test_decision_timing_does_not_extend_command_or_sensor_expiry(control, monkeypatch):
+@pytest.mark.parametrize('decision_duration', [.25, .45])
+def test_decision_timing_does_not_extend_command_or_sensor_expiry(control, monkeypatch, decision_duration):
     from deploy.app import controller as module
     controller, snapshot, events = control
     controller.operate('navigate', '1,0', snapshot, snapshot.captured_at)
-    ticks = iter([snapshot.captured_at, snapshot.captured_at + .25])
+    submitted_at = snapshot.captured_at + decision_duration + .01
+    ticks = iter([snapshot.captured_at, snapshot.captured_at + decision_duration, submitted_at])
     monkeypatch.setattr(module.time, 'monotonic', lambda: next(ticks))
     controller.step(snapshot, snapshot.captured_at)
     command = next(e for e in events.items if e['event'] == 'command_requested')
-    assert command['decision_duration_s'] == pytest.approx(.25)
+    assert command['decision_duration_s'] == pytest.approx(decision_duration)
     assert command['generated_at'] == snapshot.captured_at
     assert command['expires_at'] <= snapshot.captured_at + controller.control['command_ttl_s']
     assert command['expires_at'] <= snapshot.lidar_at + controller.robot['max_data_age_s']
+    assert command['submitted_at'] == submitted_at
+    assert command['remaining_valid_s'] == pytest.approx(command['expires_at']-command['submitted_at'])
+    assert command['pose_age_at_submit'] == pytest.approx(command['submitted_at']-snapshot.pose_at)
+    assert command['lidar_age_at_submit'] == pytest.approx(command['submitted_at']-snapshot.lidar_at)
+    assert command['delivery'] == 'queued_not_execution_ack'
+    if decision_duration > controller.control['command_ttl_s']:
+        assert command['remaining_valid_s'] < 0  # Log overruns without renewing the old decision.
 
 
 def test_cancel_exploration_discards_pending_perception_and_old_target():
@@ -152,6 +162,7 @@ def test_cancel_exploration_discards_pending_perception_and_old_target():
 
 def test_mapping_failure_does_not_report_ready(control, monkeypatch):
     controller, snapshot, _ = control
+    controller.tasks = Tasks(load()['navigation'])
     def fail(*args, **kwargs):
         raise ValueError('bad input')
     update = controller.tasks.component.mapping.update
