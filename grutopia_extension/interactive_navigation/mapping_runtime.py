@@ -186,6 +186,9 @@ class MapNavigationRuntime:
         self.open_vocabulary_last_detection_step = None
         self.open_vocabulary_last_success_step = None
         self.topology_update_interval = int(topology_update_interval)
+        # Point-navigation deployment can refresh topology on demand while
+        # retaining fresh occupancy and path-clearance checks on every tick.
+        self.defer_topology_updates = False
         self.semantic_voronoi = None
         self.voronoi_planner = None
         self.voronoi_plan_count = 0
@@ -342,7 +345,7 @@ class MapNavigationRuntime:
                 self._last_safe_position = tuple(float(value) for value in position[:3])
         if maintain:
             self._mark_person_obstacles()
-        if self.semantic_voronoi is not None and maintain:
+        if self.semantic_voronoi is not None and maintain and not self.defer_topology_updates:
             self.semantic_voronoi.update()
             self.semantic_voronoi.attach_semantics(
                 self.map.scene_graph.object_nodes()
@@ -1163,6 +1166,8 @@ class MapNavigationRuntime:
                 self.map.plan_count += 1
                 return (tuple(float(value) for value in goal),)
             try:
+                if self.defer_topology_updates:
+                    self.semantic_voronoi.update()
                 path = self.voronoi_planner.plan(start, goal)
             except PlanningError:
                 self.voronoi_plan_fallbacks += 1

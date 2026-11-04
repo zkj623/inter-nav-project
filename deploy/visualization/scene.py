@@ -44,14 +44,15 @@ class SceneCapture:
                   'frame': snapshot.planning_frame, 'position': position,
                   'orientation': snapshot.observation['orientation'].copy(),
                   'trajectory': np.asarray(self.trajectory), 'state': tasks.state, 'mode': tasks.mode,
-                  'result': tasks.result}
+                  'result': tasks.result, 'decision_stages_s': dict(tasks.last_timings)}
         if not result['ready']:
             result['reason'] = '地面/雷达原点未标定，或尚未收到有效观测；不生成导航地图'
             return result
         runtime = tasks.component.mapping
         grid = runtime.map.occupancy
-        topology = runtime.semantic_voronoi.cached_snapshot() if runtime.semantic_voronoi else None
+        topology = runtime.semantic_voronoi.peek_snapshot() if runtime.semantic_voronoi else None
         result.update(config=asdict(runtime.map.config), revision=grid.revision,
+                      topology_revision=topology.revision if topology else None,
                       observed=grid.observed.copy(), occupied=grid.occupied_mask().copy(),
                       inflated=grid.inflated_mask().copy(), log_odds=grid.log_odds.copy(),
                       static=grid.static_occupied.copy(),

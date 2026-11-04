@@ -7,8 +7,8 @@ import time
 from .safety import CommandGuard
 
 # Shared trial envelope; the worker enforces it even if the console misbehaves.
-TEST_MAX_DURATION_S = 3.
-TEST_SPEED_LIMITS = (.10, .03, .25)  # vx, vy, wz; lower device limits still apply
+TEST_MAX_DURATION_S = 2.
+TEST_SPEED_LIMITS = (.25, .03, .25)  # vx, vy, wz; lower device limits still apply
 
 
 class UnitreeSport:

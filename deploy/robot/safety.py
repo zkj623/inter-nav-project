@@ -4,11 +4,16 @@ import numpy as np
 
 
 def checked_velocity(command, config):
-    velocity = np.asarray(command, dtype=float)
+    velocity = np.array(command, dtype=float, copy=True)
     if velocity.shape != (3,) or not np.isfinite(velocity).all():
         raise ValueError('Velocity must be three finite values')
-    limits = np.array([config['max_vx'], config['max_vy'], config['max_wz']])
-    return velocity / max(1., float(np.max(np.abs(velocity)/limits)))
+    # The holonomic planner projects a checked map segment into body XY.
+    # Preserve that translation direction when either linear axis saturates;
+    # yaw saturation must not additionally shrink an otherwise valid stride.
+    limits = np.array([config['max_vx'], config['max_vy']])
+    velocity[:2] /= max(1., float(np.max(np.abs(velocity[:2])/limits)))
+    velocity[2] = np.clip(velocity[2], -config['max_wz'], config['max_wz'])
+    return velocity
 
 
 def check_observation(snapshot, now, robot, control, mapping, camera=False):

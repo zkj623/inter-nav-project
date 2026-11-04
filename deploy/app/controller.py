@@ -150,6 +150,7 @@ class NavigationController:
                 submitted_at = time.monotonic()
                 self.session.event('command_requested', generated_at=now, expires_at=expires,
                                    velocity=velocity, decision_duration_s=decision_duration,
+                                   decision_stages_s=dict(self.tasks.last_timings),
                                    submitted_at=submitted_at, remaining_valid_s=expires-submitted_at,
                                    pose_age_at_submit=submitted_at-snapshot.pose_at,
                                    lidar_age_at_submit=submitted_at-snapshot.lidar_at,

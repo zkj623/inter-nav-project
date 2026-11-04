@@ -135,6 +135,9 @@ def test_decision_timing_does_not_extend_command_or_sensor_expiry(control, monke
     controller.step(snapshot, snapshot.captured_at)
     command = next(e for e in events.items if e['event'] == 'command_requested')
     assert command['decision_duration_s'] == pytest.approx(decision_duration)
+    stages = command['decision_stages_s']
+    assert all(stages[k] >= 0 for k in ('mapping_s', 'goal_check_s', 'evaluation_s', 'planning_tracking_s'))
+    assert stages['total_s'] >= sum(v for k, v in stages.items() if k != 'total_s')
     assert command['generated_at'] == snapshot.captured_at
     assert command['expires_at'] <= snapshot.captured_at + controller.control['command_ttl_s']
     assert command['expires_at'] <= snapshot.lidar_at + controller.robot['max_data_age_s']
@@ -170,6 +173,8 @@ def test_mapping_failure_does_not_report_ready(control, monkeypatch):
     assert controller.step(snapshot, snapshot.captured_at) == 'bad input'
     assert not controller.tasks.map_ready
     assert controller.tasks.last_lidar is None
+    assert controller.tasks.last_timings['mapping_s'] >= 0
+    assert controller.tasks.last_timings['total_s'] >= controller.tasks.last_timings['mapping_s']
     monkeypatch.setattr(controller.tasks.component.mapping, 'update', update)
     assert controller.step(snapshot, snapshot.captured_at) is None
     assert controller.tasks.map_ready

@@ -241,10 +241,9 @@ class PointNavigationComponent:
         occupied_cells = np.argwhere(occupancy.occupied_mask())
         if len(occupied_cells) == 0:
             return
-        occupied_xy = np.asarray(
-            [occupancy.cell_to_world(tuple(int(value) for value in cell)) for cell in occupied_cells],
-            dtype=np.float64,
-        )
+        # Same cell centres as cell_to_world, without a Python call per obstacle.
+        occupied_xy = ((occupied_cells[:, ::-1] + .5) * occupancy.config.grid_resolution
+                       + (occupancy.config.x_limits[0], occupancy.config.y_limits[0]))
         minimum = float(np.linalg.norm(occupied_xy - np.asarray(position[:2]), axis=1).min())
         if np.isfinite(minimum):
             self._minimum_clearance = minimum if self._minimum_clearance is None else min(

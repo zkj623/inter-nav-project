@@ -16,7 +16,7 @@ from deploy.perception.client import AsyncPerception
 from deploy.recording.replay import snapshots
 from deploy.robot.localization import camera_cloud, PoseContinuity, rotation, multiply
 from deploy.robot.observation import Snapshot, normalize
-from deploy.robot.safety import CommandGuard, check_observation
+from deploy.robot.safety import CommandGuard, check_observation, checked_velocity
 from deploy.robot.sensors import decode_image
 from deploy.robot.motion import _worker
 from deploy.tests.make_fixture import make_fixture
@@ -46,6 +46,52 @@ def test_invalid_commands_latch_off(command):
     guard.arm(1)
     assert not guard.submit(command, 1, 1.2, 1)
     assert not guard.armed
+
+
+@pytest.mark.parametrize('yaw', [-1.119007271, 1.119007271])
+def test_turn_saturation_does_not_shrink_recorded_navigation_translation(yaw):
+    # Actual first live navigation request: the old whole-twist scale reduced
+    # vx from 0.1117 to 0.0349 solely because yaw exceeded its 0.35 limit.
+    requested = np.array([.111664123, -.08, yaw])
+    original = requested.copy()
+    limited = checked_velocity(requested, load()['runtime']['control'])
+    np.testing.assert_allclose(limited[:2], requested[:2])
+    assert limited[2] == pytest.approx(np.sign(yaw)*load()['runtime']['control']['max_wz'])
+    np.testing.assert_array_equal(requested, original)
+
+
+@pytest.mark.parametrize('requested', [[1.6, .30, .2], [-.8, .60, -.2], [1.6, -.60, 1.2]])
+def test_translation_saturation_preserves_checked_segment_direction(requested):
+    limits = load()['runtime']['control']
+    output = checked_velocity(requested, limits)
+    assert abs(output[0]) <= limits['max_vx']
+    assert abs(output[1]) <= limits['max_vy']
+    assert abs(output[2]) <= limits['max_wz']
+    assert output[0]*requested[1] == pytest.approx(output[1]*requested[0])
+    assert np.dot(output[:2], requested[:2]) > 0
+    assert np.linalg.norm(output[:2]) <= np.linalg.norm(requested[:2])
+
+
+@pytest.mark.parametrize('requested', [[0., 0., 0.], [.01, -.02, .03], [0., 0., 1.2]])
+def test_velocity_limit_never_invents_translation(requested):
+    output = checked_velocity(requested, load()['runtime']['control'])
+    np.testing.assert_allclose(output[:2], requested[:2])
+
+
+def test_turning_forward_command_keeps_acceleration_and_timeout_guards():
+    limits = load()['runtime']['control']
+    guard = CommandGuard(limits)
+    guard.arm(10.)
+    previous = np.zeros(3)
+    for now in np.arange(10.05, 11.81, .05):
+        assert guard.submit([.80, 0., 1.2], now, now+.3, now)
+        output = guard.tick(now)
+        assert abs(output[0]-previous[0]) <= limits['acceleration']*.05+1e-9
+        assert abs(output[2]-previous[2]) <= limits['angular_acceleration']*.05+1e-9
+        previous = output
+    np.testing.assert_allclose(output, [.80, 0., limits['max_wz']])
+    assert guard.tick(now+.31) is None
+    assert guard.reason == 'command_timeout' and not guard.armed
 
 
 def test_camera_geometry_and_invalid_pixel_alignment():

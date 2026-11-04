@@ -44,8 +44,10 @@ def unpack(value, arrays):
 
 def provenance(repo):
     try:
-        commit = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
-        dirty = bool(subprocess.check_output(['git', '-C', str(repo), 'status', '--porcelain'], text=True).strip())
+        commit = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'],
+                                         text=True, stderr=subprocess.DEVNULL).strip()
+        dirty = bool(subprocess.check_output(['git', '-C', str(repo), 'status', '--porcelain'],
+                                            text=True, stderr=subprocess.DEVNULL).strip())
     except (OSError, subprocess.CalledProcessError):
         manifest = Path(repo) / '.deploy-source.json'
         source = json.loads(manifest.read_text()) if manifest.is_file() else {}

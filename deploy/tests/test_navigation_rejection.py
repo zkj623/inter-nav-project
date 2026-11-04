@@ -37,6 +37,81 @@ def grid_for(controller):
     return controller.tasks.component.mapping.map.occupancy
 
 
+def test_point_tracking_and_display_do_not_build_topology(navigation, monkeypatch):
+    from deploy.visualization.scene import SceneCapture
+    controller, snapshot, _ = navigation
+    graph = controller.tasks.component.mapping.semantic_voronoi
+    assert graph.peek_snapshot() is None
+    def unexpected(*args, **kwargs):
+        raise AssertionError('Unnecessary topology build on the control/display path')
+    monkeypatch.setattr(graph, 'update', unexpected)
+    grid_for(controller).observed[:] = True
+    controller.operate('navigate', '1,0', snapshot, snapshot.captured_at)
+    for elapsed in (0., 1.01, 2.01):
+        now = snapshot.captured_at+elapsed
+        current = replace(snapshot, captured_at=now, pose_at=now, lidar_at=now)
+        assert controller.step(current, now) is None
+        scene = SceneCapture(include_cloud=False).capture(current, controller.tasks)
+        assert scene['topology_revision'] is None and scene['skeleton'] == []
+        stats = controller.tasks.component.mapping.statistics()
+        assert stats['semantic_voronoi']['builds'] == 0
+    assert controller.motion.commands and controller.tasks.state == 'active'
+
+
+def test_deferred_topology_is_fresh_when_a_detour_is_needed(navigation, monkeypatch):
+    controller, _, _ = navigation
+    runtime = controller.tasks.component.mapping
+    grid = grid_for(controller)
+    grid.observed[:] = True
+    grid.mark_box_occupied((.8, -.2), (1.1, .2))
+    graph = runtime.semantic_voronoi
+    plan = runtime.voronoi_planner.plan
+    revisions = []
+    def check_fresh(start, goal):
+        assert graph.peek_snapshot() is not None
+        assert graph.peek_snapshot().revision == grid.revision
+        revisions.append(grid.revision)
+        return plan(start, goal)
+    monkeypatch.setattr(runtime.voronoi_planner, 'plan', check_fresh)
+    runtime._map_plan((0., 0., .3), (2., 0., .3))
+    grid.mark_box_occupied((.8, .6), (1.1, .8))
+    runtime._map_plan((0., 0., .3), (2., 0., .3))
+    assert len(revisions) == 2 and revisions[1] > revisions[0]
+
+
+@pytest.mark.parametrize('axis,speeds', [(0, (.80, .60, .49, .31)), (1, (.30, .30, .30, .30))])
+def test_navigation_speed_profile_reaches_success_then_stops(navigation, axis, speeds):
+    controller, snapshot, events = navigation
+    grid_for(controller).observed[:] = True
+    controller.operate('navigate', '1,0' if axis == 0 else '0,1', snapshot, snapshot.captured_at)
+    for index, (distance, speed) in enumerate(zip((1., .60, .49, .31), speeds)):
+        now = snapshot.captured_at+.1*(index+1)
+        position = [0., 0., .3]
+        position[axis] = 1.-distance
+        current = replace(snapshot, observation={**snapshot.observation, 'position': position},
+                          captured_at=now, pose_at=now, lidar_at=now)
+        assert controller.step(current, now) is None
+        # The mock records planner requests; the independent motion guard
+        # applies the configured yaw cap before SDK transmission.
+        expected = [0., 0., 0. if axis == 0 else 1.2]
+        expected[axis] = speed
+        np.testing.assert_allclose(controller.motion.commands[-1][0], expected, atol=1e-9)
+        assert controller.tasks.state == 'active'
+    commands = len(controller.motion.commands)
+    now += .1
+    position[axis] = .71
+    reached = replace(current, observation={**current.observation, 'position': position},
+                      captured_at=now, pose_at=now, lidar_at=now)
+    controller.step(reached, now)
+    assert controller.tasks.result['success']
+    assert len(controller.motion.commands) == commands
+    assert controller.motion.stops
+    # Original shared/simulation defaults must remain unchanged.
+    from grutopia_extension.interactive_navigation.point_navigation import PointNavigationComponent, PointNavigationConfig
+    simulation = PointNavigationComponent(PointNavigationConfig(goal=(1., 0., .3)))
+    assert simulation.mapping.final_goal_slow_radius == .5
+
+
 @pytest.mark.parametrize('case,reason', [
     ('not_ready', '地图'), ('outside', '范围'), ('unknown', '未观测'),
     ('occupied', '障碍'), ('inflated', '膨胀'),

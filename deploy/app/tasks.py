@@ -1,5 +1,7 @@
 """Task state adapter. Existing mapping/planning implementations remain authoritative."""
 import math
+from contextlib import contextmanager
+from time import perf_counter
 import numpy as np
 from grutopia_extension.interactive_navigation.mapping import MappingConfig, canonical_semantic_label
 from grutopia_extension.interactive_navigation.mapping_runtime import SemanticDetectionMode
@@ -28,6 +30,7 @@ class Tasks:
         self._observe_tick = -1
         self._maintenance_due = None
         self.last_mapping_at = None
+        self.last_timings = {}
 
     def _point(self, goal):
         c = self.config
@@ -40,6 +43,10 @@ class Tasks:
             max_forward_speed=c['max_forward_speed'], max_lateral_speed=c['max_lateral_speed']))
         # Geometry-only tasks have no detector; never enable Isaac fallback.
         component.mapping.semantic_detection_mode = SemanticDetectionMode.OPEN_VOCABULARY
+        # Reuse the shared distance taper with a deployment-specific radius.
+        # Success is evaluated before the next action, then requests StopMove.
+        component.mapping.final_goal_slow_radius = c['final_goal_slow_radius']
+        component.mapping.defer_topology_updates = True
         component.mapping.topology_update_interval = max(1, round(c['topology_interval_s']*c['tick_hz']))
         return component
 
@@ -144,7 +151,20 @@ class Tasks:
         if grid.inflated_mask()[cell]:
             raise ValueError(f'{prefix} 位于障碍膨胀区，当前地图净空不足')
 
+    @contextmanager
+    def _measure(self, stage):
+        started = perf_counter()
+        try:
+            yield
+        finally:
+            self.last_timings[stage] = perf_counter()-started
+
     def update(self, snapshot, now):
+        self.last_timings = {}
+        with self._measure('total_s'):
+            return self._update(snapshot, now)
+
+    def _update(self, snapshot, now):
         if not snapshot.geometry_calibrated:
             if self.state == 'active':
                 raise ValueError('Navigation requires calibrated ground and LiDAR origin')
@@ -168,7 +188,8 @@ class Tasks:
             if due:
                 self._maintenance_due = now + self.config['topology_interval_s']
             self._observe_tick += 1
-            self.component.mapping.update(self._observe_tick, observation, maintenance=due)
+            with self._measure('mapping_s'):
+                self.component.mapping.update(self._observe_tick, observation, maintenance=due)
             self._accept_observation(observation, snapshot)
             return None
         self.elapsed += max(0, now-self.last_time)
@@ -179,11 +200,14 @@ class Tasks:
             self.state = 'completed'
             self.result = {'success': False, 'reason': 'task_timeout'}
             return None
-        self.component.update(step, observation)
+        with self._measure('mapping_s'):
+            self.component.update(step, observation)
         self._accept_observation(observation, snapshot)
         if self.mode == 'navigate':
-            self.check_navigation_goal(self.component.goal)
-        result = self.component.evaluate(step, observation)
+            with self._measure('goal_check_s'):
+                self.check_navigation_goal(self.component.goal)
+        with self._measure('evaluation_s'):
+            result = self.component.evaluate(step, observation)
         if result.success and self.mode == 'explore' and not self.fresh_target_confirmed():
             # Retained semantic maps can guide a new task, but cannot prove a fresh find.
             return np.zeros(3)
@@ -193,7 +217,8 @@ class Tasks:
             return None
         mapping = self.component.mapping
         failures = mapping.planning_failures
-        action = self.component.action(step, observation)
+        with self._measure('planning_tracking_s'):
+            action = self.component.action(step, observation)
         if self.mode == 'navigate' and mapping.planning_failures > failures:
             # A zero action alone is not a failure (e.g. recovery or turning).
             # Surface only a new error from the existing planner, not stale history.

@@ -148,10 +148,10 @@ def test_nonrenewable_deadline_survives_fresh_commands():
 
 
 @pytest.mark.parametrize('duration,expected_duration,lower_limits', [
-    (.18, .18, False), (8., 3., False), (None, 3., False), (.8, .8, True)])
+    (.18, .18, False), (8., 2., False), (None, 2., False), (.8, .8, True)])
 def test_test_worker_enforces_duration_and_speed_even_with_fresh_commands(duration, expected_duration, lower_limits):
     control = dict(load()['runtime']['control'])
-    caps = (.04, .02, .08) if lower_limits else (.10, .03, .25)
+    caps = (.04, .02, .08) if lower_limits else (.25, .03, .25)
     if lower_limits:
         control.update(zip(('max_vx', 'max_vy', 'max_wz'), caps))
     motion = fake_motion(control=control)

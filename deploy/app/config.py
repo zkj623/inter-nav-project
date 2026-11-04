@@ -29,7 +29,7 @@ def load(directory=None):
         'robot': ('max_data_age_s', 'image_sync_tolerance_s', 'lidar_max_range',
                   'max_position_jump_m', 'max_orientation_jump_rad', 'pose_cloud_tolerance_s'),
         'navigation': ('tick_hz', 'task_timeout_s', 'max_forward_speed', 'max_lateral_speed',
-                       'success_distance', 'safe_base_height', 'fall_height'),
+                       'success_distance', 'final_goal_slow_radius', 'safe_base_height', 'fall_height'),
     }
     for group, keys in positive.items():
         for key in keys:
