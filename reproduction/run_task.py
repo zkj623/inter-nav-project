@@ -1,4 +1,4 @@
-﻿"""Run one go2-simulation-acceptance task from this checkout and relocated assets, without historic experiment directories."""
+﻿"""Run one stage1-go2-simulation-release task from this checkout and relocated assets, without historic experiment directories."""
 import argparse,fcntl,hashlib,json,os,shutil,subprocess,sys,time
 from pathlib import Path
 R=Path(__file__).resolve().parents[1]
