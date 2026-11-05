@@ -56,7 +56,7 @@ python reproduction/prepare_assets.py \
 
 ```bash
 python delivery/verify_delivery.py
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q tests/ \
+QWEN3_WORKER_LOG="$PWD/.qwen-worker-test.log" PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q -rs tests/ \
   --deselect=tests/test_interaction_navigation_camera.py::ThirdPersonCameraPlacementTest::test_g1_third_person_is_close_and_elevated
 ```
 
@@ -92,7 +92,7 @@ done
 
 历史 QV23 十项均通过完整功能审计；包括真实接触、新扫描与整机穿越，详见 `delivery/evidence/`。新入口的自动结果检查范围以其代码和报告明确列出的检查为准，不能将历史审计冒充新机器的审计。跨 GPU/驱动版本不能承诺位级一致或完全相同耗时。
 
-新的独立目录验证结果将记录在 `reproduction/validation.json`。只有实际执行成功的任务才标记为通过；未实际测试的新机器安装条件会明确保留，不宣称已在用户的新硬件上运行。
+独立目录验证记录见 `reproduction/validation.json`；完整回归1008项通过、4项外部资产检查跳过、1项G1用例排除。跳过原因见 `reproduction/validation-evidence/tests.log`。只有实际执行成功的任务才标记为通过；未实际测试的新机器安装条件会明确保留，不宣称已在用户的新硬件上运行。
 
 ## 文档
 
