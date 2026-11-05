@@ -1,4 +1,4 @@
-﻿"""Run one QV23 task from this checkout and relocated assets, without historic experiment directories."""
+﻿"""Run one go2-simulation-验收版本 task from this checkout and relocated assets, without historic experiment directories."""
 import argparse,fcntl,hashlib,json,os,shutil,subprocess,sys,time
 from pathlib import Path
 R=Path(__file__).resolve().parents[1]
@@ -18,7 +18,7 @@ def main():
  (out/'command.json').write_text(json.dumps(args,indent=2));print('Output:',out,flush=True)
  if a.prepare_only:return
  env=os.environ.copy();env['PYTHONPATH']=str(R);env['MALLOC_ARENA_MAX']='2';env['GRUTOPIA_ASSETS_PATH']=str(assets)
- lock=Path(os.environ.get('GO2_REPRO_LOCK','/tmp/go2-qv23-reproduction.lock'))
+ lock=Path(os.environ.get('GO2_REPRO_LOCK','/tmp/go2-simulation-reproduction.lock'))
  with lock.open('a') as lf:
   fcntl.flock(lf,fcntl.LOCK_EX|fcntl.LOCK_NB)
   stable=None

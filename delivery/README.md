@@ -1,6 +1,6 @@
-# Go2 QV23 独立交付
+# go2-simulation-验收版本 独立交付
 
-交付分支：delivery/go2-online-navigation-qv23。分支基点 da6acda；实测运行版本 514cd51dc7a4400a3e7db431b1f18a7aba7e3f50。交付仅新增文档、输入和证据，不修改导航算法。源码位于仓库根目录。
+交付分支：go2-simulation-验收版本。分支基点 da6acda；实测运行版本 514cd51dc7a4400a3e7db431b1f18a7aba7e3f50。交付仅新增文档、输入和证据，不修改导航算法。源码位于仓库根目录。
 
 ## 入口与结构
 - grutopia/demo/go2_online_interactive_navigation.py：在线导航入口。
@@ -10,7 +10,7 @@
 - tests/：现有自动回归测试；delivery/regression-case-index.csv 为可定位索引。
 - tools/：任务资格和运行审计、资源保护及诊断工具。
 - delivery/inputs/T01–T10：每项历史运行的原始输入快照；评估图只能供审计，不能输入导航器。
-- delivery/*.py：原服务器QV23启动与功能审计脚本，含固定路径和运行存在性保护。历史脚本是复现依据，不可直接覆盖既有运行。
+- delivery/*.py：原服务器go2-simulation-验收版本启动与功能审计脚本，含固定路径和运行存在性保护。历史脚本是复现依据，不可直接覆盖既有运行。
 
 ## 环境与启动
 使用原Linux服务器上的Isaac Sim/IsaacLab环境；现有初始化脚本 /data20t/embodied/share/inter-nav/env.sh。先 source 该文件，进入源码目录，export PYTHONPATH="$PWD:$PYTHONPATH"。requirements/ 下保存依赖，Isaac环境不应由普通Windows Python替代。
@@ -43,7 +43,7 @@
 
 ## 正式交付文档
 - 01-交付说明与测试用例.docx / -V4.pdf：合并后的交付说明、依赖、运行方式和测试方法。
-- 02-测试报告与可视化材料.docx / -V4.pdf：QV23功能结果及20张历史录像截图。
+- 02-测试报告与可视化材料.docx / -V4.pdf：go2-simulation-验收版本功能结果及20张历史录像截图。
 两份文档统一微软雅黑、A4版式、标题、表格、页眉和页码。截图来源与版本见figures/frame-sources.json，耗时仅作参考。
 文档检查：合并说明9页，测试报告13页，报告内20张截图。已导出PDF并检查分页、图注和代表页面。
 
