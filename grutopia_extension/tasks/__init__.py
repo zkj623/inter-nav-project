@@ -1,0 +1,1 @@
+from grutopia_extension.tasks import single_inference_task

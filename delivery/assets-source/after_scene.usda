@@ -1,0 +1,563 @@
+#usda 1.0
+(
+    defaultPrim = "Scene"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "Scene" (
+    customData = {
+        dictionary inter_nav = {
+            double original_scale_factor = 1
+        }
+    }
+)
+{
+    def Xform "BaseScene" (
+        prepend references = @/data20t/embodied/zkj/inter-nav-project/grutopia/assets/scenes/GRScenes-100/home_scenes/scenes/MV7J6NIKTKJZ2AABAAAAADA8_usd/start_result_navigation.usd@
+    )
+    {
+        float3 xformOp:scale = (0.01, 0.01, 0.01)
+        double3 xformOp:translate = (0, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+
+    def Xform "InteractiveBoxes"
+    {
+        def Xform "B01" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+            customData = {
+                dictionary inter_nav = {
+                    bool interactable = 1
+                    string object_id = "B01"
+                }
+            }
+        )
+        {
+            custom string[] inter_nav:interaction_modes = ["push", "bimanual_grasp_candidate"]
+            bool physics:kinematicEnabled = 0
+            float physics:mass = 1.2
+            bool physics:rigidBodyEnabled = 1
+            float xformOp:rotateZ = 0
+            double3 xformOp:translate = (14.220000588900373, -1.814999923952699, 0.179)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ"]
+
+            def Cube "Carton1" (
+                prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = </Scene/BoxMaterials/B01_Cardboard>
+                custom rel material:binding:physics = </Scene/BoxMaterials/B01_Cardboard>
+                bool physics:collisionEnabled = 1
+                double size = 1
+                float3 xformOp:scale = (0.35, 0.35, 0.35)
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def Cube "Tape1" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = </Scene/BoxMaterials/B01_Tape>
+                double size = 1
+                float3 xformOp:scale = (0.049, 0.3325, 0.002)
+                double3 xformOp:translate = (0, 0, 0.176)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+        }
+
+        def Xform "B02" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+            customData = {
+                dictionary inter_nav = {
+                    bool interactable = 1
+                    string object_id = "B02"
+                }
+            }
+        )
+        {
+            custom string[] inter_nav:interaction_modes = ["push", "bimanual_grasp_candidate"]
+            bool physics:kinematicEnabled = 0
+            float physics:mass = 1.8
+            bool physics:rigidBodyEnabled = 1
+            float xformOp:rotateZ = 0
+            double3 xformOp:translate = (4.624251403808594, 5.291226203025244, 0.14400000000000002)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ"]
+
+            def Cube "Carton1" (
+                prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = </Scene/BoxMaterials/B02_Cardboard>
+                custom rel material:binding:physics = </Scene/BoxMaterials/B02_Cardboard>
+                bool physics:collisionEnabled = 1
+                double size = 1
+                float3 xformOp:scale = (0.75, 0.25, 0.28)
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def Cube "Tape1" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = </Scene/BoxMaterials/B02_Tape>
+                double size = 1
+                float3 xformOp:scale = (0.105, 0.2375, 0.002)
+                double3 xformOp:translate = (0, 0, 0.14100000000000001)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+        }
+
+        def Xform "B03" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+            customData = {
+                dictionary inter_nav = {
+                    bool interactable = 1
+                    string object_id = "B03"
+                }
+            }
+        )
+        {
+            custom string[] inter_nav:interaction_modes = ["push", "bimanual_grasp_candidate"]
+            bool physics:kinematicEnabled = 0
+            float physics:mass = 1.5
+            bool physics:rigidBodyEnabled = 1
+            float xformOp:rotateZ = 0
+            double3 xformOp:translate = (5.275, -1.0750000000000002, 0.134)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ"]
+
+            def Cube "Carton1" (
+                prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = </Scene/BoxMaterials/B03_Cardboard>
+                custom rel material:binding:physics = </Scene/BoxMaterials/B03_Cardboard>
+                bool physics:collisionEnabled = 1
+                double size = 1
+                float3 xformOp:scale = (0.65, 0.45, 0.26)
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def Cube "Tape1" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = </Scene/BoxMaterials/B03_Tape>
+                double size = 1
+                float3 xformOp:scale = (0.091, 0.4275, 0.002)
+                double3 xformOp:translate = (0, 0, 0.131)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+        }
+
+        def Xform "B04" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+            customData = {
+                dictionary inter_nav = {
+                    bool interactable = 1
+                    string object_id = "B04"
+                }
+            }
+        )
+        {
+            custom string[] inter_nav:interaction_modes = ["push", "bimanual_grasp_candidate"]
+            bool physics:kinematicEnabled = 0
+            float physics:mass = 2
+            bool physics:rigidBodyEnabled = 1
+            float xformOp:rotateZ = 0
+            double3 xformOp:translate = (10.175, 2.500000000000001, 0.229)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ"]
+
+            def Cube "Carton1" (
+                prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = </Scene/BoxMaterials/B04_Cardboard>
+                custom rel material:binding:physics = </Scene/BoxMaterials/B04_Cardboard>
+                bool physics:collisionEnabled = 1
+                double size = 1
+                float3 xformOp:scale = (0.6, 0.42, 0.45)
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def Cube "Tape1" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = </Scene/BoxMaterials/B04_Tape>
+                double size = 1
+                float3 xformOp:scale = (0.084, 0.399, 0.002)
+                double3 xformOp:translate = (0, 0, 0.226)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+        }
+
+        def Xform "B05" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+            customData = {
+                dictionary inter_nav = {
+                    bool interactable = 1
+                    string object_id = "B05"
+                }
+            }
+        )
+        {
+            custom string[] inter_nav:interaction_modes = ["push", "bimanual_grasp_candidate"]
+            bool physics:kinematicEnabled = 0
+            float physics:mass = 1
+            bool physics:rigidBodyEnabled = 1
+            float xformOp:rotateZ = 0
+            double3 xformOp:translate = (14.600000000000001, 2.6000000000000005, 0.304)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ"]
+
+            def Cube "Carton1" (
+                prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = </Scene/BoxMaterials/B05_Cardboard>
+                custom rel material:binding:physics = </Scene/BoxMaterials/B05_Cardboard>
+                bool physics:collisionEnabled = 1
+                double size = 1
+                float3 xformOp:scale = (0.28, 0.28, 0.6)
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def Cube "Tape1" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = </Scene/BoxMaterials/B05_Tape>
+                double size = 1
+                float3 xformOp:scale = (0.0392, 0.266, 0.002)
+                double3 xformOp:translate = (0, 0, 0.301)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+        }
+
+        def Xform "B06" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+            customData = {
+                dictionary inter_nav = {
+                    bool interactable = 1
+                    string object_id = "B06"
+                }
+            }
+        )
+        {
+            custom string[] inter_nav:interaction_modes = ["push", "bimanual_grasp_candidate"]
+            bool physics:kinematicEnabled = 0
+            float physics:mass = 6
+            bool physics:rigidBodyEnabled = 1
+            float xformOp:rotateZ = 0
+            double3 xformOp:translate = (10.180000323786967, 0.27748489272535215, 0.479)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ"]
+
+            def Cube "Carton1" (
+                prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = </Scene/BoxMaterials/B06_Cardboard>
+                custom rel material:binding:physics = </Scene/BoxMaterials/B06_Cardboard>
+                bool physics:collisionEnabled = 1
+                double size = 1
+                float3 xformOp:scale = (0.85, 0.55, 0.95)
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def Cube "Tape1" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = </Scene/BoxMaterials/B06_Tape>
+                double size = 1
+                float3 xformOp:scale = (0.119, 0.5225, 0.002)
+                double3 xformOp:translate = (0, 0, 0.476)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+        }
+
+        def Xform "B07" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+            customData = {
+                dictionary inter_nav = {
+                    bool interactable = 1
+                    string object_id = "B07"
+                }
+            }
+        )
+        {
+            custom string[] inter_nav:interaction_modes = ["push", "bimanual_grasp_candidate"]
+            bool physics:kinematicEnabled = 0
+            float physics:mass = 5
+            bool physics:rigidBodyEnabled = 1
+            float xformOp:rotateZ = 0
+            double3 xformOp:translate = (3.3018217837542254, 0.2160419151897357, 0.354)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ"]
+
+            def Cube "Carton1" (
+                prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = </Scene/BoxMaterials/B07_Cardboard>
+                custom rel material:binding:physics = </Scene/BoxMaterials/B07_Cardboard>
+                bool physics:collisionEnabled = 1
+                double size = 1
+                float3 xformOp:scale = (0.85, 0.65, 0.7)
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def Cube "Tape1" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = </Scene/BoxMaterials/B07_Tape>
+                double size = 1
+                float3 xformOp:scale = (0.119, 0.6175, 0.002)
+                double3 xformOp:translate = (0, 0, 0.351)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+        }
+    }
+
+    def "BoxMaterials"
+    {
+        def Material "B01_Cardboard" (
+            prepend apiSchemas = ["PhysicsMaterialAPI"]
+        )
+        {
+            token outputs:surface.connect = </Scene/BoxMaterials/B01_Cardboard/Shader.outputs:surface>
+            float physics:dynamicFriction = 0.5
+            float physics:restitution = 0
+            float physics:staticFriction = 0.6
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.48, 0.28, 0.12)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.85
+                token outputs:surface
+            }
+        }
+
+        def Material "B01_Tape"
+        {
+            token outputs:surface.connect = </Scene/BoxMaterials/B01_Tape/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.25, 0.45, 0.85)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.85
+                token outputs:surface
+            }
+        }
+
+        def Material "B02_Cardboard" (
+            prepend apiSchemas = ["PhysicsMaterialAPI"]
+        )
+        {
+            token outputs:surface.connect = </Scene/BoxMaterials/B02_Cardboard/Shader.outputs:surface>
+            float physics:dynamicFriction = 0.5
+            float physics:restitution = 0
+            float physics:staticFriction = 0.6
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.48, 0.28, 0.12)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.85
+                token outputs:surface
+            }
+        }
+
+        def Material "B02_Tape"
+        {
+            token outputs:surface.connect = </Scene/BoxMaterials/B02_Tape/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.85, 0.35, 0.15)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.85
+                token outputs:surface
+            }
+        }
+
+        def Material "B03_Cardboard" (
+            prepend apiSchemas = ["PhysicsMaterialAPI"]
+        )
+        {
+            token outputs:surface.connect = </Scene/BoxMaterials/B03_Cardboard/Shader.outputs:surface>
+            float physics:dynamicFriction = 0.5
+            float physics:restitution = 0
+            float physics:staticFriction = 0.6
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.48, 0.28, 0.12)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.85
+                token outputs:surface
+            }
+        }
+
+        def Material "B03_Tape"
+        {
+            token outputs:surface.connect = </Scene/BoxMaterials/B03_Tape/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.15, 0.65, 0.35)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.85
+                token outputs:surface
+            }
+        }
+
+        def Material "B04_Cardboard" (
+            prepend apiSchemas = ["PhysicsMaterialAPI"]
+        )
+        {
+            token outputs:surface.connect = </Scene/BoxMaterials/B04_Cardboard/Shader.outputs:surface>
+            float physics:dynamicFriction = 0.5
+            float physics:restitution = 0
+            float physics:staticFriction = 0.6
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.48, 0.28, 0.12)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.85
+                token outputs:surface
+            }
+        }
+
+        def Material "B04_Tape"
+        {
+            token outputs:surface.connect = </Scene/BoxMaterials/B04_Tape/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.85, 0.7, 0.15)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.85
+                token outputs:surface
+            }
+        }
+
+        def Material "B05_Cardboard" (
+            prepend apiSchemas = ["PhysicsMaterialAPI"]
+        )
+        {
+            token outputs:surface.connect = </Scene/BoxMaterials/B05_Cardboard/Shader.outputs:surface>
+            float physics:dynamicFriction = 0.5
+            float physics:restitution = 0
+            float physics:staticFriction = 0.6
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.48, 0.28, 0.12)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.85
+                token outputs:surface
+            }
+        }
+
+        def Material "B05_Tape"
+        {
+            token outputs:surface.connect = </Scene/BoxMaterials/B05_Tape/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.7, 0.2, 0.45)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.85
+                token outputs:surface
+            }
+        }
+
+        def Material "B06_Cardboard" (
+            prepend apiSchemas = ["PhysicsMaterialAPI"]
+        )
+        {
+            token outputs:surface.connect = </Scene/BoxMaterials/B06_Cardboard/Shader.outputs:surface>
+            float physics:dynamicFriction = 0.5
+            float physics:restitution = 0
+            float physics:staticFriction = 0.6
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.48, 0.28, 0.12)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.85
+                token outputs:surface
+            }
+        }
+
+        def Material "B06_Tape"
+        {
+            token outputs:surface.connect = </Scene/BoxMaterials/B06_Tape/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.2, 0.65, 0.85)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.85
+                token outputs:surface
+            }
+        }
+
+        def Material "B07_Cardboard" (
+            prepend apiSchemas = ["PhysicsMaterialAPI"]
+        )
+        {
+            token outputs:surface.connect = </Scene/BoxMaterials/B07_Cardboard/Shader.outputs:surface>
+            float physics:dynamicFriction = 0.5
+            float physics:restitution = 0
+            float physics:staticFriction = 0.6
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.48, 0.28, 0.12)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.85
+                token outputs:surface
+            }
+        }
+
+        def Material "B07_Tape"
+        {
+            token outputs:surface.connect = </Scene/BoxMaterials/B07_Tape/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.65, 0.4, 0.85)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.85
+                token outputs:surface
+            }
+        }
+    }
+}
+

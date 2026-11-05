@@ -1,0 +1,497 @@
+{
+  "assessment_only": true,
+  "navigation_success_not_yet_tested": true,
+  "scene": "MV7",
+  "scene_scale": [
+    1,
+    1,
+    1
+  ],
+  "definition": {
+    "tortuosity": "Continuous shortest geometric path / Euclidean endpoint distance on the fixed raster-derived collision polygon; uninflated geometry is a lower bound for finite-size motion on this occupancy representation.",
+    "clutter": "Nontraversable low-height collision footprint / fixed ground-mesh support area, before interaction; exterior void excluded.",
+    "disconnected": "Not qualified; infinity is not accepted as a tortuosity score.",
+    "resolution_m": 0.025,
+    "predicate_tolerance_m": 1e-09,
+    "robot_connectivity_screen_radius_m": 0.3,
+    "endpoint_clearance_m": {
+      "start_minimum": 0.6,
+      "goal_minimum": 0.3
+    },
+    "online_runtime_map": "Must start empty; assessment map/path must not enter navigator.",
+    "robot_connectivity_screen": "Disconnected at 0.30m before the specified box move, connected after a physically demonstrated side-parking pose.",
+    "interaction_required": true
+  },
+  "endpoint_visibility_screen": "Starts are previously validated safe task positions; goals are in the previously physically reached bedroom passage. Final physical trial and full-body checks remain mandatory.",
+  "software": {
+    "shapely": "2.0.7",
+    "numpy": "1.26.0",
+    "audit_tool_sha256": "892a5db10bd819ad8011b1585ee2ef8fb338124b07804a85cd8e1a02a965081b",
+    "audit_tool_file": "qualify_interaction_tasks.py",
+    "geometric_shortest_path_tool_sha256": "456f3553d4011e4dd184a1837592d34759a8c151e87b64be65958bc8a15c70e8",
+    "pair_screen_tool_sha256": "f7ade68fbda6b757b4d748dcdf17843fb05a67c3105b5695f56c2de30a7fc39e",
+    "screened_pairs_sha256": "c73bf5c7b1c84baafa03705ad57468154b22dd91052148aa8d5de70c40da3b88"
+  },
+  "inputs": {
+    "navigation_grid.npz": "894ddf82ce1b36a37a4cbdff407b7e065b769c0af3ff61cd095e83a06b7255be",
+    "scene_profile.json": "573c538084eb8f44195c41d9f028aaab9a78eadd5ad3ede534755d99dc3fa413",
+    "layout.json": "eaea7ea9b252ec6024edd7433a91290e6b75fe81e711c2760d4b7c295e3794f9",
+    "tasks_preflight.json": "03038a6e33a18ece50d25c92f27f8f75f30cc6be8d94c55fb3847f2fc31569e8",
+    "mesh_geometry_audit.json": "801901fe1a2944251cfcf1917199deac02cec38bcda1548999472d6c07f3ff0c"
+  },
+  "geometry_method": "Actual enabled collision-scope descendant mesh triangles clipped to z=[.03,.61]m, projected to fixed 2.5cm cells; parity-filled clipped solid caps. No whole-instance AABBs. Initial boxes handled separately by evaluator.",
+  "geometry_mesh_count": 1578,
+  "geometry_asset_sha256": "e4e04e405e7c93eee9dd60de143d220fef92b7d4ef05c043e19d1f9d375c60d4",
+  "clutter": {
+    "support_cells": 285292,
+    "blocked_cells": 108969,
+    "fraction": 0.38195603101383846,
+    "total_area_m2": 178.3075,
+    "blocked_area_m2": 68.10562500000002,
+    "scope": "Fixed original ground-mesh support; exterior void excluded; low-height collision projections plus all initial boxes; no robot-radius inflation."
+  },
+  "original_tasks": [],
+  "qualified_candidates": [
+    {
+      "start": [
+        14.6625,
+        1.6875
+      ],
+      "goal": [
+        10.3,
+        1.75
+      ],
+      "euclidean_m": 4.362947684765426,
+      "shortest_geometry": {
+        "length_m": 5.782883312894892,
+        "path": [
+          [
+            14.6625,
+            1.6875
+          ],
+          [
+            14.025,
+            0.6500000000000004
+          ],
+          [
+            10.600000000000001,
+            0.6500000000000004
+          ],
+          [
+            10.3,
+            1.75
+          ]
+        ],
+        "vertices": 105
+      },
+      "tortuosity": 1.3254532785455138,
+      "grid_upper_bound_m": 5.997792206135798,
+      "start_clearance_m": 0.6625000000000001,
+      "goal_clearance_m": 0.4683846015417836,
+      "id": "T06",
+      "initial_heading_rad": 1.5707963267948966,
+      "qualified": true,
+      "requires_interaction": true,
+      "robot_clearance_grid_path_m": null,
+      "clutter": 0.38195603101383846,
+      "interaction_qualification": {
+        "box_id": "B06",
+        "robot_disconnected_before": true,
+        "robot_connected_after": true,
+        "robot_path_before_m": null,
+        "robot_path_after_m": 6.764949493661192,
+        "clearance_radius_m": 0.3,
+        "parking_witness": {
+          "id": "B06",
+          "xy": [
+            9.304129600524902,
+            0.2619493305683136
+          ],
+          "dimensions": [
+            0.9391414036993383,
+            0.7017217680474177,
+            0.950000264055882
+          ],
+          "yaw": 0.0,
+          "mass_kg": 6.0,
+          "local_dimensions": [
+            0.85,
+            0.55,
+            0.95
+          ],
+          "orientation": [
+            0.9954198598861694,
+            -1.6706128036503287e-08,
+            -1.3824529787598294e-07,
+            0.09559961408376694
+          ],
+          "center_z": 0.48499998450279236
+        },
+        "parking_witness_source": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v218-t04-ground-truth-try1/T04/result.json",
+        "parking_witness_source_sha256": "0e8c512b617f00b6bb9d702624f771482aad8a8f85783c8a3e8299314d99dcf6",
+        "witness_scope": "Conservative AABB of a real prior side-parking pose in unchanged scene; evaluation only, not a route or box target supplied to runtime.",
+        "required_online_evidence": "Physical contact and >.25m box motion, side parking, scan after final box motion, actual passage crossing, automatic goal stop."
+      }
+    },
+    {
+      "start": [
+        8.3875,
+        3.8375
+      ],
+      "goal": [
+        10.3,
+        1.4
+      ],
+      "euclidean_m": 3.098235384860228,
+      "shortest_geometry": {
+        "length_m": 4.8821280307784924,
+        "path": [
+          [
+            8.3875,
+            3.8375
+          ],
+          [
+            9.025,
+            0.6749999999999998
+          ],
+          [
+            9.35,
+            0.6500000000000004
+          ],
+          [
+            9.75,
+            0.6500000000000004
+          ],
+          [
+            10.3,
+            1.4
+          ]
+        ],
+        "vertices": 32
+      },
+      "tortuosity": 1.5757769905525567,
+      "grid_upper_bound_m": 5.172056274847708,
+      "start_clearance_m": 0.6049544517614235,
+      "goal_clearance_m": 0.41250000000000003,
+      "id": "T07",
+      "initial_heading_rad": -1.5707963267948966,
+      "qualified": true,
+      "requires_interaction": true,
+      "robot_clearance_grid_path_m": null,
+      "clutter": 0.38195603101383846,
+      "interaction_qualification": {
+        "box_id": "B06",
+        "robot_disconnected_before": true,
+        "robot_connected_after": true,
+        "robot_path_before_m": null,
+        "robot_path_after_m": 7.564949493661192,
+        "clearance_radius_m": 0.3,
+        "parking_witness": {
+          "id": "B06",
+          "xy": [
+            9.304129600524902,
+            0.2619493305683136
+          ],
+          "dimensions": [
+            0.9391414036993383,
+            0.7017217680474177,
+            0.950000264055882
+          ],
+          "yaw": 0.0,
+          "mass_kg": 6.0,
+          "local_dimensions": [
+            0.85,
+            0.55,
+            0.95
+          ],
+          "orientation": [
+            0.9954198598861694,
+            -1.6706128036503287e-08,
+            -1.3824529787598294e-07,
+            0.09559961408376694
+          ],
+          "center_z": 0.48499998450279236
+        },
+        "parking_witness_source": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v218-t04-ground-truth-try1/T04/result.json",
+        "parking_witness_source_sha256": "0e8c512b617f00b6bb9d702624f771482aad8a8f85783c8a3e8299314d99dcf6",
+        "witness_scope": "Conservative AABB of a real prior side-parking pose in unchanged scene; evaluation only, not a route or box target supplied to runtime.",
+        "required_online_evidence": "Physical contact and >.25m box motion, side parking, scan after final box motion, actual passage crossing, automatic goal stop."
+      }
+    },
+    {
+      "start": [
+        4.6625,
+        4.1125
+      ],
+      "goal": [
+        3.3,
+        1.4
+      ],
+      "euclidean_m": 3.035467426937736,
+      "shortest_geometry": {
+        "length_m": 4.682744711622373,
+        "path": [
+          [
+            4.6625,
+            4.1125
+          ],
+          [
+            4.025,
+            0.6500000000000004
+          ],
+          [
+            3.725,
+            0.6500000000000004
+          ],
+          [
+            3.3,
+            1.4
+          ]
+        ],
+        "vertices": 55
+      },
+      "tortuosity": 1.5426766467879565,
+      "grid_upper_bound_m": 4.984924240491744,
+      "start_clearance_m": 0.6375000000000001,
+      "goal_clearance_m": 0.4375,
+      "id": "T08",
+      "initial_heading_rad": -1.5707963267948966,
+      "qualified": true,
+      "requires_interaction": true,
+      "robot_clearance_grid_path_m": null,
+      "clutter": 0.38195603101383846,
+      "interaction_qualification": {
+        "box_id": "B07",
+        "robot_disconnected_before": true,
+        "robot_connected_after": true,
+        "robot_path_before_m": null,
+        "robot_path_after_m": 7.7899494936612,
+        "clearance_radius_m": 0.3,
+        "parking_witness": {
+          "id": "B07",
+          "xy": [
+            4.1506028175354,
+            0.2563903331756592
+          ],
+          "dimensions": [
+            0.9086964580498929,
+            0.7289067393566484,
+            0.700000720450159
+          ],
+          "yaw": 0.0,
+          "mass_kg": 5.0,
+          "local_dimensions": [
+            0.85,
+            0.65,
+            0.7
+          ],
+          "orientation": [
+            0.9988351464271545,
+            4.888454441243084e-07,
+            -2.788024922040222e-08,
+            0.04825195297598839
+          ],
+          "center_z": 0.35999998450279236
+        },
+        "parking_witness_source": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v218-t05-ground-truth-try1/T05/result.json",
+        "parking_witness_source_sha256": "958e74afb9a66b6d1b46b46f5ca6a49793e2eb3ddaaee8df2d39cc92bfe456c8",
+        "witness_scope": "Conservative AABB of a real prior side-parking pose in unchanged scene; evaluation only, not a route or box target supplied to runtime.",
+        "required_online_evidence": "Physical contact and >.25m box motion, side parking, scan after final box motion, actual passage crossing, automatic goal stop."
+      }
+    },
+    {
+      "start": [
+        7.6125,
+        4.8125
+      ],
+      "goal": [
+        3.3,
+        1.4
+      ],
+      "euclidean_m": 5.499346552091439,
+      "shortest_geometry": {
+        "length_m": 7.475740776217998,
+        "path": [
+          [
+            7.6125,
+            4.8125
+          ],
+          [
+            6.875,
+            3.625000000000001
+          ],
+          [
+            6.375,
+            1.1749999999999998
+          ],
+          [
+            6.3500000000000005,
+            1.1500000000000004
+          ],
+          [
+            6.300000000000001,
+            1.125
+          ],
+          [
+            4.025,
+            0.6500000000000004
+          ],
+          [
+            3.725,
+            0.6500000000000004
+          ],
+          [
+            3.3,
+            1.4
+          ]
+        ],
+        "vertices": 217
+      },
+      "tortuosity": 1.3593871027049427,
+      "grid_upper_bound_m": 7.975914498161505,
+      "start_clearance_m": 0.6125,
+      "goal_clearance_m": 0.4375,
+      "id": "T09",
+      "initial_heading_rad": 0.0,
+      "qualified": true,
+      "requires_interaction": true,
+      "robot_clearance_grid_path_m": null,
+      "clutter": 0.38195603101383846,
+      "interaction_qualification": {
+        "box_id": "B07",
+        "robot_disconnected_before": true,
+        "robot_connected_after": true,
+        "robot_path_before_m": null,
+        "robot_path_after_m": 11.611269837220869,
+        "clearance_radius_m": 0.3,
+        "parking_witness": {
+          "id": "B07",
+          "xy": [
+            4.1506028175354,
+            0.2563903331756592
+          ],
+          "dimensions": [
+            0.9086964580498929,
+            0.7289067393566484,
+            0.700000720450159
+          ],
+          "yaw": 0.0,
+          "mass_kg": 5.0,
+          "local_dimensions": [
+            0.85,
+            0.65,
+            0.7
+          ],
+          "orientation": [
+            0.9988351464271545,
+            4.888454441243084e-07,
+            -2.788024922040222e-08,
+            0.04825195297598839
+          ],
+          "center_z": 0.35999998450279236
+        },
+        "parking_witness_source": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v218-t05-ground-truth-try1/T05/result.json",
+        "parking_witness_source_sha256": "958e74afb9a66b6d1b46b46f5ca6a49793e2eb3ddaaee8df2d39cc92bfe456c8",
+        "witness_scope": "Conservative AABB of a real prior side-parking pose in unchanged scene; evaluation only, not a route or box target supplied to runtime.",
+        "required_online_evidence": "Physical contact and >.25m box motion, side parking, scan after final box motion, actual passage crossing, automatic goal stop."
+      }
+    },
+    {
+      "start": [
+        4.6875,
+        2.9125
+      ],
+      "goal": [
+        10.3,
+        1.75
+      ],
+      "euclidean_m": 5.731628259055189,
+      "shortest_geometry": {
+        "length_m": 7.5495041526829585,
+        "path": [
+          [
+            4.6875,
+            2.9125
+          ],
+          [
+            5.3500000000000005,
+            1.2250000000000005
+          ],
+          [
+            5.375,
+            1.1749999999999998
+          ],
+          [
+            5.4,
+            1.1500000000000004
+          ],
+          [
+            7.275,
+            0.6500000000000004
+          ],
+          [
+            9.75,
+            0.6500000000000004
+          ],
+          [
+            10.3,
+            1.75
+          ]
+        ],
+        "vertices": 123
+      },
+      "tortuosity": 1.31716570082084,
+      "grid_upper_bound_m": 7.99987373415295,
+      "start_clearance_m": 0.6125,
+      "goal_clearance_m": 0.4683846015417836,
+      "id": "T10",
+      "initial_heading_rad": -1.5707963267948966,
+      "qualified": true,
+      "requires_interaction": true,
+      "robot_clearance_grid_path_m": null,
+      "clutter": 0.38195603101383846,
+      "interaction_qualification": {
+        "box_id": "B06",
+        "robot_disconnected_before": true,
+        "robot_connected_after": true,
+        "robot_path_before_m": null,
+        "robot_path_after_m": 9.821625176280188,
+        "clearance_radius_m": 0.3,
+        "parking_witness": {
+          "id": "B06",
+          "xy": [
+            9.304129600524902,
+            0.2619493305683136
+          ],
+          "dimensions": [
+            0.9391414036993383,
+            0.7017217680474177,
+            0.950000264055882
+          ],
+          "yaw": 0.0,
+          "mass_kg": 6.0,
+          "local_dimensions": [
+            0.85,
+            0.55,
+            0.95
+          ],
+          "orientation": [
+            0.9954198598861694,
+            -1.6706128036503287e-08,
+            -1.3824529787598294e-07,
+            0.09559961408376694
+          ],
+          "center_z": 0.48499998450279236
+        },
+        "parking_witness_source": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v218-t04-ground-truth-try1/T04/result.json",
+        "parking_witness_source_sha256": "0e8c512b617f00b6bb9d702624f771482aad8a8f85783c8a3e8299314d99dcf6",
+        "witness_scope": "Conservative AABB of a real prior side-parking pose in unchanged scene; evaluation only, not a route or box target supplied to runtime.",
+        "required_online_evidence": "Physical contact and >.25m box motion, side parking, scan after final box motion, actual passage crossing, automatic goal stop."
+      }
+    }
+  ],
+  "candidate_endpoint_count": null,
+  "all_five_qualified": true,
+  "task_set": "required-interaction-five-20261103",
+  "screened_pair_count": 21
+}

@@ -1,0 +1,182 @@
+{
+  "functional_validation": true,
+  "video_required": false,
+  "recording_accepted": false,
+  "task": "T06",
+  "version": "qv23",
+  "source_commit": "514cd51dc7a4400a3e7db431b1f18a7aba7e3f50",
+  "policy_sha256": "8862682da34ebb090a2e56f39254af430d5645f20cb5e3e104c72a4720671db8",
+  "functional_checks_passed": true,
+  "checks": {
+    "native_goal_reached": true,
+    "declared_start_and_goal": true,
+    "measured_final_stop": true,
+    "goal_error_within_050m": true,
+    "startup_stable": true,
+    "every_physics_step_present": true,
+    "every_physics_step_tilt_below30": true,
+    "rollout_healthy": true,
+    "geometry_consistent": true,
+    "all_attempted_skills_completed": true,
+    "required_interaction_completed": true,
+    "only_verified_floor_cover_incidental_contacts": true,
+    "frozen_qv23_source": true,
+    "same_policy": true,
+    "fixed_inputs": true,
+    "scene_asset_unchanged": true,
+    "online_without_forbidden_prior": true,
+    "resource_limits_preserved": true,
+    "recording_mode_matches": true
+  },
+  "fluency_checks_passed": true,
+  "failed_fluency_checks": [],
+  "goal_error_m": 0.13132995477209006,
+  "duration_to_goal_braking_s": 105.89999763295054,
+  "maximum_physics_tilt_deg": 3.5182777392488527,
+  "final_stop": {
+    "valid": true,
+    "window_seconds": 0.3999999910593033,
+    "window_long_enough": true,
+    "goal_error_m": 0.13132995477209006,
+    "goal_within_tolerance": true,
+    "linear_xy_quiet": true,
+    "vertical_quiet": true,
+    "angular_quiet": true,
+    "tilt_quiet": true,
+    "position_stable": true,
+    "height_stable": true,
+    "tilt_stable": true
+  },
+  "effects": [
+    {
+      "box_id": "B06",
+      "checks": {
+        "skill_succeeded": true,
+        "actual_push_over_025m": true,
+        "real_contact_impulses": true,
+        "fresh_scan_after_box_motion": true,
+        "side_parked_and_visible": true,
+        "actual_body_crossing": true,
+        "ground_truth_permission": true
+      },
+      "valid": true,
+      "actual_push_distance_m": 0.8172121047973633,
+      "impulse_samples": 2421,
+      "crossing": {
+        "valid": true,
+        "crossings": [
+          {
+            "row": 13374,
+            "time_s": 107.00999760814011,
+            "position": [
+              10.106718063354492,
+              0.6960527896881104,
+              0.3383614122867584
+            ],
+            "rear_beyond_boundary_m": 0.023883047542662794,
+            "original_box_would_block_body_clearance": true,
+            "counterfactual_clearance_margin_m": 0.04,
+            "recorded_box_stable_near_crossing": true,
+            "actual_body_clear_of_relocated_box": true,
+            "observed_side_displacement_m": 0.7750341603680901,
+            "continuous_local_trace": true,
+            "valid": true,
+            "bracketing_box_observations": [
+              {
+                "time_s": 106.88999761082232,
+                "xy": [
+                  10.997212409973145,
+                  0.25108814239501953
+                ]
+              },
+              {
+                "time_s": 107.04999760724604,
+                "xy": [
+                  10.997212409973145,
+                  0.25108814239501953
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "certificate": {
+        "axis": [
+          0.34902273320651767,
+          0.9371142575508347
+        ],
+        "center": [
+          9.969873398245317,
+          0.35574537370275405
+        ],
+        "nominal_center": [
+          9.969873398245317,
+          0.3557453737027543
+        ],
+        "lateral_offset_m": 0.9992617881491832,
+        "required_lateral_offset_m": 0.8699875916379821,
+        "passage_clearance_margin_m": 0.1292741965112011,
+        "robot_passage_width_m": 0.52,
+        "side_parked": true,
+        "completion_rule": "current_global_route_and_full_body_local_corridor",
+        "body_margin_m": 0.04,
+        "corridor_start": [
+          9.6208506650388,
+          -0.5813688838480806
+        ],
+        "corridor_end": [
+          10.21418931148988,
+          1.0117253539883384
+        ],
+        "route_goal": [
+          10.3,
+          1.75
+        ],
+        "ends_at_goal": false,
+        "checked_pose_count": 69,
+        "confirmation_source": "connected_observed_corridor",
+        "axis_source": "initial_observed_route",
+        "guide_entry": [
+          9.6208506650388,
+          -0.5813688838480804
+        ],
+        "guide_exit": [
+          10.21418931148988,
+          1.0117253539883384
+        ],
+        "nominal_offset_m": 0.0,
+        "confirmation_stage": "settle_released_corridor",
+        "original_box_would_block_corridor": true,
+        "original_box": {
+          "id": "B06",
+          "xy": [
+            10.180000305175781,
+            0.27748483419418335
+          ],
+          "dimensions": [
+            0.850000064978345,
+            0.5500000215731188,
+            0.9500000485488527
+          ],
+          "yaw": 0.0,
+          "mass_kg": 6.0,
+          "local_dimensions": null,
+          "orientation": null,
+          "center_z": null
+        },
+        "original_box_xy": [
+          10.180000305175781,
+          0.27748483419418335
+        ],
+        "actual_push_distance_m": 0.8172121047973633,
+        "nominal_planned_push_m": 0.8499999999999999,
+        "confirming_observation_time_s": 70.60999842174351,
+        "last_box_motion_time_s": 62.409998605027795
+      }
+    }
+  ],
+  "incidental_contacts": {},
+  "floor_cover_geometry_sha256": null,
+  "recorded_reference": false,
+  "scope": "One physical trial on the frozen QV23 implementation; recording mode explicitly identified; no new video acceptance or universal success-rate claim."
+}
