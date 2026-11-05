@@ -15,6 +15,8 @@ Git 历史用于追溯，当前分支根目录 README 是新部署入口。历�
 
 ## 1. 新机器环境
 
+**从零安装请先阅读 [新机器安装与资产下载指南](reproduction/INSTALL.md)**，包含系统工具、驱动检查、Miniconda、依赖安装、各项资产来源、固定版本下载、解压目录定位和完整性校验。下面保留主要执行命令。
+
 验证基准为 Ubuntu 22.04 x86_64。使用 Python **3.10**、Isaac Sim **4.2.0.2**、PyTorch **2.5.1**。不要直接替换成最新 Isaac Sim。准备 NVIDIA RTX GPU（至少 14 GiB 空闲显存，建议 24 GiB 显卡）、至少 56 GiB 空闲主机内存。任务串行执行，单任务 24 GiB 内存上限、禁止 swap。系统需支持 cgroup v2 与 `systemd-run --user`。
 
 场景原始数据由上游以分卷压缩包发布，下载约 51 GB；连同解压、仿真环境和复制资产，建议预留至少 200 GB 磁盘。网络需能访问 NVIDIA Python 索引和 Hugging Face。
@@ -47,6 +49,7 @@ Isaac Sim 安装遵循 [NVIDIA 官方文档](https://docs.isaacsim.omniverse.nvi
 ```bash
 python reproduction/download_dataset.py --download-dir "$HOME/go2-data-download"
 # 查看解压结果，找到同时包含 models/、Materials/、scenes/ 的 home_scenes 目录。
+# 此处为示例路径；实际层级定位方法见 reproduction/INSTALL.md 第 5 节。
 export GO2_DATASET_HOME="$HOME/go2-data-download/extracted/home_scenes"
 python reproduction/prepare_assets.py \
   --dataset-home "$GO2_DATASET_HOME" --output "$HOME/go2-simulation-assets"
