@@ -1,4 +1,4 @@
-# go2-simulation-验收版本 在线建图与推箱导航交付
+# go2-simulation-acceptance 在线建图与推箱导航交付
 
 本分支交付同一 MV7 场景的 T01–T10 固定任务：从空地图利用真实 LiDAR 建图，完成普通导航或侧推箱体、重新扫描、穿越并在目标处停稳。任务完成即通过；不设置耗时门槛。路径曲折度全部 >1.3，初始杂乱度 38.195603% >20%。
 
@@ -22,7 +22,7 @@ Git 历史用于追溯，当前分支根目录 README 是新部署入口。历�
 ```bash
 sudo apt-get update
 sudo apt-get install -y ffmpeg p7zip-full libglib2.0-0 libsm6 libxext6 libxrender1 libegl1 libgl1 libgomp1
-git clone --branch go2-simulation-验收版本 --single-branch \
+git clone --branch go2-simulation-acceptance --single-branch \
   https://github.com/zkj623/inter-nav-project.git
 cd inter-nav-project
 conda create -n go2-simulation python=3.10 -y
@@ -86,13 +86,13 @@ for task in T01 T02 T03 T04 T05 T06 T07 T08 T09 T10; do
 done
 ```
 
-入口复制该任务原始输入到新输出目录，仅修改场景所在路径；机器人比例、policy、地图频率、物理/驱动与 go2-simulation-验收版本 参数保持一致。输入守卫禁止把离线评估图提供给导航器。
+入口复制该任务原始输入到新输出目录，仅修改场景所在路径；机器人比例、policy、地图频率、物理/驱动与 go2-simulation-acceptance 参数保持一致。输入守卫禁止把离线评估图提供给导航器。
 
 ## 5. 结果判定与验证范围
 
 自动生成 `reproduction-check.json`：`passed=true` 表示任务成功到达、误差≤0.5m、实测停稳、倾角/启动/健康检查和在线输入守卫通过；交互项还要求技能成功和实际箱体移动>0.25m。原始结果为 `<task>/result.json`，完整轨迹、事件和物理接触日志一并保存。耗时仅记录，不设合格门槛。
 
-历史 go2-simulation-验收版本 十项均通过完整功能审计；包括真实接触、新扫描与整机穿越，详见 `delivery/evidence/`。新入口的自动结果检查范围以其代码和报告明确列出的检查为准，不能将历史审计冒充新机器的审计。跨 GPU/驱动版本不能承诺位级一致或完全相同耗时。
+历史 go2-simulation-acceptance 十项均通过完整功能审计；包括真实接触、新扫描与整机穿越，详见 `delivery/evidence/`。新入口的自动结果检查范围以其代码和报告明确列出的检查为准，不能将历史审计冒充新机器的审计。跨 GPU/驱动版本不能承诺位级一致或完全相同耗时。
 
 独立目录验证记录见 `reproduction/validation.json`；完整回归1008项通过、4项外部资产检查跳过、1项G1用例排除。跳过原因见 `reproduction/validation-evidence/tests.log`。只有实际执行成功的任务才标记为通过；未实际测试的新机器安装条件会明确保留，不宣称已在用户的新硬件上运行。
 
