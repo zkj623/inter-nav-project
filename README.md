@@ -15,11 +15,13 @@ Git 历史用于追溯，当前分支根目录 README 是新部署入口。历�
 
 ## 1. 新机器环境
 
-使用 Linux x86_64、Python **3.10**、Isaac Sim **4.2.0.2**、PyTorch **2.5.1**。不要直接替换成最新 Isaac Sim。准备 NVIDIA RTX GPU（至少 14 GiB 空闲显存，建议 24 GiB 显卡）、至少 56 GiB 空闲主机内存。任务串行执行，单任务 24 GiB 内存上限、禁止 swap。系统需支持 cgroup v2 与 `systemd-run --user`。
+验证基准为 Ubuntu 22.04 x86_64。使用 Python **3.10**、Isaac Sim **4.2.0.2**、PyTorch **2.5.1**。不要直接替换成最新 Isaac Sim。准备 NVIDIA RTX GPU（至少 14 GiB 空闲显存，建议 24 GiB 显卡）、至少 56 GiB 空闲主机内存。任务串行执行，单任务 24 GiB 内存上限、禁止 swap。系统需支持 cgroup v2 与 `systemd-run --user`。
 
 场景原始数据由上游以分卷压缩包发布，下载约 51 GB；连同解压、仿真环境和复制资产，建议预留至少 200 GB 磁盘。网络需能访问 NVIDIA Python 索引和 Hugging Face。
 
 ```bash
+sudo apt-get update
+sudo apt-get install -y ffmpeg p7zip-full libglib2.0-0 libsm6 libxext6 libxrender1 libegl1 libgl1 libgomp1
 git clone --branch delivery/go2-online-navigation-qv23 --single-branch \
   https://github.com/zkj623/inter-nav-project.git
 cd inter-nav-project
@@ -101,3 +103,9 @@ done
 - [路径与场景复杂度](delivery/task-paths-and-complexity.csv)
 
 Word/PDF保留历史交付时的环境说明；跨机器部署以本README和`reproduction/`为准。
+
+### 本次复现验证结果
+
+独立代码目录和重新定位的资产副本：T01通过（目标误差1.11cm），T10通过（15.27cm，实际推箱并完成导航）。验证系统Ubuntu 22.04.5、RTX 4090 D、驱动550.107.02；66份核心运行源码与本分支一致。完整回归1008通过、4项旧资产检查跳过、1项G1用例排除。
+
+已从GitHub重新克隆并完成交付文件哈希检查。本次复用现有Isaac/Python安装，没有重新下载51GB数据或从零安装Conda；接收方新硬件上的安装与执行尚未实测。安装流程与数据校验入口均已提供，详细验证范围见`reproduction/validation.json`。

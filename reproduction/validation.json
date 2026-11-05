@@ -14,11 +14,48 @@
     "deselected": 1
   },
   "runtime_tasks": {
-    "T01": "passed",
-    "T10": "running"
+    "T01": {
+      "passed": true,
+      "checks": {
+        "goal_reached": true,
+        "goal_error_le_05m": true,
+        "measured_stop": true,
+        "tilt_below_30": true,
+        "startup_below_15": true,
+        "healthy": true,
+        "online_input_guard": true,
+        "interaction_completed": true
+      },
+      "goal_error_m": 0.01112243638704858,
+      "scope": "New-machine task completion and runtime skill checks; historical full physics/contact/passage audits remain in delivery/evidence."
+    },
+    "T10": {
+      "passed": true,
+      "checks": {
+        "goal_reached": true,
+        "goal_error_le_05m": true,
+        "measured_stop": true,
+        "tilt_below_30": true,
+        "startup_below_15": true,
+        "healthy": true,
+        "online_input_guard": true,
+        "interaction_completed": true
+      },
+      "goal_error_m": 0.15269354486862163,
+      "scope": "New-machine task completion and runtime skill checks; historical full physics/contact/passage audits remain in delivery/evidence."
+    }
   },
   "limitations": [
     "The fresh conda installation and full public split-archive download have not been executed end to end.",
     "The recipient hardware/driver has not been tested."
-  ]
+  ],
+  "hardware": {
+    "os": "Ubuntu 22.04.5 LTS",
+    "gpu": "NVIDIA GeForce RTX 4090 D",
+    "driver": "550.107.02"
+  },
+  "runtime_core_source_comparison": {
+    "files": 66,
+    "mismatches": 0
+  }
 }
