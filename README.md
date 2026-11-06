@@ -105,7 +105,7 @@ done
 - [测试报告与可视化材料](delivery/02-测试报告与可视化材料.docx)：包含方法设计、实现细节（决策阈值、探索与推箱搜索、执行反馈）、测试结果及20张视频截图。
 - [路径与场景复杂度](delivery/task-paths-and-complexity.csv)
 
-Word/PDF保留历史交付时的环境说明；跨机器部署以本README和`reproduction/`为准。
+Word/PDF中的部署说明、根目录README及`reproduction/INSTALL.md`统一采用新机器安装与公开资产下载流程。文档路径为仓库内相对路径或接收方本机生成目录。
 
 ### 本次复现验证结果
 

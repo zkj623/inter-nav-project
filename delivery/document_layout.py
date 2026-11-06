@@ -40,6 +40,12 @@ def apply_document_format(path):
     specs = {'Normal': (12, False), 'Title': (22, True), 'Subtitle': (12, False),
              'Heading 1': (16, True), 'Heading 2': (14, True), 'Heading 3': (12, True),
              'Caption': (9, False), 'Header': (9, False), 'Footer': (9, False)}
+    if 'Deployment Command' in doc.styles:
+        specs['Deployment Command'] = (10.5, False)
+        pf = doc.styles['Deployment Command'].paragraph_format
+        pf.first_line_indent = Pt(0)
+        pf.line_spacing = 1.15
+        pf.space_before = pf.space_after = Pt(0)
     for name, (size, bold) in specs.items():
         set_font(doc.styles[name], size, bold)
     normal = doc.styles['Normal'].paragraph_format
@@ -72,7 +78,7 @@ def apply_document_format(path):
         size, bold = specs.get(name, (12, False))
         if name == 'Normal':
             paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-            if re.match(r'^\d+\.\s', paragraph.text) or '_' in paragraph.text or 'python ' in paragraph.text:
+            if re.match(r'^\d+\.\s', paragraph.text) or '_' in paragraph.text or 'python ' in paragraph.text or 'SHA256' in paragraph.text:
                 paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
         if name.startswith('Heading'):
             paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
