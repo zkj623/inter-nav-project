@@ -99,8 +99,9 @@ p(r,'截图保留原画面，不改写状态叠字。图片本身不能证明所
 from report_methods import add_method_chapter
 r.add_page_break();add_method_chapter(r)
 h(r,'04  stage1-go2-simulation-release统一版本结果')
-table(r,['任务','类型','误差/cm','到目标制动/s','验收'],[[t['task'],'导航' if t['task']<='T05' else '推箱交互',f'{t["goal_error_m"]*100:.2f}',f'{t["duration_to_goal_braking_s"]:.2f}','通过'] for t in A['tasks']],[2,3,3,5,2.8])
-p(r,'上述时刻为仿真时间，不是墙钟执行时间。T02–T05比历史基线慢约3–10秒，主要增加在就位、转向与制动，作为工程参考保留。')
+from report_path_comparison import add_path_comparison, NOTE
+add_path_comparison(r,D)
+p(r,NOTE)
 dummy=0
 h(r,'05  验证证据与复核')
 p(r,'历史完整测试见 evidence/tests-qv23-historical.log；本次交接定向复核见 evidence/tests-handover-targeted.log，43 passed in 7.82s。Windows缺少cv2的收集失败不计入通过结果。')
