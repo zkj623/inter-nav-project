@@ -119,4 +119,6 @@ for i,t in enumerate(A['tasks'],1):
   p(r,f'图 {i}-{j}  {label}｜{task} · {v}｜视频 {x["video_time_s"]:.2f}s · 帧 {x["frame_index"]}｜{x["state"]}','Caption')
  p(r,'来源：'+Path(items[0]['source_video']).relative_to(Path('E:/inter-nav-results/go2-textured-interaction-20261103')).as_posix(),'Caption')
 r.save(D/'02-测试报告与可视化材料.docx')
+from document_layout import apply_document_format
+for path in D.glob('*.docx'):apply_document_format(path)
 print('Built two formal documents')
