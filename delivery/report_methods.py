@@ -61,7 +61,6 @@ def add_method_chapter(doc):
     text(doc, '② 否则搜索推箱候选，代价为J_push = L_approach + 2.5 × d_push + L_remaining。若L_nav ≤ 最佳J_push，仍导航；若导航不可行或其代价更高，则选择最佳可行推箱方案。没有推箱候选但仍有导航路线时，使用导航路线。')
     text(doc, '③ 代价采用距离等效评分。满足第①项时直接返回导航决策；进入候选搜索后，按J_push排序并与导航路线长度比较。候选若暂不能形成完整后续路线，使用15的惩罚项替代后续路径项，保留该清障候选参与比较。')
     doc.add_page_break()
-    doc.add_heading('03  实现细节（续）', 1)
     section(doc, '3.3  探索触发与前沿选择',
         '探索没有“未知面积超过某比例”的触发阈值。在线目标选择器先检查已观测地图中的忽略箱体路径，再调用导航／推箱判定；若得不到非失败的任务方案，则转入前沿选择。这既可能由观测不充分导致，也可能由当前缺少安全交互方案导致。没有安全区域或可达前沿时返回等待，不把未知区域直接作为路线。')
     text(doc, '在已知—未知区域边界附近生成候选，并筛除距离机器人不足0.45 m的点。候选先粗排，最多检查前32个，收集最多8个具有安全可达路线的方案。最终评分为：')
@@ -72,7 +71,6 @@ def add_method_chapter(doc):
     text(doc, '沿每个保留方向，以0.35 m起步、0.10 m步长搜索距离。参数上限1.6 m，实际采样为0.35、0.45、…、1.55 m。候选箱体中心为p_target = p_box + d × u。每个方向只保留第一个满足约束的距离，再跨方向、跨箱体比较J_push。')
     text(doc, '检查包括：机器人接近路径可达；箱体扫掠空间不与固定障碍及其他箱体相交；机器人推动位置可行；终点满足侧方停放净空；移后参考通路不再被该箱体阻挡。在线设置下沿推移过程按0.05 m栅格步长采样。侧停规则要求箱体中心横向偏移至少覆盖箱体投影半宽、规划半径0.25 m、附加0.08 m及0.025 m余量；执行后的整机通路验证另行进行。')
     doc.add_page_break()
-    doc.add_heading('03  实现细节（续）', 1)
     section(doc, '3.5  分阶段执行与反馈',
         '方案包含箱体编号、推向、目标位置、计划推距、接近点和接近路线。状态机依次完成接近就位、停稳、转向、横向／前后对齐、接触推动、制动、释放退让及新扫描验证；阶段转换由观测反馈决定，不能仅按定时动作宣布完成。')
     table(doc, [
@@ -88,6 +86,17 @@ def add_method_chapter(doc):
     section(doc, '3.7  实现模块对应关系',
         '配置入口：reproduction/run_task.py。决策：online_navigation_decision.py、box_push_navigation.py；侧停约束：side_push_navigation.py；地图：online_navigation_map.py、layered_navigation_map.py；规划：go2_voronoi_navigation.py；执行：push_aside_skill.py、go2_contact_control.py；控制：isaac_go2_ctrl.py。运行编排为go2_side_clearance_navigation.py。')
     doc.add_page_break()
+
+
+def remove_continuation_titles(path):
+    doc = Document(path)
+    paragraphs = doc.paragraphs
+    for index, paragraph in enumerate(paragraphs):
+        if paragraph.text == '03  实现细节（续）':
+            if paragraph.paragraph_format.page_break_before and index + 1 < len(paragraphs):
+                paragraphs[index + 1].paragraph_format.page_break_before = True
+            paragraph._p.getparent().remove(paragraph._p)
+    doc.save(path)
 
 
 def update_existing_report(path):
