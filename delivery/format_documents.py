@@ -120,5 +120,7 @@ for i,t in enumerate(A['tasks'],1):
  p(r,'来源：'+Path(items[0]['source_video']).relative_to(Path('E:/inter-nav-results/go2-textured-interaction-20261103')).as_posix(),'Caption')
 r.save(D/'02-测试报告与可视化材料.docx')
 from document_layout import apply_document_format
+from unify_delivery_version import unify_report
+unify_report(D/'02-测试报告与可视化材料.docx')
 for path in D.glob('*.docx'):apply_document_format(path)
 print('Built two formal documents')
