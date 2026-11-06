@@ -62,7 +62,7 @@ def apply_document_format(path):
         section.left_margin = section.right_margin = Cm(2.5)
         section.header_distance = section.footer_distance = Cm(1.1)
         for paragraph in section.header.paragraphs:
-            paragraph.text = 'Go2仿真交付文件'
+            paragraph.text = '第一阶段仿真交付文件'
             paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         for paragraph in section.footer.paragraphs:
             paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
