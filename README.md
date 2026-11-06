@@ -102,7 +102,7 @@ done
 ## 文档
 
 - [交付说明与测试用例](delivery/01-交付说明与测试用例.docx)
-- [测试报告与可视化材料](delivery/02-测试报告与可视化材料.docx)
+- [测试报告与可视化材料](delivery/02-测试报告与可视化材料.docx)：包含方法介绍、闭环流程图、测试结果及20张视频截图。
 - [路径与场景复杂度](delivery/task-paths-and-complexity.csv)
 
 Word/PDF保留历史交付时的环境说明；跨机器部署以本README和`reproduction/`为准。
