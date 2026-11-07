@@ -144,10 +144,33 @@ def apply_document_format(path):
                 p.add_run().add_break(__import__('docx.enum.text', fromlist=['WD_BREAK']).WD_BREAK.PAGE)
             anchor.addnext(p._p)
             anchor = p._p
+    project = '项目名称：面向未知环境的交互式导航项目'
+    if not any(p.text == project for p in doc.paragraphs):
+        title = next(p for p in doc.paragraphs if p.style.name == 'Title')
+        item = doc.add_paragraph(project)
+        title._p.addprevious(item._p)
+    anchor = next(p for p in doc.paragraphs if p.text == '交付版本：stage1-go2-simulation-release')._p
+    for label in ('编制人：周康杰', '审核人：刘畅'):
+        existing = next((p for p in doc.paragraphs if p.text == label), None)
+        if existing is None:
+            existing = doc.add_paragraph(label)
+            anchor.addnext(existing._p)
+        anchor = existing._p
+        existing.paragraph_format.space_before = Pt(8)
+        existing.paragraph_format.space_after = Pt(8)
     # Preserve centered cover metadata on repeated format applications.
-    for paragraph in doc.paragraphs[:4] + [p for p in doc.paragraphs if p.text == '交付版本：stage1-go2-simulation-release']:
+    metadata = [p for p in doc.paragraphs if p.text.startswith(('交付版本：', '编制日期：', '项目名称：', '编制人：', '审核人：'))]
+    for paragraph in doc.paragraphs[:4] + metadata:
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         paragraph.paragraph_format.first_line_indent = Pt(0)
+        if paragraph.text.startswith('项目名称：'):
+            paragraph.paragraph_format.space_before = Pt(0)
+            paragraph.paragraph_format.space_after = Pt(12)
+            for run in paragraph.runs:
+                set_font(run, 16, True)
+        elif paragraph in metadata:
+            for run in paragraph.runs:
+                set_font(run, 12, False)
     # Convert standalone breaks to heading page breaks to avoid empty pages.
     from docx.text.paragraph import Paragraph
     for paragraph in list(doc.paragraphs):
