@@ -6,10 +6,15 @@ from scipy.spatial.transform import Rotation
 
 from grutopia_extension.interaction_clearance.task import evaluate_clearance, yaw_rotation
 from grutopia_extension.manipulation.bimanual_floor_lift import BimanualBox
+from grutopia_extension.manipulation.household_objects import grasp_height
 from grutopia_extension.manipulation.r1lite_bimanual_lift_sim import R1LiteBimanualLift
 
 
 class ClearanceEnvironment(R1LiteBimanualLift):
+    # Preserve the old actual horizon: 7500 controls * 7 native ticks * 0.005 s.
+    # The corrected four-tick loop must express this budget in physical seconds.
+    maximum_episode_physics_seconds = 262.5
+
     def __init__(self, output, task):
         from pxr import Gf, UsdGeom
         from grutopia_extension.configs.robots.r1lite import R1LITE_STEER_JOINTS
@@ -25,7 +30,7 @@ class ClearanceEnvironment(R1LiteBimanualLift):
         self.interaction_state = 'ready'
         self.arm_plan = None
         self.selected_place_xy = np.asarray(task.place_xy, dtype=float)
-        box = BimanualBox(task.dimensions, task.mass_kg, min(0.25, task.dimensions[2] - 0.03), 0.003)
+        box = BimanualBox(task.dimensions, task.mass_kg, grasp_height(task.object_kind, task.dimensions), 0.003, task.object_kind)
         robot_quaternion = Rotation.from_euler('z', task.robot_yaw_rad).as_quat()[[3, 0, 1, 2]]
         object_quaternion = Rotation.from_euler('z', task.object_yaw_rad).as_quat()[[3, 0, 1, 2]]
         super().__init__(output, box=box, object_xy=task.object_xy,
@@ -36,7 +41,8 @@ class ClearanceEnvironment(R1LiteBimanualLift):
         self.start_base_position, self.start_base_quaternion = self.base.get_world_pose()
         framing = [np.asarray(task.robot_xy), np.asarray(task.object_xy), np.asarray(task.place_xy)]
         for obstacle in task.scene_obstacles:
-            center, half = np.asarray(obstacle.position[:2]), np.asarray(obstacle.dimensions[:2]) / 2
+            center = np.asarray(obstacle.position[:2])
+            half = np.abs(yaw_rotation(obstacle.yaw_rad)[:2, :2]) @ (np.asarray(obstacle.dimensions[:2]) / 2)
             framing.extend((center - half, center + half))
         lower, upper = np.min(framing, axis=0) - 1.8, np.max(framing, axis=0) + 1.8
         map_center = (lower + upper) / 2
@@ -58,6 +64,8 @@ class ClearanceEnvironment(R1LiteBimanualLift):
             self.advance(self.initial_control, 'settle', 0.0)
         self.elapsed_steps = 0
         self.initialization = self.initial_pose_metrics()
+        self.control_start_physics_index = int(self.world.current_time_step_index)
+        self.control_start_physics_time = float(self.world.current_time)
         if not self.initialization['passed']:
             raise RuntimeError(f'Initial robot/object poses not realized: {self.initialization}')
         (self.output / 'initialization.json').write_text(json.dumps(self.initialization, indent=2))
@@ -75,11 +83,12 @@ class ClearanceEnvironment(R1LiteBimanualLift):
             shape.CreateDisplayColorAttr([Gf.Vec3f(0.68, 0.72, 0.77)])
             transform = UsdGeom.Xformable(shape)
             transform.AddTranslateOp().Set(Gf.Vec3d(*position))
+            transform.AddRotateZOp().Set(float(np.degrees(obstacle.yaw_rad)))
             transform.AddScaleOp().Set(Gf.Vec3f(*dimensions))
             UsdPhysics.CollisionAPI.Apply(shape.GetPrim())
             PhysxSchema.PhysxCollisionAPI.Apply(shape.GetPrim()).CreateContactOffsetAttr(0.002)
             self.wall_objects[name] = self.collision_model.fcl.CollisionObject(
-                self.collision_model.fcl.Box(*dimensions), self.collision_model.fcl.Transform(np.eye(3), position)
+                self.collision_model.fcl.Box(*dimensions), self.collision_model.fcl.Transform(yaw_rotation(obstacle.yaw_rad), position)
             )
         for name, region, color in (('RequiredPassage', self.task.passage, (0.16, 0.55, 0.30)),
                                      ('AllowedPlacement', self.task.placement, (0.18, 0.38, 0.72))):
@@ -126,7 +135,8 @@ class ClearanceEnvironment(R1LiteBimanualLift):
                         minimum, nearest = gap, [name, wall_name]
             sample['minimum_wall_clearance_m'] = minimum
             sample['nearest_wall_pair'] = nearest
-            if minimum < 0.005:
+            sample['required_wall_clearance_m'] = self.task.execution_obstacle_clearance_m
+            if minimum < self.task.execution_obstacle_clearance_m:
                 raise RuntimeError(f'Wall clearance violation: {nearest}, {minimum:.6f} m')
             return sample
         except RuntimeError:
@@ -158,6 +168,8 @@ class ClearanceEnvironment(R1LiteBimanualLift):
         velocity = base_rotation.T @ self.base.get_linear_velocity()
         goal = base_rotation.T @ (np.array((*self.task.place_xy, 0.0)) - base_position)
         return {'joint_positions': self.robot.get_joint_positions()[self.control_indices].tolist(),
+                'physics_step_index': int(self.world.current_time_step_index),
+                'physics_time_seconds': float(self.world.current_time),
                 'base_pose_world': [*base_position.tolist(), *base_quaternion.tolist()],
                 'object_pose_world': [*position.tolist(), *quaternion.tolist()],
                 'object_pose_in_base': [*relative_position.tolist(), *relative_quaternion.tolist()],
@@ -185,23 +197,28 @@ class ClearanceEnvironment(R1LiteBimanualLift):
         values['object_pose_world'] = [*object_position.tolist(), *object_quaternion.tolist()]
         return values
 
-    def solve_both(self, center, half_width, height, seed):
+    def solve_both(self, center, half_width, height, seed, object_rotation=None, preserve_contact_normal=False):
         from grutopia_extension.interaction_clearance.motion_geometry import quaternion_yaw, grasp_frames
 
         base_position, base_quaternion = self.base.get_world_pose()
         base_rotation = self.rotation(base_quaternion)
         yaw = quaternion_yaw(self.object.get_world_pose()[1])
-        left_target, right_target, left_orientation, right_orientation = grasp_frames(center, yaw, half_width, height)
+        object_rotation = yaw_rotation(yaw) if object_rotation is None else np.asarray(object_rotation, dtype=float)
+        origin = np.asarray(center) + np.array((0, 0, height - self.box.grasp_height))
+        left_local, right_local, left_frame, right_frame = grasp_frames(np.zeros(3), 0.0, half_width, self.box.grasp_height)
+        left_target, right_target = origin + object_rotation @ left_local, origin + object_rotation @ right_local
+        left_orientation, right_orientation = object_rotation @ left_frame, object_rotation @ right_frame
         obstacle = np.eye(4)
-        obstacle[:3, :3] = base_rotation.T @ yaw_rotation(yaw)
-        obstacle[:3, 3] = base_rotation.T @ (np.asarray(center) + np.array((
-            0, 0, self.box.dimensions[2] / 2 + height - self.box.grasp_height)) - base_position)
+        obstacle[:3, :3] = base_rotation.T @ object_rotation
+        obstacle[:3, 3] = base_rotation.T @ (origin + object_rotation @ np.array((0, 0, self.box.dimensions[2] / 2)) - base_position)
         solution = self.bimanual.solve(base_rotation.T @ (left_target - base_position),
                                    base_rotation.T @ (right_target - base_position),
                                    base_rotation.T @ left_orientation, base_rotation.T @ right_orientation,
                                    seed, self.collision_model, obstacle, self.box.dimensions, clearance=0.05,
                                    upper_limits=np.r_[min(self.bimanual.upper[0], 0.0), self.bimanual.upper[1:]],
-                                   reseed_torso=True)
+                                   reseed_torso=True,
+                                   **({'contact_normal': base_rotation.T @ object_rotation[:, 1]}
+                                      if preserve_contact_normal else {}))
         if self.recorder is not None:
             self.recorder.event('ik_solution', {'height_m': float(height), 'half_width_m': float(half_width),
                                                'attempts': self.bimanual.last_solve_diagnostics})
@@ -237,7 +254,7 @@ class ClearanceEnvironment(R1LiteBimanualLift):
         return Outcome(True, 'WAIT_COMPLETE', {'seconds': steps * self.control_dt})
 
     def advance(self, joints, phase, progress):
-        if self.elapsed_steps >= 7500:
+        if self.elapsed_steps >= round(self.maximum_episode_physics_seconds / self.control_dt):
             raise RuntimeError('Episode control-time budget exceeded')
         before = self.observe() if self.recorder else None
         super().step(joints)
@@ -254,6 +271,8 @@ class ClearanceEnvironment(R1LiteBimanualLift):
                 if 'minimum_wall_clearance_m' in sample]
         report['minimum_wall_clearance_m'] = min(gaps) if gaps else None
         report['wall_samples'] = len(gaps)
-        report['passed'] = bool(report['passed'] and self.safety_ok and gaps and min(gaps) >= 0.005)
+        report['required_wall_clearance_m'] = self.task.execution_obstacle_clearance_m
+        report['passed'] = bool(report['passed'] and self.safety_ok and gaps
+                                and min(gaps) >= self.task.execution_obstacle_clearance_m)
         (self.output / 'collision_audit.json').write_text(json.dumps(report, indent=2))
         return report

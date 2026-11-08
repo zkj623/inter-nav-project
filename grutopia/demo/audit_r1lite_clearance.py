@@ -27,8 +27,14 @@ def main():
     task = ClearanceTask.from_dict(json.loads((args.run / 'task.json').read_text()))
     result = json.loads((args.run / 'result.json').read_text())
     recording = json.loads((args.run / 'physics_collision_samples.json').read_text())
+    from grutopia_extension.manipulation.physics_step import validate_recorded_clock
+    clock_audit = validate_recorded_clock(recording, result)
     model = RobotCollisionModel(args.robot_urdf)
     stage = Usd.Stage.Open(str(args.run / 'scene.usda'))
+    finger_geometry = 'full_object_outer_box_v1'
+    if task.object_kind == 'stool':
+        model.verify_stool_stage(stage, task.dimensions)
+        finger_geometry = 'verified_native_stool_seat_and_legs_v1'
     wall_objects = {}
     for prim in stage.Traverse():
         if str(prim.GetPath()).startswith('/World/ClearanceScene/') and prim.HasAPI(UsdPhysics.CollisionAPI):
@@ -45,6 +51,7 @@ def main():
     minimum_body = float('inf')
     minimum_wall = float('inf')
     maximum_finger = 0.0
+    maximum_finger_bbox = 0.0
     request = model.fcl.DistanceRequest(enable_signed_distance=True)
     for sample in recording['samples']:
         transforms = {}
@@ -59,6 +66,13 @@ def main():
         distances = model.box_clearances(transforms, obstacle, task.dimensions, include_fingers=True)
         body_gap = min(distances[name] for name in model.noncontact_names)
         finger_depth = max(0.0, -min(value for name, value in distances.items() if 'gripper_finger' in name))
+        maximum_finger_bbox = max(maximum_finger_bbox, finger_depth)
+        if task.object_kind == 'stool':
+            finger_depth = max(0.0, -min(model.stool_finger_clearances(transforms, obstacle, task.dimensions).values()))
+        if sample.get('finger_clearance_geometry') != finger_geometry:
+            raise ValueError('Runtime finger geometry schema differs from independent audit')
+        if abs(sample['maximum_finger_penetration_m'] - finger_depth) > 1e-6:
+            raise ValueError('Recorded finger part distance disagrees with native-pose replay')
         objects = model.objects(transforms)
         objects['task_object'] = model.fcl.CollisionObject(model.fcl.Box(*task.dimensions),
                                                          model.fcl.Transform(obstacle[:3, :3], obstacle[:3, 3]))
@@ -68,7 +82,7 @@ def main():
         minimum_body = min(minimum_body, body_gap)
         minimum_wall = min(minimum_wall, wall_gap)
         maximum_finger = max(maximum_finger, finger_depth)
-        if body_gap < 0.005 or finger_depth > 0.002 or wall_gap < 0.005 or self_hits:
+        if body_gap < 0.005 or finger_depth > 0.002 or wall_gap < task.execution_obstacle_clearance_m or self_hits:
             violations.append({'sample': sample['sample'], 'body_gap_m': body_gap, 'wall_gap_m': wall_gap,
                                'finger_depth_m': finger_depth, 'self_intersections': self_hits})
     stable = 0.0
@@ -78,13 +92,20 @@ def main():
         for line in transitions:
             transition = json.loads(line)
             observation = transition['next_observation']
+            before = transition['observation']
+            origin = recording['physics_clock']['control_start_index'] + frames * 4
+            if before['physics_step_index'] != origin or observation['physics_step_index'] != origin + 4:
+                raise ValueError('Control transition does not span exactly four native physics steps')
+            duration = observation['physics_time_seconds'] - before['physics_time_seconds']
+            if not np.isclose(duration, 0.02, rtol=1e-6, atol=1e-7):
+                raise ValueError('Control transition duration differs from the physical clock')
             pose = observation['object_pose_world']
             metrics = evaluate_clearance(task, pose[:3], rotation(pose[3:]),
                                          float(np.linalg.norm(observation['object_linear_velocity'])),
                                          float(np.linalg.norm(observation['object_angular_velocity'])),
                                          float(np.linalg.norm(observation['hand_normal_force_vectors'], axis=1).sum()),
                                          not violations, stable)
-            stable = stable + 0.02 if metrics['physically_complete'] else 0.0
+            stable = stable + duration if metrics['physically_complete'] else 0.0
             frames += 1
         metrics['stable_seconds'] = stable
         metrics['success'] = bool(metrics.get('physically_complete') and stable >= task.required_stable_seconds)
@@ -127,13 +148,16 @@ def main():
                               and shapes_ok and finite_data and eligibility_ok and skill_matches),
               'physics_samples': len(recording['samples']), 'frames': frames, 'violations': violations,
               'minimum_noncontact_clearance_m': minimum_body, 'minimum_wall_clearance_m': minimum_wall,
+              'required_wall_clearance_m': task.execution_obstacle_clearance_m,
               'maximum_finger_penetration_m': maximum_finger, 'final_metrics': metrics,
+              'maximum_finger_bbox_penetration_m': maximum_finger_bbox, 'finger_clearance_geometry': finger_geometry,
               'dynamic_object': dynamic, 'gravity_disabled': gravity_disabled, 'object_attachment': attachment,
               'usd_mass_kg': mass, 'dataset_shapes_ok': shapes_ok, 'dataset_finite': finite_data,
               'dataset_eligibility_ok': eligibility_ok, 'executed_skill_hash_matches': skill_matches,
               'initial_poses_independently_checked': initialization_ok, 'base_return_protocol_ok': bool(protocol_ok),
               'robot_passage_metrics': robot_metrics, 'released_state_ok': released_ok, 'base_stopped': bool(base_stopped),
-              'continuous_time_guarantee': False}
+              'continuous_time_guarantee': False, 'physics_clock_audit': clock_audit,
+              'every_physics_step_recorded': True}
     (args.run / 'offline_reaudit.json').write_text(json.dumps(report, indent=2))
     print(json.dumps(report), flush=True)
     return 0 if report['passed'] else 1

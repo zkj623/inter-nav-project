@@ -25,14 +25,17 @@ class SceneObstacle:
     name: str
     position: tuple
     dimensions: tuple
+    yaw_rad: float = 0.0
 
     def validate(self):
         if not self.name.isidentifier() or self.name.startswith('_'):
             raise ValueError('Obstacle names must be public identifiers')
         if len(self.position) != 3 or len(self.dimensions) != 3:
             raise ValueError('Scene obstacles require three position and size coordinates')
-        if not np.isfinite((*self.position, *self.dimensions)).all() or min(self.dimensions) <= 0:
+        if not np.isfinite((*self.position, *self.dimensions, self.yaw_rad)).all() or min(self.dimensions) <= 0:
             raise ValueError('Scene obstacle geometry must be finite and positive')
+        if abs(self.yaw_rad) > math.pi:
+            raise ValueError('Obstacle yaw must be within [-pi, pi]')
 
 
 def default_scene_obstacles():
@@ -59,21 +62,34 @@ class ClearanceTask:
     object_yaw_rad: float = 0.0
     grasp_distance_m: float = 0.65
     return_to_start: bool = False
+    object_kind: str = 'box'
+    base_obstacle_clearance_m: float = 0.04
+    arm_obstacle_clearance_m: float = 0.015
+    execution_obstacle_clearance_m: float = 0.005
 
     def validate(self):
+        from grutopia_extension.manipulation.household_objects import OBJECT_KINDS
+
+        if self.object_kind not in OBJECT_KINDS:
+            raise ValueError('Unsupported interaction object kind')
         self.passage.validate()
         self.placement.validate()
         if not isinstance(self.return_to_start, bool):
             raise ValueError('return_to_start must be a boolean')
         values = (*self.object_xy, *self.place_xy, *self.dimensions, self.mass_kg,
                   self.required_clearance_m, self.required_stable_seconds, *self.robot_xy,
-                  self.robot_yaw_rad, self.object_yaw_rad, self.grasp_distance_m)
+                  self.robot_yaw_rad, self.object_yaw_rad, self.grasp_distance_m,
+                  self.base_obstacle_clearance_m, self.arm_obstacle_clearance_m, self.execution_obstacle_clearance_m)
         if len(self.object_xy) != 2 or len(self.place_xy) != 2 or len(self.dimensions) != 3 or len(self.robot_xy) != 2:
             raise ValueError('Task requires XY targets and three object dimensions')
         if not np.isfinite(values).all() or min(self.dimensions) <= 0 or self.mass_kg <= 0:
             raise ValueError('Task geometry and mass must be finite and positive')
         if self.required_clearance_m < 0.03 or self.required_stable_seconds < 1.0:
             raise ValueError('Clearance and stability thresholds cannot be weakened below v0 limits')
+        if (self.base_obstacle_clearance_m < 0.04 or self.arm_obstacle_clearance_m < 0.015
+                or self.execution_obstacle_clearance_m < 0.005
+                or self.execution_obstacle_clearance_m > min(self.base_obstacle_clearance_m, self.arm_obstacle_clearance_m)):
+            raise ValueError('Obstacle safety margins cannot weaken legacy limits or exceed planning margins')
         if abs(self.robot_yaw_rad) > math.pi or abs(self.object_yaw_rad) > math.pi or not 0.58 <= self.grasp_distance_m <= 0.72:
             raise ValueError('Yaw must be within [-pi, pi] and grasp distance within 0.58..0.72 m')
         object_half = np.abs(yaw_rotation(self.object_yaw_rad)[:2, :2]) @ (np.asarray(self.dimensions[:2]) / 2)
@@ -85,14 +101,14 @@ class ClearanceTask:
             if obstacle.name in names:
                 raise ValueError('Scene obstacle names must be unique')
             names.add(obstacle.name)
-            half = np.asarray(obstacle.dimensions) / 2
+            half = np.abs(yaw_rotation(obstacle.yaw_rad)) @ (np.asarray(obstacle.dimensions) / 2)
             lower = np.asarray(obstacle.position) - half
             upper = np.asarray(obstacle.position) + half
             if lower[2] < self.dimensions[2] and upper[2] > 0:
                 if np.all(lower[:2] < self.passage.upper) and np.all(upper[:2] > self.passage.lower):
                     raise ValueError('A static obstacle cannot occupy the required passage')
                 for center in (self.object_xy, self.place_xy):
-                    extent = object_half + 0.005
+                    extent = object_half + self.execution_obstacle_clearance_m
                     if np.all(lower[:2] < np.asarray(center) + extent) and np.all(upper[:2] > np.asarray(center) - extent):
                         raise ValueError('A static obstacle intersects the initial or target box footprint')
         half_extent = object_half
@@ -116,7 +132,8 @@ class ClearanceTask:
             if name in values:
                 values[name] = tuple(values[name])
         if 'scene_obstacles' in values:
-            values['scene_obstacles'] = tuple(SceneObstacle(item['name'], tuple(item['position']), tuple(item['dimensions']))
+            values['scene_obstacles'] = tuple(SceneObstacle(item['name'], tuple(item['position']), tuple(item['dimensions']),
+                                                           item.get('yaw_rad', 0.0))
                                               for item in values['scene_obstacles'])
         task = cls(**values)
         task.validate()

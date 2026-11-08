@@ -154,6 +154,70 @@ class RobotCollisionModel:
                 intersections.append([first, second])
         return intersections
 
+    def _stool_geometries(self, dimensions):
+        from grutopia_extension.manipulation.household_objects import object_parts, PRISM_FACES
+
+        key = tuple(dimensions)
+        if not hasattr(self, '_stool_cache'):
+            self._stool_cache = {}
+        if key not in self._stool_cache:
+            faces = np.asarray([value for face in PRISM_FACES for value in (len(face), *face)], dtype=np.int32)
+            self._stool_cache[key] = {
+                part.name: self.fcl.Convex(np.asarray(part.vertices), len(PRISM_FACES), faces)
+                for part in object_parts('stool', dimensions)}
+        return self._stool_cache[key]
+
+    def verify_stool_stage(self, stage, dimensions):
+        """Fail closed if native authored colliders differ from the planned seat/legs."""
+        from pxr import Usd, UsdGeom, UsdPhysics
+        from grutopia_extension.manipulation.household_objects import object_parts, PRISM_FACES
+
+        root = stage.GetPrimAtPath('/World/LiftObject')
+        if not root or root.GetAttribute('rsi:object_kind').Get() != 'stool':
+            raise ValueError('Missing native stool root/type')
+        expected = {part.name: np.asarray(part.vertices) for part in object_parts('stool', dimensions)}
+        colliders = [prim for prim in Usd.PrimRange(root) if prim.HasAPI(UsdPhysics.CollisionAPI)]
+        if len(colliders) != 5 or {p.GetName() for p in colliders} != set(expected):
+            raise ValueError('Native stool collider coverage changed')
+        faces = np.asarray([v for face in PRISM_FACES for v in (len(face), *face)], dtype=np.int32)
+        native = {}
+        for prim in colliders:
+            if (prim.GetParent() != root or not prim.IsA(UsdGeom.Mesh)
+                    or UsdPhysics.CollisionAPI(prim).GetCollisionEnabledAttr().Get() is False
+                    or UsdPhysics.MeshCollisionAPI(prim).GetApproximationAttr().Get() != 'convexHull'):
+                raise ValueError('Unsupported or disabled native stool collider')
+            mesh = UsdGeom.Mesh(prim)
+            local = np.asarray(UsdGeom.Xformable(prim).GetLocalTransformation()).T
+            points = np.asarray(mesh.GetPointsAttr().Get()) @ local[:3, :3].T + local[:3, 3]
+            if (points.shape != expected[prim.GetName()].shape or not np.isfinite(points).all()
+                    or not np.allclose(points, expected[prim.GetName()], atol=1e-6, rtol=0)
+                    or list(mesh.GetFaceVertexCountsAttr().Get()) != [4]*6
+                    or list(mesh.GetFaceVertexIndicesAttr().Get()) != [v for face in PRISM_FACES for v in face]):
+                raise ValueError('Native stool geometry differs from planned parts')
+            native[prim.GetName()] = self.fcl.Convex(points, 6, faces)
+        if not hasattr(self, '_stool_cache'):
+            self._stool_cache = {}
+        self._stool_cache[tuple(dimensions)] = native
+        return {'geometry': 'verified_native_stool_seat_and_legs_v1', 'parts': sorted(native),
+                'coordinate_tolerance_m': 1e-6}
+
+    def stool_finger_clearances(self, transforms, box_transform, dimensions):
+        """Seat/leg union for fingers; body and environment keep the full outer envelope."""
+        geometries = self._stool_geometries(dimensions)
+        rotation = box_transform[:3, :3]
+        origin = box_transform[:3, 3] - rotation @ np.array((0., 0., dimensions[2]/2))
+        parts = [self.fcl.CollisionObject(g, self.fcl.Transform(rotation, origin)) for g in geometries.values()]
+        names = [name for name in self.names if 'gripper_finger' in name]
+        if len(names) != 4:
+            raise ValueError('Stool contact check requires all four fingers')
+        request = self.fcl.DistanceRequest(enable_signed_distance=True)
+        gaps = {}
+        for name in names:
+            pose = transforms[name]
+            finger = self.fcl.CollisionObject(self.envelopes[name], self.fcl.Transform(pose[:3, :3], pose[:3, 3]))
+            gaps[name] = min(float(self.fcl.distance(finger, part, request, self.fcl.DistanceResult())) for part in parts)
+        return gaps
+
     def proxy_coverage_report(self):
         return {name: {'visual_bounds_m': [vertices.min(axis=0).tolist(), vertices.max(axis=0).tolist()],
                        'original_collision_bounds_m': self.proxy_bounds.get(name)}

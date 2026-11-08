@@ -51,13 +51,22 @@ class R1LiteBimanualLift(R1LiteFloorLift):
         self.maximum_finger_penetration = 0.002
         self.grasp_x_offset = 0.0
         self.audit_enabled = False
-        asset = create_unhandled_box(self.box, Path(output) / 'assets' / 'large_unhandled_box.usd')
+        if self.box.kind == 'box':
+            asset = create_unhandled_box(self.box, Path(output) / 'assets' / 'large_unhandled_box.usd')
+        else:
+            from grutopia_extension.manipulation.household_objects import create_household_object
+
+            asset = create_household_object(self.box, Path(output) / 'assets' / f'{self.box.kind}.usd')
         super().__init__(output, 'box', object_xy, robot_usd, robot_urdf,
                          object_usd=str(asset), grasp_offset=(0, 0, self.box.grasp_height),
                          object_dimensions=self.box.dimensions, object_mass=self.box.mass, bimanual_contact=True,
                          robot_position=robot_position, robot_orientation=robot_orientation,
                          object_orientation=object_orientation)
         self.bimanual = BimanualUrdfKinematics(urdf)
+        self.finger_geometry = ('verified_native_stool_seat_and_legs_v1' if self.box.kind == 'stool'
+                                else 'full_object_outer_box_v1')
+        if self.box.kind == 'stool':
+            self.collision_model.verify_stool_stage(self.stage, self.box.dimensions)
         left_paths = [str(prim.GetPath()) for prim in Usd.PrimRange(self.stage.GetPrimAtPath('/World/Robot'))
                       if prim.GetName() == 'left_gripper_link' and prim.HasAPI(UsdPhysics.RigidBodyAPI)]
         if len(left_paths) != 1:
@@ -154,12 +163,20 @@ class R1LiteBimanualLift(R1LiteFloorLift):
         noncontact = {name: distances[name] for name in self.collision_model.noncontact_names}
         nearest = min(noncontact, key=noncontact.get)
         finger_depth = max(0.0, -min(value for name, value in distances.items() if 'gripper_finger' in name))
+        finger_bbox_depth = finger_depth
+        if self.box.kind == 'stool':
+            finger_gaps = self.collision_model.stool_finger_clearances(transforms, box_transform, self.box.dimensions)
+            finger_depth = max(0.0, -min(finger_gaps.values()))
         self_hits = self.collision_model.self_intersections(transforms)
         sample = {'sample': len(self.physics_audit), 'minimum_noncontact_clearance_m': noncontact[nearest],
                   'nearest_noncontact_link': nearest, 'maximum_finger_penetration_m': finger_depth,
+                  'maximum_finger_bbox_penetration_m': finger_bbox_depth,
+                  'finger_clearance_geometry': self.finger_geometry,
                   'self_intersections': self_hits, 'link_positions': positions.tolist(),
                   'link_quaternions_wxyz': quaternions.tolist(), 'object_position': object_position.tolist(),
                   'object_quaternion_wxyz': object_quaternion.tolist()}
+        sample['physics_step_index'] = int(self.world.current_time_step_index)
+        sample['physics_time_seconds'] = float(self.world.current_time)
         self.physics_audit.append(sample)
         if noncontact[nearest] < self.minimum_noncontact_clearance or finger_depth > self.maximum_finger_penetration or self_hits:
             raise RuntimeError(f'Collision audit rejected physics sample: {sample["sample"]}, '
@@ -184,12 +201,20 @@ class R1LiteBimanualLift(R1LiteFloorLift):
         ))
         self.robot.apply_action(ArticulationAction(joint_velocities=wheel_velocities, joint_indices=self.wheel_indices))
         vectors = []
-        for index in range(4):
-            self.world.step(render=index == 3)
+
+        def measure():
             if self.audit_enabled:
                 self.collision_sample()
             matrix = np.asarray(self.fingers.get_contact_force_matrix(dt=self.physics_dt))
             vectors.append(matrix.reshape(4, -1, 3).sum(axis=1))
+
+        from grutopia_extension.manipulation.physics_step import advance_control
+        try:
+            advance_control(self.world, self.physics_dt, measure)
+        except RuntimeError:
+            if hasattr(self, 'safety_ok'):
+                self.safety_ok = False
+            raise
         self.finger_force_vectors = np.mean(vectors, axis=0)
         self.contact_forces = np.linalg.norm(self.finger_force_vectors, axis=1)
         self.frames += 1
@@ -260,10 +285,16 @@ class R1LiteBimanualLift(R1LiteFloorLift):
         return samples
 
     def save_collision_audit(self):
+        clock = {'physics_dt': self.physics_dt, 'control_dt': self.control_dt,
+                 'control_start_index': getattr(self, 'control_start_physics_index', None),
+                 'control_start_time': getattr(self, 'control_start_physics_time', None),
+                 'end_index': int(self.world.current_time_step_index), 'end_time': float(self.world.current_time)}
         (self.output / 'physics_collision_samples.json').write_text(json.dumps({
-            'link_names': self.collision_link_names, 'samples': self.physics_audit
+            'link_names': self.collision_link_names, 'samples': self.physics_audit,
+            'clock_schema_version': 1, 'physics_clock': clock
         }))
         report = {'method': 'FCL conservative convex envelopes of visual meshes and original URDF collision geometry',
+                  'finger_clearance_geometry': self.finger_geometry,
                   'sampling_hz': 1.0 / self.physics_dt, 'samples': len(self.physics_audit),
                   'noncontact_clearance_threshold_m': self.minimum_noncontact_clearance,
                   'finger_penetration_tolerance_m': self.maximum_finger_penetration,
@@ -271,11 +302,13 @@ class R1LiteBimanualLift(R1LiteFloorLift):
                                                         for sample in self.physics_audit), default=None),
                   'maximum_finger_penetration_m': max((sample['maximum_finger_penetration_m']
                                                        for sample in self.physics_audit), default=None),
+                  'maximum_finger_bbox_penetration_m': max((sample['maximum_finger_bbox_penetration_m']
+                                                            for sample in self.physics_audit), default=None),
                   'self_intersection_sample_count': sum(bool(sample['self_intersections'])
                                                         for sample in self.physics_audit),
                   'self_method': 'nonadjacent visual triangle meshes; parent-child and siblings excluded',
                   'collision_guard_groups': 'visual guards contact object and ground; original self-colliders remain enabled',
-                  'continuous_time_guarantee': False}
+                  'continuous_time_guarantee': False, 'clock_schema_version': 1, 'physics_clock': clock}
         report['passed'] = bool(self.physics_audit) and all(
             sample['minimum_noncontact_clearance_m'] >= self.minimum_noncontact_clearance
             and sample['maximum_finger_penetration_m'] <= self.maximum_finger_penetration

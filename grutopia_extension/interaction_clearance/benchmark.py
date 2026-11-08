@@ -18,7 +18,7 @@ def runtime_fingerprint(root):
     names = ['task', 'environment', 'skill_runtime', 'recording', 'policies', 'primitives', 'motion_geometry', 'base_planner', 'placement']
     paths = [f'grutopia_extension/interaction_clearance/{name}.py' for name in names]
     paths += [f'grutopia_extension/manipulation/{name}.py' for name in
-              ('bimanual_collision', 'bimanual_floor_lift', 'floor_lift', 'r1lite_lift_sim', 'r1lite_bimanual_lift_sim', 'local_ground')]
+              ('bimanual_collision', 'bimanual_floor_lift', 'floor_lift', 'r1lite_lift_sim', 'r1lite_bimanual_lift_sim', 'local_ground', 'household_objects', 'physics_step')]
     paths += ['grutopia_extension/interactive_navigation/r1lite_kinematics.py',
               'grutopia_extension/configs/robots/r1lite.py', 'grutopia/demo/r1lite_interaction_clearance.py',
               'grutopia/demo/audit_r1lite_clearance.py', 'grutopia/demo/r1lite_clearance_multilayout.py',

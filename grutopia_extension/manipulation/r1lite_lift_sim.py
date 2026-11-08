@@ -280,10 +280,13 @@ class R1LiteFloorLift:
         ))
         self.robot.apply_action(ArticulationAction(joint_velocities=np.zeros(3), joint_indices=self.wheel_indices))
         forces = []
-        for index in range(4):
-            self.world.step(render=index == 3)
+
+        def measure():
             matrix = np.asarray(self.fingers.get_contact_force_matrix(dt=self.physics_dt))
             forces.append(np.linalg.norm(matrix.reshape(self.finger_count, -1, 3).sum(axis=1), axis=1))
+
+        from grutopia_extension.manipulation.physics_step import advance_control
+        advance_control(self.world, self.physics_dt, measure)
         self.contact_forces = np.mean(forces, axis=0)
         self.frames += 1
         base_position, quaternion = self.base.get_world_pose()

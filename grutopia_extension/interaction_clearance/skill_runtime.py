@@ -28,7 +28,8 @@ class SkillContext:
         self._stopped = False
         self.executed_policy_ids = []
 
-    def execute(self, policy_id, *, object_id=None, place_xy=None, target=None, route=None, mode=None):
+    def execute(self, policy_id, *, object_id=None, place_xy=None, target=None, route=None, mode=None,
+                grasp_distance_offset_m=None):
         if self._stopped:
             return Outcome(False, 'UNSAFE_RETRY_REJECTED')
         if self._calls >= self._maximum_calls:
@@ -39,7 +40,7 @@ class SkillContext:
         if policy_id == 'pick_place':
             if object_id != self.task.object_id or place_xy is None or tuple(place_xy) != tuple(self.task.place_xy):
                 return Outcome(False, 'UPSTREAM_TARGET_MISMATCH')
-            if any(value is not None for value in (target, route, mode)):
+            if any(value is not None for value in (target, route, mode, grasp_distance_offset_m)):
                 return Outcome(False, 'INVALID_POLICY_ARGUMENTS')
         elif policy_id == 'base_move':
             if target not in ('grasp', 'placement', 'home') or (route is not None and route not in ('auto', 'direct', 'retreat', 'x_first', 'y_first')):
@@ -47,11 +48,16 @@ class SkillContext:
             if object_id is not None or place_xy is not None or mode is not None:
                 return Outcome(False, 'INVALID_POLICY_ARGUMENTS')
             options = {'target': target, 'route': route or 'auto'}
+            if grasp_distance_offset_m is not None:
+                if (target != 'grasp' or not isinstance(grasp_distance_offset_m, (int, float))
+                        or not math.isfinite(grasp_distance_offset_m) or not -.02 <= grasp_distance_offset_m <= 0.):
+                    return Outcome(False, 'INVALID_POLICY_ARGUMENTS')
+                options['grasp_distance_offset_m'] = grasp_distance_offset_m
         elif policy_id == 'arm_plan':
-            if mode not in ('grasp', 'place') or any(value is not None for value in (object_id, place_xy, target, route)):
+            if mode not in ('grasp', 'place') or any(value is not None for value in (object_id, place_xy, target, route, grasp_distance_offset_m)):
                 return Outcome(False, 'INVALID_POLICY_ARGUMENTS')
             options = {'mode': mode}
-        elif any(value is not None for value in (object_id, place_xy, target, route, mode)):
+        elif any(value is not None for value in (object_id, place_xy, target, route, mode, grasp_distance_offset_m)):
             return Outcome(False, 'INVALID_POLICY_ARGUMENTS')
         self._calls += 1
         self.executed_policy_ids.append(policy_id)

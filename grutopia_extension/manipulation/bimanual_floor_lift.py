@@ -15,8 +15,13 @@ class BimanualBox:
     mass: float = 1.5
     grasp_height: float = 0.25
     squeeze: float = 0.003
+    kind: str = 'box'
 
     def validate(self):
+        from grutopia_extension.manipulation.household_objects import OBJECT_KINDS
+
+        if self.kind not in OBJECT_KINDS:
+            raise ValueError('Unsupported household object kind')
         values = (*self.dimensions, self.mass, self.grasp_height, self.squeeze)
         if len(self.dimensions) != 3 or not np.isfinite(values).all() or min(values) <= 0:
             raise ValueError('box dimensions, mass, grasp height, and squeeze must be finite and positive')
@@ -44,7 +49,11 @@ class BimanualUrdfKinematics:
 
     def solve(self, left_position, right_position, left_orientation, right_orientation, seed,
               collision_model=None, box_transform=None, box_dimensions=None, clearance=0.015, upper_limits=None,
-              reseed_torso=False):
+              reseed_torso=False, contact_normal=None, pose_weights=(6.0, 0.6)):
+        weights = np.asarray(pose_weights, dtype=float)
+        if weights.shape != (2,) or not np.isfinite(weights).all() or np.any(weights <= 0):
+            raise ValueError('Pose residual weights must be two finite positive numbers')
+        position_weight, orientation_weight = weights
         upper = self.upper if upper_limits is None else np.minimum(self.upper, np.asarray(upper_limits, dtype=float))
         if upper.shape != self.upper.shape or not np.isfinite(upper).all() or np.any(upper - self.lower <= 2e-7):
             raise ValueError('Planning limits must be finite and leave a nonempty joint interval')
@@ -57,12 +66,20 @@ class BimanualUrdfKinematics:
         self.last_solve_diagnostics = []
         targets = (np.asarray(left_position), np.asarray(right_position))
         orientations = (np.asarray(left_orientation), np.asarray(right_orientation))
+        if contact_normal is not None:
+            contact_normal = np.asarray(contact_normal, dtype=float)
+            if contact_normal.shape != (3,) or not np.isfinite(contact_normal).all() or np.linalg.norm(contact_normal) < 1e-8:
+                raise ValueError('Contact normal must be a finite nonzero 3-vector')
+            contact_normal = contact_normal / np.linalg.norm(contact_normal)
 
         def residual(positions):
             errors = []
             for transform, target, orientation in zip(self.forward(positions), targets, orientations):
-                errors.extend(6.0 * (transform[:3, 3] - target))
-                errors.extend(0.6 * Rotation.from_matrix(orientation @ transform[:3, :3].T).as_rotvec())
+                errors.extend(position_weight * (transform[:3, 3] - target))
+                if contact_normal is not None:
+                    # Numerical IK priority only; actuator and contact forces are unchanged.
+                    errors.append(60.0 * np.dot(transform[:3, 3] - target, contact_normal))
+                errors.extend(orientation_weight * Rotation.from_matrix(orientation @ transform[:3, :3].T).as_rotvec())
             errors.extend(0.01 * (positions - seed))
             if collision_model is not None:
                 transforms = collision_model.forward(dict(zip(self.names, positions)))

@@ -9,6 +9,25 @@ import random
 import traceback
 
 
+def snapshot_runtime_sources(root, output):
+    from grutopia_extension.interaction_clearance.benchmark import runtime_fingerprint
+
+    expected = runtime_fingerprint(root)['files']
+    sources = {root / relative for relative in expected}
+    sources.update((root / 'grutopia_extension/interaction_clearance').rglob('*.py'))
+    manifest = {}
+    for source in sorted(sources):
+        relative = source.relative_to(root)
+        destination = output / 'source' / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+        manifest[relative.as_posix()] = hashlib.sha256(destination.read_bytes()).hexdigest()
+    if any(manifest.get(relative) != checksum for relative, checksum in expected.items()):
+        raise RuntimeError('Runtime source snapshot differs from the frozen dependency manifest')
+    (output / 'source_manifest.json').write_text(json.dumps(manifest, indent=2))
+    return manifest
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
@@ -50,22 +69,8 @@ def main():
         (args.output / 'preflight.json').write_text(json.dumps(report, indent=2))
         print(json.dumps(report), flush=True)
         return 0
-    source_files = list((root / 'grutopia_extension/interaction_clearance').rglob('*.py'))
-    source_files += [root / f'grutopia_extension/manipulation/{name}.py' for name in
-                     ('bimanual_collision', 'bimanual_floor_lift', 'floor_lift', 'r1lite_lift_sim', 'r1lite_bimanual_lift_sim', 'local_ground')]
-    source_files += [Path(__file__), root / 'grutopia_extension/interactive_navigation/r1lite_kinematics.py',
-                     root / 'grutopia_extension/configs/robots/r1lite.py',
-                     root / 'grutopia/demo/audit_r1lite_clearance.py',
-                     root / 'grutopia/demo/r1lite_clearance_multilayout.py']
-    manifest = {}
-    for source in source_files:
-        relative = source.relative_to(root)
-        destination = args.output / 'source' / relative
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination)
-        manifest[str(relative)] = hashlib.sha256(source.read_bytes()).hexdigest()
+    manifest = snapshot_runtime_sources(root, args.output)
     shutil.copy2(skill_path, args.output / 'executed_skill.py')
-    (args.output / 'source_manifest.json').write_text(json.dumps(manifest, indent=2))
     random.seed(task.seed)
     import numpy as np
     np.random.seed(task.seed)
@@ -128,6 +133,9 @@ def main():
                   'scope': 'mandatory_interaction_clearance_only', 'navigation_decision_performed': False,
                   'observation_source': 'simulation_ground_truth', 'continuous_time_guarantee': False}
         result['simulated_seconds'] = len(recorder.actions) * environment.control_dt
+        result['actual_physics_seconds'] = float(environment.world.current_time) - environment.control_start_physics_time
+        result['physics_clock_schema_version'] = 1
+        result['maximum_episode_physics_seconds'] = environment.maximum_episode_physics_seconds
         result['policy_sha256'] = manifest['grutopia_extension/interaction_clearance/policies.py']
         result['primitive_sha256'] = manifest['grutopia_extension/interaction_clearance/primitives.py']
         result['initialization'] = environment.initialization

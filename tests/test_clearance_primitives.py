@@ -191,6 +191,7 @@ class PrimitiveSafetyTests(unittest.TestCase):
     def environment(self):
         return SimpleNamespace(
             task=ClearanceTask(), interaction_state='ready', arm_plan=None, base_twist=np.zeros(3), safety_ok=True,
+            box=SimpleNamespace(dimensions=(0.4, 0.5, 0.28)), rotation=lambda quaternion: np.eye(3),
             base=SimpleNamespace(get_world_pose=lambda: (np.array((0.0, 0.0, 0.0)), np.array((1.0, 0.0, 0.0, 0.0)))),
             object=SimpleNamespace(get_world_pose=lambda: (np.array((0.65, 0.0, 0.0)), np.array((1.0, 0.0, 0.0, 0.0)))),
             robot=SimpleNamespace(get_joint_positions=lambda: np.zeros(19)), control_indices=np.arange(19),
