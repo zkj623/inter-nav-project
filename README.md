@@ -10,6 +10,8 @@ a text target such as `refrigerator` and walks up to the scanned object.
 
 ## R1 Lite policy–skill iteration research
 
+The [20-object household catalog](research/rsi/household_catalog/README.md) adds portable asset preparation, cooked collision geometry, and stationary robot-operation probes. External model/robot assets are required; this is an experimental entry point, not a validated 20-object transport policy.
+
 The experimental RSI module is separate from the default navigation demos:
 
 - `grutopia_extension/interaction_clearance/` and `manipulation/`: contact-only

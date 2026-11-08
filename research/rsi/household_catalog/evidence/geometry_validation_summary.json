@@ -1,0 +1,267 @@
+{
+  "collision_geometry_assets": 20,
+  "static_validation_physics_steps": 0,
+  "supported_side_patch_assets": 14,
+  "source_to_baked_vertex_error_m": 2.980189217627327e-08,
+  "core_tests_passed": 9,
+  "historical_proxy_only_stops_confirmed": 15,
+  "physical_probes": [
+    {
+      "asset_id": "box_white",
+      "round": "pilot_v5_baked",
+      "result": {
+        "asset_id": "box_white",
+        "success": false,
+        "transport_executed": false,
+        "training_performed": false,
+        "scope": "exploratory original-scale single-rigid-body side-grasp lift",
+        "mass_kg": 1.0,
+        "mass_source": "explicit common screening assumption; not measured",
+        "static_friction": 1.0,
+        "dynamic_friction": 0.9,
+        "hold_required_seconds": 3.0,
+        "minimum_lift_m": 0.15,
+        "geometry_audit": "same PhysX cooked convex union for native/planned finger queries; conservative body envelope",
+        "runtime_sha256": "ae92f6c4871f17d71ad0fc85cf8278851db6d75f7cff25ba29e24349735ad708",
+        "cooked_geometry_sha256": "db48c32aebde7ac9eda0a485ddd3b4222af0bc929aa6e8fdd1b741204f4b0af7",
+        "cooked_convex_hulls": 16,
+        "surface_grasp": {
+          "x_m": 0.0,
+          "height_m": 0.15556077212095262,
+          "center_y_m": 0.004295481175915619,
+          "half_width_m": 0.1623254695840043,
+          "left_surface_m": 0.16662095075991992,
+          "right_surface_m": -0.15802998840808868,
+          "patch_variation_m": 0.00019512200327431728,
+          "patch_radius_m": 0.008
+        },
+        "nominal_preload_m": 0.001,
+        "plan": {
+          "success": true,
+          "reason": "ARM_PLAN_READY",
+          "details": {
+            "mode": "grasp",
+            "waypoints": 8,
+            "retry_safe": true
+          }
+        },
+        "grasp_lift": {
+          "success": false,
+          "reason": "ARM_EXECUTION_FAILURE",
+          "details": {
+            "error": "PLANNED_NATIVE_FINGER_PENETRATION: {'minimum_noncontact_clearance_m': 0.07144225097217295, 'minimum_wall_clearance_m': 4.803468767310807, 'self_intersections': [], 'required_wall_clearance_m': 0.015, 'finger_clearance_geometry': 'same_PhysX_cooked_convex_union_v2', 'minimum_finger_gap_m': -0.0028149880451250335, 'finger_gaps_m': {'left_gripper_finger_link1': -0.0015615718152267176, 'left_gripper_finger_link2': -0.0015413373679456367, 'right_gripper_finger_link1': -0.002755165393180366, 'right_gripper_finger_link2': -0.0028149880451250335}}"
+          }
+        },
+        "reason": "GRASP_LIFT_FAILED: {'error': \"PLANNED_NATIVE_FINGER_PENETRATION: {'minimum_noncontact_clearance_m': 0.07144225097217295, 'minimum_wall_clearance_m': 4.803468767310807, 'self_intersections': [], 'required_wall_clearance_m': 0.015, 'finger_clearance_geometry': 'same_PhysX_cooked_convex_union_v2', 'minimum_finger_gap_m': -0.0028149880451250335, 'finger_gaps_m': {'left_gripper_finger_link1': -0.0015615718152267176, 'left_gripper_finger_link2': -0.0015413373679456367, 'right_gripper_finger_link1': -0.002755165393180366, 'right_gripper_finger_link2': -0.0028149880451250335}}\"}",
+        "physics_controls": 490,
+        "collision_audit": {
+          "method": "FCL conservative convex envelopes of visual meshes and original URDF collision geometry",
+          "finger_clearance_geometry": "same_PhysX_cooked_convex_union_v2",
+          "sampling_hz": 200.0,
+          "samples": 2000,
+          "noncontact_clearance_threshold_m": 0.005,
+          "finger_penetration_tolerance_m": 0.002,
+          "minimum_noncontact_clearance_m": 0.0731414834502028,
+          "maximum_finger_penetration_m": 0.0,
+          "maximum_finger_bbox_penetration_m": 0.004739289241718709,
+          "self_intersection_sample_count": 0,
+          "self_method": "nonadjacent visual triangle meshes; parent-child and siblings excluded",
+          "collision_guard_groups": "visual guards contact object and ground; original self-colliders remain enabled",
+          "continuous_time_guarantee": false,
+          "clock_schema_version": 1,
+          "physics_clock": {
+            "physics_dt": 0.005,
+            "control_dt": 0.02,
+            "control_start_index": 725,
+            "control_start_time": 3.624999918974936,
+            "end_index": 2685,
+            "end_time": 13.424999699927866
+          },
+          "passed": true,
+          "minimum_wall_clearance_m": 4.7719124014342436,
+          "wall_samples": 2000,
+          "required_wall_clearance_m": 0.005
+        }
+      },
+      "active_physics_vs_exported_collision_vertex_error_m": 0.0,
+      "target_check": "stricter full position norm reserve"
+    },
+    {
+      "asset_id": "box_reinforced",
+      "round": "pilot_v5_baked",
+      "result": {
+        "asset_id": "box_reinforced",
+        "success": false,
+        "transport_executed": false,
+        "training_performed": false,
+        "scope": "exploratory original-scale single-rigid-body side-grasp lift",
+        "mass_kg": 1.0,
+        "mass_source": "explicit common screening assumption; not measured",
+        "static_friction": 1.0,
+        "dynamic_friction": 0.9,
+        "hold_required_seconds": 3.0,
+        "minimum_lift_m": 0.15,
+        "geometry_audit": "same PhysX cooked convex union for native/planned finger queries; conservative body envelope",
+        "runtime_sha256": "ae92f6c4871f17d71ad0fc85cf8278851db6d75f7cff25ba29e24349735ad708",
+        "cooked_geometry_sha256": "18b23a5b105f39058531eee5a36707d8b338546dc0ea72af4ed4e2587388a21d",
+        "cooked_convex_hulls": 86,
+        "surface_grasp": {
+          "x_m": 0.0,
+          "height_m": 0.13199293464422224,
+          "center_y_m": 0.0006348654251315047,
+          "half_width_m": 0.11368625898222182,
+          "left_surface_m": 0.11432112440735331,
+          "right_surface_m": -0.1130513935570903,
+          "patch_variation_m": 0.00011510231652758773,
+          "patch_radius_m": 0.008
+        },
+        "nominal_preload_m": 0.001,
+        "legacy_size_whitelist_extended": true,
+        "plan": {
+          "success": true,
+          "reason": "EXTENDED_SIZE_PLAN_READY",
+          "details": {
+            "clearance": 0.09
+          }
+        },
+        "grasp_lift": {
+          "success": false,
+          "reason": "ARM_EXECUTION_FAILURE",
+          "details": {
+            "error": "GRASP_CONTACT_MISSING_BEFORE_LIFT"
+          }
+        },
+        "reason": "GRASP_LIFT_FAILED: {'error': 'GRASP_CONTACT_MISSING_BEFORE_LIFT'}",
+        "physics_controls": 450,
+        "collision_audit": {
+          "method": "FCL conservative convex envelopes of visual meshes and original URDF collision geometry",
+          "finger_clearance_geometry": "same_PhysX_cooked_convex_union_v2",
+          "sampling_hz": 200.0,
+          "samples": 1840,
+          "noncontact_clearance_threshold_m": 0.005,
+          "finger_penetration_tolerance_m": 0.002,
+          "minimum_noncontact_clearance_m": 0.06898546454656325,
+          "maximum_finger_penetration_m": 0.0,
+          "maximum_finger_bbox_penetration_m": 0.009133178133588674,
+          "self_intersection_sample_count": 0,
+          "self_method": "nonadjacent visual triangle meshes; parent-child and siblings excluded",
+          "collision_guard_groups": "visual guards contact object and ground; original self-colliders remain enabled",
+          "continuous_time_guarantee": false,
+          "clock_schema_version": 1,
+          "physics_clock": {
+            "physics_dt": 0.005,
+            "control_dt": 0.02,
+            "control_start_index": 725,
+            "control_start_time": 3.624999918974936,
+            "end_index": 2525,
+            "end_time": 12.62499971780926
+          },
+          "passed": true,
+          "minimum_wall_clearance_m": 4.779133420356357,
+          "wall_samples": 1840,
+          "required_wall_clearance_m": 0.005
+        }
+      },
+      "active_physics_vs_exported_collision_vertex_error_m": 1.1102569054260746e-16,
+      "target_check": "stricter full position norm reserve"
+    },
+    {
+      "asset_id": "bin_round_pedal",
+      "round": "pilot_v6_baked",
+      "result": {
+        "asset_id": "bin_round_pedal",
+        "success": false,
+        "transport_executed": false,
+        "training_performed": false,
+        "scope": "exploratory original-scale single-rigid-body side-grasp lift",
+        "mass_kg": 1.0,
+        "mass_source": "explicit common screening assumption; not measured",
+        "static_friction": 1.0,
+        "dynamic_friction": 0.9,
+        "hold_required_seconds": 3.0,
+        "minimum_lift_m": 0.15,
+        "geometry_audit": "same PhysX cooked convex union for native/planned finger queries; conservative body envelope",
+        "runtime_sha256": "ae92f6c4871f17d71ad0fc85cf8278851db6d75f7cff25ba29e24349735ad708",
+        "cooked_geometry_sha256": "427c65cfe4ac2605e6f44b86b13615cde94d6d2799efb738e13a3b744718e49e",
+        "cooked_convex_hulls": 110,
+        "surface_grasp": {
+          "x_m": 0.0,
+          "height_m": 0.26805605888366696,
+          "center_y_m": 0.019415102899074554,
+          "half_width_m": 0.11968443542718887,
+          "left_surface_m": 0.13909953832626343,
+          "right_surface_m": -0.10026933252811432,
+          "patch_variation_m": 0.0009628012776374817,
+          "patch_radius_m": 0.008
+        },
+        "nominal_preload_m": 0.001,
+        "legacy_size_whitelist_extended": true,
+        "plan": {
+          "success": false,
+          "reason": "NO_CERTIFIED_EXTENDED_SIZE_APPROACH",
+          "details": {
+            "rejected": [
+              {
+                "clearance": 0.13,
+                "error": "Bimanual waypoint unreachable within joint limits: [(0.00022364486135977412, 0.20423572337898668), (0.00013725258862634567, 0.1309847592736896)]"
+              },
+              {
+                "clearance": 0.11,
+                "error": "Bimanual waypoint unreachable within joint limits: [(0.00018777123445933074, 0.17086187803181876), (0.0001014899809884863, 0.09705736587184491)]"
+              },
+              {
+                "clearance": 0.09,
+                "error": "Bimanual waypoint unreachable within joint limits: [(0.00015190608678058006, 0.13740263759406082), (6.608097099311541e-05, 0.06295719121844653)]"
+              },
+              {
+                "clearance": 0.07,
+                "error": "NATIVE_SURFACE_GRASP_TARGET_INACCURATE: {'normal_errors_m': [-2.5569640277272683e-06, -0.0012077248675490355], 'tangential_errors_m': [3.0559993242579536e-05, 3.169116228653886e-05], 'normal_tolerance_m': 0.0003333333333333333, 'tangential_tolerance_m': 0.001, 'passed': False}"
+              },
+              {
+                "clearance": 0.05,
+                "error": "NATIVE_SURFACE_GRASP_TARGET_INACCURATE: {'normal_errors_m': [2.9509742995981385e-05, -0.0017566128088039108], 'tangential_errors_m': [9.198570154726544e-05, 0.00016112675858810958], 'normal_tolerance_m': 0.0003333333333333333, 'tangential_tolerance_m': 0.001, 'passed': False}"
+              }
+            ]
+          }
+        },
+        "reason": "PLAN_REJECTED: {'rejected': [{'clearance': 0.13, 'error': 'Bimanual waypoint unreachable within joint limits: [(0.00022364486135977412, 0.20423572337898668), (0.00013725258862634567, 0.1309847592736896)]'}, {'clearance': 0.11, 'error': 'Bimanual waypoint unreachable within joint limits: [(0.00018777123445933074, 0.17086187803181876), (0.0001014899809884863, 0.09705736587184491)]'}, {'clearance': 0.09, 'error': 'Bimanual waypoint unreachable within joint limits: [(0.00015190608678058006, 0.13740263759406082), (6.608097099311541e-05, 0.06295719121844653)]'}, {'clearance': 0.07, 'error': \"NATIVE_SURFACE_GRASP_TARGET_INACCURATE: {'normal_errors_m': [-2.5569640277272683e-06, -0.0012077248675490355], 'tangential_errors_m': [3.0559993242579536e-05, 3.169116228653886e-05], 'normal_tolerance_m': 0.0003333333333333333, 'tangential_tolerance_m': 0.001, 'passed': False}\"}, {'clearance': 0.05, 'error': \"NATIVE_SURFACE_GRASP_TARGET_INACCURATE: {'normal_errors_m': [2.9509742995981385e-05, -0.0017566128088039108], 'tangential_errors_m': [9.198570154726544e-05, 0.00016112675858810958], 'normal_tolerance_m': 0.0003333333333333333, 'tangential_tolerance_m': 0.001, 'passed': False}\"}]}",
+        "physics_controls": 0,
+        "collision_audit": {
+          "method": "FCL conservative convex envelopes of visual meshes and original URDF collision geometry",
+          "finger_clearance_geometry": "same_PhysX_cooked_convex_union_v2",
+          "sampling_hz": 200.0,
+          "samples": 40,
+          "noncontact_clearance_threshold_m": 0.005,
+          "finger_penetration_tolerance_m": 0.002,
+          "minimum_noncontact_clearance_m": 0.18425738168160824,
+          "maximum_finger_penetration_m": 0.0,
+          "maximum_finger_bbox_penetration_m": 0.0,
+          "self_intersection_sample_count": 0,
+          "self_method": "nonadjacent visual triangle meshes; parent-child and siblings excluded",
+          "collision_guard_groups": "visual guards contact object and ground; original self-colliders remain enabled",
+          "continuous_time_guarantee": false,
+          "clock_schema_version": 1,
+          "physics_clock": {
+            "physics_dt": 0.005,
+            "control_dt": 0.02,
+            "control_start_index": 725,
+            "control_start_time": 3.624999918974936,
+            "end_index": 725,
+            "end_time": 3.624999918974936
+          },
+          "passed": true,
+          "minimum_wall_clearance_m": 4.940402102960897,
+          "wall_samples": 40,
+          "required_wall_clearance_m": 0.005
+        }
+      },
+      "active_physics_vs_exported_collision_vertex_error_m": 0.0,
+      "target_check": "normal preload reserve plus 1mm tangential bound"
+    }
+  ],
+  "transport_executed": false,
+  "training_performed": false,
+  "scope": "stationary surface-side grasp and lift; not a full transport/place adapter",
+  "physical_probes_use_1kg_assumption": true,
+  "geometric_success_is_not_grasp_success": true
+}

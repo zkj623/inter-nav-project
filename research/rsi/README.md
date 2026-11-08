@@ -2,6 +2,10 @@
 
 本模块属于现有 `inter-nav-project`，但不改变默认导航任务。RSI 是研究/优化层，清障场景是 benchmark，机器人 policy 是底层物理能力；三者通过任务、`ctx.execute(...)`、Outcome 和 episode 数据连接，而不是将算法写死在某个仿真场景里。
 
+## 新增：20种现成家居物体
+
+[加载、几何验证和原地操作入口](household_catalog/README.md)支持所选20种GRScenes资产。需要外部模型包和已适配的R1 Lite资产；当前仅测试原地抓取/抬升，尚未通过新版稳定持物验证，不代表支持20种物体完整搬运。
+
 ## 目录与边界
 
 ```text
