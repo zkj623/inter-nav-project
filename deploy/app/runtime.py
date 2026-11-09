@@ -181,6 +181,12 @@ def run_live(args, config):
                     quitting = True
                     continue
                 controller.operate(key, value, snapshot, now)
+                if key in ('navigate', 'explore', 'r') and tasks.state == 'active':
+                    # Arming waits for the motion worker. Its acknowledgement
+                    # can arrive after this snapshot has expired. Start the
+                    # decision on the next pass with current sensors/time;
+                    # do not sleep or renew the pre-arm observation's lifetime.
+                    continue
             step_error = controller.step(snapshot, now)
             observation_error = observation_error or step_error
             current_error = sensors.last_error or observation_error

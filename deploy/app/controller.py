@@ -146,6 +146,18 @@ class NavigationController:
                               snapshot.lidar_at+self.robot['max_data_age_s'])
                 if exploring:
                     expires = min(expires, snapshot.camera_at+self.robot['max_data_age_s'])
+                dispatch_at = time.monotonic()
+                if expires <= dispatch_at:
+                    self.session.event('command_discarded', reason='decision_expired',
+                                       generated_at=now, expires_at=expires, discarded_at=dispatch_at,
+                                       velocity=velocity, decision_duration_s=decision_duration,
+                                       decision_stages_s=dict(self.tasks.last_timings),
+                                       remaining_valid_s=expires-dispatch_at,
+                                       pose_age_at_discard=dispatch_at-snapshot.pose_at,
+                                       lidar_age_at_discard=dispatch_at-snapshot.lidar_at,
+                                       delivery='not_queued')
+                    self.pause('decision_expired')
+                    return self.task_error
                 self.motion.submit(velocity, now, expires)
                 submitted_at = time.monotonic()
                 self.session.event('command_requested', generated_at=now, expires_at=expires,

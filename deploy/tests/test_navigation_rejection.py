@@ -1,5 +1,6 @@
 """Reject unsafe endpoints and expose real planner failure without robot I/O."""
 from dataclasses import replace
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -23,11 +24,13 @@ class TrackedMotion(Motion):
 
 
 @pytest.fixture
-def navigation(tmp_path):
+def navigation(tmp_path, monkeypatch):
+    from deploy.app import controller as module
     config = load()
     snapshot = next(snapshots(make_fixture(tmp_path)))
     tasks, motion, events = Tasks(config['navigation']), TrackedMotion(), Events()
     controller = NavigationController(config, tasks, motion, events)
+    monkeypatch.setattr(module, 'time', SimpleNamespace(monotonic=lambda: snapshot.captured_at))
     assert controller.step(snapshot, snapshot.captured_at) is None
     assert tasks.map_ready
     return controller, snapshot, events

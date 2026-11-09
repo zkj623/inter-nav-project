@@ -44,11 +44,13 @@ class Events:
 
 
 @pytest.fixture
-def control(tmp_path):
+def control(tmp_path, monkeypatch):
+    from deploy.app import controller as module
     config = load()
     snapshot = next(snapshots(make_fixture(tmp_path)))
     tasks, motion, events = Tasks(config['navigation']), Motion(), Events()
     controller = NavigationController(config, tasks, motion, events)
+    monkeypatch.setattr(module, 'time', SimpleNamespace(monotonic=lambda: snapshot.captured_at))
     controller.step(snapshot, snapshot.captured_at)  # Observe/map before entering a goal, as in the console.
     return controller, snapshot, events
 
@@ -124,16 +126,23 @@ def test_command_expires_with_oldest_required_observation(control):
     assert expires == pytest.approx(snapshot.lidar_at+controller.robot['max_data_age_s'])
 
 
-@pytest.mark.parametrize('decision_duration', [.25, .45])
-def test_decision_timing_does_not_extend_command_or_sensor_expiry(control, monkeypatch, decision_duration):
+@pytest.mark.parametrize('decision_duration,sensor_age', [(.25, 0.), (.35, 0.), (.45, 0.), (.15, .30)])
+def test_decision_timing_does_not_extend_command_or_sensor_expiry(
+        control, monkeypatch, decision_duration, sensor_age):
     from deploy.app import controller as module
     controller, snapshot, events = control
+    snapshot = replace(snapshot, pose_at=snapshot.captured_at-sensor_age,
+                       lidar_at=snapshot.captured_at-sensor_age)
     controller.operate('navigate', '1,0', snapshot, snapshot.captured_at)
     submitted_at = snapshot.captured_at + decision_duration + .01
-    ticks = iter([snapshot.captured_at, snapshot.captured_at + decision_duration, submitted_at])
+    ticks = iter([snapshot.captured_at, snapshot.captured_at + decision_duration,
+                  submitted_at, submitted_at])
     monkeypatch.setattr(module.time, 'monotonic', lambda: next(ticks))
     controller.step(snapshot, snapshot.captured_at)
-    command = next(e for e in events.items if e['event'] == 'command_requested')
+    expired = submitted_at >= min(snapshot.captured_at+controller.control['command_ttl_s'],
+                                  snapshot.lidar_at+controller.robot['max_data_age_s'])
+    kind = 'command_discarded' if expired else 'command_requested'
+    command = next(e for e in events.items if e['event'] == kind)
     assert command['decision_duration_s'] == pytest.approx(decision_duration)
     stages = command['decision_stages_s']
     assert all(stages[k] >= 0 for k in ('mapping_s', 'goal_check_s', 'evaluation_s', 'planning_tracking_s'))
@@ -141,13 +150,19 @@ def test_decision_timing_does_not_extend_command_or_sensor_expiry(control, monke
     assert command['generated_at'] == snapshot.captured_at
     assert command['expires_at'] <= snapshot.captured_at + controller.control['command_ttl_s']
     assert command['expires_at'] <= snapshot.lidar_at + controller.robot['max_data_age_s']
-    assert command['submitted_at'] == submitted_at
-    assert command['remaining_valid_s'] == pytest.approx(command['expires_at']-command['submitted_at'])
-    assert command['pose_age_at_submit'] == pytest.approx(command['submitted_at']-snapshot.pose_at)
-    assert command['lidar_age_at_submit'] == pytest.approx(command['submitted_at']-snapshot.lidar_at)
-    assert command['delivery'] == 'queued_not_execution_ack'
-    if decision_duration > controller.control['command_ttl_s']:
-        assert command['remaining_valid_s'] < 0  # Log overruns without renewing the old decision.
+    assert command['remaining_valid_s'] == pytest.approx(command['expires_at']-submitted_at)
+    if expired:
+        assert command['discarded_at'] == submitted_at and command['remaining_valid_s'] < 0
+        assert command['pose_age_at_discard'] == pytest.approx(submitted_at-snapshot.pose_at)
+        assert command['lidar_age_at_discard'] == pytest.approx(submitted_at-snapshot.lidar_at)
+        assert command['delivery'] == 'not_queued'
+        assert not controller.motion.commands and controller.tasks.state == 'paused'
+        assert controller.motion.stops == ['decision_expired']
+    else:
+        assert command['submitted_at'] == submitted_at
+        assert command['pose_age_at_submit'] == pytest.approx(submitted_at-snapshot.pose_at)
+        assert command['lidar_age_at_submit'] == pytest.approx(submitted_at-snapshot.lidar_at)
+        assert command['delivery'] == 'queued_not_execution_ack'
 
 
 def test_cancel_exploration_discards_pending_perception_and_old_target():
@@ -285,3 +300,64 @@ def test_immediate_worker_fault_after_arm_does_not_start_task(control):
     assert controller.tasks.state == 'paused'
     assert not controller.motion.commands
     assert controller.motion_error == 'telemetry lost'
+
+
+@pytest.mark.parametrize('fresh_after_arm', [True, False])
+def test_live_start_reacquires_sensors_after_slow_arm(tmp_path, monkeypatch, fresh_after_arm):
+    """A slow acknowledgement must neither reuse nor re-date pre-arm sensor data."""
+    from deploy.app import controller as controller_module, runtime, session, keyboard
+    from deploy.robot import sensors, motion
+
+    snapshot = next(snapshots(make_fixture(tmp_path)))
+    clock = [snapshot.captured_at]
+    fake_clock = SimpleNamespace(monotonic=lambda: clock[0],
+                                 sleep=lambda seconds: clock.__setitem__(0, clock[0]+seconds))
+    monkeypatch.setattr(runtime, 'time', fake_clock)
+    monkeypatch.setattr(controller_module, 'time', fake_clock)
+    config = load()
+    for key in ('calibration_verified', 'deskew_and_self_filter_verified',
+                'communication_verified', 'remote_arbitration_verified'):
+        config['robot'][key] = True  # In-memory fake motion only.
+    config['robot']['takeover_button_mask'] = 2
+    events = Events()
+    events.info, events.url = {'session_id': 'fake'}, 'fake-session'
+    events.frames = SimpleNamespace(error=lambda *args: None)
+    events.rgb = lambda *args: None
+    events.update = lambda *args, **kwargs: None
+    events.close = lambda summary: None
+    fake_motion = Motion()
+    fake_motion.close = lambda: []
+    original_arm = fake_motion.arm
+    pre_arm_stamp = []
+    def slow_arm():
+        pre_arm_stamp.append(clock[0]-.05)
+        clock[0] += .5
+        return original_arm()
+    fake_motion.arm = slow_arm
+    reads = []
+    def latest():
+        stamp = (pre_arm_stamp[0] if pre_arm_stamp and not fresh_after_arm else clock[0]-.05)
+        reads.append(stamp)
+        return replace(snapshot, captured_at=clock[0], pose_at=stamp, lidar_at=stamp,
+                       planning_frame='odom')
+    fake_sensors = SimpleNamespace(latest=latest, close=lambda: None, last_error=None)
+    operations = iter([None, ('navigate', '1,0'), None, ('q', None)])
+    monkeypatch.setattr(session, 'Session', lambda *args, **kwargs: events)
+    monkeypatch.setattr(motion, 'MotionProcess', lambda *args: fake_motion)
+    monkeypatch.setattr(sensors, 'RosSensors', lambda *args: fake_sensors)
+    monkeypatch.setattr(keyboard, 'Keyboard', lambda: SimpleNamespace(
+        poll=lambda: next(operations), editing=None, close=lambda: None))
+    args = SimpleNamespace(allow_motion=True, demo=False, session_port=0, camera='none', rgb_topic=None)
+
+    assert runtime.run_live(args, config) == 0
+
+    assert len(reads) == 4 and len(pre_arm_stamp) == 1
+    if fresh_after_arm:
+        assert len(fake_motion.commands) == 1
+        _, generated, expires = fake_motion.commands[0]
+        assert generated > pre_arm_stamp[0]+.5
+        assert generated < expires <= reads[2]+config['robot']['max_data_age_s']
+        assert not fake_motion.stops
+    else:
+        assert not fake_motion.commands
+        assert len(fake_motion.stops) == 1 and 'stale' in fake_motion.stops[0]

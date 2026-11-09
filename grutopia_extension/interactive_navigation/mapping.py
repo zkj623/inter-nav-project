@@ -7,6 +7,8 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 
+from .lidar_raycast import clearing_endpoints, ray_cells
+
 Vector3 = Tuple[float, float, float]
 GridCell = Tuple[int, int]
 
@@ -360,8 +362,8 @@ class OccupancyGridMap:
         stay unknown. Optional multi-height mode retains every valid obstacle
         endpoint, keeps vertical channels separate, and requires recent free
         evidence from every configured layer for each free update. Optional
-        measured-height evidence instead separates projected ground coverage
-        from obstacle support at the actual hit/ray heights.
+        measured-height evidence instead traverses actual 3D segments, keeping
+        projected ground coverage separate from support at each hit height.
         """
 
         self._lidar_frame += 1
@@ -390,6 +392,9 @@ class OccupancyGridMap:
             & (points[:, 2] >= min_height)
             & (points[:, 2] <= max_height)
         )
+        if self._height_evidence is not None:
+            self._update_height_lidar(origin_array, points[valid], in_band[valid])
+            return
         # A single free-height layer selects the simpler projected-2D-scan
         # behavior: one nearest in-band return per azimuth. With multiple
         # layers, keep vertical LiDAR channels separate so each layer has its
@@ -401,8 +406,7 @@ class OccupancyGridMap:
             / (2.0 * np.pi)
             * scan_bins
         ).astype(int) % scan_bins
-        measured_heights = self._height_evidence is not None
-        if self.config.lidar_free_height_layers > 1 or measured_heights:
+        if self.config.lidar_free_height_layers > 1:
             elevations = np.rad2deg(np.arctan2(deltas[:, 2], horizontal))
             elevation_bins = np.rint(elevations / 5.0).astype(int)
         else:
@@ -434,7 +438,7 @@ class OccupancyGridMap:
         # channel must not hide valid free-space rays in another channel.
         nearest_obstacle: Dict[Tuple[int, int], int] = {}
         clearing_endpoint: Dict[Tuple[int, int], int] = {}
-        boundary = min if self._lidar_free_height_seen is not None or measured_heights else max
+        boundary = min if self._lidar_free_height_seen is not None else max
         for key, indices in ray_groups.items():
             nearest = [index for index in indices if in_band[index]]
             if nearest:
@@ -443,8 +447,7 @@ class OccupancyGridMap:
 
         frame_free = set()
         frame_occupied = set()
-        height_hits, height_free = set(), set()
-        if self._lidar_free_height_seen is not None or measured_heights:
+        if self._lidar_free_height_seen is not None:
             # A measured hit is evidence even when another height/range in
             # this angular bin supplies the conservative clearing ray.
             # Ray sampling limits free-space work, never drops real hits.
@@ -452,13 +455,11 @@ class OccupancyGridMap:
                 cell = self.world_to_cell(points[index, :2])
                 if cell is not None:
                     frame_occupied.add(cell)
-                    if measured_heights:
-                        height_hits.add((self._height_bin(points[index, 2]), *cell))
         frame_free_layers = (
             [set() for _ in range(self.config.lidar_free_height_layers)]
             if self._lidar_free_height_seen is not None else None
         )
-        if frame_free_layers is not None or measured_heights:
+        if frame_free_layers is not None:
             selected = (
                 (index if in_band[index] else None, index)
                 for index in clearing_endpoint.values()
@@ -485,22 +486,13 @@ class OccupancyGridMap:
             else:
                 free_cells = ray[:-1]
                 frame_occupied.add(ray[-1])
-            if frame_free_layers is None and not measured_heights:
+            if frame_free_layers is None:
                 frame_free.update(free_cells)
-            if frame_free_layers is not None or measured_heights:
+            if frame_free_layers is not None:
                 for ray_index, cell in enumerate(free_cells):
                     fraction = ray_index / max(1, len(ray) - 1)
                     ray_height = origin_array[2] + fraction * (endpoint[2] - origin_array[2])
-                    # A return above the navigation envelope may still be
-                    # displayed, but its overhead ray cannot certify a route
-                    # underneath. Measured ground/low rays can observe free
-                    # floor without requiring clearance of unused upper layers.
-                    if measured_heights and self.config.point_height[0] <= ray_height <= max_height:
-                        frame_free.add(cell)
                     if ray_height < min_height or ray_height > max_height:
-                        continue
-                    if measured_heights:
-                        height_free.add((self._height_bin(ray_height), *cell))
                         continue
                     layer = min(
                         int((ray_height - min_height) / (max_height - min_height)
@@ -523,30 +515,73 @@ class OccupancyGridMap:
             }
 
         # Rays in one frame are correlated observations, not independent
-        # evidence. Count each cell once; endpoint hits take precedence at
-        # their own height, while other heights can clear independently.
-        # The planar baseline still gives whole-cell hits precedence.
-        if measured_heights:
-            for key in height_free - height_hits:
-                self._add_height(key, -self.config.free_update)
-            for key in height_hits:
-                self._add_height(key, self.config.occupied_update)
+        # evidence. Count each cell once; a whole-cell hit takes precedence.
         for cell in frame_free - frame_occupied:
-            self._add(cell, -self.config.free_update, project=not measured_heights)
+            self._add(cell, -self.config.free_update)
             if self._lidar_free_height_seen is not None:
                 self._lidar_free_height_seen[:, cell[0], cell[1]] = 0
         for cell in frame_occupied:
-            if measured_heights:
-                self.observed[cell] = True
-            else:
-                self._add(cell, self.config.occupied_update)
-        if measured_heights:
-            self._project_height_cells(frame_free | frame_occupied)
+            self._add(cell, self.config.occupied_update)
 
         # The sensor origin is not the base/footprint center. The runtime
         # clears the actual robot footprint separately; clearing a robot-size
         # disk here would erase nearby furniture in front of an offset lidar.
         if frame_free or frame_occupied:
+            self.revision += 1
+
+    def _update_height_lidar(self, origin, points, in_band):
+        """Keep measured hits; clear only actual 3D ray/cell intersections.
+
+        Height evidence remains separate from planar observed/free coverage.
+        No unseen column is cleared and no evidence decays merely with time.
+        Batched array updates count each cell once per scan, including hits.
+        """
+        if not len(points):
+            return
+        config = self.config
+        levels, height, width = self._height_evidence.shape
+        plane_size = height*width
+        grid_origin = np.array([config.x_limits[0], config.y_limits[0], config.obstacle_height[0]])
+        cell_size = np.array([config.grid_resolution, config.grid_resolution, config.lidar_height_resolution])
+        hit_cells = np.floor((points[in_band]-grid_origin)/cell_size).astype(np.int64)
+        hit_cells = hit_cells[(hit_cells[:, 0] >= 0) & (hit_cells[:, 0] < width)
+                              & (hit_cells[:, 1] >= 0) & (hit_cells[:, 1] < height)]
+        # The inclusive height upper bound can coincide with the last grid face.
+        hit_cells[:, 2] = np.minimum(hit_cells[:, 2], levels-1)
+        hits = np.unique(hit_cells[:, 2]*plane_size + hit_cells[:, 1]*width + hit_cells[:, 0])
+        hit_xy = np.unique(hits % plane_size)
+
+        endpoints = clearing_endpoints(origin, points, config.max_lidar_rays, self._lidar_frame-1)
+        if not config.allow_lidar_free_only_rays:
+            endpoints = endpoints[(endpoints[:, 2] >= config.obstacle_height[0])
+                                  & (endpoints[:, 2] <= config.obstacle_height[1])]
+        cells = ray_cells(origin, endpoints, grid_origin, cell_size,
+                          [*grid_origin[:2], min(config.point_height[0], config.obstacle_height[0])],
+                          [config.x_limits[1], config.y_limits[1], config.obstacle_height[1]])
+        inside = ((cells[:, 0] >= 0) & (cells[:, 0] < width)
+                  & (cells[:, 1] >= 0) & (cells[:, 1] < height))
+        cells = cells[inside]
+        free_xy = np.unique(cells[:, 1]*width + cells[:, 0])
+        cells = cells[(cells[:, 2] >= 0) & (cells[:, 2] < levels)]
+        clear = np.unique(cells[:, 2]*plane_size + cells[:, 1]*width + cells[:, 0])
+        clear = np.setdiff1d(clear, hits, assume_unique=True)
+        static = self.static_occupied.ravel()
+        clear = clear[~static[clear % plane_size]]
+        evidence = self._height_evidence.ravel()
+        scale = np.where(evidence[clear] >= config.sticky_occupied_threshold, config.sticky_free_scale, 1.)
+        evidence[clear] = np.maximum(0., evidence[clear] - config.free_update*scale)
+        evidence[hits] = np.minimum(4., evidence[hits] + config.occupied_update)
+
+        planar_clear = np.setdiff1d(free_xy, hit_xy, assume_unique=True)
+        planar_clear = planar_clear[~static[planar_clear]]
+        base = self._column_evidence.ravel()
+        scale = np.where(base[planar_clear] >= config.sticky_occupied_threshold, config.sticky_free_scale, 1.)
+        base[planar_clear] = np.maximum(-4., base[planar_clear] - config.free_update*scale)
+        changed = np.union1d(free_xy, hit_xy)
+        if len(changed):
+            support = self._height_evidence.reshape(levels, -1)[:, changed].max(axis=0)
+            self.log_odds.ravel()[changed] = np.where(support > 0, np.maximum(base[changed], support), base[changed])
+            self.observed.ravel()[changed] = True
             self.revision += 1
 
 
@@ -766,15 +801,7 @@ class OccupancyGridMap:
         base = self._column_evidence[cell]
         self.log_odds[cell] = max(base, supported) if supported > 0 else base
 
-    def _project_height_cells(self, cells):
-        if not cells:
-            return
-        rows, cols = np.asarray(tuple(cells), dtype=int).T
-        supported = self._height_evidence[:, rows, cols].max(axis=0)
-        base = self._column_evidence[rows, cols]
-        self.log_odds[rows, cols] = np.where(supported > 0, np.maximum(base, supported), base)
-
-    def _add(self, cell: GridCell, value: float, *, project=True):
+    def _add(self, cell: GridCell, value: float):
         if not self.in_bounds(cell):
             return
         if value < 0 and self.static_occupied[cell]:
@@ -787,7 +814,7 @@ class OccupancyGridMap:
         # Avoid NumPy's array-dispatch overhead without changing the evidence.
         updated = self._column_evidence[cell] + value
         self._column_evidence[cell] = -4.0 if updated < -4.0 else 4.0 if updated > 4.0 else updated
-        if self._height_evidence is not None and project:
+        if self._height_evidence is not None:
             self._project_height(cell)
         self.observed[cell] = True
 
