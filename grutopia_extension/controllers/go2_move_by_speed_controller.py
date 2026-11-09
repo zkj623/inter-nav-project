@@ -24,7 +24,9 @@ class Go2MoveBySpeedController(BaseController):
         super().__init__(config=config, robot=robot, scene=scene)
         # Direct-speed and path controllers operate the same physical robot.
         # Share the low-level history, previous action and inference clock.
-        contract = (config.policy_weights_path, tuple(config.joint_names), config.ground_height)
+        actuator_mode=getattr(config,'actuator_mode','implicit_pd')
+        stationary_joint_hold=getattr(config,'stationary_joint_hold',False)
+        contract = (config.policy_weights_path, tuple(config.joint_names), config.ground_height,actuator_mode,stationary_joint_hold)
         existing = getattr(robot, '_go2_locomotion_control', None)
         if existing is None:
             robot._go2_locomotion_control = Go2RSLControl(
@@ -32,6 +34,8 @@ class Go2MoveBySpeedController(BaseController):
                 self.robot.isaac_robot,
                 config.joint_names,
                 ground_height=config.ground_height,
+                actuator_mode=actuator_mode,
+                stationary_joint_hold=stationary_joint_hold,
             )
             robot._go2_locomotion_contract = contract
             control = robot._go2_locomotion_control

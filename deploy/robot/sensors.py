@@ -207,14 +207,17 @@ class RosSensors:
         parent_p, parent_q = self._tf(message.header.frame_id, message.header.stamp)
         p, q = transform(p, parent_p, parent_q), multiply(parent_q, q)
         v = message.twist.twist
-        velocity = (v.linear.x, v.linear.y, v.angular.z)
-        if not np.isfinite(velocity).all():
+        linear = (v.linear.x, v.linear.y, v.linear.z)
+        angular = (v.angular.x, v.angular.y, v.angular.z)
+        velocity = (linear[0], linear[1], angular[2])
+        if not np.isfinite((*linear, *angular)).all():
             raise ValueError('Invalid odometry velocity')
         self.continuity.check(p, q)
         with self.lock:
             self.pose_history.add(seq, p, q)
             self.last_stamps['pose'] = seq
             self.pose = (seq, received, p, q, velocity)
+            self.body_twist = (linear, angular)
 
     def _lidar(self, message):
         seq, received = self._stamp(message)
@@ -282,7 +285,11 @@ class RosSensors:
             camera_at = None
             if self.camera is not None:
                 camera_at, sensors['camera'] = self.camera
-            observation = normalize({'position': p, 'orientation': q, 'sensors': sensors}, self.config['ground_z'] if calibrated else 0.)
+            raw = {'position': p, 'orientation': q, 'sensors': sensors}
+            twist = getattr(self, 'body_twist', None)
+            if twist is not None:
+                raw.update(body_linear_velocity=twist[0], body_angular_velocity=twist[1])
+            observation = normalize(raw, self.config['ground_z'] if calibrated else 0.)
         self.sequence += 1
         return Snapshot(observation, time.monotonic(), pose_at, lidar_at, camera_at, velocity, self.sequence,
                         geometry_calibrated=calibrated, planning_frame=self.config['map_frame'])

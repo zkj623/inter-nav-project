@@ -25,15 +25,30 @@ def load(directory=None):
         elif isinstance(value, float) and not math.isfinite(value):
             raise ValueError(f'{path}: non-finite number')
     validate(result)
+    from dataclasses import fields
+    from grutopia_extension.interactive_navigation.mapping import MappingConfig
+    unknown = set(result['navigation']['mapping']) - {f.name for f in fields(MappingConfig)}
+    retired = set(result['navigation']) & {'direct_path_tracking_margin', 'visual_observation_budget_s',
+        'frontier_selection_s', 'frontier_progress_timeout_s', 'frontier_goal_timeout_s',
+        'frontier_scan_timeout_s', 'fresh_target_observations', 'topology_interval_s'}
+    if unknown or retired or 'topology_scorer' in result['runtime']:
+        raise ValueError('Retired deploy configuration; migrate from deploy/configs: ' +
+                         ', '.join(sorted(unknown | retired | ({'topology_scorer'} if 'topology_scorer' in result['runtime'] else set()))))
     positive = {
         'robot': ('max_data_age_s', 'image_sync_tolerance_s', 'lidar_max_range',
                   'max_position_jump_m', 'max_orientation_jump_rad', 'pose_cloud_tolerance_s'),
         'navigation': ('tick_hz', 'task_timeout_s', 'max_forward_speed', 'max_lateral_speed',
-                       'success_distance', 'final_goal_slow_radius', 'safe_base_height', 'fall_height'),
+                       'success_distance', 'final_goal_slow_radius', 'safe_base_height', 'fall_height',
+                       'max_yaw_speed', 'route_clearance', 'navigation_half_width', 'local_map_hz', 'global_map_hz',
+                       'local_map_radius', 'object_max_age_s', 'recognition_max_age_s', 'push_start_speed',
+                       'push_max_speed', 'subnavigation_timeout_s', 'inspection_timeout_s',
+                       'linear_acceleration', 'yaw_acceleration'),
     }
     for group, keys in positive.items():
         for key in keys:
-            if float(result[group][key]) <= 0:
+            if key not in result[group]:
+                raise ValueError(f'Missing {group}.{key}; migrate from deploy/configs')
+            if type(result[group][key]) not in (int, float) or float(result[group][key]) <= 0:
                 raise ValueError(f'{group}.{key} must be positive')
     for key, value in result['runtime']['control'].items():
         if not isinstance(value, (int, float)) or value <= 0:
@@ -41,20 +56,18 @@ def load(directory=None):
     control = result['runtime']['control']
     if not 0 < control['max_tilt_degrees'] < 90 or control['stop_settle_s'] >= control['stop_timeout_s']:
         raise ValueError('Invalid tilt limit or stopping time configuration')
-    for group, keys in {'perception': ('request_timeout', 'qwen_vl_timeout', 'result_max_age_s', 'failure_timeout_s'),
-                        'topology_scorer': ('timeout_s', 'max_age_s')}.items():
-        for key in keys:
-            value = result['runtime'][group][key]
-            if type(value) not in (int, float) or value <= 0:
-                raise ValueError(f'{group}.{key} must be positive')
-    if result['navigation']['fresh_target_observations'] < 1:
-        raise ValueError('fresh_target_observations must be positive')
+    for key in ('request_timeout', 'qwen_vl_timeout', 'result_max_age_s', 'geometry_max_age_s', 'input_max_age_s'):
+        if key not in result['runtime']['perception']:
+            raise ValueError(f'Missing perception.{key}; migrate from deploy/configs')
+        value = result['runtime']['perception'][key]
+        if type(value) not in (int, float) or value <= 0:
+            raise ValueError(f'perception.{key} must be positive')
+    if type(result['navigation']['interaction_enabled']) is not bool:
+        raise ValueError('navigation.interaction_enabled must be boolean')
+    if type(result['runtime']['perception']['geometry_verified']) is not bool:
+        raise ValueError('perception.geometry_verified must be boolean')
     if result['robot']['map_frame'] == result['robot']['base_frame']:
         raise ValueError('map_frame and base_frame must differ')
-    for key in ('topology_interval_s', 'frontier_selection_s', 'frontier_progress_timeout_s',
-                'frontier_goal_timeout_s', 'frontier_scan_timeout_s', 'visual_observation_budget_s'):
-        if result['navigation'][key] <= 0:
-            raise ValueError(f'navigation.{key} must be positive')
     robot = result['robot']
     if robot['camera_mode'] not in ('unavailable', 'rgbd'):
         raise ValueError('camera_mode must be unavailable or rgbd')
@@ -72,6 +85,20 @@ def load(directory=None):
         if (not isinstance(codes, list) or not codes
                 or not all(type(code) is int and 0 <= code <= 0xffffffff for code in codes)):
             raise ValueError('sport_state_motion_codes must be a nonempty list of reviewed uint32 state values')
+    nav, control = result['navigation'], result['runtime']['control']
+    if nav['max_forward_speed'] > control['max_vx'] or nav['max_lateral_speed'] > control['max_vy'] or nav['max_yaw_speed'] > control['max_wz']:
+        raise ValueError('Navigation velocity limits exceed SDK control limits')
+    if nav['linear_acceleration'] > control['acceleration'] or nav['yaw_acceleration'] > control['angular_acceleration']:
+        raise ValueError('Navigation acceleration limits exceed SDK control limits')
+    if nav['global_map_hz'] > nav['local_map_hz'] or nav['local_map_hz'] > nav['tick_hz']:
+        raise ValueError('Map rates must satisfy global_map_hz <= local_map_hz <= tick_hz')
+    if nav['success_distance'] > .25 or nav['push_start_speed'] > nav['push_max_speed']:
+        raise ValueError('Invalid goal tolerance or push speed range')
+    if nav['interaction_enabled']:
+        if robot['camera_mode'] != 'rgbd' or result['runtime']['perception']['geometry_verified'] is not True:
+            raise ValueError('Interaction requires RGB-D and verified complete object geometry')
+        if robot.get('interaction_motion_verified') is not True:
+            raise ValueError('Interaction requires separate SDK contact-motion acceptance')
     return result
 
 
@@ -100,8 +127,6 @@ def check_motion_configuration(config):
     check_control_configuration(config)
 
 
-def check_task_inputs(robot, snapshot, exploring=False):
+def check_task_inputs(robot, snapshot):
     if not snapshot.geometry_calibrated:
         raise ValueError('尚未测量 ground_z / lidar_origin_offset_base_m：当前仅记录原始观测，不建导航地图')
-    if exploring and robot['camera_mode'] != 'rgbd':
-        raise ValueError('语义找物未就绪：前置视频不是 RGB-D；需要对齐深度、内参和相机外参')

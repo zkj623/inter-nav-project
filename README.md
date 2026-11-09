@@ -1,197 +1,114 @@
-# inter-nav-project
+# stage1-go2-simulation-release 在线建图与推箱导航交付
 
-Go2 open-vocabulary semantic exploration on an unknown occupancy map. This
-repository is a self-contained slice of the InternUtopia / GRUtopia stack:
-Isaac Sim runtime, Unitree Go2 locomotion, RGB-D/LiDAR mapping, and semantic
-Voronoi exploration.
+本分支交付同一 MV7 场景的 T01–T10 固定任务：从空地图利用真实 LiDAR 建图，完成普通导航或侧推箱体、重新扫描、穿越并在目标处停稳。任务完成即通过；不设置耗时门槛。路径曲折度全部 >1.3，初始杂乱度 38.195603% >20%。
 
-The default demo places Go2 in a GRScenes home. It explores until it matches
-a text target such as `refrigerator` and walks up to the scanned object.
+## 交付内容与代码范围
 
-## Environment setup
+- `grutopia/demo/go2_online_interactive_navigation.py`、`go2_side_clearance_navigation.py`：任务入口。
+- `grutopia_extension/interactive_navigation/`、Go2 控制器/机器人/传感器：导航与交互逻辑。
+- `grutopia/core/` 及注册模块：运行所需框架依赖，保留其公共配置、语义模块接口和测试；并非只有一个独立导航脚本。
+- `reproduction/`：面向新机器的资产准备、启动、结果检查入口。
+- `delivery/`：模型权重、固定输入、机器人资产、文档和原始验收证据。
+- `tests/`：相关算法、控制器、框架回归测试。历史训练和诊断入口不作为交付运行入口。
 
-On this lab server, `embodied` members should clone the repo and use the
-shared conda / weights / scenes:
+Git 历史用于追溯，当前分支根目录 README 是新部署入口。历史证据中的绝对路径是来源记录；下面的新复现入口不依赖原服务器实验目录。
 
-[docs/en/get_started/lab-shared-environment.md](docs/en/get_started/lab-shared-environment.md)
+## 1. 新机器环境
 
-On any other machine, install Isaac Sim 4.2, the two conda environments,
-scene/robot assets, and perception services by following
-[docs/en/get_started/environment-setup.md](docs/en/get_started/environment-setup.md).
+**从零安装请先阅读 [新机器安装与资产下载指南](reproduction/INSTALL.md)**，包含系统工具、驱动检查、Miniconda、依赖安装、各项资产来源、固定版本下载、解压目录定位和完整性校验。下面保留主要执行命令。
 
-## Run Go2 navigation
+验证基准为 Ubuntu 22.04 x86_64。使用 Python **3.10**、Isaac Sim **4.2.0.2**、PyTorch **2.5.1**。不要直接替换成最新 Isaac Sim。准备 NVIDIA RTX GPU（至少 14 GiB 空闲显存，建议 24 GiB 显卡）、至少 56 GiB 空闲主机内存。任务串行执行，单任务 24 GiB 内存上限、禁止 swap。系统需支持 cgroup v2 与 `systemd-run --user`。
 
-On this lab server, after `source /data20t/embodied/share/inter-nav/env.sh`:
+场景原始数据由上游以分卷压缩包发布，下载约 51 GB；连同解压、仿真环境和复制资产，建议预留至少 200 GB 磁盘。网络需能访问 NVIDIA Python 索引和 Hugging Face。
 
 ```bash
-$ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
-  --gpu 0 \
-  --perception-gpu 1 \
-  --qwen-device cuda:2 \
-  --target refrigerator
-```
-
-Do not set `CUDA_VISIBLE_DEVICES`. Use `$ISAAC_PYTHON`, not `python`.
-
-On any other machine, from the repo root in the Isaac env:
-
-```bash
+sudo apt-get update
+sudo apt-get install -y ffmpeg p7zip-full libglib2.0-0 libsm6 libxext6 libxrender1 libegl1 libgl1 libgomp1
+git clone --branch stage1-go2-simulation-release --single-branch \
+  https://github.com/zkj623/inter-nav-project.git
+cd inter-nav-project
+conda create -n go2-simulation python=3.10 -y
+conda activate go2-simulation
+python -m pip install 'isaacsim==4.2.0.2' \
+  'isaacsim-extscache-physics==4.2.0.2' 'isaacsim-extscache-kit==4.2.0.2' \
+  'isaacsim-extscache-kit-sdk==4.2.0.2' --extra-index-url https://pypi.nvidia.com
+python -m pip install -r reproduction/requirements.txt
+python -m pip install --no-deps -e .
+export ISAAC_PYTHON="$(command -v python)"
 export PYTHONPATH="$PWD"
-export QWEN3_PYTHON=/path/to/miniconda3/envs/semexp/bin/python
-
-python grutopia/demo/go2_semantic_exploration.py \
-  --gpu 0 \
-  --perception-gpu 1 \
-  --qwen-device cuda:2 \
-  --target refrigerator
+# 在按 NVIDIA 提示阅读并接受 Isaac Sim 许可后配置其运行环境。
+# 安装系统工具：ffmpeg、p7zip-full；验证 nvidia-smi 和 systemd-run --user 可用。
 ```
 
-`--gpu` is Isaac Sim, `--perception-gpu` selects CLIP in the legacy classifier mode, and `--qwen-device` is the
-Qwen3-8B worker. Pick free GPUs on your machine. Change `--target` to
-`chair` or `plant` if you want a different object.
+Isaac Sim 安装遵循 [NVIDIA 官方文档](https://docs.isaacsim.omniverse.nvidia.com/latest/installation/install_python.html)，这里的锁定版本用于保持旧 API 与物理行为。语义视觉识别/训练不在本次复现流程内，不需要另外部署 Qwen 服务。
 
-## Detection modes
+## 2. 下载并准备场景资产
 
-`--detection-mode` selects which perception source feeds the semantic scene
-graph. All three modes run the same mapping, Voronoi exploration, planning, and
-locomotion stack; only the origin of the object detections changes.
-
-| Command | Detections | Use it for |
-| --- | --- | --- |
-| `--detection-mode isaac` | Isaac Sim semantic boxes only (ground truth) | Geometry and planner debugging, an oracle upper bound on target recall, runs without any VLM service |
-| `--detection-mode open_vocab` | GroundingDINO + MobileSAM + Qwen-VL (default) | Measuring what the robot actually perceives, with no ground-truth leakage |
-| `--detection-mode hybrid` | Both, fused per object | The full open-vocabulary exploration method |
-
-**1. Isaac ground truth only** — one GPU, no GroundingDINO, no MobileSAM, no Qwen:
+机器人 USD、本次箱体场景覆盖层和 policy 随分支交付。大场景采用上游 [GRScenes](https://huggingface.co/datasets/InternRobotics/GRScenes)，固定版本 `4760b9031881c985e3582075cb2d8dbde1530a68`。数据许可为 **CC BY-NC-SA 4.0**，使用和分享需遵守其非商业、署名与相同方式共享条件。机器人资产来自 Unitree/IsaacLab，保留其上游许可约束。
 
 ```bash
-$ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
-  --gpu 0 \
-  --detection-mode isaac \
-  --no-qwen \
-  --target refrigerator
+python reproduction/download_dataset.py --download-dir "$HOME/go2-data-download"
+# 查看解压结果，找到同时包含 models/、Materials/、scenes/ 的 home_scenes 目录。
+# 此处为示例路径；实际层级定位方法见 reproduction/INSTALL.md 第 5 节。
+export GO2_DATASET_HOME="$HOME/go2-data-download/extracted/home_scenes"
+python reproduction/prepare_assets.py \
+  --dataset-home "$GO2_DATASET_HOME" --output "$HOME/go2-simulation-assets"
 ```
 
-**2. Open vocabulary only** — requires DINO, SAM, and the Qwen-VL HTTP service:
+`GO2_DATASET_HOME` 应指向实际解压层级，不能把 `scenes/MV7...` 子目录当作根目录。准备程序检查 1680 个依赖文件的原始 SHA256；任一缺失或不一致会停止。随后复制必要依赖、恢复相对引用、改写服务器绝对引用，检查全部 1107 个 USD 层与 6252 个资产依赖均位于新的输出目录。输出目录必须不存在，原始数据不会被修改。`OmniPBR.mdl` 属于 Isaac 自带材质库。
 
-Start the services in two separate terminals (replace `cuda:1` with the
-perception GPU you selected):
+## 3. 检查安装与代码回归
 
 ```bash
-$QWEN3_PYTHON grutopia/demo/serve_semantic_perception.py grounding-dino \
-  --host 127.0.0.1 --port 12181 --device cuda:1
+python delivery/verify_delivery.py
+QWEN3_WORKER_LOG="$PWD/.qwen-worker-test.log" PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q -rs tests/ \
+  --deselect=tests/test_interaction_navigation_camera.py::ThirdPersonCameraPlacementTest::test_g1_third_person_is_close_and_elevated
 ```
+
+G1 摄像机用例不属于本 Go2 交付范围。若当前测试类名与上述不同，使用 `--collect-only` 核对后指定节点；历史测试结果不能替代本机的真实输出。
+
+## 4. 执行任务
+
+先验证普通导航 T01，再验证包含推箱的 T10。每次必须使用新的输出目录：
 
 ```bash
-$QWEN3_PYTHON grutopia/demo/serve_semantic_perception.py mobile-sam \
-  --host 127.0.0.1 --port 12183 --device cuda:1 \
-  --mobile-sam-checkpoint grutopia/assets/models/mobile_sam.pt
+python reproduction/run_task.py --assets "$HOME/go2-simulation-assets" \
+  --output "$HOME/go2-runs/T01-first" --task T01 --gpu 0
+python reproduction/run_task.py --assets "$HOME/go2-simulation-assets" \
+  --output "$HOME/go2-runs/T10-first" --task T10 --gpu 0
 ```
 
-Start Qwen-VL in an independent environment with local weights (see
-[Qwen-VL setup and integration notes](grutopia/demo/QWEN_VL_SEMANTICS.md)):
+`--gpu` 指 `nvidia-smi` 的设备编号；不要设置 `CUDA_VISIBLE_DEVICES`。程序等待主机内存/显存条件连续满足60秒后启动；全机使用 `/tmp/go2-simulation-reproduction.lock` 串行锁。输出目录中的 `run.log` 为实时仿真日志。需要五路录像时添加 `--record-video`，综合视频输出在 `<output>/<task>/video/combined.mp4`。
+
+全部十项按顺序复现：
 
 ```bash
-$QWEN_VL_PYTHON grutopia/demo/serve_semantic_perception.py qwen-vl \
-  --qwen-vl-model "$QWEN_VL_MODEL" --device cuda:3 --port 12185
+for task in T01 T02 T03 T04 T05 T06 T07 T08 T09 T10; do
+  python reproduction/run_task.py --assets "$HOME/go2-simulation-assets" \
+    --output "$HOME/go2-runs/${task}-full" --task "$task" --gpu 0 || break
+done
 ```
 
-Verify all three endpoints before starting Isaac:
+入口复制该任务原始输入到新输出目录，仅修改场景所在路径；机器人比例、policy、地图频率、物理/驱动与 stage1-go2-simulation-release 参数保持一致。输入守卫禁止把离线评估图提供给导航器。
 
-```bash
-curl -fsS http://127.0.0.1:12181/health
-curl -fsS http://127.0.0.1:12183/health
-curl -fsS http://127.0.0.1:12185/health
-```
+## 5. 结果判定与验证范围
 
-```bash
-$ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
-  --gpu 0 \
-  --perception-gpu 1 \
-  --qwen-device cuda:2 \
-  --detection-mode open_vocab \
-  --target refrigerator
-```
+自动生成 `reproduction-check.json`：`passed=true` 表示任务成功到达、误差≤0.5m、实测停稳、倾角/启动/健康检查和在线输入守卫通过；交互项还要求技能成功和实际箱体移动>0.25m。原始结果为 `<task>/result.json`，完整轨迹、事件和物理接触日志一并保存。耗时仅记录，不设合格门槛。
 
-**3. Hybrid** — ground-truth labels fused with open-vocabulary detections
-(choose this mode explicitly):
+历史 stage1-go2-simulation-release 十项均通过完整功能审计；包括真实接触、新扫描与整机穿越，详见 `delivery/evidence/`。新入口的自动结果检查范围以其代码和报告明确列出的检查为准，不能将历史审计冒充新机器的审计。跨 GPU/驱动版本不能承诺位级一致或完全相同耗时。
 
-```bash
-$ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
-  --gpu 0 \
-  --perception-gpu 1 \
-  --qwen-device cuda:2 \
-  --detection-mode hybrid \
-  --target refrigerator
-```
+独立目录验证记录见 `reproduction/validation.json`；完整回归1008项通过、4项外部资产检查跳过、1项G1用例排除。跳过原因见 `reproduction/validation-evidence/tests.log`。只有实际执行成功的任务才标记为通过；未实际测试的新机器安装条件会明确保留，不宣称已在用户的新硬件上运行。
 
-How the three modes differ at runtime:
+## 文档
 
-- `isaac` ignores the open-vocabulary stack entirely; GroundingDINO is never
-  queried, so `open_vocabulary_frames` stays `0`.
-- `open_vocab` never falls back to simulator labels. It checks GroundingDINO,
-  MobileSAM, and Qwen-VL (or CLIP when explicitly selected) before Isaac starts, and rejects an unavailable
-  stack with an explicit error. If a ready service later fails three
-  consecutive RGB queries, the run stops instead of exploring with an empty
-  semantic graph.
-- `hybrid` merges both sources per object: a scene-graph node keeps every
-  source that agreed on it and geometry comes from the denser observation.
-  It reports a failed preflight and degrades to Isaac-only when the services
-  are unreachable.
+- [交付说明与测试用例](delivery/01-交付说明与测试用例.docx)
+- [测试报告与可视化材料](delivery/02-测试报告与可视化材料.docx)：包含方法设计、实现细节（决策阈值、探索与推箱搜索、执行反馈）、测试结果及20张视频截图。
+- [路径与场景复杂度](delivery/task-paths-and-complexity.csv)
 
-Recorded runs identify their source, so results stay comparable: every
-scene-graph node carries `sources` (`isaac`, `open_vocabulary`, `qwen_vl`, or their combinations) and
-every statistics block reports `semantic_detection_mode`.
-For degraded hybrid runs, `semantic_detection_effective_mode`,
-`open_vocabulary_available`, and `open_vocabulary_startup_error` preserve what
-actually ran in the saved JSON.
-Saved statistics also expose attempts, completed queries, detections,
-partial candidate failures, the last detected labels, and the last exception.
-Periodic console progress stays compact.
+Word/PDF中的部署说明、根目录README及`reproduction/INSTALL.md`统一采用新机器安装与公开资产下载流程。文档路径为仓库内相对路径或接收方本机生成目录。
 
-An empty programmatic room is available with `--scene programmatic`.
+### 本次复现验证结果
 
-A finished run prints `semantic_exploration_result` with `"success": true`
-and writes to a new timestamped directory under `grutopia/results/`:
+独立代码目录和重新定位的资产副本：T01通过（目标误差1.11cm），T10通过（15.27cm，实际推箱并完成导航）。验证系统Ubuntu 22.04.5、RTX 4090 D、驱动550.107.02；66份核心运行源码与本分支一致。完整回归1008通过、4项旧资产检查跳过、1项G1用例排除。
 
-- `combined.mp4`, `robot_rgb.mp4`, `third_person.mp4`, `map_topdown.mp4`
-- `groundingdino.mp4` and `groundingdino_detections.jsonl` when the detector is queried
-- matching `*_preview.png`
-- `run_summary.json` (terminal status, target confirmation, arrival distances)
-- `manifest.json`, `events.jsonl`, `trace.csv`, `progress.json` (comparison and diagnosis)
-- `video_frames.jsonl` (regular video frame-to-step index)
-- `final_map.json` (Voronoi graph, decisions, trajectory)
-- `final_map.npz` (occupancy layers and skeleton)
-
-If `--map-output` is omitted, it automatically resolves to
-`<record-dir>/final_map`, so videos and map metadata cannot silently land in
-different run directories.
-An explicit `--record-dir` must be new; the runner refuses to overwrite an
-earlier experiment. To build a CSV across runs:
-
-```bash
-python grutopia/demo/summarize_semantic_runs.py grutopia/results \
-  --output grutopia/results/semantic_runs.csv
-```
-
-For staged offline, geometry-only, and fused semantic validation, follow the
-[navigation and semantic regression test plan](docs/navigation-semantic-regression-test-plan.md).
-The [September 19–25 navigation report](docs/reports/go2-open-vocabulary-weekly-2026-09-19-to-25.md)
-compares the earlier failures with the label-fusion rerun.
-
-## Architecture
-
-1. `SemanticVoronoiGraph` builds a safe medial-axis skeleton on observed free
-   space, plus room-like regions and doorways.
-2. `OpenVocabularyPerception` sends RGB to GroundingDINO + MobileSAM, then
-   Qwen3-VL-8B-Instruct classifies marked context crops. The legacy CLIP mode
-   remains available through `--semantic-classifier clip`. `--detection-mode` picks between these detections,
-   the Isaac simulator labels, or a fusion of both.
-3. `AdaptiveExplorationPlanner` ranks frontiers. A local Qwen3-8B worker may
-   rerank the bounded topology JSON. The model never sends locomotion
-   commands; A* and the Go2 RSL policy still move the robot.
-
-## License
-
-Simulation code follows the original GRUtopia MIT license. GRScenes assets
-remain CC BY-NC-SA 4.0 and must be downloaded separately.
+已从GitHub重新克隆并完成交付文件哈希检查。本次复用现有Isaac/Python安装，没有重新下载51GB数据或从零安装Conda；接收方新硬件上的安装与执行尚未实测。安装流程与数据校验入口均已提供，详细验证范围见`reproduction/validation.json`。

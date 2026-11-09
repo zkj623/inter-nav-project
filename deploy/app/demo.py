@@ -32,6 +32,7 @@ class DemoSensors:
             self.session.rgb(image, now, 'Synthetic RGB (not RGB-D)')
             self.last_rgb = now
         observation = {'position': np.array([0., 0., .3]), 'orientation': np.array([1., 0., 0., 0.]),
+                       'body_linear_velocity': np.zeros(3), 'body_angular_velocity': np.zeros(3),
                        'sensors': {'lidar': {'pointcloud': self.points, 'position': np.array([0., 0., .4]),
                                              'physics_step': self.step, 'max_range': 8.}}}
         return Snapshot(observation, now, now, now, None, (0., 0., 0.), self.step,

@@ -35,28 +35,28 @@ def item(step=0, points=None, *, publish=True, ready=True, captured_at=None):
             'queued_at': time.monotonic(), 'capture_ms': 1.}
 
 
-def test_worker_keeps_every_scan_and_original_voxel_clear_semantics():
-    config = {'voxel_clear_observations': 3}
+def test_worker_keeps_every_scan_as_display_history():
+    config = {}
     renderer = FrameRenderer(config, True)
     reference = VoxelPointCloudMap(MappingConfig(**config))
     old, unseen, farther = [1.05, .05, .55], [1.05, 1.05, .55], [3.05, .05, .55]
     for step, points in enumerate(([old, unseen], [farther], [farther], [farther])):
         packet = item(step, points, publish=step == 3)
         scan = packet['scan']
-        reference.clear_lidar_free_space(scan['position'], scan['pointcloud'], scan['max_range'])
         reference.update(scan['pointcloud'], step, 'lidar')
         output = renderer.render(packet)
         if step < 3:
             assert output is None
     np.testing.assert_array_equal(output['scene']['points'], reference.points())
-    assert not np.any(np.linalg.norm(output['scene']['points']-old, axis=1) < .01)
+    assert np.any(np.linalg.norm(output['scene']['points']-old, axis=1) < .01)
     assert np.any(np.linalg.norm(output['scene']['points']-unseen, axis=1) < .01)
-    assert output['scene']['voxel_count'] == 2
+    assert output['scene']['voxel_count'] == 3
+    assert output['cloud']['role'] == 'display_history_only'
     assert 'points' not in packet['scene']  # Output metadata is detached.
 
 
 def test_repeated_scan_cannot_clear_geometry_or_refresh_cloud_timestamp():
-    renderer = FrameRenderer({'voxel_clear_observations': 3}, True)
+    renderer = FrameRenderer({}, True)
     old, farther = [1.05, .05, .55], [3.05, .05, .55]
     renderer.render(item(0, [old]))
     renderer.render(item(1, [farther], captured_at=2.))
@@ -65,6 +65,12 @@ def test_repeated_scan_cannot_clear_geometry_or_refresh_cloud_timestamp():
     assert output['cloud']['stamp'] == 2.
     assert output['scene']['cloud_physics_step'] == 1
     assert np.any(np.linalg.norm(output['scene']['points']-old, axis=1) < .01)
+
+
+def test_max_range_returns_do_not_create_a_display_shell():
+    packet = item(0, [[1.05, .05, .55], [8.05, .05, .55]])
+    output = FrameRenderer({}, True).render(packet)
+    np.testing.assert_allclose(output['scene']['points'], [[1.05, .05, .55]])
 
 
 def test_cloud_and_2d_map_keep_their_own_source_timestamps():

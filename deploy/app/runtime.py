@@ -25,6 +25,9 @@ def check(config):
     print(json.dumps({'check': 'offline_only', 'dependencies': status, 'motion': motion,
                       'planning_frame': ExperimentFrame.name, 'source_frame': config['robot']['map_frame'],
                       'camera_mode': config['robot']['camera_mode'],
+                      'navigation_backend': 'simulation_release_online_navigation',
+                      'interaction_enabled': config['navigation']['interaction_enabled'],
+                      'interaction_geometry_verified': config['runtime']['perception']['geometry_verified'],
                       'geometry_calibrated': config['robot']['ground_z'] is not None and
                                              config['robot']['lidar_origin_offset_base_m'] is not None,
                       'MCF': 'kept running; no mode release or joystick switching'}, indent=2))
@@ -74,11 +77,12 @@ def run_replay(args, config):
     finally:
         try:
             if tasks.map_ready:
-                tasks.component.mapping.save(str(recorder.directory / 'final_map'))
+                tasks.engine.layers.save(str(recorder.directory / 'final_map'))
         except Exception as exc:
             error = f'Map save failed: {exc}'
         summary = {'reason': reason, 'error': error, 'task_result': tasks.result,
-                   'decisions': count, 'map_created': tasks.map_ready, 'sent_to_robot': False, 'hardware_validated': False,
+                   'decisions': count, 'map_created': tasks.map_ready,
+                   'mapping': tasks.engine.layers.statistics(), 'sent_to_robot': False, 'hardware_validated': False,
                    'completed': error is None}
         recorder.close(summary)
         print(json.dumps(summary, ensure_ascii=False), flush=True)
@@ -92,18 +96,18 @@ def run_live(args, config):
     from deploy.visualization.sources import SdkVideo
     from deploy.robot.sensors import RosSensors
     from deploy.robot.motion import MotionProcess
-    from deploy.perception.client import AsyncPerception, AsyncScorer
+    from deploy.perception.client import AsyncInteractionPerception
     if args.allow_motion:
         check_motion_configuration(config)
     robot, nav, runtime = config['robot'], config['navigation'], config['runtime']
     control = runtime['control']
     reference = ExperimentFrame(0. if args.demo else robot['ground_z'])
-    separate_cloud = robot['camera_mode'] != 'rgbd'
+    separate_cloud = True
     session = Session(config, REPO, port=args.session_port, demo=args.demo, separate_cloud=separate_cloud,
                       mode='synthetic_demo' if args.demo else ('live_motion_enabled' if args.allow_motion else 'live_observe_only'))
     print(f'本轮会话：{session.info["session_id"]}；数据服务：{session.url}', flush=True)
     print('另开终端运行 python view.py 查看三幅图；python record.py 保存实验。', flush=True)
-    sensors = motion = keyboard = perception = scorer = tasks = video = controller = None
+    sensors = motion = keyboard = perception = tasks = video = controller = None
     snapshot = None
     started_at = time.monotonic()
     quitting = False
@@ -136,11 +140,9 @@ def run_live(args, config):
         # rclpy.init can replace SIGINT; restore coordinated shutdown after init.
         for signum in handlers:
             signal.signal(signum, on_signal)
-        if not args.demo and robot['camera_mode'] == 'rgbd':
-            perception = AsyncPerception(runtime['perception'])
-        if perception and runtime['topology_scorer']['enabled']:
-            scorer = AsyncScorer(runtime['topology_scorer'])
-        tasks = Tasks(nav, perception, scorer, maintain_voxels=not separate_cloud)
+        if not args.demo and robot['camera_mode'] == 'rgbd' and nav['interaction_enabled']:
+            perception = AsyncInteractionPerception(runtime['perception'])
+        tasks = Tasks(nav, perception)
         if args.allow_motion:
             motion = MotionProcess(robot, control)
         keyboard = Keyboard() if not args.demo or sys.stdin.isatty() else None
@@ -181,7 +183,7 @@ def run_live(args, config):
                     quitting = True
                     continue
                 controller.operate(key, value, snapshot, now)
-                if key in ('navigate', 'explore', 'r') and tasks.state == 'active':
+                if key in ('navigate', 'r') and tasks.state == 'active':
                     # Arming waits for the motion worker. Its acknowledgement
                     # can arrive after this snapshot has expired. Start the
                     # decision on the next pass with current sensors/time;
@@ -213,7 +215,7 @@ def run_live(args, config):
             except Exception as exc:
                 error = f'motion cleanup: {exc}; physical stop NOT confirmed'
                 session.event('cleanup_error', reason=error)
-        for name, resource in (('keyboard', keyboard), ('perception', perception), ('scorer', scorer),
+        for name, resource in (('keyboard', keyboard), ('perception', perception),
                                ('video', video), ('sensors', sensors)):
             if resource is not None:
                 try:

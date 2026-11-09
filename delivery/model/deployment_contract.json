@@ -1,0 +1,123 @@
+{
+  "training_only": true,
+  "original_task_accepted": false,
+  "official_pretrained_policy": false,
+  "upstream_commit": "4960b84732b0c2ec593dccbfe963fda1bcd7b1e3",
+  "isaacsim_version": "4.2.0.2",
+  "native_lab_version": "1.4.0",
+  "native_lab_commit": "dd044a4977722d85e966c5b63949093c9b14667f",
+  "rsl_rl_version": "2.3.1",
+  "actor_dimension": 45,
+  "critic_dimension": 60,
+  "action_dimension": 12,
+  "observation_terms": {
+    "policy": [
+      "base_ang_vel",
+      "projected_gravity",
+      "velocity_commands",
+      "joint_pos_rel",
+      "joint_vel_rel",
+      "last_action"
+    ],
+    "critic": [
+      "base_lin_vel",
+      "base_ang_vel",
+      "projected_gravity",
+      "velocity_commands",
+      "joint_pos_rel",
+      "joint_vel_rel",
+      "joint_effort",
+      "last_action"
+    ]
+  },
+  "joint_names": [
+    "FL_hip_joint",
+    "FR_hip_joint",
+    "RL_hip_joint",
+    "RR_hip_joint",
+    "FL_thigh_joint",
+    "FR_thigh_joint",
+    "RL_thigh_joint",
+    "RR_thigh_joint",
+    "FL_calf_joint",
+    "FR_calf_joint",
+    "RL_calf_joint",
+    "RR_calf_joint"
+  ],
+  "default_joint_positions": [
+    0.10000000149011612,
+    -0.10000000149011612,
+    0.10000000149011612,
+    -0.10000000149011612,
+    0.800000011920929,
+    0.800000011920929,
+    1.0,
+    1.0,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5
+  ],
+  "body_names": [
+    "base",
+    "FL_hip",
+    "FR_hip",
+    "Head_upper",
+    "RL_hip",
+    "RR_hip",
+    "FL_thigh",
+    "FR_thigh",
+    "Head_lower",
+    "RL_thigh",
+    "RR_thigh",
+    "FL_calf",
+    "FR_calf",
+    "RL_calf",
+    "RR_calf",
+    "FL_foot",
+    "FR_foot",
+    "RL_foot",
+    "RR_foot"
+  ],
+  "asset_sha256": "75958c8286d2dfdf7617108a685110ac831dfc47f2546e71a8cc2ccaecbd83a5",
+  "floor_top_m": 0.01,
+  "actor_hz": 50,
+  "physics_hz": 200,
+  "gpu_dynamics": true,
+  "broadphase": "GPU",
+  "action_scale": 0.25,
+  "kp": 25.0,
+  "kd": 0.5,
+  "saturation_torque_nm": 23.5,
+  "velocity_limit_rad_s": 30.0,
+  "training_mass_randomization_kg": [
+    -1.0,
+    3.0
+  ],
+  "training_termination_tilt_deg": 30.0,
+  "training_reset_scope": "independent RL episodes only; not navigation rollouts",
+  "actor_sha256": "3eaf42038942e3ce194068fa8abcade2866c282001efa51ce70e46a918322fda",
+  "actor_checkpoint_sha256": "8862682da34ebb090a2e56f39254af430d5645f20cb5e3e104c72a4720671db8",
+  "observation_profile": "unitree_go2_45",
+  "observation_order": [
+    "base_ang_vel",
+    "projected_gravity",
+    "velocity_commands",
+    "joint_pos_rel",
+    "joint_vel_rel",
+    "last_action"
+  ],
+  "observation_scales": [
+    0.2,
+    1.0,
+    1.0,
+    1.0,
+    0.05,
+    1.0
+  ],
+  "observation_clip_before_scale": [
+    -100.0,
+    100.0
+  ],
+  "empirical_normalization": false
+}

@@ -32,6 +32,11 @@ def wait_until(callback, timeout=8):
     raise AssertionError('condition did not become true')
 
 
+def accept_scan(tasks, snapshot):
+    """Advance the map's 10 Hz test clock independently of renderer latency."""
+    tasks.update(snapshot, max(snapshot.captured_at, tasks.engine.layers.last_local + .101))
+
+
 @pytest.fixture
 def session():
     obj = Session(load(), REPO, port=0, demo=True, frame_limit=2, event_limit=3)
@@ -45,14 +50,14 @@ def test_scene_uses_actual_masks_and_does_not_modify_planner(session):
     tasks = Tasks(load()['navigation'])
     snapshot = DemoSensors(session).latest()
     tasks.update(snapshot, snapshot.captured_at)
-    grid = tasks.component.mapping.map.occupancy
-    revision = grid.revision
+    layers = tasks.engine.layers
+    revision = layers.local_revision
     scene = SceneCapture().capture(snapshot, tasks)
     assert scene['ready']
-    np.testing.assert_array_equal(scene['observed'], grid.observed)
-    np.testing.assert_array_equal(scene['occupied'], grid.occupied_mask())
-    assert grid.revision == revision
-    grid.observed[:] = False
+    np.testing.assert_array_equal(scene['observed'], layers.observed)
+    np.testing.assert_array_equal(scene['occupied'], layers.local_occupied)
+    assert layers.local_revision == revision
+    layers.observed[:] = False
     assert scene['observed'].any()  # detached copy, not a moving rendering target
     image = render_map(scene)
     assert image.shape == (720, 720, 3)
@@ -76,7 +81,7 @@ def test_packets_keep_raw_observations_and_count_evicted_frames(session):
     source = DemoSensors(session)
     for i in range(4):
         snapshot = source.latest()
-        tasks.update(snapshot, snapshot.captured_at)
+        accept_scan(tasks, snapshot)
         session.last_publish = float('-inf')
         session.update(snapshot, tasks, 'disabled')
         wait_until(lambda: session.frame_id == i+1)
@@ -108,7 +113,7 @@ def test_display_does_not_compress_recording_and_keeps_true_map_age(session, mon
     wait_until(lambda: session.frame_id)
     display = session.display()
     assert not calls
-    assert display['map']['stale'] and display['cloud']['stale']
+    assert display['map']['stale'] and not display['cloud']['stale']
     assert display['map']['age'] >= 2
     assert display['performance']['encode_ms'] >= 0 and display['fps'] == 5
     batch = session.batch(0, 0)
@@ -242,7 +247,7 @@ def test_display_sampling_does_not_replace_history_when_count_crosses_budget():
     assert retained >= 9
 
 
-def test_session_cloud_updates_vacated_geometry_without_erasing_unseen_history(session):
+def test_session_cloud_keeps_display_history_independent_of_live_occupancy(session):
     tasks = Tasks(load()['navigation'])
     source = DemoSensors(session)
     old = [1.05, .05, .55]
@@ -252,13 +257,14 @@ def test_session_cloud_updates_vacated_geometry_without_erasing_unseen_history(s
         snapshot = source.latest()
         snapshot.observation['sensors']['lidar'].update(
             position=np.array([.05, .05, .55]), pointcloud=np.asarray(points), physics_step=i)
-        tasks.update(snapshot, snapshot.captured_at)
+        accept_scan(tasks, snapshot)
         session.last_publish = float('-inf')
         session.update(snapshot, tasks, 'disabled')
         wait_until(lambda: session.frame_id == i+1)
     displayed = np.asarray(session.display()['cloud']['points'])
     assert session.display()['cloud']['accumulated']
-    assert not np.any(np.linalg.norm(displayed-old, axis=1) < .01)
+    assert np.any(np.linalg.norm(displayed-old, axis=1) < .01)
+    assert session.display()['cloud']['role'] == 'display_history_only'
     for kept in (unseen, farther):
         assert np.any(np.linalg.norm(displayed-kept, axis=1) < .01)
     # Re-reading from another viewer does not mutate or reset the shared map.
@@ -381,7 +387,7 @@ def test_moving_scans_keep_history_in_world_frame_and_session(session):
         snapshot.observation['position'] = np.array([i*4., 0., .3])
         snapshot.observation['sensors']['lidar']['position'] = np.array([i*4., 0., .4])
         snapshot.observation['sensors']['lidar']['pointcloud'] = points
-        tasks.update(snapshot, snapshot.captured_at)
+        accept_scan(tasks, snapshot)
         session.last_publish = float('-inf')
         session.update(snapshot, tasks, 'disabled')
         wait_until(lambda: session.frame_id == i+1)
@@ -391,7 +397,8 @@ def test_moving_scans_keep_history_in_world_frame_and_session(session):
     assert session.display()['cloud']['count'] == 4
     # A new view capture and switching tasks both keep the same accumulated map.
     tasks.start('navigate', (6., 0., .3), snapshot.captured_at)
-    np.testing.assert_allclose(SceneCapture().capture(snapshot, tasks)['points'], displayed)
+    assert 'points' not in SceneCapture().capture(snapshot, tasks)
+    np.testing.assert_allclose(session.display()['cloud']['points'], displayed)
 
 
 def test_cloud_export_fits_old_and_new_distant_regions():

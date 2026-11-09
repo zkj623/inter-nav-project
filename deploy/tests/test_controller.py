@@ -58,7 +58,7 @@ def control(tmp_path, monkeypatch):
 def test_observe_never_arms_and_cancel_clears_task_without_losing_map(control):
     controller, snapshot, events = control
     controller.step(snapshot, snapshot.captured_at)
-    retained = controller.tasks.component.mapping.map
+    retained = controller.tasks.engine.layers
     assert controller.motion.state == 'manual' and not controller.motion.commands
     controller.operate('navigate', '1,0', snapshot, snapshot.captured_at)
     assert controller.tasks.state == 'active'
@@ -66,7 +66,7 @@ def test_observe_never_arms_and_cancel_clears_task_without_losing_map(control):
     controller.operate('m', None, snapshot, snapshot.captured_at)
     assert controller.tasks.state == controller.tasks.mode == 'observe'
     assert controller.tasks.result is None
-    assert controller.tasks.component.mapping.map is retained
+    assert controller.tasks.engine.layers is retained
     assert controller.motion.stops == ['m']
 
 
@@ -97,12 +97,14 @@ def test_completion_is_recorded_once_even_if_motion_state_has_advanced(control):
     controller.operate('navigate', '0,0', snapshot, snapshot.captured_at)
     controller.motion.state = 'stopping'
     controller.step(snapshot, snapshot.captured_at)
-    controller.step(snapshot, snapshot.captured_at)
+    stopped = replace(snapshot, captured_at=snapshot.captured_at+.5, pose_at=snapshot.pose_at+.5, lidar_at=snapshot.lidar_at+.5)
+    controller.step(stopped, stopped.captured_at)
+    controller.step(stopped, stopped.captured_at)
     assert controller.tasks.state == 'completed'
     assert controller.tasks.result['success']
     assert controller.motion.stops == ['task_completed']
     assert len([e for e in events.items if e['event'] == 'task_result']) == 1
-    assert not controller.motion.commands
+    assert all(not command[0].any() for command in controller.motion.commands)
 
 
 def test_worker_stop_feedback_pauses_task_and_does_not_auto_resume(control):
@@ -145,7 +147,7 @@ def test_decision_timing_does_not_extend_command_or_sensor_expiry(
     command = next(e for e in events.items if e['event'] == kind)
     assert command['decision_duration_s'] == pytest.approx(decision_duration)
     stages = command['decision_stages_s']
-    assert all(stages[k] >= 0 for k in ('mapping_s', 'goal_check_s', 'evaluation_s', 'planning_tracking_s'))
+    assert stages['navigation_s'] >= 0
     assert stages['total_s'] >= sum(v for k, v in stages.items() if k != 'total_s')
     assert command['generated_at'] == snapshot.captured_at
     assert command['expires_at'] <= snapshot.captured_at + controller.control['command_ttl_s']
@@ -165,16 +167,14 @@ def test_decision_timing_does_not_extend_command_or_sensor_expiry(
         assert command['delivery'] == 'queued_not_execution_ack'
 
 
-def test_cancel_exploration_discards_pending_perception_and_old_target():
+def test_cancel_navigation_discards_pending_recognition_and_goal():
     resets = []
     perception = SimpleNamespace(reset=lambda: resets.append(True))
     tasks = Tasks(load()['navigation'], perception)
-    tasks.start('explore', 'chair', 10.)
-    tasks.component.target_node = object()
+    tasks.start('navigate', (1., 0., .3), 10.)
     tasks.cancel()
     assert len(resets) == 2
-    assert tasks.component.target_node is None
-    assert tasks.component.mapping.semantic_target == ''
+    assert tasks.engine.goal is None
     assert tasks.mode == tasks.state == 'observe'
 
 
@@ -183,14 +183,14 @@ def test_mapping_failure_does_not_report_ready(control, monkeypatch):
     controller.tasks = Tasks(load()['navigation'])
     def fail(*args, **kwargs):
         raise ValueError('bad input')
-    update = controller.tasks.component.mapping.update
-    monkeypatch.setattr(controller.tasks.component.mapping, 'update', fail)
+    update = controller.tasks.engine.observe
+    monkeypatch.setattr(controller.tasks.engine, 'observe', fail)
     assert controller.step(snapshot, snapshot.captured_at) == 'bad input'
     assert not controller.tasks.map_ready
     assert controller.tasks.last_lidar is None
     assert controller.tasks.last_timings['mapping_s'] >= 0
     assert controller.tasks.last_timings['total_s'] >= controller.tasks.last_timings['mapping_s']
-    monkeypatch.setattr(controller.tasks.component.mapping, 'update', update)
+    monkeypatch.setattr(controller.tasks.engine, 'observe', update)
     assert controller.step(snapshot, snapshot.captured_at) is None
     assert controller.tasks.map_ready
     assert controller.tasks.last_mapping_at == snapshot.lidar_at
@@ -361,3 +361,12 @@ def test_live_start_reacquires_sensors_after_slow_arm(tmp_path, monkeypatch, fre
     else:
         assert not fake_motion.commands
         assert len(fake_motion.stops) == 1 and 'stale' in fake_motion.stops[0]
+
+
+def test_online_decisions_are_recorded_once_with_their_kind(control):
+    controller, snapshot, events = control
+    controller.operate('navigate', '1,0', snapshot, snapshot.captured_at)
+    controller.step(snapshot, snapshot.captured_at)
+    decisions = [e for e in events.items if e['event'] == 'decision']
+    assert len(decisions) == 1 and decisions[0]['decision_kind'] == 'navigate'
+    assert not controller.tasks.engine.events

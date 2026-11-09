@@ -1,11 +1,9 @@
 """Unitree Go2 open-vocabulary semantic exploration on an unknown map."""
 
 import argparse
-import json
 import os
 import sys
 from datetime import datetime
-from pathlib import Path
 
 from grutopia.core.util import has_display
 from grutopia.demo.go2_point_navigation import build_objects
@@ -47,10 +45,6 @@ def parse_args():
     parser.add_argument('--portable-root', help='private Kit data/cache/log root')
     parser.add_argument('--material-mode', choices=('original', 'preview', 'simple'), default=None)
     parser.add_argument('--target', default='refrigerator')
-    parser.add_argument(
-        '--test-object-position', type=float, nargs=3, metavar=('X', 'Y', 'Z'),
-        help='spawn one fixed purple test column with the --target semantic label (center in world meters)',
-    )
     parser.add_argument(
         '--scene',
         choices=('grscene', 'programmatic'),
@@ -148,7 +142,7 @@ def build_semantic_objects(args):
     return objects
 
 
-def build_grscene_floor(profile):
+def build_grscene_floor(profile, floor_top=GRSCENE_FLOOR_TOP):
     """Give Go2 a flat collision plane above the scanned mesh floor.
 
     The 0.15 m top surface balances two constraints: low enough that lidar
@@ -157,6 +151,10 @@ def build_grscene_floor(profile):
     plinths that the locomotion policy would otherwise climb and get stuck on
     (observed with a 0.10 m floor).
     """
+    import math
+    floor_top = float(floor_top)
+    if not math.isfinite(floor_top) or not 0 < floor_top <= 0.30:
+        raise ValueError('Collision floor top must be within (0, 0.30] m')
     x_limits = profile.mapping.x_limits
     y_limits = profile.mapping.y_limits
     return [
@@ -166,15 +164,20 @@ def build_grscene_floor(profile):
             position=(
                 (x_limits[0] + x_limits[1]) / 2.0,
                 (y_limits[0] + y_limits[1]) / 2.0,
-                GRSCENE_FLOOR_TOP / 2.0,
+                floor_top / 2.0,
             ),
             scale=(
                 x_limits[1] - x_limits[0],
                 y_limits[1] - y_limits[0],
-                GRSCENE_FLOOR_TOP,
+                floor_top,
             ),
             color=(0.42, 0.42, 0.44),
             semantic_label='floor',
+            visible=False,
+            static_friction=1.0,
+            dynamic_friction=1.0,
+            torsional_patch_radius=0.0,
+            min_torsional_patch_radius=0.0,
         )
     ]
 
@@ -207,22 +210,6 @@ def main():
     map_output = resolve_map_output(record_dir, args.map_output)
     profile = build_profile(args)
     objects = build_grscene_floor(profile) if args.scene == 'grscene' else build_semantic_objects(args)
-    if args.test_object_position is not None:
-        test_object = FixedCubeCfg(
-            name='navigation_test_object',
-            prim_path='/World/env_0/objects/navigation_test_object',
-            position=tuple(args.test_object_position),
-            scale=(0.4, 0.4, 0.7),
-            color=(0.85, 0.05, 0.85),
-            semantic_label=args.target,
-        )
-        objects.append(test_object)
-        # Placement is experiment metadata only; the planner receives the
-        # label and must obtain the target position from camera observations.
-        directory = Path(record_dir)
-        directory.mkdir(parents=True, exist_ok=True)
-        with (directory / 'test_object.json').open('x', encoding='utf-8') as output:
-            json.dump(test_object.model_dump(), output, indent=2)
     return run_go2_semantic_exploration(
         profile,
         Go2SemanticExplorationRunConfig(

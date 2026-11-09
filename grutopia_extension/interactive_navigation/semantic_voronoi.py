@@ -360,10 +360,6 @@ class SemanticVoronoiGraph:
 
         return self.update() if self._snapshot is None else self._snapshot
 
-    def peek_snapshot(self) -> Optional[SemanticVoronoiSnapshot]:
-        """Read-only observers must not trigger the initial topology build."""
-        return self._snapshot
-
     def region_assignment(self) -> Optional[Tuple[np.ndarray, Tuple[str, ...]]]:
         """Return the cached per-cell region index grid and sorted region ids.
 
@@ -410,18 +406,18 @@ class SemanticVoronoiGraph:
         return semantics
 
     def statistics(self) -> dict:
-        snapshot = self.peek_snapshot()
+        snapshot = self.cached_snapshot()
         result = asdict(self._stats)
         result.update(
             {
-                'revision': snapshot.revision if snapshot else None,
-                'node_count': len(snapshot.nodes) if snapshot else 0,
-                'edge_count': len(snapshot.edges) if snapshot else 0,
-                'frontier_count': len(snapshot.frontiers) if snapshot else 0,
-                'semantic_count': len(snapshot.semantics) if snapshot else 0,
-                'skeleton_cell_count': len(snapshot.skeleton_cells) if snapshot else 0,
-                'region_count': len(snapshot.regions) if snapshot else 0,
-                'doorway_count': len(snapshot.doorways) if snapshot else 0,
+                'revision': snapshot.revision,
+                'node_count': len(snapshot.nodes),
+                'edge_count': len(snapshot.edges),
+                'frontier_count': len(snapshot.frontiers),
+                'semantic_count': len(snapshot.semantics),
+                'skeleton_cell_count': len(snapshot.skeleton_cells),
+                'region_count': len(snapshot.regions),
+                'doorway_count': len(snapshot.doorways),
             }
         )
         return result

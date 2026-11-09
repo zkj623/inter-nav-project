@@ -9,7 +9,34 @@ from omni.isaac.range_sensor import _range_sensor
 from grutopia.core.robot.robot import BaseRobot, Scene
 from grutopia.core.robot.sensor import BaseSensor
 from grutopia_extension.configs.sensors import PhysXLidarCfg
-from grutopia_extension.sensors.lidar_returns import exclude_robot_returns
+from grutopia_extension.sensors.lidar_returns import exclude_robot_returns, freeze_lidar_scan
+
+
+class _SynchronizedRotatingLidarPhysX(RotatingLidarPhysX):
+    """Keep hit identities and pose beside the points acquired by Isaac."""
+
+    def __init__(self, *args, **kwargs):
+        self._synchronized_frame = {}
+        super().__init__(*args, **kwargs)
+
+    def _data_acquisition_callback(self, step_size):
+        super()._data_acquisition_callback(step_size)
+        if self.is_paused() or 'point_cloud' not in self._current_frame:
+            return
+        position, orientation = self.get_world_pose()
+        self._synchronized_frame = freeze_lidar_scan(
+            self._current_frame['point_cloud'],
+            self._lidar_sensor_interface.get_prim_data(self.prim_path),
+            position, orientation,
+            self._current_frame['physics_step'], self._current_frame['time'],
+        )
+
+    def get_synchronized_frame(self):
+        return self._synchronized_frame
+
+    def post_reset(self):
+        self._synchronized_frame = {}
+        super().post_reset()
 
 
 @BaseSensor.register('PhysXLidar')
@@ -24,7 +51,7 @@ class PhysXLidar(BaseSensor):
             return
         prim_path = f'{robot.config.prim_path}/{config.prim_path}'
         self._lidar = scene.add(
-            RotatingLidarPhysX(
+            _SynchronizedRotatingLidarPhysX(
                 prim_path=prim_path,
                 name=f'{name}_isaac',
                 translation=np.asarray(config.translation, dtype=float),
@@ -48,15 +75,17 @@ class PhysXLidar(BaseSensor):
     def get_data(self) -> Dict:
         if self._lidar is None:
             return {}
-        frame = self._lidar.get_current_frame()
+        frame = self._lidar.get_synchronized_frame()
+        if not frame:
+            return {}
         local_points = frame.get('point_cloud')
         local_points = _points_array(local_points)
         self_hits = 0
         if len(local_points):
             local_points, self_hits = exclude_robot_returns(
-                local_points, self._interface.get_prim_data(self._lidar.prim_path), self._robot_path
+                local_points, frame['hit_paths'], self._robot_path
             )
-        position, orientation = self._lidar.get_world_pose()
+        position, orientation = frame['position'], frame['orientation']
         world_points = _transform_points(local_points, position, orientation)
         return {
             'pointcloud': world_points,
@@ -70,6 +99,7 @@ class PhysXLidar(BaseSensor):
             'horizontal_fov': float(self.config.fov[0]),
             'rotation_frequency': float(self.config.rotation_frequency),
             'self_hits_removed': self_hits,
+            'scan_pose_and_hit_paths_synchronized': True,
         }
 
     def cleanup(self):

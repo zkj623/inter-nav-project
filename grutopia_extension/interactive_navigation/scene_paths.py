@@ -75,6 +75,17 @@ def prepare_navigation_scene(stage, scene_root, material_mode):
     if material_mode not in ('original', 'preview', 'simple'):
         raise ValueError(f'Unknown navigation material mode: {material_mode}')
     if material_mode != 'original':
+        if material_mode == 'preview':
+            from .material_compaction import compact_scene_materials
+            print(json.dumps({'event': 'material_compaction',
+                              **compact_scene_materials(stage, scene_root, prune_unused=True)}), flush=True)
+            from .mdl_preview_materials import convert_exported_pbr_materials
+            print(json.dumps({'event': 'exported_pbr_preview',
+                              **convert_exported_pbr_materials(stage, scene_root)}), flush=True)
         convert = apply_simple_scene_material if material_mode == 'simple' else apply_koostruct_material_fallbacks
         print(json.dumps({'event': 'material_fallback', 'mode': material_mode,
                           **convert(stage, scene_root)}), flush=True)
+        if material_mode == 'preview':
+            from .texture_compaction import compact_texture_assets
+            print(json.dumps({'event':'texture_compaction',
+                              **compact_texture_assets(stage,scene_root)}),flush=True)

@@ -32,7 +32,7 @@ def odometry(stamp, x, frame='odom'):
     return Message(header=Message(frame_id=frame, stamp=stamp), child_frame_id='base_link',
                    pose=Message(pose=Message(position=Message(x=x, y=0., z=0.),
                                             orientation=Message(w=1., x=0., y=0., z=0.))),
-                   twist=Message(twist=Message(linear=Message(x=.1, y=0.), angular=Message(z=0.))))
+                   twist=Message(twist=Message(linear=Message(x=.1, y=0., z=.02), angular=Message(x=.03, y=.04, z=0.))))
 
 
 def sensor(calibrated=True):
@@ -72,20 +72,19 @@ def test_sensor_error_recovers_only_when_its_own_stream_recovers():
     assert source.last_error is None
 
 
-def test_observe_maintenance_uses_wall_interval_without_advancing_task_timeout():
+def test_observe_deduplicates_scans_without_advancing_task_timeout():
     source = sensor()
     source._pose(odometry(1_000_000_000, 1.))
     source._pose(odometry(1_020_000_000, 1.02))
     source._lidar(cloud())
     snapshot = source.latest()
-    engine = Tasks(load()['navigation'])
-    calls = []
-    engine.component.mapping.update = lambda step, obs, **kwargs: calls.append((step, kwargs['maintenance']))
+    tasks = Tasks(load()['navigation'])
     for now in (10., 10.1, 10.3, 10.9, 11.2, 11.3):
-        engine.update(snapshot, now)
-    assert [step for step, _ in calls] == list(range(6))
-    assert [due for _, due in calls] == [True, False, False, False, True, False]
-    assert engine.elapsed == 0 and engine.last_step == -1
+        tasks.update(snapshot, now)
+    assert tasks.engine.layers.scan_count == 1
+    assert tasks.elapsed == 0 and tasks.last_step == -1
+    np.testing.assert_allclose(snapshot.observation['body_linear_velocity'], [.1, 0, .02])
+    np.testing.assert_allclose(snapshot.observation['body_angular_velocity'], [.03, .04, 0])
 
 
 def test_observation_freshness_error_identifies_stream_and_direction():
@@ -185,14 +184,13 @@ def test_uncalibrated_data_recordable_but_cannot_build_or_drive_map():
         engine.update(packet, packet.captured_at)
 
 
-def test_video_only_profile_allows_geometry_but_rejects_exploration():
+def test_video_only_profile_supports_navigation_but_has_no_interaction():
     source = sensor()
     source._pose(odometry(1_000_000_000, 1.))
     source._lidar(cloud())
     packet = source.latest()
-    check_task_inputs(source.config, packet, exploring=False)
-    with pytest.raises(ValueError, match='RGB-D'):
-        check_task_inputs(source.config, packet, exploring=True)
+    check_task_inputs(source.config, packet)
+    assert load()['navigation']['interaction_enabled'] is False
 
 
 def test_diagnostic_metadata_does_not_dump_binary_payload():
@@ -218,7 +216,7 @@ def test_live_observe_without_rgbd_does_not_start_models_or_motion(monkeypatch, 
         editing=None, poll=lambda: keys.popleft(), close=lambda: None))
     def forbidden(*args, **kwargs):
         pytest.fail('Observe-only video-unavailable profile must not start models or SDK')
-    monkeypatch.setattr(client, 'AsyncPerception', forbidden)
+    monkeypatch.setattr(client, 'AsyncInteractionPerception', forbidden)
     monkeypatch.setattr(motion, 'MotionProcess', forbidden)
     from deploy.app import session as session_module
     original = session_module.Session

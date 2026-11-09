@@ -65,6 +65,8 @@ class GroundingDinoRecordingTest(unittest.TestCase):
                 recorder.record_perception(25, observation, runtime)
                 with patch.object(
                     recorder, '_render_map', return_value=np.zeros((720, 1280, 3), dtype=np.uint8)
+                ), patch.object(
+                    recorder, '_render_pointcloud', return_value=np.zeros((720, 1280, 3), dtype=np.uint8)
                 ):
                     position = SimpleNamespace(robot_position=(0.0, 0.0, 0.0))
                     recorder.capture(24, 'exploring', observation, position, runtime)

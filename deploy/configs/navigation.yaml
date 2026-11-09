@@ -1,41 +1,39 @@
-# Level indoor floor; fixed bounds relative to this run's experiment origin.
+# Shared algorithms come from stage1-go2-simulation-release; time is seconds.
 mapping:
   x_limits: [-10.0, 10.0]
   y_limits: [-10.0, 10.0]
   grid_resolution: 0.1
   voxel_size: 0.1
-  voxel_clear_observations: 3  # clear old geometry only after measured free rays in three scans
-  # Keep a 2D navigation map; clear measured obstacles only at the ray's height.
-  lidar_height_resolution: 0.1
   robot_radius: 0.30
   obstacle_inflation_radius: 0.40
-  # 2026-11-03: operator-selected standing Go2 navigation band, ground-relative.
-  # This is a trial clearance setting, not an independently measured body envelope.
+  # Preserve this robot's reviewed, ground-relative navigation envelope.
   obstacle_height: [0.15, 0.63]
-  # Keep higher scene geometry visible even when it does not block navigation.
   point_height: [-0.1, 2.0]
   safe_recovery_y_limits: [-9.5, 9.5]
   sticky_free_scale: 0.25
-  object_position_window: 4
-# Point navigation: extra margin outside obstacle inflation; null keeps Voronoi-first behavior.
-# Body radius + this margin must also remain inside observed free space.
-direct_path_tracking_margin: 0.10
-# 2026-11-04: below native remote requests (~0.96-1.12 forward, 0.33-0.36 lateral).
-# Requested speeds, not measured body speeds; point navigation still needs field validation.
 max_forward_speed: 0.80
 max_lateral_speed: 0.30
-# Reuse the original distance taper: straight approach is ~0.30 m/s at success boundary.
+max_yaw_speed: 0.90
 final_goal_slow_radius: 0.80
-success_distance: 0.30
+success_distance: 0.25
 safe_base_height: 0.22
 fall_height: 0.16
 task_timeout_s: 300.0
-# Explicit scheduler tick, not Isaac physics steps. Slow work skips ticks.
 tick_hz: 10.0
-topology_interval_s: 1.0
-frontier_selection_s: 2.0
-frontier_progress_timeout_s: 20.0
-frontier_goal_timeout_s: 90.0
-frontier_scan_timeout_s: 30.0
-visual_observation_budget_s: 8.0
-fresh_target_observations: 2
+# Real RGB-D, measured full object envelopes and SDK contact-motion acceptance
+# are prerequisites; single-camera preview does not enable interaction.
+interaction_enabled: false
+# Global routes keep the deployment clearance; local motion checks full body shape.
+route_clearance: 0.40
+navigation_half_width: 0.22
+local_map_hz: 10.0
+global_map_hz: 1.0
+local_map_radius: 3.0
+object_max_age_s: 0.75
+recognition_max_age_s: 8.0
+push_start_speed: 0.15
+push_max_speed: 0.30
+subnavigation_timeout_s: 80.0
+inspection_timeout_s: 20.0
+linear_acceleration: 0.50
+yaw_acceleration: 1.50

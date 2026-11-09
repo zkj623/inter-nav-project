@@ -13,3 +13,5 @@ class Go2MoveBySpeedControllerCfg(ControllerCfg):
     # scan is (base_z - ground_height - 0.5); on scenes with an elevated
     # collision floor a stale 0.0 makes the policy walk in a crouch.
     ground_height: float = 0.0
+    actuator_mode: str = 'implicit_pd'
+    stationary_joint_hold: bool = False

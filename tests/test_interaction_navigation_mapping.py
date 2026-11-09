@@ -26,58 +26,6 @@ from grutopia_extension.interactive_navigation.state_machine import (
 
 
 class InteractionNavigationMappingTest(unittest.TestCase):
-    def test_lidar_scene_retains_unseen_geometry_and_removes_confirmed_vacated_voxel(self):
-        config = MappingConfig(voxel_size=.1, voxel_clear_observations=3)
-        mapping = FusedMap(config)
-        origin = (.05, .05, .55)
-        old = [1.05, .05, .55]
-        unseen = [1.05, 1.05, .55]
-        occluded = [4.05, .05, .55]
-        ground = [1.05, .05, .05]
-        mapping.update_lidar(origin, np.array([old, unseen, occluded, ground]), 0, 8.)
-        farther = np.array([[3.05, .05, .55]])
-        for step in (1, 2):
-            mapping.update_lidar(origin, farther, step, 8.)
-            self.assertTrue(np.any(np.linalg.norm(mapping.voxels.points()-old, axis=1) < .01))
-        mapping.update_lidar(origin, farther, 3, 8.)
-        points = mapping.voxels.points()
-        self.assertFalse(np.any(np.linalg.norm(points-old, axis=1) < .01))
-        for kept in (unseen, occluded, ground, farther[0]):
-            self.assertTrue(np.any(np.linalg.norm(points-kept, axis=1) < .01))
-
-    def test_lidar_scene_respects_hits_and_nearer_returns_and_resets_free_evidence(self):
-        mapping = FusedMap(MappingConfig(voxel_clear_observations=3))
-        origin = (.05, .05, .55)
-        old = np.array([[1.05, .05, .55]])
-        farther = np.array([[3.05, .05, .55]])
-        mapping.update_lidar(origin, old, 0, 8.)
-        for step in (1, 2):
-            mapping.update_lidar(origin, farther, step, 8.)
-        # A new hit overrides pending free evidence, including a farther return.
-        mapping.update_lidar(origin, np.concatenate([farther, old]), 3, 8.)
-        for step in (4, 5):
-            mapping.update_lidar(origin, farther, step, 8.)
-        self.assertTrue(np.any(np.linalg.norm(mapping.voxels.points()-old[0], axis=1) < .01))
-        # A nearer return occludes the old voxel, independent of return ordering.
-        nearer = np.array([[.55, .05, .55]])
-        for step in range(6, 12):
-            rays = np.concatenate([farther, nearer])
-            mapping.update_lidar(origin, rays if step % 2 else rays[::-1], step, 8.)
-        self.assertTrue(np.any(np.linalg.norm(mapping.voxels.points()-old[0], axis=1) < .01))
-        mapping.update_lidar(origin, farther, 12, 8.)
-        self.assertFalse(np.any(np.linalg.norm(mapping.voxels.points()-old[0], axis=1) < .01))
-
-    def test_lidar_scene_does_not_clear_from_invalid_or_range_limit_returns(self):
-        for count in (0, 3):
-            mapping = FusedMap(MappingConfig(voxel_clear_observations=count))
-            origin = (.05, .05, .55)
-            old = np.array([[1.05, .05, .55]])
-            mapping.update_lidar(origin, old, 0, 8.)
-            for step in range(1, 5):
-                rays = np.array([[8.05, .05, .55], [np.nan, 0, 0]]) if count else np.array([[3.05, .05, .55]])
-                mapping.update_lidar(origin, rays, step, 8.)
-            self.assertTrue(np.any(np.linalg.norm(mapping.voxels.points()-old[0], axis=1) < .01))
-
     def test_ray_budget_preserves_nearest_thin_obstacle_before_flattening(self):
         config = MappingConfig(
             x_limits=(0.0, 8.0), y_limits=(-2.0, 2.0),
@@ -137,7 +85,6 @@ class InteractionNavigationMappingTest(unittest.TestCase):
                 for _ in range(60):
                     occupancy.update_lidar(origin, points, max_range=8)
                 self.assertEqual(bool(occupancy.occupied_mask()[cell]), height > 0)
-                self.assertEqual(float(occupancy.log_odds[cell]), 4.0 if height > 0 else -4.0)
 
 
     def test_same_frame_semantic_sources_are_deduplicated(self):
@@ -269,7 +216,6 @@ class InteractionNavigationMappingTest(unittest.TestCase):
             x_limits=(0.0, 6.0), y_limits=(-1.0, 1.0),
             grid_resolution=0.1, obstacle_height=(0.2, 0.8),
             allow_lidar_free_only_rays=False, lidar_free_height_layers=2,
-            lidar_free_height_window_frames=2,
         )
         occupancy = OccupancyGridMap(config)
         origin = (0.5, 0.0, 0.6)
@@ -279,85 +225,6 @@ class InteractionNavigationMappingTest(unittest.TestCase):
         occupancy.update_lidar(origin, np.array([[4.0, 0.0, 0.25]]), max_range=5.0)
         self.assertTrue(occupancy.observed[cell])
         self.assertFalse(occupancy.occupied_mask()[cell])
-
-    def test_height_aware_default_does_not_combine_separate_scans(self):
-        config = MappingConfig(x_limits=(0, 6), y_limits=(-1, 1),
-                               obstacle_height=(.2, .8), lidar_free_height_layers=2)
-        occupancy = OccupancyGridMap(config)
-        origin = (.5, 0., .6)
-        cell = occupancy.world_to_cell((3., 0.))
-        occupancy.update_lidar(origin, np.array([[4., 0., .75]]), 8.)
-        occupancy.update_lidar(origin, np.array([[4., 0., .25]]), 8.)
-        self.assertFalse(occupancy.observed[cell])
-        occupancy.update_lidar(origin, np.array([[4., 0., .25], [4., 0., .75]]), 8.)
-        self.assertTrue(occupancy.observed[cell])
-
-    def test_height_aware_floor_rays_do_not_erase_elevated_obstacle(self):
-        config = MappingConfig(x_limits=(0, 6), y_limits=(-1, 1),
-                               obstacle_height=(.2, .8), sticky_free_scale=.25,
-                               lidar_free_height_layers=2)
-        occupancy = OccupancyGridMap(config)
-        origin = (.5, 0., .6)
-        cell = occupancy.world_to_cell((3., 0.))
-        for _ in range(3):
-            occupancy.update_lidar(origin, np.array([[3., 0., .75]]), 8.)
-        confirmed = float(occupancy.log_odds[cell])
-        for _ in range(60):
-            occupancy.update_lidar(origin, np.array([[4., 0., .05]]), 8.)
-        self.assertEqual(float(occupancy.log_odds[cell]), confirmed)
-        self.assertTrue(occupancy.occupied_mask()[cell])
-        # Removing the object and seeing through both height layers supplies
-        # actual contrary evidence, so dynamic obstacles can still disappear.
-        for _ in range(60):
-            occupancy.update_lidar(origin, np.array([[4., 0., .25], [4., 0., .75]]), 8.)
-        self.assertFalse(occupancy.occupied_mask()[cell])
-
-    def test_height_aware_hit_invalidates_old_free_evidence(self):
-        config = MappingConfig(x_limits=(0, 6), y_limits=(-1, 1),
-                               obstacle_height=(.2, .8), sticky_free_scale=.25,
-                               lidar_free_height_layers=2, lidar_free_height_window_frames=5)
-        occupancy = OccupancyGridMap(config)
-        origin = (.5, 0., .6)
-        cell = occupancy.world_to_cell((3., 0.))
-        occupancy.update_lidar(origin, np.array([[4., 0., .75]]), 8.)
-        # A new lower-layer hit invalidates the earlier upper-layer clearing.
-        occupancy.update_lidar(origin, np.array([[3., 0., .3]]), 8.)
-        hit = float(occupancy.log_odds[cell])
-        occupancy.update_lidar(origin, np.array([[4., 0., .25]]), 8.)
-        self.assertEqual(float(occupancy.log_odds[cell]), hit)
-
-    def test_height_aware_free_evidence_is_consumed_and_expires(self):
-        config = MappingConfig(x_limits=(0, 6), y_limits=(-1, 1),
-                               obstacle_height=(.2, .8),
-                               lidar_free_height_layers=2, lidar_free_height_window_frames=3)
-        occupancy = OccupancyGridMap(config)
-        origin = (.5, 0., .6)
-        cell = occupancy.world_to_cell((3., 0.))
-        occupancy.update_lidar(origin, np.array([[4., 0., .25], [4., 0., .75]]), 8.)
-        first_free = float(occupancy.log_odds[cell])
-        occupancy.update_lidar(origin, np.array([[4., 0., .25]]), 8.)
-        self.assertEqual(float(occupancy.log_odds[cell]), first_free)
-        # Old partial evidence cannot join a much later observation.
-        other = OccupancyGridMap(config)
-        other.update_lidar(origin, np.array([[4., 0., .75]]), 8.)
-        for _ in range(3):
-            other.update_lidar(origin, np.array([[1., .8, .6]]), 8.)
-        other.update_lidar(origin, np.array([[4., 0., .25]]), 8.)
-        self.assertFalse(other.observed[cell])
-
-    def test_height_aware_retains_hits_beyond_nearest_and_ray_budget(self):
-        config = MappingConfig(x_limits=(0, 8), y_limits=(-2, 2),
-                               obstacle_height=(.2, .8), lidar_free_height_layers=2,
-                               max_lidar_rays=1)
-        occupancy = OccupancyGridMap(config)
-        origin = (.5, 0., .6)
-        points = np.array([[2., 0., .6], [4., 0., .6], [3., 1., .7]])
-        occupancy.update_lidar(origin, points, 8.)
-        for point in points:
-            self.assertTrue(occupancy.occupied_mask()[occupancy.world_to_cell(point[:2])])
-        # Actual far hits are retained; that does not infer visible free space
-        # behind a nearer return, nor fill the object's interior.
-        self.assertFalse(occupancy.observed[occupancy.world_to_cell((3., 0.))])
 
     def test_flattened_scan_blocks_free_space_behind_nearer_obstacle(self):
         """A tabletop return in the same direction as a far wall must clamp

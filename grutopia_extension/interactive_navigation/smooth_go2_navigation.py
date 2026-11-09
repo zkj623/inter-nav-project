@@ -1,0 +1,413 @@
+"""Continuous exploration velocity tracking with acceleration-bounded requests.
+
+The original Go2 policy/actuator loop is unchanged. Local checks evaluate the
+command actually sent after smoothing, including the full body footprint.
+"""
+import math
+import numpy as np
+from grutopia_extension.interactive_navigation.go2_exploration_tracking import ExplorationPathTracker
+from grutopia_extension.interactive_navigation.go2_voronoi_navigation import body_motion_clear,body_translation_recovery_clear,navigation_body_blocked,navigation_footprint_samples,route_blocked,body_rotation_clear
+from grutopia_extension.interactive_navigation.mapping import AStarMapPlanner
+from grutopia_extension.interactive_navigation.local_staging_control import LocalStagingControl,native_translation_speed
+from grutopia_extension.interactive_navigation.go2_interaction_motion import GO2_NATIVE_GOAL_CAPTURE_M
+from scipy.ndimage import distance_transform_edt
+from grutopia_extension.interactive_navigation.go2_recovery_settling import RecoveryMotionGate
+from grutopia_extension.interactive_navigation.route_progress import RouteProgress
+
+
+class VelocitySlewLimiter:
+    def __init__(self,linear_acceleration=.65,yaw_acceleration=1.8):
+        self.linear_acceleration=linear_acceleration;self.yaw_acceleration=yaw_acceleration
+        self.command=np.zeros(3);self.last_time=None
+        self.measured=np.zeros(3);self.measurement_time=None;self.body_state=None
+        self.policy_command=None  # Populated only by the validated 45D runtime adapter.
+        self.staging=None;self.progress_position=None;self.progress_time=None
+        self.recovery_gate=RecoveryMotionGate()
+    def clear_guidance(self,position,now):
+        """Discard old route maneuvers after a measured recovery handoff.
+
+        Keep command/measurement history so the next route still accelerates
+        from the actual controller state instead of resetting its velocity.
+        """
+        self.staging=None;self.recovery_gate=RecoveryMotionGate()
+        self.progress_position=np.asarray(position[:2],float).copy();self.progress_time=float(now)
+
+    def observe(self,velocity,now,*,body_state=None):
+        velocity=np.asarray(velocity,float)
+        if self.measurement_time is None:self.measured=velocity.copy()
+        else:
+            dt=max(0.,float(now)-self.measurement_time);alpha=dt/(.15+dt)
+            self.measured+=alpha*(velocity-self.measured)
+        self.measurement_time=float(now)
+        if body_state is not None:
+            position,linear,angular,tilt=body_state
+            self.body_state=(np.asarray(position,float).copy(),np.asarray(linear,float).copy(),
+                np.asarray(angular,float).copy(),float(tilt),float(now))
+    def preview(self,target,now):
+        dt=.005 if self.last_time is None else max(.001,min(.1,float(now)-self.last_time))
+        target=np.asarray(target,float);delta=target[:2]-self.command[:2]
+        maximum=self.linear_acceleration*dt
+        planar=self.command[:2]+delta*min(1.,maximum/max(np.linalg.norm(delta),1e-9))
+        yaw=self.command[2]+np.clip(target[2]-self.command[2],-self.yaw_acceleration*dt,self.yaw_acceleration*dt)
+        return np.array([*planar,yaw])
+    def preview_directional_translation(self,target,now):
+        """Stay on the checked translation ray within the original slew ball.
+
+        Interpolating two body-frame vectors can bend the world-space ray
+        when the measured heading changes. Intersect the requested ray with
+        the same acceleration ball instead; fall back to the ordinary
+        preview when no forward point on that ray is reachable this tick.
+        The caller must still check the actual returned movement geometry.
+        """
+        target=np.asarray(target,float);ordinary=self.preview(target,now)
+        dt=.005 if self.last_time is None else max(.001,min(.1,float(now)-self.last_time))
+        budget=self.linear_acceleration*dt;speed=float(np.linalg.norm(target[:2]))
+        detail={'direction_preserved':False,'planar_acceleration_budget_mps':float(budget)}
+        if speed<1e-9:
+            detail['reason']='no_translation';return ordinary,detail
+        direction=target[:2]/speed;before=self.command[:2]
+        projection=float(np.dot(before,direction));perpendicular=before-projection*direction
+        perpendicular_squared=float(np.dot(perpendicular,perpendicular))
+        if perpendicular_squared>budget*budget:
+            detail['reason']='ray_outside_slew_ball';return ordinary,detail
+        reach=math.sqrt(max(0.,budget*budget-perpendicular_squared))
+        lower=max(0.,projection-reach);upper=projection+reach
+        if upper<0.:
+            detail['reason']='ray_behind_slew_ball';return ordinary,detail
+        value=float(np.clip(speed,lower,upper));command=ordinary.copy();command[:2]=direction*value
+        detail.update(direction_preserved=True,reason='checked_direction',
+            planar_command_change_mps=float(np.linalg.norm(command[:2]-before)))
+        return command,detail
+
+    def accept(self,command,now):
+        self.command=np.asarray(command,float).copy();self.last_time=float(now)
+
+
+class SmoothExplorationTracker(ExplorationPathTracker):
+    def __init__(self,start,path,limiter,*,max_forward=.50,max_lateral=.18,final_goal_slow_radius=.75,final_task_goal=None):
+        super().__init__(start,path,lookahead=.55,max_forward_speed=max_forward,max_lateral_speed=max_lateral)
+        self.limiter=limiter;self.max_forward=max_forward;self.max_lateral=max_lateral
+        self.final_goal_slow_radius=float(final_goal_slow_radius)
+        self.final_task_goal=None if final_task_goal is None else np.asarray(final_task_goal[:2],float)
+        self._last_plan_time=-1e9;self._desired=np.zeros(3)
+        self._blocked_ticks=0;self._last_safe=np.zeros(3)
+        self._observation_started=None
+        self._observation_yaw_origin=0.;self._observation_yaw_sign=1.;self._observation_yaw_moving=False
+        self.route_progress=RouteProgress(start,self._planned_path)
+
+    def action_for(self,decision,observation,step=None):
+        if self.staging_active:return {'move_along_path':[]}
+        position=np.asarray(observation['position'][:2],float)
+        self._waypoint_index=self.route_progress.advance(position,self._waypoint_index,
+            self._tracking_segment_clear,self.velocity_lookahead_distance)
+        return super().action_for(decision,observation,step)
+
+    def _lookahead_target(self,position):
+        return self.route_progress.target(position,self._waypoint_index,self.velocity_lookahead_distance)
+
+    @property
+    def staging_active(self):return self.limiter.staging is not None
+
+    def _unknown_on_chord(self,position,heading,target,planner,boxes):
+        observed=getattr(planner,'planning_observed',None)
+        if observed is None:return False
+        occupied=~planner.free & observed
+        for box in boxes:occupied |= planner.box_mask(box)
+        xx,yy=navigation_footprint_samples(planner);c,s=math.cos(heading),math.sin(heading)
+        dx=np.rint((c*xx-s*yy)/planner.resolution).astype(int)
+        dy=np.rint((s*xx+c*yy)/planner.resolution).astype(int)
+        unknown=False
+        for t in np.linspace(0,1,13):
+            xy=np.asarray(position[:2])+t*(np.asarray(target[:2])-position[:2])
+            row,col=planner.cell(xy);rows=row+dy;cols=col+dx
+            if rows.min()<0 or cols.min()<0 or rows.max()>=observed.shape[0] or cols.max()>=observed.shape[1]:return False
+            if occupied[rows,cols].any():return False
+            unknown |= bool((~observed[rows,cols]).any())
+        return unknown
+
+    def _observe_gap(self,position,heading,target,planner,boxes,now,confirmed_gap=False):
+        if not confirmed_gap and not self._unknown_on_chord(position,heading,target,planner,boxes):
+            self._observation_started=None;return None
+        if self._observation_started is None:
+            self._observation_started=now;self._observation_yaw_origin=heading
+            delta=np.asarray(target)-position[:2]
+            error=(math.atan2(delta[1],delta[0])-heading+math.pi)%(2*math.pi)-math.pi
+            self._observation_yaw_sign=1. if error>=0 else -1.
+            self._observation_yaw_moving=False
+        elapsed=now-self._observation_started
+        if elapsed>8.:return None
+        delta=np.asarray(target)-position[:2]
+        progress=abs((heading-self._observation_yaw_origin+math.pi)%(2*math.pi)-math.pi)
+        if abs(self.limiter.measured[2])>.15:self._observation_yaw_moving=True
+        sign=self._observation_yaw_sign
+        # From a settled stance the measured yaw response can be much lower
+        # than the command. Use the calibrated1.0 request to initiate the
+        # turn, then.6 after actual rotation starts. Keep the turn direction
+        # fixed until enough sensor viewpoint change has been achieved.
+        yaw_request=.6 if self._observation_yaw_moving else 1.
+        candidates=([np.array([0.,0.,sign*yaw_request]),np.array([0.,0.,-sign*yaw_request])]
+                    if elapsed<3. and progress<.35 else [])
+        if not candidates and (abs(self.limiter.command[2])>.1 or abs(self.limiter.measured[2])>.15):
+            return np.zeros(3)
+        lateral_sign=1. if -math.sin(heading)*delta[0]+math.cos(heading)*delta[1]>=0 else -1.
+        candidates.extend([np.array([0.,lateral_sign*.30,0.]),np.array([0.,-lateral_sign*.30,0.]),np.array([-.35,0.,0.])])
+        for candidate in candidates:
+            # Observation itself must fit entirely in already observed free
+            # space. Never "fix" a blind band by declaring it free.
+            if body_motion_clear(planner,boxes,position,heading,candidate[0],candidate[2],horizon=.8,lateral=candidate[1]):
+                if abs(candidate[2])>.1:self._observation_yaw_sign=math.copysign(1.,candidate[2])
+                return candidate
+        return None
+
+    def _tracking_segment_clear(self,start,target):
+        # The global guide is a centerline on the inflated observed map.
+        # The full oriented body is checked on its actual turning motion,
+        # not translated at a fixed yaw all the way to a distant waypoint.
+        return AStarMapPlanner.segment_clear(self._planner.cell(start),self._planner.cell(target),self._route_blocked)
+
+    @staticmethod
+    def _only_unknown_blocks(command,position,heading,planner,boxes,horizon):
+        observed=getattr(planner,'planning_observed',None)
+        if observed is None:return False
+        saved=planner.free
+        try:
+            # Diagnostic classification only. No motion is accepted against
+            # this temporary mask; observation movements use the real mask.
+            planner.free=saved | ~observed
+            return body_motion_clear(planner,boxes,position,heading,command[0],command[2],horizon=horizon,lateral=command[1])
+        finally:planner.free=saved
+
+    def action(self,position,heading,planner,boxes):
+        now=float(getattr(planner,'control_time',0.))
+        scope=getattr(planner,'planning_scope','local')
+        try:
+            planner.planning_scope='global';self._route_blocked=route_blocked(planner,boxes)
+        finally:planner.planning_scope=scope
+        # Baseline exploration's interpolated target and waypoint progression.
+        action,state=super().action(position,heading,planner,boxes)
+        delta=np.asarray(state['target'])-np.asarray(position[:2]);distance=float(np.linalg.norm(delta))
+        error=(math.atan2(delta[1],delta[0])-heading+math.pi)%(2*math.pi)-math.pi
+        remaining=float(np.linalg.norm(np.asarray(self._planned_path[-1])-position[:2]))
+        factor=max(0.,math.cos(error))**2
+        c,s=math.cos(heading),math.sin(heading)
+        local=np.array([c*delta[0]+s*delta[1],-s*delta[0]+c*delta[1]])
+        desired=np.asarray(action['move_by_speed'],float).copy()
+        if self.limiter.progress_position is None:
+            self.limiter.progress_position=np.asarray(position[:2]).copy();self.limiter.progress_time=now
+        elif np.linalg.norm(np.asarray(position[:2])-self.limiter.progress_position)>.05:
+            self.limiter.progress_position=np.asarray(position[:2]).copy();self.limiter.progress_time=now
+        stalled=now-self.limiter.progress_time>1.5
+        target_heading=heading+error
+        corner_heading=None
+        index=self._waypoint_index
+        if stalled and index+1<len(self._planned_path):
+            corner=np.asarray(self._planned_path[index]);following=np.asarray(self._planned_path[index+1])
+            to_corner=corner-np.asarray(position[:2]);segment=following-corner
+            approach_error=(math.atan2(to_corner[1],to_corner[0])-heading+math.pi)%(2*math.pi)-math.pi
+            future_heading=math.atan2(segment[1],segment[0])
+            future_error=(future_heading-heading+math.pi)%(2*math.pi)-math.pi
+            corner_distance=float(np.linalg.norm(to_corner))
+            corner_in_range=corner_distance<.28
+            if not corner_in_range and corner_distance<self.velocity_lookahead_distance:
+                # The full body may be unable to reach the waypoint's .28m
+                # acceptance disk. If the normal approach is blocked, use
+                # the existing lookahead to prepare its outgoing heading;
+                # staging still checks the complete body and known space.
+                normal_horizon=.60+float(np.linalg.norm(desired[:2]))/(2*self.limiter.linear_acceleration)
+                corner_in_range=not body_motion_clear(planner,boxes,position,heading,
+                    desired[0],desired[2],horizon=normal_horizon,lateral=desired[1])
+            if (corner_in_range and np.linalg.norm(segment)>.08
+                    and abs(approach_error)<.35 and abs(future_error)>.35):
+                # A short fallback carrot can point straight at the near
+                # waypoint while the body must turn for the outgoing segment.
+                # Use that route tangent for a checked turn, never for an
+                # unchecked shortcut across the corner.
+                corner_heading=future_heading;target_heading=heading+future_error
+                state['blocked_corner_heading_rad']=float(future_heading)
+                state['blocked_corner_distance_m']=corner_distance
+        stage_error=(target_heading-heading+math.pi)%(2*math.pi)-math.pi
+        # A slow, blended turn near an endpoint can leave the rough policy
+        # leaning without a full stride (T05 v77). Finish this turn from a
+        # measured stop using the existing checked staging maneuver instead
+        # of continuing ever smaller simultaneous vx/vy/yaw requests.
+        endpoint_turn=(remaining<self.final_goal_slow_radius and abs(stage_error)>.30
+                       and .05<float(np.linalg.norm(desired[:2]))<.42)
+        sharp_turn=not state.get('recovering_buffer') and (abs(stage_error)>.85 or endpoint_turn) and distance>.10
+        if endpoint_turn:state['endpoint_turn_braking']=True
+        if not self.staging_active and sharp_turn:
+            # A world-directed shortcut can request reverse/strafe and large
+            # yaw together when a frontier or corner moves behind the dog.
+            # Brake first, then finish a checked turn before resuming travel.
+            candidate=LocalStagingControl(position,heading,target_heading,planner,boxes,now)
+            if not candidate.failed:
+                candidate.phase='staging_brake'
+                self.limiter.staging=candidate
+            else:
+                desired[:]=0.;state['needs_replan']=True
+                state['sharp_turn_space_unavailable']=True
+        elif (not self.staging_active and stalled and (not state.get('recovering_buffer') or corner_heading is not None) and abs(stage_error)>.25
+                and np.linalg.norm(self.limiter.measured[:2])<.08
+                and (corner_heading is not None or not body_rotation_clear(planner,boxes,position,heading,target_heading,margin=.025)
+                     or (self.limiter.policy_command is not None
+                         and np.linalg.norm(self.limiter.measured[:2])<.02
+                         and abs(self.limiter.measured[2])<.06
+                         and np.linalg.norm(self.limiter.policy_command[:2])>.02))):
+            # The validated Unitree policy may not execute a small coupled
+            # translation/yaw command even when in-place rotation is clear.
+            # Resolve that local pose with the existing checked turn before
+            # discarding many remote frontiers sharing the same first leg.
+            candidate=LocalStagingControl(position,heading,target_heading,planner,boxes,now)
+            if not candidate.failed:
+                self.limiter.staging=candidate
+                state['local_execution_recovery']='measured_stall_prepare_heading'
+        staging_command=None
+        if self.staging_active:
+            result=self.limiter.staging.update(position,heading,planner,boxes,self.limiter,now)
+            if result is None:
+                self.limiter.staging=None;self.limiter.progress_time=now
+                self.limiter.progress_position=np.asarray(position[:2]).copy()
+                state.update(needs_replan=True,buffer_cleared_replan=True,staging_completed=True,recovering_buffer=False)
+            else:
+                staging_command,stage_state=result;state.update(stage_state)
+                if self.limiter.staging.failed:
+                    self.limiter.staging=None;state['blocked_ticks']=100
+        if staging_command is not None:desired=staging_command
+        native_goal=(self.final_task_goal is not None and self.limiter.policy_command is not None
+            and np.linalg.norm(np.asarray(self._planned_path[-1])-self.final_task_goal)<1e-6
+            and np.linalg.norm(np.asarray(state['target'])-self.final_task_goal)<.01
+            and GO2_NATIVE_GOAL_CAPTURE_M<=remaining<.60 and abs(error)<.25
+            and staging_command is None and not self.staging_active
+            and not state.get('recovering_buffer') and not state.get('needs_replan'))
+        if native_goal:
+            direction=local/max(distance,1e-9)
+            speed=min(.50,max(float(np.linalg.norm(desired[:2])),native_translation_speed(.35,direction)))
+            desired[:2]=speed*direction
+            state.update(native_final_goal_approach=True,goal_capture_radius_m=GO2_NATIVE_GOAL_CAPTURE_M,
+                goal_effective_speed_mps=float(speed))
+        # Restore the actual baseline velocity law, including its preserved
+        # world direction when lateral speed is limited. Do not multiply a
+        # second cosine-squared factor onto the reference.
+        preview_horizon=.60+float(np.linalg.norm(desired[:2]))/(2*self.limiter.linear_acceleration)
+        if native_goal:
+            speed=float(np.linalg.norm(desired[:2]))
+            finite=(remaining+.025)/(max(speed,1e-9)*math.cos(.10))
+            if abs(desired[2])*finite<=.10:preview_horizon=min(preview_horizon,finite)
+        desired_clear=body_motion_clear(planner,boxes,position,heading,desired[0],desired[2],horizon=preview_horizon,lateral=desired[1])
+        unknown_gap=(not desired_clear and self._only_unknown_blocks(desired,position,heading,planner,boxes,preview_horizon))
+        if state.get('staging_completed'):
+            # The staging maneuver displaced the base away from the old
+            # route. Hand off to a route from this actual pose before moving.
+            desired=np.zeros(3)
+        elif staging_command is None and (state.get('needs_replan') or unknown_gap):
+            observation=self._observe_gap(position,heading,state['target'],planner,boxes,now,confirmed_gap=unknown_gap)
+            if observation is not None:
+                desired=observation;state['needs_replan']=False
+                state['observation_motion']=True;state['observation_reason']='unobserved_cells_in_body_corridor'
+                self.limiter.progress_time=now
+                self.limiter.progress_position=np.asarray(position[:2]).copy()
+            else:
+                desired[:]=0.;state['needs_replan']=True;state['observation_timeout_or_blocked']=True
+        else:self._observation_started=None
+        if state.get('recovering_buffer') and not state.get('local_staging'):
+            # A short, continuously accelerated translation leaves mild map
+            # overlap. Do not alternate large fixed sidesteps and yaw modes.
+            direction=local/max(distance,1e-9)
+            desired=np.array([*(.25*direction),0.])
+        smoothed=self.limiter.preview(desired,now)
+        if state.get('recovering_buffer') and not state.get('local_staging'):smoothed[2]=0.
+        horizon=.60+max(float(np.linalg.norm(smoothed[:2])),float(np.linalg.norm(self.limiter.measured[:2])))/(2*self.limiter.linear_acceleration)
+        if state.get('staging_phase')=='staging_move' or native_goal:
+            target_delta=np.asarray(state['target'])-np.asarray(position[:2])
+            world=np.array([c*smoothed[0]-s*smoothed[1],s*smoothed[0]+c*smoothed[1]])
+            speed=np.linalg.norm(world);remaining=np.linalg.norm(target_delta)
+            if speed>1e-8 and remaining>1e-8:
+                alignment=float(np.clip(np.dot(world,target_delta)/(speed*remaining),-1.,1.))
+                if abs(smoothed[2])<1e-8 and alignment>.95:
+                    horizon=min(horizon,(remaining+.025)/speed)
+                elif alignment>.995:
+                    finite=(remaining+.025)/(speed*math.cos(math.acos(alignment)+.10))
+                    if abs(smoothed[2])*finite<=.10:horizon=min(horizon,finite)
+        clear=body_motion_clear(planner,boxes,position,heading,smoothed[0],smoothed[2],horizon=horizon,lateral=smoothed[1])
+        if not clear and state.get('recovering_buffer'):
+            world=np.array([c*smoothed[0]-s*smoothed[1],s*smoothed[0]+c*smoothed[1]])
+            if abs(smoothed[2])<1e-8:
+                clear=(body_translation_recovery_clear(planner,boxes,position,heading,state['target']) and
+                    body_translation_recovery_clear(planner,boxes,position,heading,
+                        np.asarray(position[:2])+world*max(horizon,.5),require_clear_end=False))
+                if clear:state['overlap_recovery']=True
+        if not clear:
+            # Keep one continuous twist when possible. These alternatives are
+            # all checked AFTER acceleration limiting, not just at the target.
+            candidates=[]
+            for scale in [.75,.40,0.]:
+                for yaw in ([desired[2]] if state.get('local_staging') else [desired[2],0.,-.6,.6]):
+                    target=np.array([desired[0]*scale,desired[1]*scale,yaw])
+                    cmd=self.limiter.preview(target,now)
+                    if body_motion_clear(planner,boxes,position,heading,cmd[0],cmd[2],horizon=horizon,lateral=cmd[1]):
+                        cost=np.linalg.norm(cmd-desired)+.15*np.linalg.norm(cmd-self.limiter.command)
+                        candidates.append((cost,cmd))
+            if candidates:smoothed=min(candidates,key=lambda item:item[0])[1];clear=True
+            else:
+                # Emergency stop takes priority if a new scan reveals a
+                # collision inside the braking distance. This is logged.
+                smoothed=np.zeros(3);state['emergency_collision_stop']=True
+        measured=self.limiter.measured
+        if state.get('overlap_recovery'):
+            measured_world=np.array([c*measured[0]-s*measured[1],s*measured[0]+c*measured[1]])
+            measured_clear=body_translation_recovery_clear(planner,boxes,position,heading,np.asarray(position[:2])+measured_world*.25,require_clear_end=False)
+        else:measured_clear=body_motion_clear(planner,boxes,position,heading,measured[0],measured[2],horizon=.8 if native_goal else .25,lateral=measured[1])
+        if (np.linalg.norm(measured[:2])>.10 or abs(measured[2])>.15) and not measured_clear:
+            smoothed=np.zeros(3);clear=False;state['measured_braking_space_blocked']=True
+        # A safe, nonzero command is not proof of executable motion. In
+        # v160 the checked 0.14 m/s alternative left the policy stationary
+        # indefinitely, while blocked_ticks stayed zero. Reuse the existing
+        # frontier-failure handoff after measured progress has stalled.
+        # Intentional staging/observation holds retain their own lifecycle.
+        execution_stalled=(stalled and not self.staging_active
+            and not state.get('local_staging') and not state.get('observation_motion')
+            and not state.get('recovering_buffer')
+            and np.linalg.norm(desired[:2])>.05 and np.linalg.norm(smoothed[:2])>.02
+            and np.linalg.norm(measured[:2])<.02 and abs(measured[2])<.06)
+        if execution_stalled:
+            state.update(execution_stalled=True,progress_stall_seconds=float(now-self.limiter.progress_time))
+        stopped_by_check=(not clear) or state.get('needs_replan',False) or execution_stalled or (np.linalg.norm(smoothed)<.02 and np.linalg.norm(desired)>.15)
+        self._blocked_ticks=self._blocked_ticks+1 if stopped_by_check else 0
+        if self._blocked_ticks>30:state['needs_replan']=True
+        self.limiter.accept(smoothed,now)
+        state.update(controller=('continuous_'+state['staging_phase'] if state.get('local_staging') else 'continuous_exploration_velocity'),target=state['target'],
+            desired_command=desired.tolist(),applied_command=smoothed.tolist(),
+            heading_error_rad=error,body_sweep_clear=bool(clear and not state.get('overlap_recovery')),body_motion_safe=bool(clear),blocked_ticks=max(self._blocked_ticks,state.get('blocked_ticks',0)))
+        return {'move_by_speed':smoothed.tolist()},state
+
+
+def smooth_recovery_action(action,position,heading,planner,boxes,limiter,now,*,directional_translation=False):
+    """Preserve a checked recovery's motion type and optionally its exact ray."""
+    raw=np.asarray(action['move_by_speed'],float)
+    diagnostic={'time_s':float(now),'requested':raw.tolist(),
+        'previous_command':np.asarray(limiter.command,float).tolist(),
+        'measured':np.asarray(limiter.measured,float).tolist(),
+        'directional_translation_requested':bool(directional_translation)}
+    limiter.recovery_diagnostic=diagnostic
+    raw=limiter.recovery_gate.filter(raw,limiter.measured,now,body_state=limiter.body_state,command=limiter.command)
+    diagnostic.update(gated_request=raw.tolist(),gate_mode=getattr(limiter.recovery_gate,'mode',None),
+        gate_settling=bool(getattr(limiter.recovery_gate,'settling',False)))
+    if not np.any(raw):
+        diagnostic['reason']='measured_stop_gate';return {'move_by_speed':[0.,0.,0.]}
+    if directional_translation and np.linalg.norm(raw[:2])>1e-8 and abs(raw[2])<1e-8:
+        command,detail=limiter.preview_directional_translation(raw,now);diagnostic['directional_preview']=detail
+    else:command=limiter.preview(raw,now)
+    if abs(raw[2])>1e-8 and np.linalg.norm(raw[:2])<1e-8:
+        if np.linalg.norm(limiter.measured[:2])>.10:
+            diagnostic['reason']='translation_before_turn';return {'move_by_speed':[0.,0.,0.]}
+        command[:2]=0.
+        command[2]=math.copysign(min(abs(command[2]),abs(raw[2])),raw[2]) if command[2]*raw[2]>0 else 0.
+        diagnostic.update(reason='checked_rotation',applied=command.tolist())
+        return {'move_by_speed':command.tolist()}
+    command[2]=0.;c,s=math.cos(heading),math.sin(heading)
+    world=np.array([c*command[0]-s*command[1],s*command[0]+c*command[1]])
+    endpoint=np.asarray(position[:2])+world*.5
+    safe=body_translation_recovery_clear(planner,boxes,position,heading,endpoint,require_clear_end=False)
+    diagnostic.update(preview=command.tolist(),checked_endpoint=endpoint.tolist(),sweep_safe=bool(safe),
+        reason='checked_translation' if safe else 'translation_sweep_blocked')
+    if safe:return {'move_by_speed':command.tolist()}
+    return {'move_by_speed':[0.,0.,0.]}

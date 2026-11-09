@@ -27,7 +27,7 @@ def wait_until(predicate, timeout=8.):
 @pytest.fixture
 def detached_scene():
     config = load()
-    tasks = Tasks(config['navigation'], maintain_voxels=False)
+    tasks = Tasks(config['navigation'])
     session = Session(config, REPO, port=0, demo=True, separate_cloud=True)
     try:
         yield session, tasks
@@ -53,7 +53,10 @@ def snapshot(step, points):
 
 def update(session, tasks, packet, *, publish=False, accepted=True):
     if accepted:
-        tasks.update(packet, packet.captured_at)
+        # Exercise every accepted scan without real sleeps; the release mapper
+        # intentionally skips inputs inside its local map scheduling period.
+        now = max(packet.captured_at, tasks.engine.layers.last_local + .101)
+        tasks.update(packet, now)
     session.last_publish = float('-inf') if publish else time.monotonic()+60.
     session.update(packet, tasks, 'disabled')
 
@@ -69,10 +72,10 @@ def contains(points, point):
 
 def test_detached_cloud_fuses_nonpublished_scans_but_not_repeats_or_rejected_input(detached_scene, monkeypatch):
     session, tasks = detached_scene
-    main_voxels = tasks.component.mapping.map.voxels
+    import deploy.visualization.scene as scene_module
     def must_not_extract():
         raise AssertionError('navigation thread extracted cumulative display points')
-    monkeypatch.setattr(main_voxels, 'points', must_not_extract)
+    monkeypatch.setattr(scene_module, 'display_points', must_not_extract)
     old, unseen, farther = [1.05, .05, .55], [1.05, 1.05, .55], [3.05, .05, .55]
     update(session, tasks, snapshot(1, [old, unseen]), publish=True)
     published_scene(session, 1)
@@ -85,7 +88,7 @@ def test_detached_cloud_fuses_nonpublished_scans_but_not_repeats_or_rejected_inp
     update(session, tasks, snapshot(3, [farther]))
     update(session, tasks, snapshot(4, [farther]), publish=True)
     fourth = published_scene(session, 3)
-    assert not contains(fourth['points'], old)
+    assert contains(fourth['points'], old)  # Historical display, independent of navigation clearing.
     assert contains(fourth['points'], unseen) and contains(fourth['points'], farther)
     cloud_at = fourth['cloud_updated_at']
     rejected_point = [5.05, 1.05, .55]
@@ -93,7 +96,7 @@ def test_detached_cloud_fuses_nonpublished_scans_but_not_repeats_or_rejected_inp
     rejected = published_scene(session, 4)
     assert not contains(rejected['points'], rejected_point)
     assert rejected['cloud_physics_step'] == 4 and rejected['cloud_updated_at'] == cloud_at
-    assert main_voxels.voxel_count == 0
+    assert 'points' not in session.capture.capture(snapshot(6, [farther]), tasks)
     assert session.cloud_input_dropped == session.dropped == 0
     session.close({'completed': True}, grace=0)
     assert session.summary['telemetry_complete'] and session.summary['cloud_history_complete']

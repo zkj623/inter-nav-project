@@ -1,10 +1,25 @@
 """Copy the running planner's geometry; render it without another mapper."""
 from collections import deque
-from dataclasses import asdict
+from dataclasses import asdict, is_dataclass
 import base64
 
 import cv2
 import numpy as np
+
+
+def _payload(value):
+    """Detach decision diagnostics and keep HTTP JSON finite."""
+    if is_dataclass(value):
+        value = asdict(value)
+    if isinstance(value, dict):
+        return {str(k): _payload(v) for k, v in value.items()}
+    if isinstance(value, (tuple, list, np.ndarray)):
+        return [_payload(v) for v in value]
+    if isinstance(value, np.generic):
+        value = value.item()
+    if isinstance(value, float) and not np.isfinite(value):
+        return None
+    return value
 
 
 def display_points(voxel_map, limit=12000):
@@ -31,9 +46,8 @@ def display_points(voxel_map, limit=12000):
 
 
 class SceneCapture:
-    def __init__(self, include_cloud=True):
+    def __init__(self):
         self.trajectory = deque(maxlen=4000)
-        self.include_cloud = include_cloud
 
     def capture(self, snapshot, tasks):
         position = snapshot.observation['position'].copy()
@@ -48,25 +62,32 @@ class SceneCapture:
         if not result['ready']:
             result['reason'] = '地面/雷达原点未标定，或尚未收到有效观测；不生成导航地图'
             return result
-        runtime = tasks.component.mapping
-        grid = runtime.map.occupancy
-        topology = runtime.semantic_voronoi.peek_snapshot() if runtime.semantic_voronoi else None
-        result.update(config=asdict(runtime.map.config), revision=grid.revision,
-                      topology_revision=topology.revision if topology else None,
-                      observed=grid.observed.copy(), occupied=grid.occupied_mask().copy(),
-                      inflated=grid.inflated_mask().copy(), log_odds=grid.log_odds.copy(),
-                      static=grid.static_occupied.copy(),
-                      path=[list(p) for p in (runtime._planned_path or ())],
-                      skeleton=[list(cell) for cell in topology.skeleton_cells] if topology else [],
-                      frontiers=[list(f.centroid) for f in topology.frontiers] if topology else [],
-                      objects=[{'position': list(n.position), 'label': n.label}
-                               for n in runtime.map.scene_graph.object_nodes()][:40])
-        if self.include_cloud:
-            result.update(points=display_points(runtime.map.voxels),
-                          voxel_count=runtime.map.voxels.voxel_count)
-        goal = getattr(tasks.component.config, 'goal', None)
-        target = getattr(tasks.component, 'target_node', None)
-        result['goal'] = list(target.position) if target is not None else (list(goal) if goal is not None and tasks.mode == 'navigate' else None)
+        engine = tasks.engine
+        layers = engine.layers
+        decision = _payload(engine.decision)
+        detail = decision.get('explanation', decision) if isinstance(decision, dict) else {}
+        frontier = (detail or {}).get('frontier_goal')
+        skill = engine.skill
+        result.update(config=asdict(layers.config), revision=layers.local_revision,
+                      global_revision=layers.global_revision, topology_revision=None,
+                      observed=layers.observed.copy(), occupied=layers.local_occupied.copy(),
+                      inflated=engine.planner.blocked(layers.current_boxes).copy(),
+                      log_odds=layers.evidence.log_odds.copy(),
+                      static=layers.static_occupied.copy(), tracked=layers.tracked_occupied.copy(),
+                      global_observed=layers.global_observed.copy(),
+                      global_occupied=layers.global_occupied.copy(),
+                      path=_payload(engine.path), skeleton=[],
+                      frontiers=[] if frontier is None else [list(frontier)],
+                      objects=[{'position': [*box.xy, box.center_z or box.dimensions[2]/2],
+                                'label': box.id, 'dimensions': list(box.dimensions), 'yaw': box.yaw}
+                               for box in layers.current_boxes][:40],
+                      goal=None if engine.goal is None else list(engine.goal),
+                      phase=engine.phase, decision=decision,
+                      skill=None if skill is None else {'state': skill.state, 'status': skill.status,
+                          'reason': skill.reason, 'object_id': skill.plan.box_id},
+                      cloud_role='display_history_only')
+        # Display voxels belong exclusively to the rendering process. Capturing
+        # a map never extracts or changes a navigation-side point cloud.
         return result
 
 
@@ -75,8 +96,10 @@ def render_map(scene, size=720):
     observed, occupied, inflated = scene['observed'], scene['occupied'], scene['inflated']
     grid = np.full((*observed.shape, 3), (37, 33, 29), dtype=np.uint8)
     grid[observed] = (210, 217, 220)
-    grid[inflated & ~occupied] = (115, 185, 228)
+    grid[inflated & observed & ~occupied] = (115, 185, 228)
     grid[occupied] = (75, 75, 215)
+    if 'tracked' in scene:
+        grid[scene['tracked']] = (180, 80, 150)
     for row, col in scene['skeleton']:
         if 0 <= row < grid.shape[0] and 0 <= col < grid.shape[1]:
             grid[row, col] = (210, 135, 50)
@@ -101,6 +124,13 @@ def render_map(scene, size=720):
         cv2.circle(frame, pixel(p), 4, (220, 210, 40), -1)
     for obj in scene['objects']:
         p = pixel(obj['position'])
+        if 'dimensions' in obj:
+            half = np.asarray(obj['dimensions'][:2])/2
+            angle = np.radians(obj['yaw'])
+            rotation = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
+            corners = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])*half
+            corners = corners @ rotation.T + obj['position'][:2]
+            cv2.polylines(frame, [np.array([pixel(c) for c in corners], dtype=np.int32)], True, (180, 80, 150), 2)
         cv2.circle(frame, p, 4, (180, 80, 150), -1)
         cv2.putText(frame, obj['label'][:16], (p[0]+5, p[1]-5), cv2.FONT_HERSHEY_SIMPLEX, .35, (180, 80, 150), 1)
     if scene['goal'] is not None:
@@ -121,4 +151,8 @@ def map_payload(scene):
         raise ValueError('Map PNG encoding failed')
     return {'ready': True, 'png': base64.b64encode(image).decode(), 'revision': scene['revision'],
             'frame': scene['frame'], 'voxel_count': scene['voxel_count'],
-            'resolution': scene['config']['grid_resolution'], 'path_points': len(scene['path'])}
+            'resolution': scene['config']['grid_resolution'], 'path_points': len(scene['path']),
+            'global_revision': scene.get('global_revision'), 'phase': scene.get('phase'),
+            'decision': scene.get('decision'), 'skill': scene.get('skill'),
+            'observed_cells': int(scene['observed'].sum()),
+            'tracked_objects': len(scene['objects']), 'cloud_role': 'display_history_only'}

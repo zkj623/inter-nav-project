@@ -10,10 +10,8 @@ class NavigationController:
         self.robot = config['robot']
         self.navigation = config['navigation']
         self.control = config['runtime']['control']
-        self.perception_timeout = config['runtime']['perception']['failure_timeout_s']
         self.tasks, self.motion, self.session = tasks, motion, session
         self.perception = perception
-        self.perception_started = None
         self.last_perception_delivery = None
         self.stop_confirmed = None
         self.motion_error = None
@@ -64,17 +62,16 @@ class NavigationController:
                 self.tasks.cancel()
                 self.task_error = None
             return
-        if key not in ('navigate', 'explore', 'r'):
+        if key not in ('navigate', 'r'):
             return
         try:
             if self.motion is None:
                 raise ValueError('本次仅观察。实机配置验收后使用 --allow-motion 启动')
             if snapshot is None:
                 raise ValueError('等待有效定位和点云')
-            exploring = key == 'explore' or (key == 'r' and self.tasks.mode == 'explore')
-            check_task_inputs(self.robot, snapshot, exploring)
+            check_task_inputs(self.robot, snapshot)
             check_observation(snapshot, now, self.robot, self.control,
-                              self.navigation['mapping'], camera=exploring)
+                              self.navigation['mapping'], camera=False)
             if snapshot.observation['position'][2] < self.navigation['safe_base_height']:
                 raise ValueError('机器人机身高度不足')
             if key == 'navigate':
@@ -83,13 +80,9 @@ class NavigationController:
                     raise ValueError('目标格式为 x,y，例如 2.0,1.0')
                 self.tasks.check_navigation_goal(xy)
                 self.tasks.start('navigate', (*xy, float(snapshot.observation['position'][2])), now)
-            elif key == 'explore':
-                if not value.strip():
-                    raise ValueError('目标物品名称不能为空')
-                self.tasks.start('explore', value.replace('_', ' '), now)
             else:
                 if self.tasks.mode == 'navigate':
-                    self.tasks.check_navigation_goal(self.tasks.component.goal)
+                    self.tasks.check_navigation_goal(self.tasks.engine.goal)
                 self.tasks.resume(now)
             # Wait in a non-running task state. arm() may receive the previous
             # stop's events while waiting for this request's acknowledgement.
@@ -102,8 +95,6 @@ class NavigationController:
             self.tasks.resume(now)
             self.task_error = None
             self.stop_confirmed = False
-            if exploring:
-                self.perception_started = now
         except (ValueError, RuntimeError) as exc:
             self.task_error = str(exc)
             self.pause(str(exc))
@@ -117,26 +108,28 @@ class NavigationController:
             self.pause('missing_sensor_data')
             return self.task_error
         try:
-            exploring = self.tasks.state == 'active' and self.tasks.mode == 'explore'
             if snapshot.geometry_calibrated:
                 check_observation(snapshot, now, self.robot, self.control,
-                                  self.navigation['mapping'], camera=exploring)
+                                  self.navigation['mapping'], camera=False)
             else:
                 snapshot.require_fresh(now, self.robot['max_data_age_s'])
             if self.tasks.state == 'active' and snapshot.observation['position'][2] < self.navigation['fall_height']:
                 raise ValueError('Robot below fall-height threshold')
-            if exploring:
-                # A resume starts a new grace interval; an old failure cannot immediately re-pause it.
-                last_success = max(self.perception.last_success or 0., self.perception_started or now)
-                if now-last_success > self.perception_timeout:
-                    raise ValueError(f'Perception unavailable: {self.perception.last_error}')
             previous_state = self.tasks.state
             decision_started = time.monotonic()
             velocity = self.tasks.update(snapshot, now)
+            engine = getattr(self.tasks, 'engine', None)
+            if engine is not None:
+                while engine.events:
+                    event = dict(engine.events.popleft())
+                    kind = event.pop('event', 'navigation_event')
+                    if 'kind' in event:
+                        event['decision_kind'] = event.pop('kind')
+                    self.session.event(kind, **event)
             decision_duration = time.monotonic() - decision_started
             self.decision_duration_s = decision_duration
             if self.perception:
-                delivery = self.perception.last_delivery
+                delivery = getattr(self.perception, 'last_delivery', None)
                 if delivery is not None and delivery is not self.last_perception_delivery:
                     self.session.event('perception_result', **delivery)
                     self.last_perception_delivery = delivery
@@ -144,8 +137,6 @@ class NavigationController:
                 expires = min(now+self.control['command_ttl_s'],
                               snapshot.pose_at+self.robot['max_data_age_s'],
                               snapshot.lidar_at+self.robot['max_data_age_s'])
-                if exploring:
-                    expires = min(expires, snapshot.camera_at+self.robot['max_data_age_s'])
                 dispatch_at = time.monotonic()
                 if expires <= dispatch_at:
                     self.session.event('command_discarded', reason='decision_expired',

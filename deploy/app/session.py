@@ -58,14 +58,17 @@ class _RecordedFrame:
 
 class Session:
     def __init__(self, config, repo, port=8765, demo=False, mode='live_observe_only', frame_limit=4, event_limit=4096,
-                 separate_cloud=False):
+                 separate_cloud=True):
+        # All online planning maps are independent of display-only voxels,
+        # including when RGB-D is available. Preserve the argument for callers.
+        separate_cloud = True
         self.info = {'session_id': uuid4().hex, 'started_at': datetime.now(timezone.utc).isoformat(),
                      'config': config, 'provenance': provenance(repo), 'mode': mode, 'demo': demo,
                      'separate_cloud': separate_cloud}
         self.lock = threading.Lock()
         self.frames = LatestFrames(stale_after=1., demo=demo)
         self.separate_cloud = separate_cloud
-        self.capture = SceneCapture(include_cloud=not separate_cloud)
+        self.capture = SceneCapture()
         context = mp.get_context('spawn')
         self.pending = context.Queue(maxsize=4)
         self.rendered, output = context.Pipe(duplex=False)

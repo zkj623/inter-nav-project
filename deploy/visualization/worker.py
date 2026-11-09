@@ -25,10 +25,13 @@ class FrameRenderer:
             if self.cloud_step is not None and step < self.cloud_step:
                 raise ValueError('Display cloud received an out-of-order scan')
             if step != self.cloud_step:
-                # Identical calls to the original mapper, with the original
-                # world-frame points/origin; do not reapply the robot pose.
-                self.voxels.clear_lidar_free_space(scan['position'], scan['pointcloud'], scan['max_range'])
-                self.voxels.update(scan['pointcloud'], step=scan['step'], source='lidar')
+                # Match the release mapper's measured-return contract. This
+                # historical display layer does not decide collision freedom;
+                # current hit/free evidence lives in OnlineNavigationMap.
+                points = np.asarray(scan['pointcloud'], dtype=float)
+                distance = np.linalg.norm(points-np.asarray(scan['position']), axis=1)
+                measured = points[np.isfinite(points).all(axis=1) & (distance < scan['max_range']*.99)]
+                self.voxels.update(measured, step=scan['step'], source='lidar')
                 self.cloud_step, self.cloud_at = step, scan['captured_at']
         cloud_finished = time.monotonic()
         if item['scene'] is None:
@@ -49,6 +52,7 @@ class FrameRenderer:
                  'count': scene['voxel_count'] if scene['ready'] else len(lidar['pointcloud']),
                  'display_count': len(points), 'frame': snapshot.planning_frame,
                  'accumulated': bool(scene['ready']), 'stamp': cloud_at, 'source_age': None,
+                 'role': 'display_history_only',
                  'ground_relative_z': snapshot.geometry_calibrated,
                  'kind': '累计建图点云' if scene['ready'] else '当前原始点云（未建图）'}
         w, x, y, z = snapshot.observation['orientation']

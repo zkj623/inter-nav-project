@@ -43,6 +43,12 @@ def normalize(observation, ground_z=0.0):
     position[2] -= ground_z
     result = {'position': position, 'orientation': quaternion(observation['orientation']),
               'sensors': {}}
+    for name in ('body_linear_velocity', 'body_angular_velocity'):
+        if name in observation:
+            value = np.asarray(observation[name], dtype=float)
+            if value.shape != (3,) or not np.isfinite(value).all():
+                raise ValueError(f'Invalid {name}')
+            result[name] = value.copy()
     lidar = dict(observation['sensors']['lidar'])
     points = np.asarray(lidar['pointcloud'], dtype=np.float32).copy()
     if points.ndim != 2 or points.shape[1] != 3 or not len(points) or not np.isfinite(points).all():

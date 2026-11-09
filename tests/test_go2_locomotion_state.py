@@ -140,3 +140,52 @@ def test_direct_and_path_wrappers_share_one_policy_state(monkeypatch):
     config.policy_weights_path = 'different.pt'
     with pytest.raises(ValueError, match='same locomotion'):
         module.Go2MoveBySpeedController(config, robot, None)
+
+
+def test_supported_hold_preserves_actor_and_motor_cadence_and_actual_action_history(monkeypatch, checkpoint):
+    joint_velocity=np.zeros(12)
+    class Subset:
+        def __init__(self, articulation, names):self.joint_indices=np.arange(12)
+        def get_joint_positions(self):return DEFAULTS.copy()
+        def get_joint_velocities(self):return joint_velocity.copy()
+    for name,attrs in {
+        'omni.isaac.core.articulations':{'ArticulationSubset':Subset},
+        'omni.isaac.core.utils.types':{'ArticulationAction':SimpleNamespace},
+    }.items():
+        dependency=ModuleType(name);dependency.__dict__.update(attrs);monkeypatch.setitem(sys.modules,name,dependency)
+    monkeypatch.setitem(sys.modules,'grutopia_extension.controllers.go2_policy',policy_module)
+    monkeypatch.setitem(sys.modules,'grutopia_extension.robots.go2_asset',asset_module)
+    module=load_module('held_go2_ctrl_test','grutopia_extension/controllers/isaac_go2_ctrl.py')
+    articulation=SimpleNamespace(get_world_pose=lambda:(np.array([0.,0.,.42]),np.array([1.,0.,0.,0.])),
+        get_linear_velocity=lambda:np.zeros(3),get_angular_velocity=lambda:np.zeros(3))
+    control=module.Go2RSLControl(checkpoint,articulation,JOINTS,actuator_mode='explicit_dc',stationary_joint_hold=True)
+    clock=[0.];control._simulation_time=lambda:clock[0]
+    packed=[];pack=module.build_go2_observation
+    def capture(*args,**kwargs):
+        observation=pack(*args,**kwargs);packed.append(observation.copy());return observation
+    monkeypatch.setattr(module,'build_go2_observation',capture)
+    held=None
+    for tick in range(121):
+        clock[0]=tick*.005;previous=control.last_action.copy();count=control.policy_inferences
+        result=control.step()
+        if control.policy_inferences>count:np.testing.assert_array_equal(packed[-1][36:48],previous)
+        if control.stationary_hold_control.state=='holding':
+            if held is None:held=control.applied_joint_positions.copy()
+            np.testing.assert_array_equal(control.applied_joint_positions,held)
+    assert held is not None and control.policy_inferences==31
+    previous_efforts=result.joint_efforts.copy();joint_velocity[:]=1.;clock[0]=.605
+    result=control.step()
+    assert control.policy_inferences==31
+    assert not np.allclose(previous_efforts,result.joint_efforts)
+    control.set_command(.4,0.,0.)
+    for tick in range(122,205):
+        clock[0]=tick*.005;control.step()
+        if tick==124:
+            assert control.stationary_hold_control.state=='releasing'
+            np.testing.assert_array_equal(control.applied_joint_positions,held)
+    assert control.stationary_hold_control.state=='tracking'
+    assert control.policy_inferences==52
+    control.reset()
+    assert control.stationary_hold_control.state=='tracking'
+    assert control.stationary_hold_control.held_target is None
+    assert control.policy_inferences==0

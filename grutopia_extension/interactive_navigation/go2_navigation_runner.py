@@ -76,8 +76,16 @@ class Go2NavigationRunConfig:
     # Keep physics state in Fabric instead of writing USD back every step.
     use_fabric: bool = False
     material_mode: str | None = None
+    lidar_max_range: float = 8.0
+    lidar_resolution: tuple[float, float] = (2.0, 5.0)
+    actuator_mode: str = 'implicit_pd'
+    stationary_joint_hold: bool = False
 
     def __post_init__(self):
+        if self.stationary_joint_hold and self.actuator_mode!='explicit_dc':
+            raise ValueError('stationary_joint_hold requires explicit_dc')
+        if self.actuator_mode not in ('implicit_pd','explicit_dc'):
+            raise ValueError('actuator_mode must be implicit_pd or explicit_dc')
         if self.material_mode not in (None, 'original', 'preview', 'simple'):
             raise ValueError('material_mode must be original, preview, or simple')
         if self.gpu < 0:
@@ -94,6 +102,10 @@ class Go2NavigationRunConfig:
             raise ValueError('policy_path cannot be empty')
         if not self.robot_usd_path:
             raise ValueError('robot_usd_path cannot be empty')
+        if self.lidar_max_range <= 0.25:
+            raise ValueError('lidar_max_range must exceed 0.25 m')
+        if len(self.lidar_resolution) != 2 or not all(math.isfinite(v) and v > 0 for v in self.lidar_resolution):
+            raise ValueError('lidar_resolution must contain two positive finite angles')
 
 
 @dataclass(frozen=True)
@@ -162,6 +174,8 @@ def build_go2_navigation_config(
     controllers = go2_navigation_controller_cfgs(
         run.policy_path,
         ground_height=getattr(run, 'ground_height', 0.0),
+        actuator_mode=getattr(run,'actuator_mode','implicit_pd'),
+        stationary_joint_hold=getattr(run,'stationary_joint_hold',False),
     )
     robot = Go2RobotCfg(
         position=profile.start,
@@ -174,6 +188,8 @@ def build_go2_navigation_config(
                 prim_path='base/MappingLidar',
                 translation=(0.24, 0.0, 0.10),
                 fov=(360.0, 40.0),
+                resolution=run.lidar_resolution,
+                valid_range=(0.25, run.lidar_max_range),
             ),
         ],
     )
@@ -184,8 +200,8 @@ def build_go2_navigation_config(
             # of open-loop physics substeps whenever it renders, and the Go2
             # policy only tolerates the original 4-substep (1/50 s) window.
             # Render frequency is reduced via rendering_interval alone.
-            rendering_dt=1 / 50,
-            rendering_interval=run.rendering_interval,
+            rendering_dt=1 / 200 if getattr(run,'actuator_mode','implicit_pd')=='explicit_dc' else 1 / 50,
+            rendering_interval=7 if getattr(run,'actuator_mode','implicit_pd')=='explicit_dc' else run.rendering_interval,
             use_fabric=run.use_fabric,
         ),
         task_config=SingleInferenceTaskCfg(

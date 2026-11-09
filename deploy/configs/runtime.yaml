@@ -18,15 +18,13 @@ perception:
   request_timeout: 2.0
   qwen_vl_timeout: 5.0
   semantic_classifier: qwen-vl
-  qwen_vl_max_candidates: 12
+  qwen_vl_max_candidates: 6
   # One captured frame shares this budget across DINO, SAM and Qwen requests.
   result_max_age_s: 8.0
-  failure_timeout_s: 15.0
+  geometry_max_age_s: 0.75
+  input_max_age_s: 0.5
+  # Partial visible surfaces are not a verified full object envelope.
+  geometry_verified: false
 recording:
   root: results/deploy
   # record.py output root; live run.py publishes data without writing experiment files.
-topology_scorer:
-  enabled: false
-  url: http://127.0.0.1:12187/generate
-  timeout_s: 5.0
-  max_age_s: 8.0

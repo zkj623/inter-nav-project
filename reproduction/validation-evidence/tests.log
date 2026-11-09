@@ -1,0 +1,31 @@
+........................................................................ [  7%]
+........................................................................ [ 14%]
+........................................................................ [ 21%]
+.................................................................sss.s.. [ 28%]
+........................................................................ [ 35%]
+........................................................................ [ 42%]
+........................................................................ [ 49%]
+........................................................................ [ 56%]
+........................................................................ [ 64%]
+........................................................................ [ 71%]
+........................................................................ [ 78%]
+........................................................................ [ 85%]
+........................................................................ [ 92%]
+........................................................................ [ 99%]
+....                                                                     [100%]
+=============================== warnings summary ===============================
+grutopia/core/config/task/__init__.py:10
+  /data20t/embodied/zkj/go2-github-delivery-snapshot-20261105/grutopia/core/config/task/__init__.py:10: PydanticDeprecatedSince20: `pydantic.config.Extra` is deprecated, use literal values instead (e.g. `extra='allow'`). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.8/migration/
+    class TaskCfg(BaseModel, extra=Extra.allow):
+
+grutopia/core/runtime/task_runtime.py:16
+  /data20t/embodied/zkj/go2-github-delivery-snapshot-20261105/grutopia/core/runtime/task_runtime.py:16: PydanticDeprecatedSince20: `pydantic.config.Extra` is deprecated, use literal values instead (e.g. `extra='allow'`). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.8/migration/
+    class TaskRuntime(BaseModel, extra=Extra.allow):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_go2_navigation_support.py:187: rough Go2 checkpoint is not installed
+SKIPPED [1] tests/test_go2_navigation_support.py:208: Isaac Lab Go2 USD is not installed
+SKIPPED [1] tests/test_go2_navigation_support.py:95: official Go2 URDF is not installed
+SKIPPED [1] tests/test_go2_navigation_support.py:277: GRScenes asset and collision metadata are required for this integration check
+1008 passed, 4 skipped, 1 deselected, 2 warnings in 132.04s (0:02:12)

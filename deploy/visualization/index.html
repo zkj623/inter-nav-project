@@ -120,7 +120,7 @@ async function poll(){if(polling)return;polling=true;clearTimeout(pollTimer);$('
   if(!offline&&data.pose_overlay)cameraPose={position:[...data.pose.position],yaw:data.pose.yaw};
   delay=data.finished?null:1000/data.fps;$('connection').textContent=data.finished?'本轮运行已结束':offline?'主程序心跳已过期':'已连接';$('reconnect').hidden=!data.finished;
   $('demo').textContent=data.demo?'演示数据':'';
-  if(data.cloud){$('cloudEmpty').style.display='none';$('cloudMeta').textContent=data.cloud.accumulated?`累计场景：${data.cloud.count} 个体素 · 显示 ${data.cloud.display_count} 点 · 浅灰为地面`:'未标定 · 当前帧点云';
+  if(data.cloud){$('cloudEmpty').style.display='none';$('cloudMeta').textContent=data.cloud.accumulated?`历史点云：${data.cloud.count} 个体素 · 显示 ${data.cloud.display_count} 点 · 通行判断见实时地图`:'未标定 · 当前帧点云';
    if(follow&&data.pose_overlay)center=[...data.pose.position];}
   if(!data.cloud){$('cloudEmpty').style.display='grid';}
   markStale('cloud',offline||!!data.cloud?.stale);
@@ -128,7 +128,9 @@ async function poll(){if(polling)return;polling=true;clearTimeout(pollTimer);$('
   if(metrics){$('performance').textContent=`显示 ${metrics.display_fps.toFixed(1)} 帧/秒 · 点云年龄 ${((data.cloud?.age||0)*1000).toFixed(0)} ms`;
    $('cloudStale').textContent=offline?'数据源已断开':metrics.input_stale?'输入观测已过期':'点云显示更新延迟';
    $('mapStale').textContent=offline?'数据源已断开':metrics.input_stale?'输入观测已过期':'地图更新延迟';}
-  $('task').textContent=data.status?.state==='observe'?'':`${data.status?.mode||''} · ${data.status?.state||''}`;
+  const skill=data.map?.skill;
+  $('task').textContent=[data.status?.mode,data.status?.state,data.map?.phase,
+   skill?`${skill.object_id} · ${skill.state} · ${skill.status}`:null].filter(Boolean).join(' · ');
   if(data.map?.ready){$('mapEmpty').style.display='none';$('mapImage').style.display='block';
    const url='data:image/png;base64,'+data.map.png;if($('mapImage').getAttribute('src')!==url)$('mapImage').src=url;
 

@@ -15,6 +15,11 @@ class FixedCubeCfg(ObjectCfg):
     type: Optional[str] = 'FixedCube'
     color: Optional[Tuple[float, float, float]] = None
     semantic_label: Optional[str] = None
+    visible: bool = True
+    static_friction: Optional[float] = None
+    dynamic_friction: Optional[float] = None
+    torsional_patch_radius: Optional[float] = None
+    min_torsional_patch_radius: Optional[float] = None
 
 
 class VisualCubeCfg(ObjectCfg):

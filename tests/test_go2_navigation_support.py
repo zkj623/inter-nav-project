@@ -149,6 +149,8 @@ class Go2NavigationSupportTest(unittest.TestCase):
         elevated = flat_ground_height_scan(0.55, ground_height=0.15)
         flat = flat_ground_height_scan(0.40)
         self.assertTrue((elevated == flat).all())
+        low_floor = flat_ground_height_scan(0.41, ground_height=0.01)
+        self.assertTrue((low_floor == flat).all())
         # A stale ground height of 0 reads the terrain 15 cm too low.
         stale = flat_ground_height_scan(0.55)
         self.assertTrue(((stale - elevated) > 0.14).all())
@@ -284,6 +286,8 @@ class Go2NavigationSupportTest(unittest.TestCase):
             _ROOT / 'grutopia' / 'demo' / 'profiles' / 'go2_grscene_mv7_exploration.json'
         )
         fridge = (10.959860905091203, -1.7563874653050138)
+        if not Path(profile.scene_asset_path).is_file() or not Path(profile.static_obstacle_metadata_path).is_file():
+            self.skipTest('GRScenes asset and collision metadata are required for this integration check')
         obstacles = load_profile_static_obstacles(profile)
 
         self.assertTrue(Path(profile.scene_asset_path).is_file())

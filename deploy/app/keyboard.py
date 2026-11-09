@@ -5,7 +5,7 @@ import sys
 import termios
 import tty
 
-MENU = '\n[o]观察 [n]点导航 [e]寻找物体 [p]暂停 [r]继续 [m]停止自主输出 [空格]取消 [q]退出\n'
+MENU = '\n[o]观察 [n]点导航 [p]暂停 [r]继续 [m]停止自主输出 [空格]取消 [q]退出\n'
 
 
 class Keyboard:
@@ -50,10 +50,9 @@ class Keyboard:
                 self.text += key
                 print(key, end='', flush=True)
             return None
-        if key in ('n', 'e'):
-            self.editing = 'navigate' if key == 'n' else 'explore'
-            print('\n先停止当前任务。输入本轮 experiment 坐标 x,y：' if key == 'n' else
-                  '\n先停止当前任务。输入英文目标名（下划线表示空格）：', end='', flush=True)
+        if key == 'n':
+            self.editing = 'navigate'
+            print('\n先停止当前任务。输入本轮 experiment 坐标 x,y：', end='', flush=True)
             return ('prepare', None)
         if key in ('o', 'p', 'r', 'm', 'q'):
             return (key, None)

@@ -15,7 +15,7 @@ from deploy.recording.recorder import Recorder
 def make_fixture(root):
     recorder = Recorder(root, load(), 'synthetic_fixture_not_physics', REPO)
     angles = np.linspace(-np.pi, np.pi, 720, endpoint=False)
-    for index in range(20):
+    for index in range(26):
         x = min(index*.05, .85)
         now = 1000.+index*.1
         points = np.stack((4*np.cos(angles)+x, 4*np.sin(angles), np.full(720, .5)), axis=1).astype(np.float32)

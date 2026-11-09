@@ -1,28 +1,11 @@
-"""Control contract ported from Zhefan-Xu/isaac-go2-ros2.
+"""Go2 RSL-RL observation and motor interface for InternUtopia.
 
-That repository does not ship a standalone PD class. Walking is:
-
-    actions = policy(obs)
-    obs, _, _, _ = env.step(actions)
-
-where ``obs`` is ``Go2RSLEnvCfg.ObservationsCfg.PolicyCfg`` and ``env.step``
-runs Isaac Lab ``JointPositionAction`` (scale 0.25) plus the Go2 DCMotor.
-
-This module keeps that observation order, command buffer, action scale, and
-actuator model so InternUtopia can drive the same ``rough_model_7850.pt``.
-
-Timing contract: Isaac Lab recomputes the actuator torque at every 200 Hz
-physics substep and runs the policy exactly every 4 substeps. InternUtopia's
-per-``env.step`` effort control could not honor that: whenever Isaac renders,
-a full rendering_dt (4 substeps, 20 ms) of physics advances with frozen joint
-efforts, which opened the PD loop rhythmically and made Go2 walk with a limp.
-The controller therefore emits joint POSITION targets against PhysX implicit
-drives configured with the same gains (25 / 0.5, 23.5 N*m clamp): PhysX then
-recomputes the PD torque inside every substep, render windows included, and
-policy inference is aligned to the simulation clock so it fires every 20 ms
-even though env.step durations alternate between 5 and 20 ms. Reading state
-or applying efforts from a physics callback instead is not possible on the
-CPU pipeline (PhysX rejects copyInternalStateToCache during stepping).
+The actor uses the original checkpoint, 235 ordered observations, action
+scale 0.25 and a 50 Hz policy clock. ``explicit_dc`` recalculates the trained
+25/0.5 PD motor and its 23.5 N m torque-speed envelope before EVERY 5 ms
+physics step; it rejects batched physics advances. ``implicit_pd`` uses
+native PhysX position drives and is retained for legacy reproductions.
+Native per-joint speed constraints remain those authored in the Go2 USD.
 """
 
 from __future__ import annotations
@@ -45,6 +28,7 @@ from grutopia_extension.controllers.go2_policy import (
 )
 from grutopia_extension.configs.robots.go2 import GO2_JOINT_NAMES
 from grutopia_extension.robots.go2_asset import GO2_DEFAULT_JOINT_POSITIONS
+from grutopia_extension.interactive_navigation.go2_actuation import dc_motor_efforts
 
 # Isaac Lab trained Go2 at 50 Hz with dt=0.005. Their play cfg uses 40 Hz.
 POLICY_DECIMATION = 4
@@ -96,9 +80,20 @@ class Go2RSLControl:
         articulation,
         joint_names: Iterable[str],
         ground_height: float = 0.0,
+        actuator_mode: str = 'implicit_pd',
+        stationary_joint_hold: bool = False,
     ) -> None:
         init_base_vel_cmd(1)
+        if actuator_mode not in ['implicit_pd','explicit_dc']:raise ValueError('Invalid Go2 actuator mode')
+        if stationary_joint_hold and actuator_mode!='explicit_dc':
+            raise ValueError('Stationary joint holding requires explicit_dc')
+        self.actuator_mode=actuator_mode
+        self._last_control_time=None
+        self.applied_joint_efforts=np.zeros(12,dtype=np.float32)
         self.ground_height = float(ground_height)
+        from grutopia_extension.interactive_navigation.go2_stationary_hold import StationaryJointHold
+        self.stationary_hold_control = StationaryJointHold(ground_height=self.ground_height) if stationary_joint_hold else None
+        self.stationary_hold_allowed = True
         joint_names = list(joint_names)
         self.policy = load_go2_actor(policy_weights_path)
         self.policy_command = np.zeros(3, dtype=np.float32)
@@ -109,7 +104,17 @@ class Go2RSLControl:
             [GO2_DEFAULT_JOINT_POSITIONS[GO2_JOINT_NAMES.index(name)] for name in joint_names],
             dtype=np.float32,
         )
+        contract = getattr(self.policy, 'go2_deployment_contract', None)
+        if contract is not None:
+            if actuator_mode != 'explicit_dc' or stationary_joint_hold:
+                raise ValueError('Unitree Go2 policy requires explicit_dc without stationary joint hold')
+            if contract.get('joint_names') != joint_names:
+                raise ValueError('Unitree Go2 deployment joint order differs from controller')
+            defaults = np.asarray(contract.get('default_joint_positions', []), dtype=np.float32)
+            if defaults.shape != (12,) or not np.allclose(defaults, self.default_joint_positions, atol=1e-6, rtol=0):
+                raise ValueError('Unitree Go2 deployment default joint positions differ from controller')
         self.last_action = np.zeros(12, dtype=np.float32)
+        self.raw_policy_action = np.zeros(12, dtype=np.float32)
         self.applied_joint_positions = self.default_joint_positions.copy()
         self.apply_times_left = 0
         self.policy_name = Path(policy_weights_path).name
@@ -124,7 +129,12 @@ class Go2RSLControl:
     def reset(self):
         """Discard policy and timing state when the physical robot resets."""
         self.policy_command.fill(0)
+        self._last_control_time=None
+        if hasattr(self,'applied_joint_efforts'):self.applied_joint_efforts.fill(0.)
         self.last_action.fill(0)
+        if hasattr(self,'raw_policy_action'):self.raw_policy_action.fill(0.)
+        if getattr(self,'stationary_hold_control',None) is not None:self.stationary_hold_control.reset()
+        self.stationary_hold_allowed=True
         self.applied_joint_positions = self.default_joint_positions.copy()
         self.apply_times_left = 0
         self._prev_position = None
@@ -148,8 +158,21 @@ class Go2RSLControl:
         return set_base_vel_cmd(command).numpy()
 
     def step(self) -> ArticulationAction:
+        now=self._simulation_time()
+        previous=getattr(self,'_last_control_time',None)
+        if getattr(self,'actuator_mode','implicit_pd')=='explicit_dc' and now is not None and previous is not None:
+            if now-previous>.005+1e-6:
+                raise RuntimeError('Explicit Go2 DC control requires one 5 ms physics step per actuator update')
+        self._last_control_time=now
         if self._should_infer():
             self._infer_policy()
+        if getattr(self,'actuator_mode','implicit_pd')=='explicit_dc':
+            self.applied_joint_efforts=dc_motor_efforts(self.applied_joint_positions,
+                self.joint_subset.get_joint_positions(),self.joint_subset.get_joint_velocities(),
+                stiffness=STIFFNESS,damping=DAMPING,saturation_effort=SATURATION_EFFORT,
+                effort_limit=SATURATION_EFFORT,velocity_limit=VELOCITY_LIMIT)
+            return ArticulationAction(joint_efforts=self.applied_joint_efforts.copy(),
+                                      joint_indices=self.joint_subset.joint_indices)
         # Position targets against the implicit PhysX drive: the drive
         # recomputes PD torque at every physics substep while the target is
         # held, including physics steps advanced during rendering.
@@ -202,9 +225,13 @@ class Go2RSLControl:
             'command': base_vel_cmd(),
             'policy_command': self.policy_command.copy(),
             'policy_action': self.last_action.copy(),
+            'raw_policy_action': getattr(self,'raw_policy_action',self.last_action).copy(),
+            'motor_joint_target': self.applied_joint_positions.copy(),
+            'stationary_hold': (self.stationary_hold_control.report() if getattr(self,'stationary_hold_control',None) is not None else None),
             'policy_name': self.policy_name,
             'observation_dim': self.observation_dim,
             'policy_backend': 'rsl',
+            'actuator_mode':getattr(self,'actuator_mode','implicit_pd'),
             'body_lin_vel': self.body_lin_vel.copy(),
             'body_ang_vel': self.body_ang_vel.copy(),
             'yaw': self.yaw,
@@ -283,7 +310,19 @@ class Go2RSLControl:
             action = self.policy(torch.from_numpy(observation).unsqueeze(0))[0].numpy()
         if action.shape != (12,) or not np.isfinite(action).all():
             raise RuntimeError('Go2 locomotion policy produced invalid actions')
-        self.last_action = action.astype(np.float32, copy=True)
+        self.raw_policy_action = action.astype(np.float32, copy=True)
+        self.last_action = (np.clip(self.raw_policy_action, -100., 100.)
+                            if self.observation_dim == 45 else self.raw_policy_action.copy())
         self.applied_joint_positions = (
             self.default_joint_positions + DEFAULT_ACTION_SCALE * self.last_action
         )
+        holding = getattr(self,'stationary_hold_control',None)
+        now = self._simulation_time()
+        if holding is not None and now is not None:
+            self.applied_joint_positions = holding.update(self.applied_joint_positions,command,
+                position,linear_body,angular_body,float(np.degrees(np.arccos(np.clip(-gravity_body[2],-1.,1.)))),
+                now,allowed=self.stationary_hold_allowed)
+            if holding.state!='tracking':
+                # The actor sees the action actually sent to the motor, not
+                # an ignored prediction from its continued50Hz inference.
+                self.last_action=((self.applied_joint_positions-self.default_joint_positions)/DEFAULT_ACTION_SCALE).astype(np.float32)

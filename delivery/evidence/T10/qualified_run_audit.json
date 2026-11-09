@@ -1,0 +1,298 @@
+{
+  "task": "T10",
+  "run": "qualified-qv23-t10-try1",
+  "server_checks_passed": true,
+  "new_task_accepted": false,
+  "local_hash_and_visual_review_outstanding": true,
+  "checks": {
+    "difficulty_tortuosity_strict_gt_1_3": true,
+    "difficulty_clutter_strict_gt_020": true,
+    "robot_connectivity_screen": true,
+    "frozen_qualification_hash": true,
+    "frozen_evaluation_map_hash": true,
+    "input_snapshot_hashes": true,
+    "scene_and_layout_unchanged": true,
+    "declared_task_coordinates": true,
+    "automatic_task_success": true,
+    "goal_error_within_user_050m": true,
+    "scene_scale_one": true,
+    "robot_scale_one": true,
+    "floor_one_cm": true,
+    "no_teleports_flag": true,
+    "rollout_health": true,
+    "model_contract": true,
+    "robot_geometry": true,
+    "robot_asset_hash": true,
+    "policy_hash": true,
+    "policy_files": true,
+    "physics_200hz_dc": true,
+    "online_map_1_10hz": true,
+    "source_version": true,
+    "source_snapshot": true,
+    "full_media_decode": true,
+    "recording_coverage_and_hold": true,
+    "empty_initial_map": true,
+    "no_offline_map_reads": true,
+    "startup_at_declared_start": true,
+    "initial_box_layout_matches": true,
+    "raw_physics_complete": true,
+    "raw_health": true,
+    "raw_startup_below15": true,
+    "no_large_pose_jumps": true,
+    "actor_50hz": true,
+    "stays_in_evaluation_scene_domain": true,
+    "measured_final_stop": true,
+    "interaction_count_consistent": true,
+    "any_interaction_physically_completed": true,
+    "preview_material_mode": true,
+    "original_diffuse_textures_loaded": true,
+    "no_simple_scene_override": true,
+    "required_interaction_completed": true,
+    "material_compaction_preserves_bindings": true,
+    "exported_scene_pbr_textures_preserved": true,
+    "texture_compaction_preserves_image_bytes": true
+  },
+  "definition": {
+    "start": [
+      4.6875,
+      2.9125
+    ],
+    "goal": [
+      10.3,
+      1.75
+    ],
+    "euclidean_m": 5.731628259055189,
+    "shortest_geometry": {
+      "length_m": 7.5495041526829585,
+      "path": [
+        [
+          4.6875,
+          2.9125
+        ],
+        [
+          5.3500000000000005,
+          1.2250000000000005
+        ],
+        [
+          5.375,
+          1.1749999999999998
+        ],
+        [
+          5.4,
+          1.1500000000000004
+        ],
+        [
+          7.275,
+          0.6500000000000004
+        ],
+        [
+          9.75,
+          0.6500000000000004
+        ],
+        [
+          10.3,
+          1.75
+        ]
+      ],
+      "vertices": 123
+    },
+    "tortuosity": 1.31716570082084,
+    "grid_upper_bound_m": 7.99987373415295,
+    "start_clearance_m": 0.6125,
+    "goal_clearance_m": 0.4683846015417836,
+    "id": "T10",
+    "initial_heading_rad": -1.5707963267948966,
+    "qualified": true,
+    "requires_interaction": true,
+    "robot_clearance_grid_path_m": null,
+    "clutter": 0.38195603101383846,
+    "interaction_qualification": {
+      "box_id": "B06",
+      "robot_disconnected_before": true,
+      "robot_connected_after": true,
+      "robot_path_before_m": null,
+      "robot_path_after_m": 9.821625176280188,
+      "clearance_radius_m": 0.3,
+      "parking_witness": {
+        "id": "B06",
+        "xy": [
+          9.304129600524902,
+          0.2619493305683136
+        ],
+        "dimensions": [
+          0.9391414036993383,
+          0.7017217680474177,
+          0.950000264055882
+        ],
+        "yaw": 0.0,
+        "mass_kg": 6.0,
+        "local_dimensions": [
+          0.85,
+          0.55,
+          0.95
+        ],
+        "orientation": [
+          0.9954198598861694,
+          -1.6706128036503287e-08,
+          -1.3824529787598294e-07,
+          0.09559961408376694
+        ],
+        "center_z": 0.48499998450279236
+      },
+      "parking_witness_source": "/data20t/embodied/zkj/inter-nav-results/go2-online-smooth-20261027/recognition-skill-v218-t04-ground-truth-try1/T04/result.json",
+      "parking_witness_source_sha256": "0e8c512b617f00b6bb9d702624f771482aad8a8f85783c8a3e8299314d99dcf6",
+      "witness_scope": "Conservative AABB of a real prior side-parking pose in unchanged scene; evaluation only, not a route or box target supplied to runtime.",
+      "required_online_evidence": "Physical contact and >.25m box motion, side parking, scan after final box motion, actual passage crossing, automatic goal stop."
+    }
+  },
+  "scene_clutter": {
+    "support_cells": 285292,
+    "blocked_cells": 108969,
+    "fraction": 0.38195603101383846,
+    "total_area_m2": 178.3075,
+    "blocked_area_m2": 68.10562500000002,
+    "scope": "Fixed original ground-mesh support; exterior void excluded; low-height collision projections plus all initial boxes; no robot-radius inflation."
+  },
+  "source_commit": "514cd51dc7a4400a3e7db431b1f18a7aba7e3f50",
+  "policy_sha256": "8862682da34ebb090a2e56f39254af430d5645f20cb5e3e104c72a4720671db8",
+  "goal_error_m": 0.1631131715826831,
+  "final_stop": {
+    "valid": true,
+    "window_seconds": 0.3999999910593033,
+    "window_long_enough": true,
+    "goal_error_m": 0.1631131715826831,
+    "goal_within_tolerance": true,
+    "linear_xy_quiet": true,
+    "vertical_quiet": true,
+    "angular_quiet": true,
+    "tilt_quiet": true,
+    "position_stable": true,
+    "height_stable": true,
+    "tilt_stable": true
+  },
+  "frames_per_stream": 2710,
+  "fps": 25.0,
+  "duration_s": 108.4,
+  "final_goal_hold_cycles": 260,
+  "raw_physics": {
+    "rows": 22320,
+    "expected_rows": 22320,
+    "maximum_tilt_deg": 3.2959828362633203,
+    "startup_maximum_tilt_deg": 1.683173660403017,
+    "minimum_height_m": 0.3253982365131378,
+    "maximum_planar_step_m": 0.0030579138535467548,
+    "outside_scene_domain_steps": 0
+  },
+  "interactions": [
+    {
+      "object_id": "B06",
+      "valid": true,
+      "permission_valid": true,
+      "fresh_map": true,
+      "impulse_samples": 1939,
+      "crossing": {
+        "valid": true,
+        "crossings": [
+          {
+            "row": 12956,
+            "time_s": 103.66499768290669,
+            "position": [
+              10.247296333312988,
+              0.6987162232398987,
+              0.3365730941295624
+            ],
+            "rear_beyond_boundary_m": 0.02192872580736438,
+            "original_box_would_block_body_clearance": true,
+            "counterfactual_clearance_margin_m": 0.04,
+            "recorded_box_stable_near_crossing": true,
+            "actual_body_clear_of_relocated_box": true,
+            "observed_side_displacement_m": 0.8084003253555951,
+            "continuous_local_trace": true,
+            "valid": true,
+            "bracketing_box_observations": [
+              {
+                "time_s": 103.52999768592417,
+                "xy": [
+                  9.33463191986084,
+                  0.26677972078323364
+                ]
+              },
+              {
+                "time_s": 103.6899976823479,
+                "xy": [
+                  9.33463191986084,
+                  0.26677975058555603
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "interaction_required": true,
+  "incidental_nonfloor_nonbox_contact_records": 0,
+  "static_evaluation_occupied_center_steps": 0,
+  "static_evaluation_discrepancy_samples": [],
+  "videos_sha256": {
+    "combined.mp4": "e056aafdcad3ee58e63e80233d352b6e06c6edd0aafcebfb6de5dfeae4d32b80",
+    "robot_rgb.mp4": "fc37d0031e5601028ed49647f49b6846403ad45400dabf48ac8d824a4bec3c24",
+    "third_person.mp4": "18c9b4b3bf6f192b507cf14768f35664e99e4d1aa8b2c3eecf5d677a218c8a8a",
+    "pointcloud_map.mp4": "26b4f441a0c76ad9263802c904bf2b57204fdc208fe29f60ea87a0ac82afcdda",
+    "map_topdown.mp4": "ff30220c796e61ce18c5ac6b7f09d883ef782ccf6b6d678c3b071c4551bcf37c"
+  },
+  "audit_tool_sha256": "8cae4b83ad494c38c20fdf1e53c97be2e82a894b63a6e474633f19b7a4574f7a",
+  "scope": "Finite geometric tortuosity >1.3 before interaction, robot-clearance connectivity created by a specified box move, and required physical contact/fresh-map passage.",
+  "material_evidence": {
+    "mode": "preview",
+    "fallback_events": [
+      {
+        "event": "material_fallback",
+        "mode": "preview",
+        "replaced": 189,
+        "textured": 37,
+        "colored": 152,
+        "missing_sources": 0
+      }
+    ],
+    "compaction_events": [
+      {
+        "event": "material_compaction",
+        "materials_before": 6744,
+        "duplicate_materials_disabled": 3608,
+        "unused_materials_disabled": 828,
+        "canonical_single_shader_materials": 2744,
+        "binding_relationships_rewritten": 3906,
+        "effective_bindings_verified": 26176,
+        "physical_bindings_preserved": 28,
+        "texture_resampling": false,
+        "geometry_modified": false
+      }
+    ],
+    "exported_pbr_events": [
+      {
+        "event": "exported_pbr_preview",
+        "converted": 1780,
+        "texture_connections": 2767,
+        "normal_maps": 1780,
+        "unique_texture_files": 2119,
+        "texture_resampling": false,
+        "scope": "Exported base colors/textures/UVs, metallic, roughness, emission, normal and opacity retained in preview shading; refraction/displacement and textured specular are approximations."
+      }
+    ],
+    "texture_events": [
+      {
+        "event": "texture_compaction",
+        "source_texture_paths": 2151,
+        "unique_texture_contents": 328,
+        "file_connections_rewritten": 2465,
+        "image_bytes_unchanged": true,
+        "texture_resampling": false,
+        "mapping_sha256": "c41f85895d7d03cd88d0ecfa5ae2373adf0fa6127a00f02b844ece0416164c9f"
+      }
+    ],
+    "appearance_scope": "Original diffuse textures/colors retained using existing UsdPreviewSurface compatibility conversion; not all original MDL shading parameters are identical.",
+    "actual_visual_review_outstanding": true
+  },
+  "base_audit_tool_sha256": "034bb14d7a0185151a17a62472e14f79170ac2c6dd4063f22997983812525565"
+}
