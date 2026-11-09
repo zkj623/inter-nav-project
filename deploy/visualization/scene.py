@@ -76,6 +76,17 @@ class SceneCapture:
                       static=layers.static_occupied.copy(), tracked=layers.tracked_occupied.copy(),
                       global_observed=layers.global_observed.copy(),
                       global_occupied=layers.global_occupied.copy(),
+                      stable=layers.stable_obstacles.copy(),
+                      local_dynamic=layers.local_dynamic.copy(),
+                      global_tracked=layers.global_tracked.copy(),
+                      recently_vacated=(layers.now-layers.vacated_time < 3.).copy(),
+                      map_time_s=layers.now, local_radius=layers.local_radius,
+                      local_period=layers.local_period, global_period=layers.global_period,
+                      navigation_half_width=getattr(engine.planner, 'navigation_half_width', .22),
+                      interaction_enabled=bool(getattr(engine, 'config', {}).get('interaction_enabled', False)),
+                      interactable_ids=list(getattr(layers, 'interactable_ids', ())),
+                      recognized_objects=_payload(getattr(layers, 'recognized_objects', {})),
+                      task_start=_payload(getattr(engine, 'task_start', None)),
                       path=_payload(engine.path), skeleton=[],
                       frontiers=[] if frontier is None else [list(frontier)],
                       objects=[{'position': [*box.xy, box.center_z or box.dimensions[2]/2],
@@ -92,55 +103,9 @@ class SceneCapture:
 
 
 def render_map(scene, size=720):
-    """Same occupancy/path conventions as simulation; equal scale on X and Y."""
-    observed, occupied, inflated = scene['observed'], scene['occupied'], scene['inflated']
-    grid = np.full((*observed.shape, 3), (37, 33, 29), dtype=np.uint8)
-    grid[observed] = (210, 217, 220)
-    grid[inflated & observed & ~occupied] = (115, 185, 228)
-    grid[occupied] = (75, 75, 215)
-    if 'tracked' in scene:
-        grid[scene['tracked']] = (180, 80, 150)
-    for row, col in scene['skeleton']:
-        if 0 <= row < grid.shape[0] and 0 <= col < grid.shape[1]:
-            grid[row, col] = (210, 135, 50)
-    height, width = grid.shape[:2]
-    scale = min(size / width, size / height)
-    dw, dh = round(width * scale), round(height * scale)
-    left, top = (size-dw)//2, (size-dh)//2
-    frame = np.full((size, size, 3), (27, 20, 13), dtype=np.uint8)
-    frame[top:top+dh, left:left+dw] = cv2.resize(np.flipud(grid), (dw, dh), interpolation=cv2.INTER_NEAREST)
-    config = scene['config']
-
-    def pixel(p):
-        col = (p[0]-config['x_limits'][0])/config['grid_resolution']
-        row = (p[1]-config['y_limits'][0])/config['grid_resolution']
-        return int(round(left+col*dw/width)), int(round(top+dh-row*dh/height))
-
-    for path, color, thickness in ((scene['trajectory'], (70, 160, 55), 2),
-                                    ([scene['position'], *scene['path']], (245, 130, 30), 3)):
-        if len(path) >= 2:
-            cv2.polylines(frame, [np.array([pixel(p) for p in path], dtype=np.int32)], False, color, thickness)
-    for p in scene['frontiers']:
-        cv2.circle(frame, pixel(p), 4, (220, 210, 40), -1)
-    for obj in scene['objects']:
-        p = pixel(obj['position'])
-        if 'dimensions' in obj:
-            half = np.asarray(obj['dimensions'][:2])/2
-            angle = np.radians(obj['yaw'])
-            rotation = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
-            corners = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])*half
-            corners = corners @ rotation.T + obj['position'][:2]
-            cv2.polylines(frame, [np.array([pixel(c) for c in corners], dtype=np.int32)], True, (180, 80, 150), 2)
-        cv2.circle(frame, p, 4, (180, 80, 150), -1)
-        cv2.putText(frame, obj['label'][:16], (p[0]+5, p[1]-5), cv2.FONT_HERSHEY_SIMPLEX, .35, (180, 80, 150), 1)
-    if scene['goal'] is not None:
-        cv2.drawMarker(frame, pixel(scene['goal']), (0, 215, 255), cv2.MARKER_CROSS, 18, 2)
-    p = scene['position']
-    w, x, y, z = scene['orientation']
-    yaw = np.arctan2(2*(w*z+x*y), 1-2*(y*y+z*z))
-    cv2.circle(frame, pixel(p), 5, (80, 240, 80), -1)
-    cv2.arrowedLine(frame, pixel(p), pixel([p[0]+.5*np.cos(yaw), p[1]+.5*np.sin(yaw)]), (20, 120, 20), 2)
-    return frame
+    """Render detached navigation layers with the simulation's map renderer."""
+    from .simulation_view import render_navigation_map
+    return render_navigation_map(scene, size)
 
 
 def map_payload(scene):

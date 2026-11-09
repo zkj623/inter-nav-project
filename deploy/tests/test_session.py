@@ -60,7 +60,7 @@ def test_scene_uses_actual_masks_and_does_not_modify_planner(session):
     layers.observed[:] = False
     assert scene['observed'].any()  # detached copy, not a moving rendering target
     image = render_map(scene)
-    assert image.shape == (720, 720, 3)
+    assert image.shape == (720, 1280, 3)
 
 
 def test_unverified_geometry_does_not_invent_map(session):

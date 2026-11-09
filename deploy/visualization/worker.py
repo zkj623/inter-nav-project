@@ -7,6 +7,7 @@ import numpy as np
 from grutopia_extension.interactive_navigation.mapping import MappingConfig, VoxelPointCloudMap
 from .scene import display_points, map_payload
 from .sources import jpeg_from_bgr
+from .simulation_view import CLOUD_STYLE
 
 
 class FrameRenderer:
@@ -54,6 +55,7 @@ class FrameRenderer:
                  'accumulated': bool(scene['ready']), 'stamp': cloud_at, 'source_age': None,
                  'role': 'display_history_only',
                  'ground_relative_z': snapshot.geometry_calibrated,
+                 'style': CLOUD_STYLE,
                  'kind': '累计建图点云' if scene['ready'] else '当前原始点云（未建图）'}
         w, x, y, z = snapshot.observation['orientation']
         pose = {'position': snapshot.observation['position'].tolist(),

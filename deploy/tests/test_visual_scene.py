@@ -46,7 +46,7 @@ def test_online_layers_and_push_state_are_detached_from_display():
     engine.path[0] = (9., 9., .3)
     assert scene['observed'].any() and scene['tracked'].any()
     assert scene['path'][0] == [.4, 0., .3]
-    assert render_map(scene).shape == (720, 720, 3)
+    assert render_map(scene).shape == (720, 1280, 3)
     scene['voxel_count'] = 3
     payload = map_payload(scene)
     assert payload['phase'] == 'skill' and payload['tracked_objects'] == 1
@@ -58,3 +58,47 @@ def test_online_layers_and_push_state_are_detached_from_display():
     np.testing.assert_array_equal(restored['tracked'], scene['tracked'])
     assert restored['decision'] == scene['decision'] and restored['skill'] == scene['skill']
     assert restored_snapshot.planning_frame == 'experiment'
+
+
+def test_detached_map_geometry_matches_direct_simulation_renderer():
+    from deploy.app.config import load
+    from deploy.app.demo import DemoSensors
+    from deploy.app.tasks import Tasks
+    from grutopia_extension.interactive_navigation.task_video_recording import TaskVideoRecorder
+
+    tasks = Tasks(load()['navigation'])
+    snapshot = DemoSensors(SimpleNamespace(rgb=lambda *args: None)).latest()
+    tasks.update(snapshot, snapshot.captured_at)
+    tasks.start('navigate', (1., 0., .3), snapshot.captured_at)
+    tasks.update(snapshot, snapshot.captured_at+.1)
+    scene = SceneCapture().capture(snapshot, tasks)
+    renderer = TaskVideoRecorder.__new__(TaskVideoRecorder)
+    renderer.task = {'id': 'D01', 'start': tasks.engine.task_start, 'goal': (1., 0.)}
+    renderer._trajectory = list(scene['trajectory'])
+    runtime = SimpleNamespace(map=SimpleNamespace(config=tasks.engine.layers.config),
+                              navigation_layers=tasks.engine.layers, _planned_path=tasks.engine.path)
+    expected = renderer._render_map(0, tasks.engine.phase,
+                                   SimpleNamespace(robot_position=scene['position']), runtime)
+    actual = render_map(scene)
+    # Titles and real-device permissions differ; every geometry/route pixel agrees.
+    np.testing.assert_array_equal(actual[35:, :785], expected[35:, :785])
+    for field, source in [('stable', 'stable_obstacles'), ('local_dynamic', 'local_dynamic'),
+                          ('global_tracked', 'global_tracked')]:
+        np.testing.assert_array_equal(scene[field], getattr(tasks.engine.layers, source))
+        assert not np.shares_memory(scene[field], getattr(tasks.engine.layers, source))
+
+
+def test_follow_cloud_height_slice_is_display_only_and_requires_calibration():
+    import pytest
+    from deploy.visualization.cloud_image import render_cloud
+    points = np.array([[1., 0., .4], [1.5, .3, .7]])
+    extra = np.vstack((points, [[1., 0., -.1], [1., 0., 1.2]]))
+    before = extra.copy()
+    arguments = dict(position=[0., 0., .3], orientation=[1., 0., 0., 0.],
+                     ground_relative_z=True, mode='follow')
+    expected, actual = render_cloud(points, **arguments), render_cloud(extra, **arguments)
+    assert actual.shape == (720, 1280, 3)
+    np.testing.assert_array_equal(actual, expected)
+    np.testing.assert_array_equal(extra, before)
+    with pytest.raises(ValueError, match='ground-relative'):
+        render_cloud(points, [0., 0., .3], mode='follow')

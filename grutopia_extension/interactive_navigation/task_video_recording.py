@@ -77,8 +77,9 @@ class TaskVideoRecorder(InteractionVideoRecorder):
                         c=a+(b-a)*i/n;d=a+(b-a)*min(i+1,n)/n
                         cv2.line(frame,tuple(c.astype(int)),tuple(d.astype(int)),color,width,cv2.LINE_AA)
         details=layers.decision or {}
-        origin=details.get('start',self.task['start'])
-        reference=reference_overlay_state(details,self.task['start'],layers.now)
+        task=self.task or {'start':layers.robot_xy,'goal':None}
+        origin=details.get('start',task['start'])
+        reference=reference_overlay_state(details,task['start'],layers.now)
         if reference['path'] and not details.get('reference_stale'):route(reference['origin'],reference['path'],(20,120,230),2,True)
         if details.get('after_path'):route(origin,details['after_path'],(30,175,50),2,True)
         current_route=runtime._planned_path or ()
@@ -86,7 +87,7 @@ class TaskVideoRecorder(InteractionVideoRecorder):
         if self._trajectory:
             for a,b in zip(self._trajectory,self._trajectory[1:]):
                 cv2.line(frame,pixel(a),pixel(b),(90,120,70),1,cv2.LINE_AA)
-        if details.get('kind')=='push':
+        if details.get('kind')=='push' and all(k in details for k in ('initial_xy','destination_xy')):
             a=pixel(details['initial_xy']);b=pixel(details['destination_xy'])
             cv2.arrowedLine(frame,a,b,(185,45,190),3,cv2.LINE_AA,tipLength=.25)
             cv2.circle(frame,a,10,(185,45,190),1,cv2.LINE_AA)
@@ -117,7 +118,7 @@ class TaskVideoRecorder(InteractionVideoRecorder):
             cv2.putText(frame,str(text),(x,y),cv2.FONT_HERSHEY_SIMPLEX,scale,color,1,cv2.LINE_AA);y+=22
         def distance(value):return 'BLOCKED' if value is None else f'{value:.2f} m'
         choice=details.get('kind','at goal' if 'goal' in state else 'deciding').upper()
-        line(choice+(' '+details['box_id'] if choice=='PUSH' else ''),(145,40,145),.66)
+        line(choice+(' '+str(details['box_id']) if choice=='PUSH' and details.get('box_id') else ''),(145,40,145),.66)
         reasons={'ordinary_path_available':'Open route: no interaction needed',
             'goal_not_connected_in_observed_map':'Goal unseen / disconnected: observe frontier',
             'observed_passage_navigation':'Opened passage: current navigation reference',
@@ -149,19 +150,23 @@ class TaskVideoRecorder(InteractionVideoRecorder):
             line('Predicted route: '+distance(details['after_length_m']),(35,160,45))
             gain=details.get('path_saving_m')
             line('Route benefit: '+(f'{gain:.2f} m shorter' if gain is not None else 'disconnected -> reachable'))
-            line(f"Approach {details['approach_length_m']:.2f} m | push {details['push_distance_m']:.2f} m")
-            line(f"Push plan cost: {details['total_push_cost']:.2f} equiv. m")
-            line('Cost = approach + 2.5*push + remaining',scale=.41)
+            if all(details.get(k) is not None for k in ('approach_length_m','push_distance_m','total_push_cost')):
+                line(f"Approach {details['approach_length_m']:.2f} m | push {details['push_distance_m']:.2f} m")
+                line(f"Push plan cost: {details['total_push_cost']:.2f} equiv. m")
+                line('Cost = approach + 2.5*push + remaining',scale=.41)
             clearance=details.get('passage_clearance')
             if clearance:line(f"Pred. side clearance: {clearance['passage_clearance_margin_m']:.2f} m",scale=.44)
-        line(f"Goal distance: {np.linalg.norm(layers.robot_xy-np.array(self.task['goal'])):.2f} m",(45,70,180),.48)
+        line('No active navigation goal' if task['goal'] is None else
+             f"Goal distance: {np.linalg.norm(layers.robot_xy-np.array(task['goal'])):.2f} m",(45,70,180),.48)
         line(f'Global {1/layers.global_period:g} Hz | local {1/layers.local_period:g} Hz',scale=.47)
         line(f'Revisions G{layers.global_revision} / L{layers.local_revision}',scale=.44)
         if hasattr(layers,'observed'):
             line(f'Online map: {100*layers.observed.mean():.1f}% observed | grey: unknown',scale=.43)
         truth=getattr(layers,'interaction_source',None)=='ground_truth_layout'
-        line('Eligibility: layout ground truth' if truth else 'Eligibility: RGB classification',scale=.42)
-        line('Gold: interactable box | grey: other/unknown',scale=.42)
+        enabled=getattr(layers,'interaction_enabled',True)
+        line(('Eligibility: layout ground truth' if truth else 'Eligibility: RGB classification')
+             if enabled else 'Interaction: disabled',scale=.42)
+        line('Gold: interactable box | grey: other/unknown' if enabled else 'Grey: detected object (no push permission)',scale=.42)
         line('Orange: before push | Blue: current route' if reference['historical'] else 'Orange: current reference | Blue: current route',scale=.42)
         line('Thin green: traveled | light green: vacated',scale=.41)
         # The inset uses the exact high-frequency collision layer, not a

@@ -32,7 +32,9 @@ def save_visual(directory, frame, snapshot, scene):
         stem.with_suffix('.png').write_bytes(base64.b64decode(frame['map']['png'], validate=True))
     points = scene['points'] if scene['ready'] else snapshot.observation['sensors']['lidar']['pointcloud']
     if not cv2.imwrite(str(stem.with_suffix('.cloud.png')), render_cloud(points, snapshot.observation['position'],
-                      ground_relative_z=snapshot.geometry_calibrated)):
+                      ground_relative_z=snapshot.geometry_calibrated,
+                      orientation=snapshot.observation['orientation'],
+                      mode='follow' if snapshot.geometry_calibrated else 'overview')):
         raise OSError('Failed to save cloud image')
     stem.with_suffix('.json').write_text(json.dumps(metadata, ensure_ascii=False, allow_nan=False))
 
