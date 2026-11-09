@@ -126,7 +126,9 @@ from portable_documentation import update_guide
 update_guide(D/'01-交付说明与测试用例.docx')
 from unify_delivery_version import unify_report
 unify_report(D/'02-测试报告与可视化材料.docx')
+from split_algorithm_document import split_documents
+split_documents(D)
 for path in D.glob('*.docx'):
  revise_terminology(path)
  apply_document_format(path)
-print('Built two formal documents')
+print('Built three formal documents')
