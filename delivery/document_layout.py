@@ -46,6 +46,13 @@ def apply_document_format(path):
         pf.first_line_indent = Pt(0)
         pf.line_spacing = 1.15
         pf.space_before = pf.space_after = Pt(0)
+    if 'Reference Entry' in doc.styles:
+        specs['Reference Entry'] = (10.5, False)
+        pf = doc.styles['Reference Entry'].paragraph_format
+        pf.first_line_indent = Pt(0)
+        pf.line_spacing = 1.15
+        pf.space_before = Pt(0)
+        pf.space_after = Pt(6)
     for name, (size, bold) in specs.items():
         set_font(doc.styles[name], size, bold)
     normal = doc.styles['Normal'].paragraph_format

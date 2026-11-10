@@ -14,4 +14,4 @@
 
 训练环境为Isaac Sim 4.2.0.2、IsaacLab 1.4.0（提交dd044a4977722d85e966c5b63949093c9b14667f）、RSL-RL 2.3.1。导航部署使用已交付权重及`reproduction/requirements.txt`，无需重新训练或将部署环境升级为训练环境。
 
-原始摘要中的`original_task_accepted=false`等字段记录训练结束时的状态；后续导航任务验收证据位于`delivery/evidence/T01`至`T10`。算法设计文档第2章说明训练方法和policy到推箱skill的衔接。
+原始摘要中的`original_task_accepted=false`等字段记录训练结束时的状态；后续导航任务验收证据位于`delivery/evidence/T01`至`T10`。算法设计文档第4章说明训练方法和policy到推箱skill的衔接，图6-3给出训练与部署接口关系。

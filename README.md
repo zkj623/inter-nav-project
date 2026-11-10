@@ -103,7 +103,7 @@ done
 
 - [交付说明与测试用例](delivery/01-交付说明与测试用例.docx)
 - [测试报告与可视化材料](delivery/02-测试报告与可视化材料.docx)：测试结果、实际路径与最短几何路径对比，以及20张视频截图。
-- [算法设计文档](delivery/03-算法设计文档.docx)：方法设计、底层policy训练与skill封装、实现细节；训练源码和记录见`delivery/training/`。
+- [算法设计文档](delivery/03-算法设计文档.docx)：研究背景、相关技术进展、方法设计、底层policy训练、实现细节、4张系统图解及参考文献；训练源码和记录见`delivery/training/`。
 - [路径与场景复杂度](delivery/task-paths-and-complexity.csv)
 
 Word/PDF中的部署说明、根目录README及`reproduction/INSTALL.md`统一采用新机器安装与公开资产下载流程。文档路径为仓库内相对路径或接收方本机生成目录。

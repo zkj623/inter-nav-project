@@ -130,6 +130,8 @@ from split_algorithm_document import split_documents
 split_documents(D)
 from algorithm_policy_training import update_algorithm
 update_algorithm(D)
+from enrich_algorithm_document import enrich_algorithm
+enrich_algorithm(D)
 for path in D.glob('*.docx'):
  revise_terminology(path)
  apply_document_format(path)
