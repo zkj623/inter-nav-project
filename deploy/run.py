@@ -1,4 +1,4 @@
-"""Robot console. Default: observe only; replay never connects to the robot."""
+"""Robot console. Start observing; task keys enable motion. Replay never connects to the robot."""
 from pathlib import Path
 import sys
 
@@ -16,7 +16,9 @@ def main(argv=None):
     mode.add_argument('--check', action='store_true', help='offline dependency/config check; no network or motion')
     mode.add_argument('--diagnose', action='store_true', help='read-only ROS receipt/interface diagnostic; no SDK')
     parser.add_argument('--duration', type=float, default=10., help='diagnostic subscription duration, 1..60 seconds')
-    mode.add_argument('--allow-motion', action='store_true', help='allow explicit task keys to arm SportClient')
+    mode.add_argument('--allow-motion', action='store_true', help=argparse.SUPPRESS)
+    mode.add_argument('--observe-only', dest='allow_motion', action='store_false',
+                      help='observe and map without enabling motion through task keys')
     mode.add_argument('--replay', type=Path, help='recorded run directory; hardware is never initialized')
     mode.add_argument('--motion-test', action='store_true', help='bounded SDK acceptance trials; no ROS, map or autonomous tasks')
     parser.add_argument('--task', choices=('observe', 'navigate'), default='observe', help='replay task only')
@@ -27,7 +29,10 @@ def main(argv=None):
     parser.add_argument('--rgb-topic', help='sensor_msgs/Image topic for --camera ros')
     mode.add_argument('--demo', action='store_true', help='synthetic inputs through the real mapper; no robot connection')
     parser.add_argument('--demo-seconds', type=float, default=0., help='optional demo time limit; 0 runs until Ctrl+C')
+    parser.set_defaults(allow_motion=True)
     args = parser.parse_args(argv)
+    args.allow_motion = args.allow_motion and not (
+        args.check or args.diagnose or args.demo or args.replay is not None or args.motion_test)
     if not 1 <= args.session_port <= 65535 or not 0 <= args.demo_seconds <= 86400:
         parser.error('invalid session port or demo duration')
     if args.output and not (args.diagnose or args.replay):

@@ -66,7 +66,7 @@ class NavigationController:
             return
         try:
             if self.motion is None:
-                raise ValueError('本次仅观察。实机配置验收后使用 --allow-motion 启动')
+                raise ValueError('本次仅观察。需要真机导航时请退出，使用 python run.py 启动')
             if snapshot is None:
                 raise ValueError('等待有效定位和点云')
             check_task_inputs(self.robot, snapshot)

@@ -208,6 +208,31 @@ def test_actual_cli_replay_runs_existing_planner_without_hardware(tmp_path):
     decisions = [json.loads(line) for line in (report.parent/'events.jsonl').read_text().splitlines()]
     assert any(e['requested_velocity'] and e['requested_velocity'][0] > 0 for e in decisions)
 
+@pytest.mark.parametrize('argv, motion_allowed, demo', [
+    ([], True, False),
+    (['--camera', 'none'], True, False),
+    (['--allow-motion'], True, False),
+    (['--observe-only'], False, False),
+    (['--demo'], False, True),
+])
+def test_cli_motion_permission_is_enabled_only_for_live_navigation(monkeypatch, argv, motion_allowed, demo):
+    from deploy import run
+    from deploy.app import runtime
+
+    calls = []
+
+    def live(args, config):
+        calls.append(args)
+        return 0
+
+    monkeypatch.chdir(REPO/'deploy')
+    monkeypatch.setattr(runtime, 'run_live', live)
+    assert run.main(argv) == 0
+    assert len(calls) == 1
+    assert calls[0].allow_motion is motion_allowed
+    assert calls[0].demo is demo
+
+
 def test_replay_and_motion_flags_are_mutually_exclusive(tmp_path):
     result = subprocess.run([sys.executable, str(REPO/'deploy/run.py'), '--replay', str(tmp_path),
                              '--allow-motion'], text=True, capture_output=True)

@@ -5,19 +5,37 @@
 **不需要语义识别、GPU 模型服务或 RGB-D；交互识别与推移保持关闭。**
 
 以下设备端命令假定仓库位于 `~/inter-nav-project`，运行环境已安装；首次使用见文末。
+所有 Python 命令都在 `~/inter-nav-project/deploy` 中执行，虚拟环境位于上一级的 `.venv-deploy`。
+开发机使用已配置好的 `go2` SSH 别名；没有配置时，换成实际的 `用户名@设备地址`。
 机器人需站稳，定位与雷达驱动正常运行。操作 `run` 的终端须支持交互，SSH 登录时保留 TTY。
 
 ## 启动与记录
 
+在开发机开三个终端，分别登录同一台 Orin，再用 tmux 保留各自的程序终端。
+下面的 `tmux new` 只在首次创建会话时执行；已有会话请按“断线重连”接回。
+**tmux 中的 run 不会因 SSH 断开而自动暂停。** 主动离开前先按 `p` 暂停；意外断线时由现场遥控器接管。
+
 ### 终端 1：运行点导航
 
-在 Go2 的 Orin 上执行：
+在开发机登录：
+
+```bash
+ssh go2
+```
+
+登录后创建 run 会话：
+
+```bash
+tmux new -s go2-run
+```
+
+进入 tmux 后执行：
 
 ```bash
 source ~/unitree_ros2/setup.sh
-cd ~/inter-nav-project
-source .venv-deploy/bin/activate
-python deploy/run.py --allow-motion --camera none
+cd ~/inter-nav-project/deploy
+source ../.venv-deploy/bin/activate
+python run.py
 ```
 
 启动后先观察，不会立即行走。等待出现“实验坐标系已固定”，且状态为
@@ -27,28 +45,39 @@ python deploy/run.py --allow-motion --camera none
 仅查看传感器和地图时，将最后一条命令换为：
 
 ```bash
-python deploy/run.py --camera none
+python run.py --observe-only
 ```
 
-仅观察模式不能通过按键启用运动，需退出并用 `--allow-motion` 重新启动。
-需要前置相机画面时，把 `--camera none` 换为 `--camera sdk`；这只启用视频预览。
+仅观察模式不能通过按键启用运动，需退出并用 `python run.py` 重新启动。
+默认启用前置相机视频预览，不参与语义识别；不需要画面时加 `--camera none`。
 
 ### 终端 2：打开地图
 
-在同一台 Orin 上另开终端：
+在开发机另开终端，登录并转发网页端口：
 
 ```bash
-cd ~/inter-nav-project
-source .venv-deploy/bin/activate
-python deploy/view.py
+ssh -L 8080:127.0.0.1:8080 go2
 ```
 
-浏览器打开 <http://127.0.0.1:8080>。如果浏览器在开发机上，在开发机执行 SSH 转发，
-将地址换成实际设备地址，然后打开同一网址：
+登录后创建 view 会话：
 
 ```bash
-ssh -N -L 8080:127.0.0.1:8080 unitree@192.168.123.18
+tmux new -s go2-view
 ```
+
+进入 tmux 后执行：
+
+```bash
+cd ~/inter-nav-project/deploy
+source ../.venv-deploy/bin/activate
+python view.py
+```
+
+保持 SSH 连接，在开发机浏览器打开 <http://127.0.0.1:8080>。
+`-L 本地端口:远端目标地址:远端端口` 将开发机的端口转发到 Orin 上的 view。
+若本地 8080 已被占用，把参数换为 `-L 8050:127.0.0.1:8080`，浏览器改开
+<http://127.0.0.1:8050>；view 仍使用 8080。只需一个 SSH 连接转发该本地端口。
+这里不加 `-N`，以便登录后启动或接回程序；`-N` 只建立隧道，不打开远程终端。
 
 界面上方并排显示全局路线/局部碰撞地图和历史点云，下方显示 RGB。地图使用与仿真一致的
 分层配色、机器人轮廓、目标与路线标记；按“放大地图”可展开查看。
@@ -59,18 +88,67 @@ ssh -N -L 8080:127.0.0.1:8080 unitree@192.168.123.18
 
 ### 终端 3：保存验收记录
 
-在同一台 Orin 上另开终端，开始导航前启动记录：
+在开发机另开终端登录：
 
 ```bash
-cd ~/inter-nav-project
-source .venv-deploy/bin/activate
-python deploy/record.py --output ~/go2-demo-records
+ssh go2
+```
+
+登录后创建 record 会话：
+
+```bash
+tmux new -s go2-record
+```
+
+进入 tmux 后执行，开始导航前确认打印出记录目录：
+
+```bash
+cd ~/inter-nav-project/deploy
+source ../.venv-deploy/bin/activate
+python record.py --output ~/go2-demo-records
 ```
 
 记录目录会打印到终端，每次运行自动创建独立子目录。
 `run` 不自动保存实验文件；`view` 和 `record` 都不控制机器人。
 结束时先在 **run 终端按 `q`**，等待停止反馈和 `record` 自动保存结束，再关闭 `view`。
 在 record 终端按 `Ctrl+C` 只会结束记录，不会停止机器人。
+
+## 断线重连
+
+以下适用于 Orin 仍在运行、tmux 会话和程序未退出的情况。重新打开三个开发机终端：
+run、record 使用 `ssh go2` 登录；view 使用上面的带 `-L` 命令登录，以恢复网页转发。
+登录后，分别执行：
+
+| 终端 | 接回命令 |
+|---|---|
+| run | `tmux attach -d -t go2-run` |
+| view | `tmux attach -d -t go2-view` |
+| record | `tmux attach -d -t go2-record` |
+
+`-d` 会断开旧的 tmux 客户端，接回原终端；不会重启程序。刷新浏览器即可恢复 view。
+接回后先查看程序状态，不要重复执行启动命令。若之前按 `p` 暂停，确认现场状态后再按 `r` 继续。
+三个程序均在 Orin 本机运行；仅开发机 SSH 断开时，tmux 内的 record 可以继续记录本机 run。
+
+| 操作或现象 | 处理 |
+|---|---|
+| 查看保留的会话 | 在 Orin 执行 `tmux ls` |
+| 暂时离开 tmux | 先按 `Ctrl+b`，松开后按 `d`；程序继续运行，run 应先暂停 |
+| 程序已退出，但 tmux 会话还在 | 接回后在原 shell 中重新启动该程序 |
+| 提示找不到会话 | 先检查进程；确认对应程序已退出，再按启动步骤创建会话 |
+| 本地端口占用 | 关闭旧的转发连接，或换用 8050 等空闲本地端口 |
+
+若之前直接用普通 SSH 启动，没有使用 tmux，无法通过新建 tmux 接回旧终端。
+在 Orin 检查当前进程：
+
+```bash
+pgrep -af 'python.*(run|view|record)\.py'
+```
+
+普通终端挂断被识别后，run 会进入停止和退出流程，view、record 也会退出；
+网络中断不一定立即被识别，不能仅凭断线判断机器人已停。若旧 run 仍在且无法接回，
+先由现场接管，再正常结束旧 run，避免重复启动。
+重新启动 run 会重建地图、重设坐标原点，不恢复旧任务。重新启动 record 会生成新记录目录，
+已保存的数据仍在，但中断期间的记录不能保证补齐。record 的数据源退出或更换会话时也会结束记录，需重新启动。
 
 ## run 按键
 
@@ -130,7 +208,7 @@ python deploy/record.py --output ~/go2-demo-records
 
 ## 常用配置与排查
 
-配置位于 `deploy/configs/`；改完后重新启动 run。
+在 deploy 目录下，配置位于 `configs/`；改完后重新启动 run。
 
 | 配置文件 | 当前点导航设置 |
 |---|---|
@@ -144,11 +222,11 @@ python deploy/record.py --output ~/go2-demo-records
 导航高度范围外的障碍不由此地图层表达，现场应使用平地、无台阶的验收区域。
 更换设备、重置里程计或改变地面参考后，复核地面高度和 LiDAR 外参。
 
-在已加载环境的设备终端中，可先做以下检查；两条命令均不发运动指令：
+在 deploy 目录、已加载环境的设备终端中，可先做以下检查；两条命令均不发运动指令：
 
 ```bash
-python deploy/run.py --check
-python deploy/run.py --diagnose --duration 10 --output /tmp/go2-diagnostic.json
+python run.py --check
+python run.py --diagnose --duration 10 --output /tmp/go2-diagnostic.json
 ```
 
 `--check` 检查依赖和配置，退出码为 0 不等于 ROS、DDS 或硬件已就绪；
@@ -169,31 +247,38 @@ python deploy/run.py --diagnose --duration 10 --output /tmp/go2-diagnostic.json
 
 ```bash
 source ~/unitree_ros2/setup.sh
-cd ~/inter-nav-project
-bash deploy/scripts/install.sh
+cd ~/inter-nav-project/deploy
+bash scripts/install.sh
 ```
 
-安装脚本创建 `.venv-deploy`，安装 CPU 运行依赖。ROS、传感器驱动、定位和
+安装脚本在仓库根目录创建 `.venv-deploy`，安装 CPU 运行依赖；进入 deploy 后用
+`source ../.venv-deploy/bin/activate` 激活。ROS、传感器驱动、定位和
 `unitree_sdk2_python` 需在设备上就绪；脚本不安装或启动这些组件。
 
-需要同步代码时，在开发机仓库根目录执行，替换实际设备地址和路径。
+在 Orin 上运行 `tmux -V` 检查 tmux；未安装时执行：
+
+```bash
+sudo apt install tmux
+```
+
+需要同步代码时，在开发机仓库的 deploy 目录执行，替换实际设备地址和路径。
 先预览，再应用；应用前停止设备上的 run：
 
 ```bash
-bash deploy/scripts/sync.sh unitree@192.168.123.18 /home/unitree/inter-nav-project
-bash deploy/scripts/sync.sh unitree@192.168.123.18 /home/unitree/inter-nav-project --apply
+bash scripts/sync.sh go2 /home/unitree/inter-nav-project
+bash scripts/sync.sh go2 /home/unitree/inter-nav-project --apply
 ```
 
 同步会覆盖同名文件，不删除目标目录中的其他文件。设备专用配置可放在仓库外，
 启动时用 `--config-dir /绝对路径/配置目录` 指定，目录内需包含三份 YAML 配置。
 
-在仓库根目录、已激活环境的终端中，其他常用入口为：
+在 deploy 目录、已激活环境的终端中，其他常用入口为：
 
 | 用途 | 命令 |
 |---|---|
-| 无硬件合成演示，5 秒后退出 | `python deploy/run.py --demo --camera none --demo-seconds 5` |
-| 实际记录离线回放，不发送运动指令 | `python deploy/run.py --replay /绝对路径/单次记录目录 --task navigate --goal 1 0 --output /tmp/go2-replay` |
-| 独立 SDK 短时运动验收 | `python deploy/run.py --motion-test` |
+| 无硬件合成演示，5 秒后退出 | `python run.py --demo --camera none --demo-seconds 5` |
+| 实际记录离线回放，不发送运动指令 | `python run.py --replay /绝对路径/单次记录目录 --task navigate --goal 1 0 --output /tmp/go2-replay` |
+| 独立 SDK 短时运动验收 | `python run.py --motion-test` |
 
 `--goal` 仅用于离线回放；真机目标通过 `n` 输入。回放使用保存的观测，不模拟机器人对命令的响应，不能代替闭环验收。
 `--motion-test` 与正常 run 分开运行，不启用地图或避障；按 `a` 准备，再按 `f` 前行、`j` 左转或 `t` 测试命令超时停车，空格停止、`q` 退出。
