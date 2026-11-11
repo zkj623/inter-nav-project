@@ -15,10 +15,12 @@ camera_info_topic: ""
 # This Go2, 2026-10-25: standing on level ground; height in upstream odom, metres.
 # Recheck ground_z after odom resets or the floor/reference changes.
 ground_z: -0.012
-# 2026-10-27: use the supplied official base->radar URDF at the user's direction.
-# Adopt base == base_link and radar origin == range origin for this robot.
-# URDF rpy=[0, 2.8782, 0]; incoming cloud is already in odom: do not rotate it again.
-lidar_origin_offset_base_m: [0.28945, 0.0, -0.046825]
+# /utlidar/cloud origin expressed in base_link, recovered from 464 paired
+# cloud/cloud_base frames in static-three-clouds-20261110-220303 (592334 returns).
+# This is the topic transform, not an independent physical mounting survey.
+# cloud_deskewed already includes the upstream rotation/translation into odom;
+# this offset locates the ray origin only. Do not transform those endpoints again.
+lidar_origin_offset_base_m: [0.28216003, 0.0, 0.0]
 lidar_max_range: 8.0
 pose_cloud_tolerance_s: 0.05
 image_sync_tolerance_s: 0.04
@@ -26,7 +28,7 @@ max_data_age_s: 0.4
 max_position_jump_m: 0.5
 max_orientation_jump_rad: 0.7
 # Receipt alone does not establish calibration, filtering, DDS or motion readiness.
-# Acceptance basis: measured ground + user-accepted URDF frame correspondence.
+# Acceptance basis: measured ground + user-accepted cloud/base topic correspondence.
 # This is not an independent physical survey or motion acceptance.
 calibration_verified: true
 # 2026-10-28: operator explicitly requested true for supervised point-nav trials.

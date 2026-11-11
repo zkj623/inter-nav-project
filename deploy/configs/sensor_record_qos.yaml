@@ -1,0 +1,47 @@
+# Read-only sensor capture. Best-effort subscriptions accept both reliable and
+# best-effort publishers; recorded message counts do not prove lossless delivery.
+/utlidar/cloud:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 100
+/utlidar/cloud_base:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 100
+/utlidar/cloud_deskewed:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 100
+/utlidar/robot_odom:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 100
+/utlidar/imu:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 1000
+/lowstate:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 1000
+/go2/imu_lowstate:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 1000
+/tf:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 100
+/tf_static:
+  reliability: reliable
+  durability: transient_local
+  history: keep_last
+  depth: 100
