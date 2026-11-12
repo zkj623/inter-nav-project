@@ -154,6 +154,23 @@ class OnlineMapTests(unittest.TestCase):
         m.ingest_scan_masks(np.zeros_like(free),free);m.refresh_global()
         with m.global_planning() as boxes:self.assertFalse(p.path((-1,0),(1,0),boxes))
 
+    def test_disconnected_frontiers_are_rejected_without_repeating_astar(self):
+        from unittest.mock import patch
+        p,m=self.make();free=np.ones_like(m.observed);free[:,58:64]=False
+        m.ingest_scan_masks(np.zeros_like(free),free);m.refresh_global()
+        goal=(1.5,0.);original=p.path;calls=[]
+        def path(start,target,boxes,**kwargs):
+            calls.append(tuple(target))
+            if tuple(target)!=goal:
+                self.assertLess(p.cell(target)[1],58)  # Start is on the left island.
+            return original(start,target,boxes,**kwargs)
+        before=m.observed.copy()
+        with patch.object(p,'path',side_effect=path):
+            decision,target=OnlineGoalSelector().decide(m,(-1,0),goal)
+        self.assertIn(goal,calls)  # Normal task planning still checks the actual goal.
+        if target is not None:self.assertLess(p.cell(target)[1],58)
+        np.testing.assert_array_equal(m.observed,before)
+
     def test_unreachable_goal_wait_explanation_is_json_serializable(self):
         p,m=self.make();hit=np.zeros_like(m.observed);hit[:,70]=True
         m.ingest_scan_masks(hit,np.ones_like(hit));m.refresh_global()

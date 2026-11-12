@@ -18,6 +18,7 @@ class NavigationController:
         self.motion_detail = ''
         self.decision_duration_s = None
         self.task_error = None
+        self.wait_reason = None
 
     @property
     def motion_state(self):
@@ -89,6 +90,7 @@ class NavigationController:
             # a watchdog from an old observation. Preserve this prepared route
             # across arm acknowledgement instead of resetting it in resume().
             print('正在准备导航路径，暂不启用运动…', flush=True)
+            self.wait_reason = None
             prepared_at = time.monotonic()
             prepared = self.tasks.prepare_for_motion(snapshot, now)
             preparation_duration = time.monotonic()-prepared_at
@@ -97,8 +99,14 @@ class NavigationController:
                                decision_stages_s=dict(self.tasks.last_timings),
                                phase=self.tasks.engine.phase, sent_to_robot=False)
             if not prepared:
-                self.session.event('task_result', result=self.tasks.result)
-                print(f'导航准备结束：{self.tasks.result}', flush=True)
+                if self.tasks.result is not None:
+                    self.session.event('task_result', result=self.tasks.result)
+                    print(f'导航准备结束：{self.tasks.result}', flush=True)
+                else:
+                    self.wait_reason = (self.tasks.engine.decision or {}).get('reason', 'no_executable_route')
+                    self.task_error = f'导航等待：{self.wait_reason}；保持停止，地图更新后按 r 重新规划。'
+                    self.session.event('navigation_wait', reason=self.wait_reason, sent_to_robot=False)
+                    print(self.task_error, flush=True)
                 return
             print(f'导航准备完成，耗时 {preparation_duration*1000:.0f} ms；正在启用运动。', flush=True)
             self.motion_detail = ''
@@ -141,6 +149,11 @@ class NavigationController:
                     if 'kind' in event:
                         event['decision_kind'] = event.pop('kind')
                     self.session.event(kind, **event)
+                    if kind == 'decision':
+                        reason = event.get('reason') if event.get('decision_kind') == 'wait' else None
+                        if reason and reason != self.wait_reason:
+                            print(f'导航等待：{reason}；当前观测地图没有满足净空的路径或可达探索点。', flush=True)
+                        self.wait_reason = reason
             decision_duration = time.monotonic() - decision_started
             self.decision_duration_s = decision_duration
             if self.perception:

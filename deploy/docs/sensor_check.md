@@ -180,9 +180,9 @@ printf '%s\n' "$SENSOR_TEST_DIR"
 在开发机另开终端，进入本地 deploy，将下面的 `sensor-check-实际时间` 替换为打印的目录名：
 
 ```bash
-cd ~/metabot-workspace/inter-nav-project/deploy
+cd ~/inter-nav-project/deploy
 mkdir -p ../results/deploy
-scp -r go2:~/inter-nav-project/results/deploy/sensor-check-实际时间 ../results/deploy/
+scp -r go2:~/inter-nav-project/results/deploy/sensor-check-19700120-194654 ../results/deploy/
 ```
 
 复制整个目录，保留 `metadata.yaml`、全部 `.db3` 文件、话题清单和测量说明。

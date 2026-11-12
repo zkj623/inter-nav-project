@@ -1,5 +1,6 @@
 import math
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
@@ -52,6 +53,20 @@ class GlobalBufferConnectionTests(unittest.TestCase):
             local_free=np.zeros_like(local)))
         self.assertIs(p.free,global_free)
         self.assertIsNone(p._global_buffer_exit)
+
+    def test_search_stops_after_a_safe_usable_exit_without_checking_every_candidate(self):
+        from grutopia_extension.interactive_navigation import go2_voronoi_navigation as geometry
+        p,local=self.scene();position=(0.,0.);heading=math.pi/2
+        with patch.object(geometry,'calibrated_buffer_translation',
+                          wraps=geometry.calibrated_buffer_translation) as check:
+            action,state=decision_buffer_recovery(position,heading,p,[],(1.5,1.),heading,
+                local_free=local,require_goal_connection=False)
+        self.assertLess(check.call_count,16)
+        self.assertFalse(state['goal_connection_checked'])
+        p.free=local
+        self.assertTrue(body_translation_recovery_clear(p,[],position,heading,state['target']))
+        vx,vy,w=action['move_by_speed']
+        self.assertTrue(body_motion_clear(p,[],position,heading,vx,w,lateral=vy,horizon=.5))
 
     def test_global_free_pose_does_not_request_recovery(self):
         p,local=self.scene()

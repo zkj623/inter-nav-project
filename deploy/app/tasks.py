@@ -62,8 +62,10 @@ class Tasks:
         if self.state != 'active':
             return False
         self.state = 'paused'
-        self._prepared = True
-        return True
+        # A successful computation may still say "wait, no observed route".
+        # Keep that goal/map, but do not arm a writer with nothing to execute.
+        self._prepared = (self.engine.decision or {}).get('kind') != 'wait'
+        return self._prepared
 
     def activate_prepared(self, now):
         if self.state != 'paused' or not self._prepared:

@@ -80,6 +80,28 @@ def test_arm_rejection_keeps_task_paused_and_never_submits(control):
     assert any(item['event'] == 'task_rejected' for item in events.items)
 
 
+def test_prepared_wait_keeps_goal_disarmed_until_explicit_replan(control, monkeypatch):
+    import numpy as np
+    controller, snapshot, events = control
+    layers = controller.tasks.engine.layers
+    original = controller.tasks.engine.update
+    def no_route(*args, **kwargs):
+        layers.decision = {'kind': 'wait', 'reason': 'no_reachable_observed_frontier'}
+        return np.zeros(3)
+    with monkeypatch.context() as patch:
+        patch.setattr(controller.tasks.engine, 'update', no_route)
+        controller.operate('navigate', '1,0', snapshot, snapshot.captured_at)
+    assert controller.motion.state == 'manual'
+    assert controller.tasks.state == 'paused' and controller.tasks.engine.goal[:2] == (1., 0.)
+    assert controller.tasks.engine.layers is layers
+    assert not controller.motion.commands
+    assert not any(e['event'] == 'task_result' for e in events.items)
+    assert any(e['event'] == 'navigation_wait' for e in events.items)
+    controller.operate('r', None, snapshot, snapshot.captured_at)
+    assert controller.tasks.engine.update == original
+    assert controller.motion.state == 'active' and controller.tasks.state == 'active'
+
+
 @pytest.mark.parametrize('missing', [True, False])
 def test_missing_or_stale_observation_stops_once_and_requires_explicit_resume(control, missing):
     controller, snapshot, events = control

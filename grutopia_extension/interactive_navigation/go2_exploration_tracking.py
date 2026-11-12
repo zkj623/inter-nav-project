@@ -82,15 +82,20 @@ def _body_safe_global_buffer_exit(position,heading,planner,boxes,goal,*,local_fr
     for angle in np.linspace(-np.pi,np.pi,32,endpoint=False):
         unit=np.array([np.cos(angle),np.sin(angle)])
         for distance in [.10,.15,.20,.30,.45,.60,.80,1.0]:
-            target=position+distance*unit;command=safe_command(target)
-            if command is None:continue
+            target=position+distance*unit
             score=distance+float(np.linalg.norm(target-np.asarray(goal[:2])))
-            candidates.append((score,distance,target,command))
+            candidates.append((score,distance,target))
     candidates.sort(key=lambda r:r[:2])
-    # Check the best geometric candidates until one connects, rather than
-    # solving an entire global route for every candidate on every selection.
-    for omit_boxes in [False,True]:
-        for _,_,target,command in candidates:
+    # Geometry scores do not depend on the collision check. Validate in the
+    # same score order and stop at the first usable exit instead of sweeping
+    # all 256 candidates before selecting one. Keep results only for this
+    # call, including the optional box-free connectivity pass below.
+    commands={}
+    for omit_boxes in ([False,True] if require_goal_connection else [False]):
+        for index,(_,_,target) in enumerate(candidates):
+            if index not in commands:commands[index]=safe_command(target)
+            command=commands[index]
+            if command is None:continue
             # A box may still require interaction after the buffer exit.
             # Every motion check above included the real current boxes.
             if require_goal_connection and not planner.path(target,goal,[] if omit_boxes else boxes):continue
@@ -98,7 +103,7 @@ def _body_safe_global_buffer_exit(position,heading,planner,boxes,goal,*,local_fr
                 'require_goal_connection':require_goal_connection}
             return {'move_by_speed':command},{'target':target.tolist(),'recovering_buffer':True,
                 'needs_replan':False,'controller':'body_safe_global_buffer_exit','reused_exit_target':False,
-                'safe_exit_candidates':len(candidates),'goal_connection_checked':require_goal_connection}
+                'checked_exit_candidates':len(commands),'goal_connection_checked':require_goal_connection}
     return None
 
 

@@ -60,16 +60,26 @@ def test_invalid_endpoint_rejected_before_arm(navigation, capsys, case, reason):
     assert any(e['event'] == 'task_rejected' for e in events.items)
 
 
-def test_unknown_goal_is_accepted_without_revealing_unknown_map(navigation):
-    controller, snapshot, _ = navigation
+@pytest.mark.parametrize('connected_frontier', [False, True])
+def test_unknown_goal_is_accepted_without_revealing_unknown_map(navigation, connected_frontier):
+    controller, snapshot, events = navigation
+    if connected_frontier:
+        # Floor returns reveal a free prefix with an unobserved continuation,
+        # unlike the fixture's enclosing obstacle ring.
+        snapshot.observation['sensors']['lidar']['pointcloud'][:, 2] = 0.
+        controller.tasks = Tasks(load()['navigation'])
+        controller.step(snapshot, snapshot.captured_at)
     engine = controller.tasks.engine
     goal = (8., 0.)
     cell = engine.planner.cell(goal)
     assert not engine.layers.observed[cell]
     controller.operate('navigate', '8,0', snapshot, snapshot.captured_at)
     controller.step(snapshot, snapshot.captured_at)
-    assert controller.tasks.state == 'active' and controller.motion.arm_calls == 1
-    assert engine.decision['kind'] in ('explore', 'wait')
+    assert controller.tasks.state == ('active' if connected_frontier else 'paused')
+    assert controller.motion.arm_calls == int(connected_frontier)
+    assert engine.decision['kind'] == ('explore' if connected_frontier else 'wait')
+    assert engine.goal[:2] == goal
+    assert not any(e['event'] == 'task_rejected' for e in events.items)
     assert not engine.layers.observed[cell] and not engine.layers.global_observed[cell]
     assert not engine.planner.interactable_ids
 

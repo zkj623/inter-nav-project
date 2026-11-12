@@ -2,7 +2,7 @@
 import math
 import copy
 import numpy as np
-from scipy.ndimage import distance_transform_edt
+from scipy.ndimage import distance_transform_edt,label
 from grutopia_extension.interactive_navigation.box_push_navigation import BoxDecision
 from grutopia_extension.interactive_navigation.semantic_voronoi import SemanticVoronoiGraph
 from grutopia_extension.interactive_navigation.exploration_frontiers import local_unknown
@@ -139,6 +139,13 @@ class OnlineGoalSelector:
             snapshot=graph.cached_snapshot()
             blocked=p.blocked(boxes);safe=~blocked
             if not safe.any():return BoxDecision('wait','insufficient_observed_space'),None
+            # Observed-only A* forbids diagonal corner cuts, so its reachable
+            # cells have the same components as four-connected free space.
+            # Label once instead of exhausting the same island for every
+            # disconnected frontier candidate (especially after a map change).
+            components,_=label(safe)
+            start_cell=p.cell(start)
+            component=components[start_cell] if p.valid_cell(start_cell) else 0
             _,nearest=distance_transform_edt(~safe,return_indices=True)
             proposals={}
             for frontier in snapshot.frontiers:
@@ -157,6 +164,7 @@ class OnlineGoalSelector:
             candidates=sorted(proposals.values(),key=lambda entry:entry[0])
             choices=[]
             for _,xy,gain in candidates[:32]:
+                if not component or components[p.cell(xy)]!=component:continue
                 path=p.path(start,xy,boxes)
                 if not path:continue
                 cost=p.length(start,path)+1.25*float(np.linalg.norm(xy-np.asarray(goal)))-.8*gain+self.initial_turn_cost(layers,start,path)

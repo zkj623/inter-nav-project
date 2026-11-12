@@ -42,7 +42,11 @@ class _RecordedFrame:
     def __init__(self, frame_id, snapshot, scene, visual, mapping):
         self.frame_id = frame_id
         self.snapshot, self.scene = snapshot, scene
-        self.visual, self.mapping = visual, mapping
+        # The numeric packet already contains the measured and display clouds.
+        # Re-encoding their Python float lists in each record batch holds the
+        # GIL and can stall navigation; only /api/frame needs browser points.
+        self.visual = {key: value for key, value in visual.items() if key != 'cloud'}
+        self.mapping = mapping
         self._packet = None
         self._lock = threading.Lock()
 

@@ -74,6 +74,11 @@ def test_unverified_geometry_does_not_invent_map(session):
     assert not data['map']['ready']
     assert data['cloud']['kind'] == '当前原始点云（未建图）'
     assert data['status']['motion'] == 'disabled'
+    frame = session.batch(0, 0)['frames'][-1]
+    assert 'cloud' not in frame['visual']
+    restored, _ = decode_packet(frame['packet'])
+    np.testing.assert_array_equal(restored.observation['sensors']['lidar']['pointcloud'],
+                                  snapshot.observation['sensors']['lidar']['pointcloud'])
 
 
 def test_packets_keep_raw_observations_and_count_evicted_frames(session):
@@ -91,6 +96,11 @@ def test_packets_keep_raw_observations_and_count_evicted_frames(session):
     restored, scene = decode_packet(batch['frames'][-1]['packet'])
     np.testing.assert_array_equal(restored.observation['sensors']['lidar']['pointcloud'], snapshot.observation['sensors']['lidar']['pointcloud'])
     assert restored.geometry_calibrated and scene['ready']
+    # Record clients get the exact numeric cloud once; browser clients still
+    # receive the display points. Removing duplicate JSON must lose no data.
+    assert 'cloud' not in batch['frames'][-1]['visual']
+    np.testing.assert_array_equal(np.round(scene['points'].astype(float), 3),
+                                  session.display()['cloud']['points'])
     assert session.display()['session_id'] == batch['info']['session_id']
     # Every network endpoint is read-only.
     assert requests.post(session.url+'/api/record').status_code == 501
