@@ -9,13 +9,14 @@ from collections import deque
 from dataclasses import replace
 
 import numpy as np
+from deploy.robot.safety import checked_velocity
 
 from grutopia_extension.interactive_navigation.mapping import MappingConfig, OccupancyGridMap
 from grutopia_extension.interactive_navigation.online_navigation_map import OnlineNavigationMap
 from grutopia_extension.interactive_navigation.online_navigation_decision import OnlineGoalSelector
 from grutopia_extension.interactive_navigation.side_push_navigation import SidePushPlanner
 from grutopia_extension.interactive_navigation.go2_voronoi_navigation import (
-    ExplorationVoronoiRoutes, ForwardExplorationPathTracker, decision_recovery_required)
+    ExplorationVoronoiRoutes, ForwardExplorationPathTracker, decision_recovery_required, body_motion_clear)
 from grutopia_extension.interactive_navigation.go2_exploration_tracking import decision_buffer_recovery
 from grutopia_extension.interactive_navigation.smooth_go2_navigation import (
     SmoothExplorationTracker, VelocitySlewLimiter, smooth_recovery_action)
@@ -41,6 +42,19 @@ class DeploymentNavigationMap(OnlineNavigationMap):
                 'movable_pose_source': 'measured_rgbd_geometry_admitted_by_current_lidar_visibility',
                 'uses_simulator_object_poses': False,
                 'free_ray_model': 'height_clipped_measured_return_rays_only_no_synthetic_misses'}
+
+
+class DeploymentVelocityLimiter(VelocitySlewLimiter):
+    """Apply device limits before the release checks the resulting body sweep."""
+    def __init__(self, limits, **kwargs):
+        super().__init__(**kwargs)
+        self.limits = limits
+
+    def preview(self, target, now):
+        return super().preview(checked_velocity(target, self.limits), now)
+
+    def preview_directional_translation(self, target, now):
+        return super().preview_directional_translation(checked_velocity(target, self.limits), now)
 
 
 class NavigationEngine:
@@ -153,7 +167,12 @@ class NavigationEngine:
 
     def _reset_execution(self):
         self.selector = OnlineGoalSelector()
-        self.limiter = VelocitySlewLimiter(
+        self.velocity_limits = {
+            'max_vx': float(self.config.get('max_forward_speed', .5)),
+            'max_vy': float(self.config.get('max_lateral_speed', .18)),
+            'max_wz': float(self.config.get('max_yaw_speed', .5)),
+        }
+        self.limiter = DeploymentVelocityLimiter(self.velocity_limits,
             linear_acceleration=float(self.config.get('linear_acceleration', .50)),
             yaw_acceleration=float(self.config.get('yaw_acceleration', 1.50)))
         self.tracker = None
@@ -308,11 +327,20 @@ class NavigationEngine:
         command = np.array(velocity, float, copy=True)
         if command.shape != (3,) or not np.isfinite(command).all():
             raise ValueError('Navigation emitted an invalid velocity')
-        # Mirror SDK limits in the limiter history: subsequent checks must use
-        # the request that can actually be sent, not the larger simulation one.
-        limits = np.asarray([self.config.get('max_forward_speed', .5), self.config.get('max_lateral_speed', .18),
-                             self.config.get('max_yaw_speed', .5)])
-        command /= max(1., float(np.max(np.abs(command)/limits)))
+        limited = checked_velocity(command, self.velocity_limits)
+        if not np.array_equal(command, limited):
+            # Normal tracking already limits BEFORE its collision check. If a
+            # skill bypasses preview, independent yaw clipping changes its arc;
+            # check that actual bounded arc instead of assuming it stays safe.
+            horizon = .60+max(np.linalg.norm(limited[:2]), np.linalg.norm(self.limiter.measured[:2]))/(2*self.limiter.linear_acceleration)
+            clear = self.observation is not None and body_motion_clear(
+                self.planner, self.layers.current_boxes, self.position[:2], self.heading,
+                limited[0], limited[2], horizon=horizon, lateral=limited[1])
+            if not clear:
+                self.events.append({'event': 'velocity_limit_blocked', 'time_s': self.now,
+                                    'requested': command.tolist(), 'limited': limited.tolist()})
+                limited = np.zeros(3)
+        command = limited
         self.limiter.accept(command, self.now)
         return command
 

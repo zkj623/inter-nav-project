@@ -135,13 +135,54 @@ def test_goal_requires_measured_stopping_inside_release_bound():
     assert engine.result['reason'] == 'goal_reached_and_stopped'
 
 
-def test_twist_limit_preserves_checked_arc_and_tracks_sent_command():
+def test_translation_and_yaw_limits_are_independent_and_track_sent_command():
     engine = NavigationEngine(config())
+    engine.observe(observation(), 0.)
     requested = np.array([.6, .15, 1.6])
     command = engine._output(requested)
-    np.testing.assert_allclose(command, requested*.25)
+    np.testing.assert_allclose(command, [.30, .075, .4])
     np.testing.assert_array_equal(engine.limiter.command, command)
     np.testing.assert_array_equal(requested, [.6, .15, 1.6])
+
+
+@pytest.mark.parametrize('yaw', [-1.119007271, 1.119007271])
+def test_recorded_turn_does_not_reduce_translation_in_navigation_adapter(yaw):
+    engine = NavigationEngine(config())
+    engine.observe(observation(), 0.)
+    requested = [.111664123, -.08, yaw]
+    command = engine._output(requested)
+    np.testing.assert_allclose(command[:2], requested[:2])
+    assert command[2] == pytest.approx(np.sign(yaw)*.4)
+
+
+def test_limiter_checks_bounded_velocity_before_acceptance_with_independent_acceleration():
+    engine = NavigationEngine(config())
+    previous = np.zeros(3)
+    engine.limiter.accept(previous, 0.)
+    for index in range(1, 31):
+        command = engine.limiter.preview([.30, 0., 1.6], index*.1)
+        assert np.linalg.norm(command[:2]-previous[:2]) <= .05+1e-9
+        assert abs(command[2]-previous[2]) <= .15+1e-9
+        assert abs(command[2]) <= .4
+        engine.limiter.accept(command, index*.1)
+        previous = command
+    np.testing.assert_allclose(command, [.30, 0., .4])
+
+
+def test_clipped_arc_is_rechecked_and_stops_if_blocked(monkeypatch):
+    from deploy.app import navigation
+    engine = NavigationEngine(config())
+    engine.observe(observation(), 0.)
+    checked = []
+    def blocked(planner, boxes, position, heading, forward, yaw, **kwargs):
+        checked.append((forward, kwargs['lateral'], yaw))
+        return False
+    monkeypatch.setattr(navigation, 'body_motion_clear', blocked)
+    command = engine._output([.6, .15, 1.6])
+    np.testing.assert_allclose(checked, [[.3, .075, .4]])
+    np.testing.assert_array_equal(command, np.zeros(3))
+    np.testing.assert_array_equal(engine.limiter.command, command)
+    assert engine.events[-1]['event'] == 'velocity_limit_blocked'
 
 
 @pytest.mark.parametrize('frames', [(), ('same',), ('same', 'same')])

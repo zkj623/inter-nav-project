@@ -6,6 +6,30 @@
 本轮使用 `ros2 bag record` 保存原始 ROS 消息。`record.py` 保存的是运行程序输出，
 不能替代三路原始点云与 IMU 的同步记录。
 
+## 开测前检查与实验顺序
+
+这一轮确认四件事：静止墙距偏差是否稳定、实际使用的点云与定位发布者、IMU 是否有有效数据、
+转向时是否出现新的畸变或跨帧重影。假定环境物体静止；这不是完整的 IMU 标定或点导航验收。
+
+- [ ] Orin 已同步本说明和 `configs/sensor_record_qos.yaml`，仓库路径与下面命令一致。
+- [ ] 雷达、定位、站立服务正常；三路点云和 odom 有发布者，记录 IMU 话题是否可用。
+- [ ] `run.py` 已退出；需要运动时由现场操作员用原生遥控器控制，已确认能停止。
+- [ ] 同一面实体墙、地面标记和卷尺准备好；测量基准为雷达中心投影到主墙面。
+- [ ] 保存当前代码版本和话题发布者信息；记录本轮使用的驱动、定位启动方式，组间不切换配置。
+- [ ] 记录盘有可用空间；确认第一组录制已收到点云和 IMU，再继续后续实验。
+
+| 顺序 | 记录 | 操作 | 主要检查 |
+|---|---|---|---|
+| 1 | `wall_080` | 约 80 cm，静止 30 秒，立即检查 bag | 数据是否录齐、近距离墙距、静止 IMU |
+| 2 | `wall_120` | 约 120 cm，静止 30 秒 | 墙距误差是否随距离变化 |
+| 3 | `wall_160` | 约 160 cm，静止 30 秒 | 固定偏移与比例误差的区别 |
+| 4 | `turn_90` | 静止、缓慢转约 90°、停、转回、停 | 运动畸变、姿态与时间对齐 |
+
+每组记录实际墙距或转角，不把目录名称当作实测值。前三组已包含静止 IMU 检查，
+本轮无需单独增加一个静止 IMU 实验。
+换 SLAM 的离线对比在拿到这些数据后进行；点导航的启动、暂停和接管流程见
+[deploy README](../README.md)，不包含在这四组传感器实验中。
+
 ## 1. 登录与准备
 
 先将本说明和 `configs/sensor_record_qos.yaml` 同步到 Go2 的对应 deploy 目录。
@@ -22,11 +46,23 @@ source ~/unitree_ros2/setup.sh
 cd ~/inter-nav-project/deploy
 SENSOR_TEST_DIR="$PWD/../results/deploy/sensor-check-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$SENSOR_TEST_DIR"
+df -h "$SENSOR_TEST_DIR"
+git rev-parse HEAD > "$SENSOR_TEST_DIR/source-commit.txt"
+git status --short > "$SENSOR_TEST_DIR/source-status.txt"
 ros2 topic list -t | tee "$SENSOR_TEST_DIR/topics.txt"
-ros2 topic info /utlidar/cloud --verbose > "$SENSOR_TEST_DIR/cloud-publisher.txt"
-ros2 topic info /utlidar/imu --verbose > "$SENSOR_TEST_DIR/imu-publisher.txt"
+ros2 node list > "$SENSOR_TEST_DIR/nodes.txt"
+for SENSOR_TOPIC in /utlidar/cloud /utlidar/cloud_base /utlidar/cloud_deskewed \
+    /utlidar/robot_odom /utlidar/imu /lowstate /go2/imu_lowstate; do
+  ros2 topic info "$SENSOR_TOPIC" --verbose \
+    > "$SENSOR_TEST_DIR/${SENSOR_TOPIC//\//_}-publisher.txt" 2>&1
+done
 cp configs/robot.yaml configs/sensor_record_qos.yaml "$SENSOR_TEST_DIR/"
 ```
+
+把本轮实际使用的雷达、定位启动命令及已知版本写入记录目录中的 `setup.txt`，
+已有驱动或定位配置文件也一并保存。不了解版本时注明未知，不用猜测。
+发布者信息用于追查 `/utlidar/cloud` 在进入 deploy 前是否已有处理；不能仅凭话题名认定它
+完全未经处理。上面的 `source-commit.txt` 记录的是 deploy 仓库版本，不是雷达固件版本。
 
 确认三路 `/utlidar/cloud`、`/utlidar/cloud_base`、`/utlidar/cloud_deskewed`、
 `/utlidar/robot_odom` 有发布者。IMU 重点记录 `/utlidar/imu` 和 `/lowstate`；
@@ -80,6 +116,11 @@ record_sensors wall_080
 ```bash
 ros2 bag info "$SENSOR_TEST_DIR/wall_080"
 ```
+
+**先核对第一组，再移动到下一个距离：**三路点云、odom 和待检查的 IMU 应都有非零消息数。
+如果 IMU 缺失，先检查话题名称、发布者和录制日志；解决后重录第一组，再继续完整测试。
+若现场暂时无法获得 IMU，可继续完成墙距测试，但须注明“仅点云检查”，不能据此完成
+IMU 验证或与依赖 IMU 的 SLAM 做完整对比。
 
 后两组分别摆好、测量并站稳后，再各执行一条，按同样方式结束和检查：
 

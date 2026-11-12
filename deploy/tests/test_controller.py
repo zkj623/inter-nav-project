@@ -370,3 +370,64 @@ def test_online_decisions_are_recorded_once_with_their_kind(control):
     decisions = [e for e in events.items if e['event'] == 'decision']
     assert len(decisions) == 1 and decisions[0]['decision_kind'] == 'navigate'
     assert not controller.tasks.engine.events
+
+
+@pytest.mark.parametrize('operation', ['navigate', 'r'])
+def test_cold_plan_longer_than_ttl_precedes_arm_and_is_not_rebuilt(control, monkeypatch, operation):
+    import numpy as np
+    from deploy.app import controller as module
+    from deploy.robot.safety import CommandGuard
+    controller, snapshot, events = control
+    clock = [snapshot.captured_at]
+    monkeypatch.setattr(module, 'time', SimpleNamespace(monotonic=lambda: clock[0]))
+    guard = CommandGuard(controller.control)
+    original_arm = controller.motion.arm
+    original_submit = controller.motion.submit
+    armed_at = []
+    def arm():
+        armed_at.append(clock[0])
+        guard.arm(clock[0])
+        return original_arm()
+    def submit(command, generated, expires):
+        assert guard.submit(command, generated, expires, clock[0])
+        original_submit(command, generated, expires)
+    controller.motion.arm, controller.motion.submit = arm, submit
+    decide = controller.tasks.engine._decide
+    decisions = []
+    def slow_decide(recognition):
+        assert not guard.armed and not controller.motion.commands
+        decisions.append(clock[0])
+        clock[0] += .7  # Two command TTLs; the initial route is not a live command.
+        return decide(recognition)
+    monkeypatch.setattr(controller.tasks.engine, '_decide', slow_decide)
+    if operation == 'r':
+        controller.tasks.start('navigate', (1., 0., .3), clock[0])
+        controller.tasks.pause()
+    controller.operate(operation, '1,0' if operation == 'navigate' else None, snapshot, clock[0])
+    assert armed_at == [snapshot.captured_at+.7]
+    assert len(decisions) == 1 and controller.tasks.engine.phase == 'navigate'
+    assert not controller.motion.commands
+    np.testing.assert_array_equal(controller.tasks.engine.limiter.command, np.zeros(3))
+    # This is a new sensor observation, not a renewed timestamp on the old command.
+    clock[0] += .02
+    fresh = replace(snapshot, captured_at=clock[0], pose_at=clock[0], lidar_at=clock[0])
+    controller.step(fresh, clock[0])
+    assert len(decisions) == 1 and len(controller.motion.commands) == 1
+    assert guard.tick(clock[0]) is not None and guard.armed
+    prepared = next(e for e in events.items if e['event'] == 'navigation_prepared')
+    assert prepared['duration_s'] == pytest.approx(.7) and prepared['sent_to_robot'] is False
+    # After activation, the original watchdog still latches off on a real stall.
+    assert guard.tick(clock[0]+controller.control['command_ttl_s']+.01) is None
+    assert guard.reason == 'command_timeout' and not guard.armed
+
+
+def test_preparation_failure_never_arms(control, monkeypatch):
+    controller, snapshot, events = control
+    def failed(recognition):
+        return controller.tasks.engine._finish(False, 'no_safe_route')
+    monkeypatch.setattr(controller.tasks.engine, '_decide', failed)
+    controller.operate('navigate', '1,0', snapshot, snapshot.captured_at)
+    assert controller.motion.state == 'manual' and not controller.motion.commands
+    assert controller.tasks.state == 'completed'
+    assert events.items[-1]['event'] == 'task_result'
+    assert events.items[-1]['result']['reason'] == 'no_safe_route'

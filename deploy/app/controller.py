@@ -36,7 +36,7 @@ class NavigationController:
                 self.stop_confirmed = False
             elif state == 'stopped':
                 self.stop_confirmed = True
-            if state in ('stopping', 'fault', 'stop_error'):
+            if state in ('stopping', 'fault', 'stop_error') and self.tasks.state == 'active':
                 self.tasks.pause()
             if state == 'fault':
                 self.motion_error = event['detail']
@@ -84,20 +84,35 @@ class NavigationController:
                 if self.tasks.mode == 'navigate':
                     self.tasks.check_navigation_goal(self.tasks.engine.goal)
                 self.tasks.resume(now)
-            # Wait in a non-running task state. arm() may receive the previous
-            # stop's events while waiting for this request's acknowledgement.
-            self.tasks.pause()
+            # Cold global planning can exceed the command TTL on Orin. Do it
+            # BEFORE arming, never by extending a command's validity or feeding
+            # a watchdog from an old observation. Preserve this prepared route
+            # across arm acknowledgement instead of resetting it in resume().
+            print('正在准备导航路径，暂不启用运动…', flush=True)
+            prepared_at = time.monotonic()
+            prepared = self.tasks.prepare_for_motion(snapshot, now)
+            preparation_duration = time.monotonic()-prepared_at
+            self.session.event('navigation_prepared', ready=prepared,
+                               duration_s=preparation_duration,
+                               decision_stages_s=dict(self.tasks.last_timings),
+                               phase=self.tasks.engine.phase, sent_to_robot=False)
+            if not prepared:
+                self.session.event('task_result', result=self.tasks.result)
+                print(f'导航准备结束：{self.tasks.result}', flush=True)
+                return
+            print(f'导航准备完成，耗时 {preparation_duration*1000:.0f} ms；正在启用运动。', flush=True)
             self.motion_detail = ''
             armed = self.motion.arm()
             self.motion_events(self.motion.events())
             if not armed or self.motion.state != 'active':
                 raise ValueError(f'运动未启用：{self.motion.state}；原因={self.motion_detail or "未收到具体原因"}')
-            self.tasks.resume(now)
+            self.tasks.activate_prepared(time.monotonic())
             self.task_error = None
             self.stop_confirmed = False
         except (ValueError, RuntimeError) as exc:
             self.task_error = str(exc)
             self.pause(str(exc))
+            self.tasks.pause()  # Also invalidate a route whose arm request was rejected.
             print(str(exc), flush=True)
             self.session.event('task_rejected', reason=str(exc))
 
@@ -139,6 +154,9 @@ class NavigationController:
                               snapshot.lidar_at+self.robot['max_data_age_s'])
                 dispatch_at = time.monotonic()
                 if expires <= dispatch_at:
+                    print(f'导航命令已过期：计算 {decision_duration*1000:.0f} ms，'
+                          f'定位年龄 {(dispatch_at-snapshot.pose_at)*1000:.0f} ms，'
+                          f'点云年龄 {(dispatch_at-snapshot.lidar_at)*1000:.0f} ms；暂停导航。', flush=True)
                     self.session.event('command_discarded', reason='decision_expired',
                                        generated_at=now, expires_at=expires, discarded_at=dispatch_at,
                                        velocity=velocity, decision_duration_s=decision_duration,

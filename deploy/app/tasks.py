@@ -19,6 +19,7 @@ class Tasks:
         self.map_ready = False
         self.last_mapping_at = None
         self.last_timings = {}
+        self._prepared = False
 
     def start(self, mode, value, now):
         if mode != 'navigate':
@@ -31,11 +32,13 @@ class Tasks:
         self.mode, self.state = 'navigate', 'active'
         self.elapsed, self.last_time, self.last_step = 0., now, -1
         self.result = None
+        self._prepared = False
 
     def pause(self):
         if self.state == 'active':
             self.engine.pause()
             self.state = 'paused'
+        self._prepared = False
 
     def resume(self, now):
         if self.state != 'paused':
@@ -44,6 +47,32 @@ class Tasks:
             self.perception.reset()
         self.engine.set_goal(self.engine.goal, now)
         self.last_time, self.state = now, 'active'
+        self._prepared = False
+
+    def prepare_for_motion(self, snapshot, now):
+        """Build the first route while the SDK writer is still disarmed.
+
+        The resulting velocity is deliberately discarded. Activation preserves
+        the route, but the next live step must check a fresh observation before
+        requesting any motion.
+        """
+        if self.state != 'active':
+            raise ValueError('No navigation task to prepare')
+        self.update(snapshot, now)
+        if self.state != 'active':
+            return False
+        self.state = 'paused'
+        self._prepared = True
+        return True
+
+    def activate_prepared(self, now):
+        if self.state != 'paused' or not self._prepared:
+            raise ValueError('No prepared navigation task')
+        self._prepared = False
+        self.last_time, self.state = now, 'active'
+        # Planning is not execution: never seed the slew limiter with an
+        # unsent recovery/turn request generated during preparation.
+        self.engine.limiter.accept(np.zeros(3), now)
 
     def cancel(self):
         if self.perception is not None:
@@ -52,6 +81,7 @@ class Tasks:
         self.state = self.mode = 'observe'
         self.result = None
         self.elapsed, self.last_time = 0., None
+        self._prepared = False
 
     def fail(self, reason):
         self.engine.pause()
