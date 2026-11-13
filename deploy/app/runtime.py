@@ -153,6 +153,7 @@ def run_live(args, config):
         if not args.demo and (robot['ground_z'] is None or robot['lidar_origin_offset_base_m'] is None):
             print('地面/雷达原点未标定：本次可记录观测，导航地图暂不生成。', flush=True)
         while not quitting:
+            cycle_started = time.monotonic()
             now = time.monotonic()
             if args.demo and args.demo_seconds and now-started_at >= args.demo_seconds:
                 reason = 'demo_finished'
@@ -160,7 +161,9 @@ def run_live(args, config):
             operation = keyboard.poll() if keyboard else None
             if motion:
                 controller.motion_events(motion.events())
+            sensor_read_started = time.monotonic()
             snapshot = sensors.latest()
+            sensor_read_duration = time.monotonic()-sensor_read_started
             # Sensor callbacks may advance while keyboard/events/locks run.
             # Compare against time AFTER acquiring the observation.
             now = time.monotonic()
@@ -183,17 +186,29 @@ def run_live(args, config):
                     quitting = True
                     continue
                 controller.operate(key, value, snapshot, now)
-                if key in ('navigate', 'r') and tasks.state == 'active':
+                if controller.fresh_cycle_required:
                     # Arming waits for the motion worker. Its acknowledgement
                     # can arrive after this snapshot has expired. Start the
                     # decision on the next pass with current sensors/time;
                     # do not sleep or renew the pre-arm observation's lifetime.
+                    controller.fresh_cycle_required = False
                     continue
             step_error = controller.step(snapshot, now)
+            if controller.fresh_cycle_required:
+                controller.fresh_cycle_required = False
+                continue
             observation_error = observation_error or step_error
             current_error = sensors.last_error or observation_error
+            publish_started = time.monotonic()
             session.update(snapshot, tasks, motion.state if motion else 'disabled', current_error,
                            decision_duration_s=controller.decision_duration_s)
+            if tasks.state == 'active' or controller.planning_hold is not None:
+                session.event('control_cycle', sequence=None if snapshot is None else snapshot.sequence,
+                              cycle_started_at=cycle_started, sensor_read_duration_s=sensor_read_duration,
+                              pre_decision_duration_s=now-cycle_started,
+                              publication_duration_s=time.monotonic()-publish_started,
+                              elapsed_s=time.monotonic()-cycle_started,
+                              planning_hold=None if controller.planning_hold is None else controller.planning_hold['token'])
             if now-last_status >= 2 and (keyboard is None or keyboard.editing is None):
                 print(f'状态={tasks.state} 任务={tasks.mode} 运动={motion.state if motion else "disabled"}'
                       f' 观测={"ready" if snapshot else "waiting"} 建图={tasks.map_ready} 最近错误={current_error}', flush=True)

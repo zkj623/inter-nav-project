@@ -192,9 +192,31 @@ def _worker(pipe, robot, control, sdk_factory=UnitreeSport, test_mode=False):
                         reply['accepted'] = True
                         report('active', duration_s=duration, **reply)
                 elif operation == 'velocity':
-                    guard.submit(packet['velocity'], packet['generated_at'], packet['expires_at'], now)
+                    accepted = guard.submit(packet['velocity'], packet['generated_at'], packet['expires_at'], now)
+                    if packet.get('command_id') is not None:
+                        send({'kind': 'command_ack', 'state': 'active' if accepted else 'command_rejected',
+                              'command_id': packet['command_id'], 'accepted': accepted,
+                              'worker_at': now, 'expires_at': guard.expires,
+                              'detail': guard.reason})
                 elif operation in ('stop', 'close'):
+                    planned = operation == 'stop' and str(packet.get('reason', '')).startswith('planning_hold:')
+                    if planned:
+                        if guard.armed and guard.deadline is not None and now >= guard.deadline:
+                            guard.stop('test_duration_elapsed')
+                        elif guard.armed and now >= guard.expires:
+                            guard.stop('command_timeout')
+                        elif sdk.takeover or not sdk.healthy(now):
+                            guard.stop('remote_takeover' if sdk.takeover else 'robot_state_stale_or_unsafe')
+                        if not guard.armed and guard.reason not in ('manual', 'task_completed', 'p', 'prepare', 'stop', 'o', 'm') and not guard.reason.startswith('planning_hold:'):
+                            # A late planning request cannot relabel a real
+                            # timeout/takeover/fault and authorize auto-resume.
+                            report('rejected', 'Planning hold refused after '+guard.reason)
+                            break
                     guard.stop(packet.get('reason', operation))
+                    # A planning handoff may race an already completed stop.
+                    # Still obtain new stationary feedback for this request.
+                    if planned:
+                        was_armed = True
                     quit_requested = quit_requested or operation == 'close'
                     # Act on stop before accepting any later command.
                     break
@@ -280,6 +302,7 @@ class MotionProcess:
         self._pending = []
         self._responses = {}
         self._request_id = 0
+        self._command_id = 0
         self.process.start()
         child.close()
         if not self.pipe.poll(10):
@@ -304,7 +327,9 @@ class MotionProcess:
                 self._responses[request_id] = event
                 if len(self._responses) > 16:
                     del self._responses[next(iter(self._responses))]
-            if event.get('kind') != 'reply':
+            if event.get('kind') == 'command_ack':
+                self._pending.append(event)
+            elif event.get('kind') != 'reply':
                 self.state = event['state']
                 self._pending.append(event)
         if not self.closing and not self.process.is_alive() and self.state != 'fault':
@@ -347,8 +372,11 @@ class MotionProcess:
             return False
 
     def submit(self, velocity, generated_at, expires_at):
+        self._command_id += 1
         self.pipe.send({'op': 'velocity', 'velocity': list(velocity),
-                        'generated_at': generated_at, 'expires_at': expires_at})
+                        'generated_at': generated_at, 'expires_at': expires_at,
+                        'command_id': self._command_id})
+        return self._command_id
 
     def stop(self, reason):
         if self.process.is_alive():

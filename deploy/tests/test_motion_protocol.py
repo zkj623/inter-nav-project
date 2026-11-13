@@ -52,6 +52,7 @@ def fake_motion(robot=None, control=None, test_mode=True):
                                     kwargs={'test_mode': test_mode})
     motion.state, motion.closing = 'starting', False
     motion._pending, motion._responses, motion._request_id = [], {}, 0
+    motion._command_id = 0
     motion.process.start()
     child.close()
     assert motion.pipe.poll(5), 'fake SDK did not initialize'
@@ -84,6 +85,7 @@ def protocol_client(pipe):
     motion.pipe, motion.process = pipe, SimpleNamespace(is_alive=lambda: True)
     motion.state, motion.closing = 'manual', False
     motion._pending, motion._responses, motion._request_id = [], {}, 0
+    motion._command_id = 0
     return motion
 
 

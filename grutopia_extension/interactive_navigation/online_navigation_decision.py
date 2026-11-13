@@ -113,7 +113,25 @@ class OnlineGoalSelector:
             # Unknown cells stay blocked even in the box-free hypothesis.
             optimistic=p.path(start,goal,[])
             if optimistic:
-                decision=p.decide(start,goal,boxes)
+                if not boxes:
+                    # With no tracked boxes the optimistic, direct and
+                    # configure_route queries use the identical observed map.
+                    # Reuse this call's checked path; never cache across scans.
+                    # Preserve configure_route's empty-box passage reset and
+                    # the ordinary planner's complete decision explanation.
+                    if hasattr(p,'active_passages'):p.active_passages={}
+                    length=p.length(start,optimistic)
+                    reason=('ordinary_path_available' if length<=p.detour_ratio*length+.5
+                            else 'no_feasible_push_use_detour')
+                    finite_length=float(length) if math.isfinite(length) else None
+                    details={'start':list(map(float,start)),'goal':list(map(float,goal)),
+                        'before_path':optimistic,'without_boxes_path':optimistic,
+                        'before_length_m':finite_length,'without_boxes_length_m':finite_length,
+                        'candidate_count':0,'cost_formula':'approach + 2.5 * push_distance + remaining_route',
+                        'map_source':'static_prior_plus_current_obstacles','kind':'navigate','reason':reason}
+                    decision=BoxDecision('navigate',reason,optimistic,explanation=details)
+                else:
+                    decision=p.decide(start,goal,boxes)
                 if decision.kind!='failed':
                     decision.explanation.update(map_source='online_lidar_observed_cells_only',
                         requested_goal=list(map(float,goal)),goal_observed=True)

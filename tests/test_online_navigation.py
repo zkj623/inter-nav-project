@@ -112,9 +112,52 @@ class OnlineMapTests(unittest.TestCase):
         from unittest.mock import patch
         from grutopia_extension.interactive_navigation.box_push_navigation import BoxDecision
         p,m=self.make();m.ingest_scan_masks(np.zeros_like(m.observed),np.ones_like(m.observed));m.refresh_global();m._bind_local()
+        m.global_boxes=[BoxState('tracked',(.5,.8),(.2,.2,.4))]
         with m.global_planning():self.assertTrue(p.path((0,0),(1,0),[]))
         with patch.object(p,'decide',return_value=BoxDecision('failed','no_safe_contact_push_or_parking_pose')):
             self.assertIsNone(OnlineGoalSelector().task_decision(m,(0,0),(1,0)))
+
+    def test_empty_box_task_decision_matches_full_planner_and_checks_one_path(self):
+        from unittest.mock import patch
+        for obstacle,detour_ratio in [(False,1.6),(True,1.6),(False,.1)]:
+            with self.subTest(obstacle=obstacle,detour_ratio=detour_ratio):
+                p,m=self.make();p.detour_ratio=detour_ratio
+                hit=np.zeros_like(m.observed)
+                if obstacle:hit[52:69,60]=True  # Force the same checked detour.
+                m.ingest_scan_masks(hit,np.ones_like(hit));m.refresh_global();m._bind_local()
+                start,goal=(-1.,0.),(1.,0.)
+                with m.global_planning() as boxes:
+                    expected=p.decide(start,goal,boxes)
+                    expected.explanation.update(map_source='online_lidar_observed_cells_only',
+                        requested_goal=list(goal),goal_observed=True)
+                self.assertEqual(expected.kind,'navigate')
+                p.active_passages={'retired':{'source':'old_decision'}}
+                with patch.object(p,'path',wraps=p.path) as checked:
+                    actual=OnlineGoalSelector().task_decision(m,start,goal)
+                self.assertEqual(actual,expected)
+                self.assertEqual(checked.call_count,1)
+                self.assertEqual(p.active_passages,{})
+
+    def test_empty_box_path_is_rechecked_after_observed_map_changes(self):
+        p,m=self.make();free=np.ones_like(m.observed)
+        m.ingest_scan_masks(np.zeros_like(free),free);m.refresh_global();m._bind_local()
+        selector=OnlineGoalSelector();start,goal=(-1.,0.),(1.,0.)
+        self.assertEqual(selector.task_decision(m,start,goal).kind,'navigate')
+        # A newly occupied full-height separator must invalidate the old path.
+        hit=np.zeros_like(free);hit[:,60]=True
+        m.ingest_scan_masks(hit,free);m.refresh_global(reason='changed_map');m._bind_local()
+        self.assertIsNone(selector.task_decision(m,start,goal))
+
+    def test_empty_box_task_decision_keeps_unknown_and_occupied_goals_blocked(self):
+        for kind in ['unknown_goal','occupied_goal','unknown_separator']:
+            with self.subTest(kind=kind):
+                p,m=self.make();free=np.ones_like(m.observed);hit=np.zeros_like(free)
+                start,goal=(-1.,0.),(1.,0.)
+                if kind=='unknown_goal':free[p.cell(goal)]=False
+                elif kind=='occupied_goal':hit[p.cell(goal)]=True
+                else:free[:,58:64]=False
+                m.ingest_scan_masks(hit,free);m.refresh_global();m._bind_local()
+                self.assertIsNone(OnlineGoalSelector().task_decision(m,start,goal))
 
     def test_actual_empty_range_ray_enters_online_map(self):
         p,m=self.make()

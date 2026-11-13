@@ -60,6 +60,15 @@ class CommandGuard:
         if not all(math.isfinite(v) for v in (generated_at, expires_at, now)):
             self.stop('invalid_timestamp')
             return False
+        # The worker receives packets before its next tick. A delayed tick or
+        # SDK call must not let a fresh packet renew an already expired lease.
+        # Keep the same deadline precedence as tick(), including trial limits.
+        if self.deadline is not None and now >= self.deadline:
+            self.stop('test_duration_elapsed')
+            return False
+        if now >= self.expires:
+            self.stop('command_timeout')
+            return False
         if generated_at > now+.01 or expires_at <= now or expires_at > generated_at+self.config['command_ttl_s']+.001:
             self.stop('expired_command')
             return False

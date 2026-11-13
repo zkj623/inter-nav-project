@@ -32,6 +32,10 @@ from grutopia_extension.interactive_navigation.object_inspection import ObjectIn
 from grutopia_extension.interactive_navigation.local_path_guidance import local_guidance_path
 
 
+class PlanningRequired(RuntimeError):
+    """Yield before unbounded global work while a motion lease is active."""
+
+
 class DeploymentNavigationMap(OnlineNavigationMap):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -93,6 +97,7 @@ class NavigationEngine:
         self.status = 'idle'
         self.goal = None
         self.result = None
+        self.before_planning = None
         self._reset_execution()
         self.skill_reports.clear()
 
@@ -351,12 +356,19 @@ class NavigationEngine:
         return self._output(command)
 
     def _route(self, target):
+        self._planning_boundary('global_route')
         with self.layers.global_planning() as boxes:
             path = self.routes.plan(self.position[:2], target, boxes)
         self.layers.global_path = path
         self.layers.local_path = ()
         self.layers.guidance_revision = self.layers.global_revision
         return path
+
+    def _planning_boundary(self, reason):
+        # The live controller installs this hook; offline replay/simulation
+        # keep their synchronous algorithm. A yield occurs BEFORE mutations.
+        if self.before_planning is not None:
+            self.before_planning(reason)
 
     def _tracker(self, path, *, short_goal=False):
         return SmoothExplorationTracker(
@@ -534,6 +546,7 @@ class NavigationEngine:
             # A changed map invalidates execution of the old certificate.
             self.passage = None
         if self.config.get('interaction_enabled', False) and recognition is not None and self.full_motion_feedback:
+            self._planning_boundary('object_inspection')
             inspection = self.inspection_planner.propose(self.layers, self.position[:2], self.heading,
                                                         self.goal[:2], recognition, self.now)
             if inspection is not None:
@@ -545,6 +558,7 @@ class NavigationEngine:
                 self.layers.decision = {'kind': 'inspect', 'reason': inspection.reason,
                                         'object_id': inspection.object_id, 'interaction_allowed': False}
                 return self._brake()
+        self._planning_boundary('global_decision')
         decision, endpoint = self.selector.decide(self.layers, self.position[:2], self.goal[:2])
         self.layers.decision = {**(decision.explanation or {}), 'kind': decision.kind,
                                 'reason': decision.reason, 'decision_time_s': self.now}
@@ -640,6 +654,7 @@ class NavigationEngine:
             close = np.linalg.norm(self.position[:2]-np.asarray(self.endpoint)) < .35
             reconsider = close
             if self.now >= self.next_reconsider and not self.tracker.staging_active:
+                self._planning_boundary('frontier_reconsideration')
                 reconsider |= self.selector.task_decision(self.layers, self.position[:2], self.goal[:2]) is not None
                 self.next_reconsider = self.now+1.
             if reconsider:
