@@ -1,6 +1,9 @@
 # 第一阶段仿真交付材料
 
-交付分支：`stage1-go2-simulation-release`。新机器从[安装与下载指南](../reproduction/INSTALL.md)开始，全部运行命令见[根目录README](../README.md)。
+私有仓库：`zkj623/rsi-nav`；交付分支：`rsi-nav-v1`。接收方需先获得仓库访问权限，并在自己的GitHub账号配置SSH密钥，使用 `ssh -T git@github.com` 检查后克隆。
+
+
+交付分支：`rsi-nav-v1`。新机器从[安装与下载指南](../reproduction/INSTALL.md)开始，全部运行命令见[根目录README](../README.md)。
 
 ## 文件与资产来源
 

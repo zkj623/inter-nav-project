@@ -1,5 +1,8 @@
 # stage1-go2-simulation-release 在线建图与推箱导航交付
 
+私有仓库：`zkj623/rsi-nav`；交付分支：`rsi-nav-v1`。接收方需先获得仓库访问权限，并在自己的GitHub账号配置SSH密钥，使用 `ssh -T git@github.com` 检查后克隆。
+
+
 本分支交付同一 MV7 场景的 T01–T10 固定任务：从空地图利用真实 LiDAR 建图，完成普通导航或侧推箱体、重新扫描、穿越并在目标处停稳。任务完成即通过；不设置耗时门槛。路径曲折度全部 >1.3，初始杂乱度 38.195603% >20%。
 
 ## 交付内容与代码范围
@@ -24,9 +27,9 @@ Git 历史用于追溯，当前分支根目录 README 是新部署入口。历�
 ```bash
 sudo apt-get update
 sudo apt-get install -y ffmpeg p7zip-full libglib2.0-0 libsm6 libxext6 libxrender1 libegl1 libgl1 libgomp1
-git clone --branch stage1-go2-simulation-release --single-branch \
-  https://github.com/zkj623/inter-nav-project.git
-cd inter-nav-project
+git clone --branch rsi-nav-v1 --single-branch \
+  git@github.com:zkj623/rsi-nav.git
+cd rsi-nav
 conda create -n go2-simulation python=3.10 -y
 conda activate go2-simulation
 python -m pip install 'isaacsim==4.2.0.2' \

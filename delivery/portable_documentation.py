@@ -39,7 +39,7 @@ def update_guide(path):
     chapter.add_paragraph('策略权重SHA256：8862682da34ebb090a2e56f39254af430d5645f20cb5e3e104c72a4720671db8。完整安装指南为reproduction/INSTALL.md，仓库README.md提供全部十项运行与结果检查命令。')
     chapter.add_page_break()
     chapter.add_heading('2.2  新机器部署与执行', 2)
-    chapter.add_paragraph('按reproduction/INSTALL.md完成系统工具、Miniconda和显卡驱动准备，克隆stage1-go2-simulation-release分支并进入仓库根目录。以下命令在Ubuntu Bash中执行，所有输出均保存在接收方本机。')
+    chapter.add_paragraph('按reproduction/INSTALL.md完成系统工具、Miniconda和显卡驱动准备，克隆私有仓库zkj623/rsi-nav的rsi-nav-v1分支并进入仓库根目录。以下命令在Ubuntu Bash中执行，所有输出均保存在接收方本机。')
     commands = [
         'conda create -n go2-simulation python=3.10 -y',
         'conda activate go2-simulation',

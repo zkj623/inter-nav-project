@@ -1,6 +1,9 @@
 # 新机器安装与资产下载指南
 
-适用交付分支：`stage1-go2-simulation-release`。下面命令在新机器的 Ubuntu 22.04 x86_64 **Bash** 终端执行，不需要访问原服务器。运行结果和验收标准见[根目录 README](../README.md)。
+私有仓库：`zkj623/rsi-nav`；交付分支：`rsi-nav-v1`。接收方需先获得仓库访问权限，并在自己的GitHub账号配置SSH密钥，使用 `ssh -T git@github.com` 检查后克隆。
+
+
+适用交付分支：`rsi-nav-v1`。下面命令在新机器的 Ubuntu 22.04 x86_64 **Bash** 终端执行，不需要访问原服务器。运行结果和验收标准见[根目录 README](../README.md)。
 
 ## 1. 硬件、系统与驱动
 
@@ -39,9 +42,9 @@ python --version
 ## 3. 克隆交付分支并安装依赖
 
 ```bash
-git clone --branch stage1-go2-simulation-release --single-branch \
-  https://github.com/zkj623/inter-nav-project.git
-cd inter-nav-project
+git clone --branch rsi-nav-v1 --single-branch \
+  git@github.com:zkj623/rsi-nav.git
+cd rsi-nav
 python -m pip install --upgrade pip setuptools wheel
 python -m pip install 'isaacsim==4.2.0.2' \
   'isaacsim-extscache-physics==4.2.0.2' 'isaacsim-extscache-kit==4.2.0.2' \

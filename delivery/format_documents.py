@@ -50,7 +50,7 @@ def qualification(doc,number):
  p(doc,'几何最短路由固定栅格派生碰撞多边形上的可见性图计算，使用未膨胀几何；它是该占据表示下有限尺寸运动的下界。机器人可行性另行检查：T01–T05存在机器人净空路径；T06–T10初始机器人通路被阻挡，侧推后连通，并经真实运行的接触、箱体位移、新扫描和穿越证据验收。')
  p(doc,'资格数据仅用于离线评估，不向在线导航器输入这些路线。qualification.json中的navigation_success_not_yet_tested是资格评估时点的字段；任务成功结论以其后的stage1-go2-simulation-release功能证据为准。原始完整路径坐标见task-paths-and-complexity.json / .csv，资格文件见evidence/qualification/。')
 d=new('GO2-DLV-001','交付说明与测试用例','源码交接、环境配置、运行方式与验收方法')
-table(d,['项目','说明'],[['交付版本','stage1-go2-simulation-release；运行源码 514cd51dc7a4400a3e7db431b1f18a7aba7e3f50'],['交付分支','stage1-go2-simulation-release'],['验收口径','以任务成功完成为准，不设耗时门槛'],['配套文件','《测试报告与可视化材料》、源码、模型、场景输入、测试证据']],[3,14])
+table(d,['项目','说明'],[['交付版本','stage1-go2-simulation-release；运行源码 514cd51dc7a4400a3e7db431b1f18a7aba7e3f50'],['交付分支','rsi-nav-v1'],['验收口径','以任务成功完成为准，不设耗时门槛'],['配套文件','《测试报告与可视化材料》、源码、模型、场景输入、测试证据']],[3,14])
 p(d,'本文件将交付说明与测试用例合并，供接收方理解交付范围、准备运行环境，并执行后续验证。原始证据保留历史记录，耗时比较仅供参考。')
 h(d,'01  交付范围')
 table(d,['内容','位置与用途'],[['运行入口','grutopia/demo/go2_online_interactive_navigation.py'],['导航与交互模块','grutopia_extension/interactive_navigation/：建图、探索、路径跟随、执行安全、推箱与停稳'],['Go2控制器','grutopia_extension/controllers/isaac_go2_ctrl.py'],['自动测试与审计','tests/、tools/；delivery/regression-case-index.csv 提供定位索引'],['输入、模型与证据','delivery/inputs/、model/、evidence/；figures/ 包含截图与来源清单']],[4,13])
