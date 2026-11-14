@@ -1,6 +1,7 @@
 """Pure motion guards; no SDK or ROS dependencies."""
 import math
 import numpy as np
+from .contact_guard import ContactGuard
 
 
 def checked_velocity(command, config):
@@ -39,8 +40,10 @@ class CommandGuard:
         self.reason = 'manual'
         self.last_time = None
         self.deadline = None
+        self.contact = ContactGuard(config)
 
     def arm(self, now, duration_s=None):
+        self.contact.arm()
         self.armed = True
         self.reason = 'active'
         self.expires = now + self.config['command_ttl_s']
@@ -54,7 +57,19 @@ class CommandGuard:
         self.reason = reason
         self.output.fill(0)
 
-    def submit(self, command, generated_at, expires_at, now):
+    def check_deadlines(self, now):
+        """Latch expired budgets before packets, planning holds or output."""
+        if not self.armed:
+            return False
+        if self.deadline is not None and now >= self.deadline:
+            self.stop('test_duration_elapsed')
+        elif self.contact.expiry_reason(now):
+            self.stop(self.contact.expiry_reason(now))
+        elif now >= self.expires:
+            self.stop('command_timeout')
+        return self.armed
+
+    def submit(self, command, generated_at, expires_at, now, interaction=None):
         if not self.armed:
             return False
         if not all(math.isfinite(v) for v in (generated_at, expires_at, now)):
@@ -63,34 +78,39 @@ class CommandGuard:
         # The worker receives packets before its next tick. A delayed tick or
         # SDK call must not let a fresh packet renew an already expired lease.
         # Keep the same deadline precedence as tick(), including trial limits.
-        if self.deadline is not None and now >= self.deadline:
-            self.stop('test_duration_elapsed')
-            return False
-        if now >= self.expires:
-            self.stop('command_timeout')
+        if not self.check_deadlines(now):
             return False
         if generated_at > now+.01 or expires_at <= now or expires_at > generated_at+self.config['command_ttl_s']+.001:
             self.stop('expired_command')
             return False
         try:
-            self.velocity = checked_velocity(command, self.config)
+            self.contact.accept(interaction, now)
+        except ValueError as error:
+            self.stop(str(error))
+            return False
+        effective = self.contact.effective_config()
+        try:
+            self.velocity = checked_velocity(command, effective)
         except ValueError:
             self.stop('invalid_command')
             return False
-        self.expires = expires_at
+        # Entering contact or reducing its bounds cannot leave the previous,
+        # faster navigation output alive for a deceleration ramp.
+        self.output = checked_velocity(self.output, effective)
+        self.expires = (expires_at if self.contact.active is None else
+                        min(expires_at, self.contact.active['source_expires_at'],
+                            self.contact.active['deadline']))
         return True
 
     def tick(self, now):
         if not self.armed:
             return None
-        if self.deadline is not None and now >= self.deadline:
-            self.stop('test_duration_elapsed')
-            return None
-        if now >= self.expires:
-            self.stop('command_timeout')
+        if not self.check_deadlines(now):
             return None
         dt = min(max(now-self.last_time, 0), .1)
-        delta = np.array([self.config['acceleration']]*2+[self.config['angular_acceleration']])*dt
+        effective = self.contact.effective_config()
+        delta = np.array([effective['acceleration']]*2+[effective['angular_acceleration']])*dt
         self.output += np.clip(self.velocity-self.output, -delta, delta)
+        self.output = checked_velocity(self.output, effective)
         self.last_time = now
         return self.output.copy()

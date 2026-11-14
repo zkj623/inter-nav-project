@@ -19,6 +19,14 @@ from grutopia_extension.interactive_navigation.online_lidar_evidence import onli
 
 
 class OnlineNavigationMap(LayeredNavigationMap):
+    def robot_footprint_box(self,forward):
+        """Original map self-filter envelope; adapters may supply measured geometry."""
+        return BoxState('__robot__',tuple(self.robot_xy+.09*forward),(.82,.44,.5),np.degrees(self.robot_yaw))
+
+    def measured_scan_masks(self,hit,free):
+        """Optional observer before object ownership masks are applied."""
+        pass
+
     def __init__(self,planner,sensor_config,*,floor_height=.01,**kwargs):
         super().__init__(planner,sensor_config,**kwargs)
         self.static_occupied[:]=False
@@ -66,7 +74,7 @@ class OnlineNavigationMap(LayeredNavigationMap):
         self.robot_yaw=float(np.arctan2(2*(q[0]*q[3]+q[1]*q[2]),1-2*(q[2]**2+q[3]**2)))
         self.local_window=self._window(self.robot_xy)
         forward=np.array([np.cos(self.robot_yaw),np.sin(self.robot_yaw)])
-        footprint=BoxState('__robot__',tuple(self.robot_xy+.09*forward),(.82,.44,.5),np.degrees(self.robot_yaw))
+        footprint=self.robot_footprint_box(forward)
         mask=self.planner.box_mask(footprint,padding=self.planner.resolution)
         self.robot_footprint=mask if mask is not None else np.zeros_like(self.observed)
         lidar=observation.get('sensors',{}).get('lidar',{})
@@ -102,6 +110,7 @@ class OnlineNavigationMap(LayeredNavigationMap):
             measured_hit,measured_free,self.ray_statistics=online_lidar_masks(self.config,
                 filtered.get('position',observation['position']),np.asarray(filtered['pointcloud']),
                 max_range=float(filtered.get('max_range',5.)),min_range=float(filtered.get('min_range',.25)))
+            self.measured_scan_masks(measured_hit,measured_free)
             hit=measured_hit & ~self.tracked_sensor_mask & ~self.robot_footprint
             free=measured_free & ~new_mask
             self.ingest_scan_masks(hit,free)

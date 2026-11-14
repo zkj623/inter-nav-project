@@ -1,5 +1,13 @@
 # Robot interaction perception
 
+The live non-semantic push path is `RegisteredBoxPerception` in
+`registered_boxes.py`: current LiDAR + measured full dimensions → conservative
+`BoxState` + a `registered_box_lidar` permission with source-time expiry. See
+[robot interaction](../docs/interaction.md) for configuration and the complete
+module chain. `interaction/config.py` is the single provider factory for live
+run and offline replay. The RGB-D path below remains available for diagnostics;
+its visible AABB alone cannot authorize the new SDK contact backend.
+
 `AsyncInteractionPerception(config, backend=None, clock=time.monotonic, catalog=None)`
 returns `(tuple[BoxState], RecognitionStore)` from `update(snapshot, now)`.
 It shares the release `InteractionCatalog`, aliases, classifier labels, RGB crop

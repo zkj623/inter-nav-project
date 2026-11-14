@@ -1,10 +1,11 @@
-# Go2 点导航 Demo
+# Go2 导航与推箱 Demo
 
 本轮目标：输入平面坐标，让 Go2 自主到达、绕过障碍并停稳，支持暂停、继续和人工接管。
 使用 ROS 定位与 LiDAR 建图，通过 SportClient 输出机身速度，MCF 保持运行。
-**不需要语义识别、GPU 模型服务或 RGB-D；交互识别与推移保持关闭。**
+**默认点导航不需要语义识别、GPU 模型服务或 RGB-D；推移默认关闭。**
 
-完整自主推箱导航的实现路线与验收标准见[真机交互方案](docs/interaction_plan.md)。
+已登记箱体的完整自主推箱接入与操作见[真机推箱交互](docs/interaction.md)，
+实验设计和整体验收标准见[真机交互方案](docs/interaction_plan.md)。
 
 以下设备端命令假定仓库位于 `~/inter-nav-project`，运行环境已安装；首次使用见文末。
 所有 Python 命令都在 `~/inter-nav-project/deploy` 中执行，虚拟环境位于上一级的 `.venv-deploy`。
@@ -234,6 +235,7 @@ pgrep -af 'python.*(run|view|record)\.py'
 | `navigation.yaml` | 速度上限：前向 `0.8 m/s`、侧向 `0.3 m/s`、转向 `0.9 rad/s` |
 | `navigation.yaml` | 导航障碍高度：距地面 `0.15–0.63 m`；障碍膨胀半径 `0.4 m` |
 | `robot.yaml` / `runtime.yaml` | 数据最大年龄 `0.4 s`；命令有效期 `0.35 s` |
+| `interaction.yaml` | 登记箱体、LiDAR 跟踪和 SDK 接触参数；默认未启用、无登记箱体 |
 
 运动进程还会按 `runtime.yaml` 的上限限速；调整速度时同时核对两处配置。
 前向与侧向速度按同一比例限幅以保留平移方向，角速度独立限幅；转向达到上限不会额外压低线速度。
@@ -289,7 +291,7 @@ bash scripts/sync.sh go2 /home/unitree/inter-nav-project --apply
 ```
 
 同步会覆盖同名文件，不删除目标目录中的其他文件。设备专用配置可放在仓库外，
-启动时用 `--config-dir /绝对路径/配置目录` 指定，目录内需包含三份 YAML 配置。
+启动时用 `--config-dir /绝对路径/配置目录` 指定。目录内需包含 `robot.yaml`、`navigation.yaml`、`runtime.yaml`；使用登记箱体交互时还需 `interaction.yaml` 及其引用的接触参数文件。
 
 在 deploy 目录、已激活环境的终端中，其他常用入口为：
 

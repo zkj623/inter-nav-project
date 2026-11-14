@@ -30,7 +30,7 @@ class SidePushPlanner(BoxPushPlanner):
                 return (distance_transform_edt(~occupied)*self.resolution<=radius) | ~observed
             return distance_transform_edt(free)*self.resolution<=radius
         if self.robot_heading is None:return super().blocked(boxes,omit)
-        if getattr(self,'full_navigation_footprint',False):
+        if getattr(self,'full_navigation_footprint',False) or getattr(self,'body_geometry',None) is not None:
             from grutopia_extension.interactive_navigation.go2_voronoi_navigation import navigation_body_blocked
             return navigation_body_blocked(self,[box for box in boxes if box.id!=omit],self.robot_heading)
         free=self.free.copy()
@@ -102,11 +102,12 @@ class SidePushPlanner(BoxPushPlanner):
         half=abs(np.dot(normal,first))*box.dimensions[0]/2+abs(np.dot(normal,second))*box.dimensions[1]/2
         center=np.array(box.xy if xy is None else xy)
         lateral=abs(float(np.dot(center-passage['center'],normal)))
-        protected_half=self.radius+.08
+        geometry=getattr(self,'body_geometry',None)
+        protected_half=(self.radius if geometry is None else max(self.radius,geometry.half_width))+.08
         required=half+protected_half
         return {'axis':axis.tolist(),'center':passage['center'],'lateral_offset_m':lateral,
                 'required_lateral_offset_m':float(required),'passage_clearance_margin_m':float(lateral-required),
-                'robot_passage_width_m':2*(self.radius+.08),'side_parked':bool(lateral>=required)}
+                'robot_passage_width_m':2*protected_half,'side_parked':bool(lateral>=required)}
 
     def side_parking_allowed(self,box,destination,direction):
         if box.id not in self.active_passages:return False
@@ -158,7 +159,8 @@ class SidePushPlanner(BoxPushPlanner):
             theta=math.radians(box.yaw)
             u=np.array([math.cos(theta),math.sin(theta)]);v=np.array([-u[1],u[0]])
             half=abs(np.dot(normal,u))*box.dimensions[0]/2+abs(np.dot(normal,v))*box.dimensions[1]/2
-            protected=getattr(self,'navigation_half_width',.22)+margin
+            geometry=getattr(self,'body_geometry',None)
+            protected=(getattr(self,'navigation_half_width',.22) if geometry is None else geometry.half_width)+margin
             lateral=abs(float(np.dot(np.asarray(box.xy)-center,normal)))
             if lateral<half+protected:continue
             return {'axis':axis.tolist(),'center':center.tolist(),'nominal_center':nominal.tolist(),

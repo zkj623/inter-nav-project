@@ -10,13 +10,14 @@ from .tasks import Tasks
 from deploy.recording.recorder import Recorder
 from deploy.robot.observation import ExperimentFrame
 from deploy.robot.safety import check_observation, checked_velocity
+from deploy.interaction.config import create_perception
 
 
 def check(config):
     required = ('numpy', 'cv2', 'yaml', 'requests', 'scipy')
     optional = ('rclpy', 'tf2_ros', 'sensor_msgs', 'nav_msgs', 'unitree_sdk2py')
     status = {name: importlib.util.find_spec(name) is not None for name in required+optional}
-    Tasks(config['navigation'])  # Validate mapping config without Isaac or robot.
+    Tasks(config['navigation'], interaction=config.get('interaction'))
     try:
         check_motion_configuration(config)
         motion = 'configured; hardware NOT verified by this check'
@@ -27,7 +28,12 @@ def check(config):
                       'camera_mode': config['robot']['camera_mode'],
                       'navigation_backend': 'simulation_release_online_navigation',
                       'interaction_enabled': config['navigation']['interaction_enabled'],
-                      'interaction_geometry_verified': config['runtime']['perception']['geometry_verified'],
+                      'interaction_source': config.get('interaction', {}).get('source', 'rgbd'),
+                      'registered_boxes': len(config.get('interaction', {}).get('boxes', [])),
+                      'contact_profile_configured': config.get('interaction', {}).get('contact_profile') is not None,
+                      'interaction_geometry_verified': (config.get('interaction', {}).get('geometry_verified', False)
+                          if config.get('interaction', {}).get('source') == 'registered_box_lidar'
+                          else config['runtime']['perception']['geometry_verified']),
                       'geometry_calibrated': config['robot']['ground_z'] is not None and
                                              config['robot']['lidar_origin_offset_base_m'] is not None,
                       'MCF': 'kept running; no mode release or joystick switching'}, indent=2))
@@ -45,7 +51,10 @@ def _recorder(args, config, mode):
 
 def run_replay(args, config):
     from deploy.recording.replay import snapshots
-    tasks = Tasks(config['navigation'])
+    from deploy.interaction.replay import RecordedInteractionHandoff
+    perception = create_perception(config, synchronous=True)
+    tasks = Tasks(config['navigation'], perception, interaction=config.get('interaction'))
+    handoff = RecordedInteractionHandoff(config['runtime']['control'], config['robot']['max_data_age_s'])
     recorder = _recorder(args, config, 'offline_replay_no_motion')
     started = False
     reason, error = 'recording_exhausted', None
@@ -62,7 +71,17 @@ def run_replay(args, config):
                 check_task_inputs(config['robot'], snapshot)
                 tasks.start('navigate', (*args.goal, float(snapshot.observation['position'][2])), now)
                 started = True
-            velocity = tasks.update(snapshot, now)
+            velocity, handoff_event = handoff.update(tasks, snapshot, now)
+            if handoff_event is not None:
+                recorder.event(handoff_event.pop('event'), **handoff_event)
+            if perception is not None and perception.last_delivery is not None:
+                recorder.event('perception_result', **perception.last_delivery)
+            while tasks.engine.events:
+                event = dict(tasks.engine.events.popleft())
+                kind = event.pop('event', 'navigation_event')
+                if 'kind' in event:
+                    event['decision_kind'] = event.pop('kind')
+                recorder.event(kind, **event)
             recorder.event('decision', sequence=snapshot.sequence, state=tasks.state,
                            requested_velocity=None if velocity is None else checked_velocity(
                                velocity, config['runtime']['control']), sent_to_robot=False)
@@ -75,18 +94,23 @@ def run_replay(args, config):
     except Exception as exc:
         error, reason = str(exc), 'replay_error'
     finally:
+        if perception is not None:
+            perception.close()
         try:
             if tasks.map_ready:
                 tasks.engine.layers.save(str(recorder.directory / 'final_map'))
         except Exception as exc:
             error = f'Map save failed: {exc}'
+        if handoff.pending and error is None:
+            reason = 'interaction_stop_handoff_required'
         summary = {'reason': reason, 'error': error, 'task_result': tasks.result,
                    'decisions': count, 'map_created': tasks.map_ready,
                    'mapping': tasks.engine.layers.statistics(), 'sent_to_robot': False, 'hardware_validated': False,
-                   'completed': error is None}
+                   'recorded_stop_handoff': handoff.diagnostic(),
+                   'completed': error is None and not handoff.pending}
         recorder.close(summary)
         print(json.dumps(summary, ensure_ascii=False), flush=True)
-    return 0 if error is None else 2
+    return 0 if error is None and not handoff.pending else 2
 
 
 def run_live(args, config):
@@ -96,7 +120,6 @@ def run_live(args, config):
     from deploy.visualization.sources import SdkVideo
     from deploy.robot.sensors import RosSensors
     from deploy.robot.motion import MotionProcess
-    from deploy.perception.client import AsyncInteractionPerception
     if args.allow_motion:
         check_motion_configuration(config)
     robot, nav, runtime = config['robot'], config['navigation'], config['runtime']
@@ -140,9 +163,9 @@ def run_live(args, config):
         # rclpy.init can replace SIGINT; restore coordinated shutdown after init.
         for signum in handlers:
             signal.signal(signum, on_signal)
-        if not args.demo and robot['camera_mode'] == 'rgbd' and nav['interaction_enabled']:
-            perception = AsyncInteractionPerception(runtime['perception'])
-        tasks = Tasks(nav, perception)
+        if not args.demo:
+            perception = create_perception(config)
+        tasks = Tasks(nav, perception, interaction=config.get('interaction'))
         if args.allow_motion:
             motion = MotionProcess(robot, control)
         keyboard = Keyboard() if not args.demo or sys.stdin.isatty() else None

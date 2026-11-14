@@ -1,0 +1,18 @@
+# Independent of semantic recognition. Enable tracking first in --observe-only.
+source: registered_box_lidar
+tracking_enabled: false
+geometry_verified: false
+registry_reference: ""
+# Measured full box dimensions and an experiment-frame association region.
+# Example schema only (replace with real measurements; no boxes are registered):
+# - id: box-1
+#   dimensions_m: [length, width, height]
+#   search_region: [xmin, xmax, ymin, ymax]
+#   push_allowed: true
+boxes: []
+tracking:
+  max_age_s: 0.25
+max_skill_seconds: 180.0
+# Fill the complete measured SDK profile before enabling interaction.
+# See docs/interaction.md; no simulation calibration is silently inherited.
+contact_profile: null

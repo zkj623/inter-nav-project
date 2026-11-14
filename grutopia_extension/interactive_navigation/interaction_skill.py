@@ -40,6 +40,14 @@ class SkillContext:
     body_angular_velocity:Any=None
     orientation:Any=None
     policy_command:Any=None
+    # Deployment supplies a fresh scan based check; command is already bounded.
+    # Only the selected, registered target may be contacted. False means stop.
+    contact_motion_check:Any=None
+    # Original source acquisition times/identities, never processing completion.
+    box_observed_at:Any=None
+    box_observation_id:Any=None
+    map_observed_at:Any=None
+    map_observation_id:Any=None
 
 
 class SkillRegistry:

@@ -16,7 +16,7 @@ def observed_release_braking_clear(planner, boxes, position, heading):
     from grutopia_extension.interactive_navigation.go2_voronoi_navigation import body_motion_clear, body_rotation_clear
     return (body_motion_clear(planner,boxes,position,heading,0.,0.,horizon=0.)
             and body_rotation_clear(planner,boxes,position,heading,heading,
-                                    margin=CONTACT_RELEASE_BRAKING_MARGIN_M))
+                                    margin=getattr(planner,'release_braking_margin',CONTACT_RELEASE_BRAKING_MARGIN_M)))
 
 
 def approach_alignment_ready(position, approach, planner, blocked, radius=.35):
@@ -130,7 +130,7 @@ def contact_braking_required(delta, velocity, horizon=1.0, stop_margin=.025):
 
 
 def contact_face_lateral_allowance(dimensions, direction, heading_error, tilt_degrees,
-                                   maximum=.10, face_margin=.04):
+                                   maximum=.10, face_margin=.04, *, head_bounds=None, nose_offset=.33):
     """Keep the whole Go2 head envelope inside a cardinal box face.
 
     The two head colliders in isaaclab_go2.usd fit body-frame bounds
@@ -154,13 +154,19 @@ def contact_face_lateral_allowance(dimensions, direction, heading_error, tilt_de
     half_face=float(np.dot(np.abs(tangent),dimensions[:2]))/2
     tilt=np.deg2rad(tilt_degrees);st,ct=np.sin(tilt),np.cos(tilt)
     sy,cy=abs(np.sin(heading_error)),abs(np.cos(heading_error))
-    longitudinal=max(abs(.239*ct-.33),abs(.341-.33))
-    projected_head=sy*(longitudinal+st*(.051*st+.108))+cy*(.051+.108*st)
+    if head_bounds is None:
+        longitudinal=max(abs(.239*ct-.33),abs(.341-.33))
+        projected_head=sy*(longitudinal+st*(.051*st+.108))+cy*(.051+.108*st)
+    else:
+        xmin,xmax=head_bounds[0];half_width=max(abs(v) for v in head_bounds[1])
+        height=max(abs(v) for v in head_bounds[2])
+        longitudinal=max(abs(xmin*ct-nose_offset),abs(xmax-nose_offset))
+        projected_head=sy*(longitudinal+st*(half_width*st+height))+cy*(half_width+height*st)
     return float(max(0.,min(maximum,half_face-projected_head-face_margin)))
 
 
 def observed_contact_face_clear(position, orientation, box_xy, center_z, local_dimensions,
-                                box_orientation, direction, maximum=.10, face_margin=.04):
+                                box_orientation, direction, maximum=.10, face_margin=.04, *, head_bounds=None, require_vertical=False):
     """Project the padded head envelope onto the observed, oriented box face.
 
     The world AABB is retained for obstacle checks, but is not a physical
@@ -186,12 +192,14 @@ def observed_contact_face_clear(position, orientation, box_xy, center_z, local_d
     alignment=np.abs(box_rotation[:,:2].T@normal);face_axis=int(np.argmax(alignment))
     if alignment[face_axis]<.9:return False  # No near-normal cardinal push on this observed face.
     tangent_axis=1-face_axis
-    corners=np.array([[x,y,z] for x in [.239,.341] for y in [-.051,.051] for z in [-.108,.061]])
+    bounds=((.239,.341),(-.051,.051),(-.108,.061)) if head_bounds is None else head_bounds
+    corners=np.array([[x,y,z] for x in bounds[0] for y in bounds[1] for z in bounds[2]])
     head_world=position+corners@robot_rotation.T
     box_center=np.array([*box_xy,float(center_z)])
     local_head=(head_world-box_center)@box_rotation
     projected=local_head[:,tangent_axis];lower=float(projected.min());upper=float(projected.max())
     half_face=dimensions[tangent_axis]/2
+    if require_vertical and (local_head[:,2].min() < -dimensions[2]/2+face_margin or local_head[:,2].max() > dimensions[2]/2-face_margin):return False
     return bool(lower>=-half_face+face_margin and upper<=half_face-face_margin
                 and abs((lower+upper)/2)<maximum)
 
@@ -265,7 +273,9 @@ def observed_contact_retreat(planner, boxes, position, heading, direction, limit
         applied=request if limiter is None else limiter.preview(request,now)
         if abs(applied[2])>1e-8:continue
         acceleration=.65 if limiter is None else limiter.linear_acceleration
-        horizon=.4+max(np.linalg.norm(applied[:2]),np.linalg.norm(measured[:2]))/(2*acceleration)
+        speed=max(np.linalg.norm(applied[:2]),np.linalg.norm(measured[:2]))
+        backend=getattr(planner,'motion_backend',None)
+        horizon=.4+speed/(2*acceleration) if backend is None else backend.retreat_horizon(speed,acceleration)
         endpoint=position+(rotation@applied[:2])*horizon
         if not body_translation_recovery_clear(planner,boxes,position,heading,endpoint,require_clear_end=False):continue
         return applied,target

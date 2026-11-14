@@ -206,7 +206,7 @@ def test_actual_cli_replay_runs_existing_planner_without_hardware(tmp_path):
     assert 'simulated' not in summary['mapping']['movable_pose_source']
     assert (report.parent/'final_map'/'layered_map.npz').is_file()
     decisions = [json.loads(line) for line in (report.parent/'events.jsonl').read_text().splitlines()]
-    assert any(e['requested_velocity'] and e['requested_velocity'][0] > 0 for e in decisions)
+    assert any(e.get('requested_velocity') and e['requested_velocity'][0] > 0 for e in decisions)
 
 @pytest.mark.parametrize('argv, motion_allowed, demo', [
     ([], True, False),

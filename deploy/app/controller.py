@@ -73,6 +73,7 @@ class NavigationController:
                 self.stop_confirmed = True
                 if planned:
                     self.planning_hold['stopped_at'] = event.get('worker_at', time.monotonic())
+                    self.tasks.engine.interaction_stopped()
             if state in ('stopping', 'fault', 'stop_error', 'rejected') and not planned:
                 self._clear_hold()
                 if self.tasks.state == 'active':
@@ -204,10 +205,21 @@ class NavigationController:
                 self.task_error = None if self.tasks.result is not None else '导航等待：当前地图没有可执行路线；更新后按 r 重新规划。'
                 self._clear_hold()
                 return
+            self._finish_stopped_interaction()
             hold['prepared_at'] = time.monotonic()
             self.session.event('planning_hold_prepared', hold_id=hold['token'],
                                duration_s=self.decision_duration_s, sent_to_robot=False)
             return
+
+    def _finish_stopped_interaction(self):
+        """Complete a skill proved while its writer has remained disarmed."""
+        hold = self.planning_hold
+        engine = self.tasks.engine
+        if (hold is not None and hold['stopped_at'] is not None
+                and self.motion.state == 'stopped' and engine.execution.awaiting_stop):
+            engine.interaction_stopped()
+            self.session.event('interaction_handoff_completed', hold_id=hold['token'],
+                               evidence='writer_remained_stopped', sent_to_robot=False)
 
     def _resume_hold(self, snapshot, now):
         hold = self.planning_hold
@@ -230,6 +242,7 @@ class NavigationController:
             self.task_error = None if self.tasks.result is not None else '导航等待：新观测下无可执行路线；按 r 重新规划。'
             self._clear_hold()
             return True
+        self._finish_stopped_interaction()
         # A slow revalidation must itself finish disarmed and request another
         # fresh observation. Never retimestamp its result or extend sensor age.
         remaining = min(snapshot.pose_at, snapshot.lidar_at)+self.robot['max_data_age_s']-finished
@@ -250,6 +263,14 @@ class NavigationController:
         print('规划已更新，继续当前目标。', flush=True)
         return True
 
+    def _record_perception(self):
+        if self.perception is None:
+            return
+        delivery = getattr(self.perception, 'last_delivery', None)
+        if delivery is not None and delivery is not self.last_perception_delivery:
+            self.session.event('perception_result', **delivery)
+            self.last_perception_delivery = delivery
+
     def step(self, snapshot, now):
         """Validate this observation, update the original algorithm, queue at most one command."""
         self.decision_duration_s = None
@@ -265,6 +286,11 @@ class NavigationController:
             if (self.tasks.state == 'active' or self.planning_hold is not None) and snapshot.observation['position'][2] < self.navigation['fall_height']:
                 raise ValueError('Robot below fall-height threshold')
             if self.planning_hold is not None:
+                # Physical stopping can outlast the target geometry lease.
+                # Continue observing fresh scans while disarmed; never keep a
+                # target alive by retimestamping its old pose or stepping the skill.
+                self.tasks.observe_only(snapshot, now)
+                self._record_perception()
                 if not self._resume_hold(snapshot, now):
                     self._continue_hold(snapshot, now)
                 return self.task_error
@@ -274,10 +300,17 @@ class NavigationController:
                     self.pause('control_deadline_missed')
                     return self.task_error
                 # Admit a control cycle only when the preceding lease covers
-                # its recent computation cost plus two worker polls. Otherwise
+                # its recent computation cost and transport reserve. Otherwise
                 # explicitly stop BEFORE computing, preserving the same goal.
                 reserve = max(.05, 2/self.control['poll_hz'])
                 budget = max(1/self.navigation['tick_hz'], self.last_decision_cost*1.5)+reserve
+                if self.tasks.engine.execution.active:
+                    # Fitting runs asynchronously: the accepted target is
+                    # commonly one tick older than this snapshot. Budget the
+                    # computation ahead and one writer poll plus queue slack,
+                    # not a second observation cycle. This is an admission
+                    # estimate only; dispatch and writer enforce both leases.
+                    budget = max(.005, self.last_decision_cost*1.5)+1/self.control['poll_hz']+.005
                 if remaining < budget:
                     self._hold('control_budget')
                     return self.task_error
@@ -302,15 +335,19 @@ class NavigationController:
             decision_duration = time.monotonic() - decision_started
             self.decision_duration_s = decision_duration
             self.last_decision_cost = decision_duration
-            if self.perception:
-                delivery = getattr(self.perception, 'last_delivery', None)
-                if delivery is not None and delivery is not self.last_perception_delivery:
-                    self.session.event('perception_result', **delivery)
-                    self.last_perception_delivery = delivery
+            self._record_perception()
+            if engine is not None and engine.execution.awaiting_stop and self.motion and self.tasks.state == 'active':
+                # A completed contact skill cannot silently drop its writer
+                # envelope. Obtain physical stop feedback before ordinary nav.
+                self._hold('interaction_completed')
+                return self.task_error
             if velocity is not None and self.motion and self.tasks.state == 'active':
                 expires = min(now+self.control['command_ttl_s'],
                               snapshot.pose_at+self.robot['max_data_age_s'],
                               snapshot.lidar_at+self.robot['max_data_age_s'])
+                interaction = engine.interaction_command if engine is not None else None
+                if interaction is not None:
+                    expires = min(expires, interaction['source_expires_at'], interaction['deadline'])
                 dispatch_at = time.monotonic()
                 if expires <= dispatch_at:
                     print(f'导航命令已过期：计算 {decision_duration*1000:.0f} ms，'
@@ -332,7 +369,8 @@ class NavigationController:
                                        decision_duration_s=decision_duration, delivery='not_queued')
                     self.pause('control_deadline_missed')
                     return self.task_error
-                command_id = self.motion.submit(velocity, now, expires)
+                command_id = (self.motion.submit(velocity, now, expires, interaction=interaction)
+                              if interaction is not None else self.motion.submit(velocity, now, expires))
                 self.last_expires_at = expires
                 submitted_at = time.monotonic()
                 self.session.event('command_requested', generated_at=now, expires_at=expires,
@@ -342,6 +380,8 @@ class NavigationController:
                                    pose_age_at_submit=submitted_at-snapshot.pose_at,
                                    lidar_age_at_submit=submitted_at-snapshot.lidar_at,
                                    command_id=command_id, delivery='queued_not_execution_ack')
+                if interaction is not None:
+                    self.session.event('interaction_command', command_id=command_id, **interaction)
             if previous_state == 'active' and self.tasks.state == 'completed':
                 if self.motion:
                     self.motion.stop('task_completed')

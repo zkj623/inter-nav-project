@@ -166,7 +166,7 @@ def _worker(pipe, robot, control, sdk_factory=UnitreeSport, test_mode=False):
                     duration = packet.get('duration_s')
                     invalid_duration = duration is not None and (
                         type(duration) not in (int, float) or not math.isfinite(duration) or duration <= 0)
-                    if guard.armed or stopping is not None:
+                    if guard.armed or stopping is not None or was_armed:
                         report('rejected', 'Motion is active or still stopping', **reply)
                     elif invalid_duration:
                         report('rejected', 'duration_s must be finite and positive', **reply)
@@ -192,20 +192,20 @@ def _worker(pipe, robot, control, sdk_factory=UnitreeSport, test_mode=False):
                         reply['accepted'] = True
                         report('active', duration_s=duration, **reply)
                 elif operation == 'velocity':
-                    accepted = guard.submit(packet['velocity'], packet['generated_at'], packet['expires_at'], now)
+                    if (guard.armed and (packet.get('interaction') is not None or guard.contact.active is not None)
+                            and (sdk.takeover or not sdk.healthy(now))):
+                        guard.stop('remote_takeover' if sdk.takeover else 'robot_state_stale_or_unsafe')
+                    accepted = guard.submit(packet['velocity'], packet['generated_at'], packet['expires_at'], now,
+                                            interaction=packet.get('interaction'))
                     if packet.get('command_id') is not None:
                         send({'kind': 'command_ack', 'state': 'active' if accepted else 'command_rejected',
                               'command_id': packet['command_id'], 'accepted': accepted,
                               'worker_at': now, 'expires_at': guard.expires,
-                              'detail': guard.reason})
+                              'detail': guard.reason, 'interaction': guard.contact.snapshot()})
                 elif operation in ('stop', 'close'):
                     planned = operation == 'stop' and str(packet.get('reason', '')).startswith('planning_hold:')
                     if planned:
-                        if guard.armed and guard.deadline is not None and now >= guard.deadline:
-                            guard.stop('test_duration_elapsed')
-                        elif guard.armed and now >= guard.expires:
-                            guard.stop('command_timeout')
-                        elif sdk.takeover or not sdk.healthy(now):
+                        if guard.check_deadlines(now) and (sdk.takeover or not sdk.healthy(now)):
                             guard.stop('remote_takeover' if sdk.takeover else 'robot_state_stale_or_unsafe')
                         if not guard.armed and guard.reason not in ('manual', 'task_completed', 'p', 'prepare', 'stop', 'o', 'm') and not guard.reason.startswith('planning_hold:'):
                             # A late planning request cannot relabel a real
@@ -371,11 +371,11 @@ class MotionProcess:
             self.stop('arm_ack_timeout')
             return False
 
-    def submit(self, velocity, generated_at, expires_at):
+    def submit(self, velocity, generated_at, expires_at, *, interaction=None):
         self._command_id += 1
         self.pipe.send({'op': 'velocity', 'velocity': list(velocity),
                         'generated_at': generated_at, 'expires_at': expires_at,
-                        'command_id': self._command_id})
+                        'command_id': self._command_id, 'interaction': interaction})
         return self._command_id
 
     def stop(self, reason):

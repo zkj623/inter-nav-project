@@ -182,6 +182,8 @@ def _recovery_reverse_speed(value):
 
 def calibrated_buffer_translation(planner,boxes,position,heading,target,*,reverse_speed=.35):
     """A reachable free pose must also admit an effective, stoppable stride."""
+    backend=getattr(planner,'motion_backend',None)
+    if backend is not None:return backend.buffer_translation(planner,boxes,position,heading,target,reverse_speed=reverse_speed)
     reverse_speed=_recovery_reverse_speed(reverse_speed)
     delta=np.asarray(target[:2],float)-np.asarray(position[:2],float)
     distance=float(np.linalg.norm(delta))
@@ -506,6 +508,8 @@ class ForwardExplorationPathTracker(ExplorationPathTracker):
         return sign*min(1.,.4+.01*ticks)
 
     def _begin_corner_maneuver(self,position,heading,planner,boxes):
+        backend=getattr(planner,'motion_backend',None)
+        if backend is not None:return backend.corner_maneuver(position,heading,planner,boxes)
         target=super()._lookahead_target(np.asarray(position[:2],float))
         delta=np.asarray(target)-np.asarray(position[:2])
         if np.linalg.norm(delta)<.05:return None
@@ -521,6 +525,8 @@ class ForwardExplorationPathTracker(ExplorationPathTracker):
         return result
 
     def _calibrate_local_action(self,action,state,position,heading,planner,boxes):
+        backend=getattr(planner,'motion_backend',None)
+        if backend is not None:return backend.local_action(action,state,position,heading,planner,boxes)
         if not getattr(planner,'layered_local_control',False):return action,state
         vx,vy,rotation=action['move_by_speed']
         if (state.get('foot_clearance_translation') or state.get('foot_clearance_axis_step')) and abs(vx)<.05 and .03<abs(vy)<.30:
@@ -580,6 +586,8 @@ def route_blocked(planner,boxes):
 
 
 def navigation_footprint_samples(planner,margin=0.):
+    geometry=getattr(planner,'body_geometry',None)
+    if geometry is not None:return geometry.samples(planner.resolution,margin)
     halfwidth=getattr(planner,'navigation_half_width',.22)+margin
     # Include both extrema; arange omitted the last 2 cm of the front and
     # produced an asymmetric width when dimensions were not grid multiples.
@@ -684,7 +692,7 @@ def turn_reduces_overlap(planner,boxes,position,first,last):
     return counts[-1]==0 and max(counts)<=counts[0]
 
 
-def body_motion_clear(planner,boxes,position,heading,forward,rotation,horizon=.25,lateral=0.):
+def body_motion_clear(planner,boxes,position,heading,forward,rotation,horizon=.25,lateral=0.,*,margin=0.):
     """Check the body over the next coupled forward/yaw movement, not a full
     future turn about a stationary center. Pose spacing is below one map cell.
     """
@@ -693,7 +701,7 @@ def body_motion_clear(planner,boxes,position,heading,forward,rotation,horizon=.2
         mask=planner.box_mask(box)
         if mask is None:return False
         raw &= ~mask
-    xx,yy=navigation_footprint_samples(planner)
+    xx,yy=navigation_footprint_samples(planner,margin=margin)
     for t in np.linspace(0.,horizon,19):
         angle=heading+rotation*t
         if abs(rotation)>1e-8:

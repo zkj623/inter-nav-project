@@ -14,6 +14,9 @@ def checked_contact_turn_command(request, position, heading, planner, boxes, lim
     All boxes remain obstacles here: deliberate contact starts only after
     preparation. A stationary yaw request is not a stationary physical turn.
     """
+    backend = getattr(planner, 'motion_backend', None)
+    if backend is not None:
+        return backend.checked_contact_command(request, position, heading, planner, boxes, limiter, now, target_position)
     command = limiter.preview(request, now)
     measured = limiter.measured
     horizon = .60 + max(np.linalg.norm(command[:2]), np.linalg.norm(measured[:2])) / (2 * limiter.linear_acceleration)

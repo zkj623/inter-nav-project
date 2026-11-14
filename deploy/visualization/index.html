@@ -21,6 +21,7 @@ button{border:1px solid #cbd4da;background:#fff;color:#405461;padding:4px 10px;b
 .status{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 2px 0;color:#596b78;font-size:12px}
 #demo,#viewMode,#errors{color:#955017}#viewMode:empty,#errors:empty{display:none}#viewMode{font-size:12px;padding:6px 12px 0}
 #errors{white-space:pre-wrap;overflow-wrap:anywhere;margin-top:8px;font-size:12px}
+#interaction{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;color:#405461;margin:8px 0}#interaction:empty{display:none}
 .height-key{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:7px}.height-ramp{height:7px;width:120px;background:linear-gradient(to right,#440154,#3b528b,#21918c,#5ec962,#fde725);border-radius:3px}
 @media(max-width:1000px){body{padding:8px}.grid{grid-template-columns:1fr}.panel:first-child{grid-column:auto}}
 </style>
@@ -37,6 +38,7 @@ button{border:1px solid #cbd4da;background:#fff;color:#405461;padding:4px 10px;b
 </main>
 <div class="status"><span id="connection">连接中</span><button id="reconnect" hidden>重新连接</button><span id="demo"></span><span id="task"></span><span id="performance"></span></div>
 <div id="errors" role="status"></div>
+<div id="interaction" role="status"></div>
 <script>
 'use strict';
 const $=id=>document.getElementById(id), canvas=$('cloud'), ctx=canvas.getContext('2d');
@@ -145,6 +147,19 @@ async function poll(){if(polling)return;polling=true;clearTimeout(pollTimer);$('
    $('cloudStale').textContent=offline?'数据源已断开':metrics.input_stale?'输入观测已过期':'点云显示更新延迟';
    $('mapStale').textContent=offline?'数据源已断开':metrics.input_stale?'输入观测已过期':'地图更新延迟';}
   const skill=data.map?.skill;
+  const perception=data.map?.interaction_perception;
+  const observations=perception?.detections||[];
+  $('interaction').textContent=observations.map(o=>{
+   const quality=Number.isFinite(o.fit_residual_m)?` · 拟合残差 ${(o.fit_residual_m*100).toFixed(1)} cm`:'';
+   const measured=o.geometry_verified?'几何已核验':'仅观测 · 几何待核验';
+   const observationAge=data.map?.interaction_observation_age_s;
+   const ageSeconds=Number.isFinite(observationAge)?observationAge+(data.map?.age||0):Infinity;
+   const age=Number.isFinite(ageSeconds)?` · 观测年龄 ${(ageSeconds*1000).toFixed(0)} ms`:'';
+   const lease=Number.isFinite(o.expires_at)&&Number.isFinite(o.captured_at)?o.expires_at-o.captured_at:0;
+   const valid=o.valid&&!offline&&!data.map?.stale&&ageSeconds<lease;
+   return `${o.object_id}: ${valid?'已跟踪':o.invalid_reason||'观测已过期'} · ${measured}${quality}${age}`;
+  }).join('\n')+(data.map?.interaction_perception_error?`\n跟踪：${data.map.interaction_perception_error}`:'')+
+   (data.map?.contact_collision&&skill?`\n接触检查：${data.map.contact_collision.reason}`:'');
   $('task').textContent=[data.status?.mode,data.status?.state,data.map?.phase,
    skill?`${skill.object_id} · ${skill.state} · ${skill.status}`:null].filter(Boolean).join(' · ');
   if(data.map?.ready){$('mapEmpty').style.display='none';$('mapImage').style.display='block';

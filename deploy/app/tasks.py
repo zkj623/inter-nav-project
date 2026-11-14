@@ -7,9 +7,9 @@ from .navigation import NavigationEngine
 
 
 class Tasks:
-    def __init__(self, config, perception=None):
+    def __init__(self, config, perception=None, interaction=None):
         self.config, self.perception = config, perception
-        self.engine = NavigationEngine(config)
+        self.engine = NavigationEngine(config, interaction=interaction)
         self.mode = self.state = 'observe'
         self.elapsed = 0.
         self.last_time = None
@@ -20,6 +20,7 @@ class Tasks:
         self.last_mapping_at = None
         self.last_timings = {}
         self._prepared = False
+        self._perception_sample = None
 
     def start(self, mode, value, now):
         if mode != 'navigate':
@@ -28,6 +29,7 @@ class Tasks:
             raise ValueError('Goal must contain three finite map coordinates')
         if self.perception is not None:
             self.perception.reset()
+        self._perception_sample = None
         self.engine.set_goal(tuple(value), now)
         self.mode, self.state = 'navigate', 'active'
         self.elapsed, self.last_time, self.last_step = 0., now, -1
@@ -45,6 +47,7 @@ class Tasks:
             raise ValueError('No paused task')
         if self.perception is not None:
             self.perception.reset()
+        self._perception_sample = None
         self.engine.set_goal(self.engine.goal, now)
         self.last_time, self.state = now, 'active'
         self._prepared = False
@@ -79,6 +82,7 @@ class Tasks:
     def cancel(self):
         if self.perception is not None:
             self.perception.reset()
+        self._perception_sample = None
         self.engine.cancel()
         self.state = self.mode = 'observe'
         self.result = None
@@ -119,17 +123,34 @@ class Tasks:
         with self._measure('total_s'):
             return self._update(snapshot, now)
 
-    def _update(self, snapshot, now):
+    def observe_only(self, snapshot, now):
+        """Maintain live geometry/maps during a writer hold without advancing skills.
+
+        This does not reset task identity, extend execution deadlines, or submit
+        motion. A same-cycle preparation reuses the perception sample below.
+        """
+        self.last_timings = {}
+        with self._measure('total_s'):
+            return self._update(snapshot, now, advance=False)
+
+    def _perceive(self, snapshot, now):
+        cached = self._perception_sample
+        if cached is not None and cached[0] is snapshot and cached[1] == now:
+            return cached[2]
+        result = ((), None) if self.perception is None else self.perception.update(snapshot, now)
+        self._perception_sample = (snapshot, now, result)
+        return result
+
+    def _update(self, snapshot, now, *, advance=True):
         if not snapshot.geometry_calibrated:
             if self.state == 'active':
                 raise ValueError('Navigation requires calibrated ground and LiDAR origin')
             return None
-        observation = {**snapshot.observation, 'velocity': tuple(snapshot.velocity)}
-        boxes, recognition = (), None
-        if self.perception is not None:
-            with self._measure('perception_s'):
-                boxes, recognition = self.perception.update(snapshot, now)
-        if self.state == 'active':
+        observation = {**snapshot.observation, 'velocity': tuple(snapshot.velocity),
+                       'lidar_captured_at': snapshot.lidar_at}
+        with self._measure('perception_s'):
+            boxes, recognition = self._perceive(snapshot, now)
+        if advance and self.state == 'active':
             self.elapsed += max(0., now-self.last_time)
             self.last_time = now
             self.last_step = max(self.last_step+1, int(self.elapsed*self.config['tick_hz']))
@@ -149,10 +170,10 @@ class Tasks:
             self.last_lidar = self.engine.layers.last_scan
             if self.last_lidar == observation['sensors']['lidar'].get('physics_step'):
                 self.last_mapping_at = snapshot.lidar_at
-        if self.state == 'active':
+        if advance and self.state == 'active':
             with self._measure('goal_check_s'):
                 self.check_navigation_goal(self.engine.goal)
-        if self.state == 'active' and self.engine.status in ('completed', 'failed'):
+        if advance and self.state == 'active' and self.engine.status in ('completed', 'failed'):
             self.state = 'completed'
             self.result = self.engine.result
             return None

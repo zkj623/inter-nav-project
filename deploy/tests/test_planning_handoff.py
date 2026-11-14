@@ -107,11 +107,13 @@ def prepare_hold(run):
 
 
 def test_active_global_decision_yields_before_selector_or_route(run, monkeypatch):
+    import deploy.app.navigation as navigation
+    buffer_queries = count_calls(monkeypatch, navigation, 'decision_buffer_recovery')
     decisions = count_calls(monkeypatch, run.tasks.engine.selector, 'decide')
     routes = count_calls(monkeypatch, run.tasks.engine.routes, 'plan')
     token = run.hold()
-    assert token.endswith(':global_decision')
-    assert not decisions and not routes
+    assert token.endswith(':decision_buffer_recovery')
+    assert not buffer_queries and not decisions and not routes
     assert run.motion.stops == [token] and run.motion.state == 'stopping'
     assert run.tasks.state == 'active' and not run.motion.commands
 

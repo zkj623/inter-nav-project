@@ -59,6 +59,13 @@ class SceneCapture:
                   'orientation': snapshot.observation['orientation'].copy(),
                   'trajectory': np.asarray(self.trajectory), 'state': tasks.state, 'mode': tasks.mode,
                   'result': tasks.result, 'decision_stages_s': dict(tasks.last_timings)}
+        perception = getattr(tasks, 'perception', None)
+        if perception is not None:
+            result['interaction_perception'] = _payload(getattr(perception, 'last_delivery', None))
+            result['interaction_perception_error'] = getattr(perception, 'last_error', None)
+            delivery = result['interaction_perception']
+            result['interaction_observation_age_s'] = (max(0., snapshot.captured_at-delivery['captured_at'])
+                if delivery is not None and delivery.get('captured_at') is not None else None)
         if not result['ready']:
             result['reason'] = '地面/雷达原点未标定，或尚未收到有效观测；不生成导航地图'
             return result
@@ -94,6 +101,9 @@ class SceneCapture:
                                for box in layers.current_boxes][:40],
                       goal=None if engine.goal is None else list(engine.goal),
                       phase=engine.phase, decision=decision,
+                      interaction_source=getattr(engine, 'interaction_source', None),
+                      interaction_command=_payload(getattr(engine, 'interaction_command', None)),
+                      contact_collision=_payload(engine.contact_collision.diagnostic) if getattr(engine, 'contact_collision', None) is not None else None,
                       skill=None if skill is None else {'state': skill.state, 'status': skill.status,
                           'reason': skill.reason, 'object_id': skill.plan.box_id},
                       cloud_role='display_history_only')
@@ -119,5 +129,10 @@ def map_payload(scene):
             'resolution': scene['config']['grid_resolution'], 'path_points': len(scene['path']),
             'global_revision': scene.get('global_revision'), 'phase': scene.get('phase'),
             'decision': scene.get('decision'), 'skill': scene.get('skill'),
+            'interaction_source': scene.get('interaction_source'),
+            'interaction_perception': scene.get('interaction_perception'),
+            'interaction_perception_error': scene.get('interaction_perception_error'),
+            'interaction_observation_age_s': scene.get('interaction_observation_age_s'),
+            'contact_collision': scene.get('contact_collision'),
             'observed_cells': int(scene['observed'].sum()),
             'tracked_objects': len(scene['objects']), 'cloud_role': 'display_history_only'}

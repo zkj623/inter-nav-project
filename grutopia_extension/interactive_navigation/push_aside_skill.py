@@ -1,24 +1,24 @@
 """Parameterized Go2 side-push skill with staged alignment and map confirmation.
 
 The skill emits velocity/navigation commands. It never sets robot or object
-poses; object movement must come from the simulator's contact dynamics.
+poses; object movement must come from measured physical contact.
 """
 from dataclasses import dataclass
+from grutopia_extension.interactive_navigation.push_aside_backend import PushAsideBackend
 from grutopia_extension.interactive_navigation.box_push_navigation import BoxState
 import math
 import numpy as np
 from grutopia_extension.interactive_navigation.interaction_skill import SkillSpec,SkillCommand
 from grutopia_extension.interactive_navigation.go2_contact_control import (
-    ContactYawServo,contact_heading_hold,contact_face_lateral_allowance,observed_contact_face_clear,observed_contact_retreat,
-    push_centerline_velocity,push_completion_state,push_braking_distance,observed_release_braking_clear)
-from grutopia_extension.interactive_navigation.go2_contact_turn import ContactTurnControl,checked_contact_turn_command,checked_contact_step_command
+    contact_heading_hold,observed_contact_face_clear,observed_contact_retreat,
+    push_centerline_velocity,push_completion_state,observed_release_braking_clear)
+from grutopia_extension.interactive_navigation.go2_contact_turn import checked_contact_turn_command,checked_contact_step_command
 from grutopia_extension.interactive_navigation.go2_voronoi_navigation import (
     body_rotation_clear,body_translation_recovery_clear,body_motion_clear,
     ForwardExplorationPathTracker,navigation_body_blocked,body_axis_recovery_target)
 from grutopia_extension.interactive_navigation.go2_passage_confirmation import observed_passage_routes
 from grutopia_extension.interactive_navigation.go2_exploration_tracking import decision_buffer_recovery
 from grutopia_extension.interactive_navigation.smooth_go2_navigation import smooth_recovery_action
-from grutopia_extension.interactive_navigation.go2_heading_trim import HeadingTrimControl
 from grutopia_extension.interactive_navigation.go2_contact_translation_step import ContactTranslationStep
 
 
@@ -61,27 +61,22 @@ class PushAsideConfig:
 class PushAsideSkill:
     spec=SkillSpec('push_aside','1.0',('box',),'physically side-park a box and confirm an observed free passage')
 
-    def __init__(self,permission,plan,task_start,task_goal,config=None):
+    def __init__(self,permission,plan,task_start,task_goal,config=None,*,backend=None):
         if permission is None or permission.skill_name!=self.spec.name or permission.category!='box':
             raise ValueError('PushAsideSkill requires an allowlisted box')
-        if permission.source=='rgb_dino_qwen_vl':
-            if len(set(permission.evidence_frames))<2 or not permission.classifier_models:
-                raise ValueError('Vision mode requires two independent recognized frames')
-        elif permission.source=='ground_truth_layout':
-            if (not permission.source_reference or len(permission.source_digest)!=64
-                    or any(c not in '0123456789abcdef' for c in permission.source_digest)
-                    or permission.evidence_frames or permission.classifier_models):
-                raise ValueError('Ground-truth mode requires explicit provenance without fake visual evidence')
-        else:raise ValueError('Unsupported interaction permission source')
+        self.backend=backend if backend is not None else PushAsideBackend()
+        self.backend.validate_permission(permission)
         if permission.object_id!=plan.box_id:raise ValueError('Permission does not match push target')
         self.permission=permission;self.plan=plan;self.config=config or PushAsideConfig()
+        self.contact_started=None
+        self.movement_tilt_limit=self.backend.movement_tilt_limit
         self.task_start=np.asarray(task_start,float);self.task_goal=np.asarray(task_goal,float)
         self.direction=np.asarray(plan.direction,float);self.direction/=np.linalg.norm(self.direction)
         self.tangent=np.array([-self.direction[1],self.direction[0]])
         self.push_heading=math.atan2(self.direction[1],self.direction[0])
         self.state='prepare';self.started=None;self.state_since=None;self.retries=0
         self.initial_box=None;self.last_box=None;self.engage_box_position=None;self.initial_box_geometry=None;self.last_box_motion_time=None;self.last_release_probe=-1e9;self.stage=None;self.anchor=None;self.axis=None
-        self.turn=None;self.yaw_servo=ContactYawServo(self.config.yaw_tolerance)
+        self.turn=None;self.yaw_servo=self.backend.yaw_servo(self.config.yaw_tolerance)
         self.settled_since=None;self.translation_braking=False;self.navigation_goal=None;self.events=[]
         self.release_origin=None;self.release_reason=None;self.certificate=None
         self.last_verify=-1e9;self.observation_moves=0;self.used_stages=[]
@@ -97,9 +92,10 @@ class PushAsideSkill:
     def _transition(self,state,ctx,reason=''):
         self.events.append({'skill':self.spec.name,'object_id':self.plan.box_id,'from':self.state,
             'to':state,'reason':reason,'time_s':float(ctx.now),'retry':self.retries})
+        if state=='engage' and self.contact_started is None:self.contact_started=float(ctx.now)
         self.state=state;self.state_since=ctx.now;self.settled_since=None;self.translation_braking=False;self.lateral_step=None;self.longitudinal_step=None
         if state=='recover_release_pose':self.release_axis_attempts=[];self.release_axis_pending=False
-        if state=='refine_heading':self.heading_trim=HeadingTrimControl(self.push_heading,min(self.config.alignment_yaw_tolerance,self.config.yaw_tolerance),acceptance_tolerance=self.config.yaw_tolerance)
+        if state=='refine_heading':self.heading_trim=self.backend.heading_trim(self)
         self.progress_mark=np.asarray(ctx.position[:2]).copy();self.progress_since=ctx.now
 
     def _output(self,velocity=(0.,0.,0.),navigation_goal=None):
@@ -113,6 +109,7 @@ class PushAsideSkill:
         return self._output()
 
     def _quiet(self,ctx,seconds=.30,max_tilt=15.):
+        seconds,max_tilt=self.backend.quiet_requirements(seconds,max_tilt)
         commanded=np.asarray(getattr(ctx.limiter,'command',(0.,0.,0.)),float)
         angular=getattr(ctx,'body_angular_velocity',None)
         angular=np.asarray((0.,0.,ctx.yaw_rate) if angular is None else angular,float)
@@ -129,16 +126,17 @@ class PushAsideSkill:
 
     def _box_frame(self,ctx):
         extent=float(np.dot(np.abs(self.direction),np.asarray(ctx.box.dimensions[:2]))/2)
-        nose=np.asarray(ctx.position[:2])+.33*np.array([math.cos(ctx.heading),math.sin(ctx.heading)])
+        nose=np.asarray(ctx.position[:2])+self.backend.nose_offset_m*np.array([math.cos(ctx.heading),math.sin(ctx.heading)])
         delta=np.asarray(ctx.box.xy)-nose
         return float(np.dot(delta,self.direction)-extent),float(np.dot(delta,self.tangent)),wrap(self.push_heading-ctx.heading)
 
     def _contact_lateral_allowance(self,ctx,*,moving=False):
-        maximum=(self.config.pushing_face_offset_max if moving else self.config.preparation_face_offset_max)
-        return contact_face_lateral_allowance(ctx.box.dimensions,self.direction,
-            wrap(self.push_heading-ctx.heading),ctx.tilt_degrees,maximum,self.config.contact_face_margin)
+        return self.backend.lateral_allowance(self,ctx,moving=moving)
 
     def _contact_face_clear(self,ctx,*,moving=False):
+        return self.backend.contact_face_clear(self,ctx,moving=moving)
+
+    def _default_contact_face_clear(self,ctx,*,moving=False):
         maximum=(self.config.pushing_face_offset_max if moving else self.config.preparation_face_offset_max)
         geometry=[getattr(ctx.box,k,None) for k in ['local_dimensions','orientation','center_z']]
         if any(value is not None for value in geometry):
@@ -172,7 +170,7 @@ class PushAsideSkill:
         if abs(yaw_error)>self.config.preparation_heading_tolerance or not .20<=gap<=.85 or abs(lateral)>.80:return False
         if not body_motion_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.):return False
         extent=float(np.dot(np.abs(self.direction),np.asarray(ctx.box.dimensions[:2]))/2)
-        anchor=np.asarray(ctx.box.xy)-self.direction*(extent+.33+self.config.front_gap)
+        anchor=np.asarray(ctx.box.xy)-self.direction*(extent+self.backend.nose_offset_m+self.config.front_gap)
         longitudinal=anchor+self.tangent*float(np.dot(np.asarray(ctx.position[:2])-anchor,self.tangent))
         # The turn controller executes the shortest yaw change. Near +/-pi,
         # raw endpoints would test almost a full revolution instead.
@@ -185,10 +183,21 @@ class PushAsideSkill:
         self.axis=np.asarray(passage['axis'] if passage else self.tangent,float)
         if np.dot(self.task_goal-np.asarray(ctx.box.xy),self.axis)<0:self.axis=-self.axis
         self.axis/=np.linalg.norm(self.axis)
-        self.yaw_servo=ContactYawServo(min(self.config.alignment_yaw_tolerance,self.config.yaw_tolerance))
+        self.yaw_servo=self.backend.yaw_servo(min(self.config.alignment_yaw_tolerance,self.config.yaw_tolerance))
         return True
 
+    @staticmethod
+    def _before_contact_planning(ctx,reason):
+        """Let deployment stop/disarm before expensive global computations.
+
+        The hook may yield by raising before any planning state is committed.
+        Simulation has no hook and retains its existing synchronous behavior.
+        """
+        hook=getattr(ctx.planner,'before_contact_planning',None)
+        if hook is not None:hook(reason)
+
     def _select_stage(self,ctx):
+        self._before_contact_planning(ctx,'skill_prepare_stage')
         p=ctx.planner;position=np.asarray(ctx.position[:2])
         passage=p.active_passages.get(ctx.box.id,p.passages.get(ctx.box.id))
         self.axis=np.asarray(passage['axis'] if passage else self.tangent,float)
@@ -200,7 +209,7 @@ class PushAsideSkill:
             try:
                 candidates=[]
                 for gap in [self.config.front_gap,.40,.30]:
-                    anchor=np.asarray(ctx.box.xy)-self.direction*(extent+.33+gap)
+                    anchor=np.asarray(ctx.box.xy)-self.direction*(extent+self.backend.nose_offset_m+gap)
                     if not body_rotation_clear(p,boxes,anchor,self.push_heading,self.push_heading,margin=.025):continue
                     points=[position,anchor,anchor-.25*self.direction,anchor-.45*self.direction]
                     points.extend(anchor-self.axis*back+self.direction*along
@@ -249,18 +258,21 @@ class PushAsideSkill:
             terminal_release=self.terminal_release_reason is not None)
         return self._output()
 
+    def _translation(self,ctx,target,axis,speed,tolerance):
+        return self.backend.translate(self,ctx,target,axis,speed,tolerance)
+
     def _start_corrective_lateral_step(self,ctx):
         # The runner supplies policy_command only for a loader-validated 45D
         # Unitree profile. Legacy profiles keep their established behavior.
         error=float(np.dot(np.asarray(ctx.box.xy)-np.asarray(ctx.position[:2]),self.tangent))
-        if (getattr(ctx,'policy_command',None) is None or
+        if (not self.backend.policy_translation_steps or getattr(ctx,'policy_command',None) is None or
                 abs(self.config.lateral_speed-ContactTranslationStep.SPEED)>1e-6 or
                 abs(error)<=self.config.alignment_tolerance):return
         required=min(ContactTranslationStep.TARGET_PROGRESS_CAP,max(0.,abs(error)-self.config.alignment_tolerance))
         self.lateral_step=ContactTranslationStep(ctx.position,self.tangent*np.sign(error),ctx.now,minimum_progress_m=required)
         self.events[-1]['corrective_lateral_step']={**ContactTranslationStep.configuration(),'minimum_progress_m':required}
 
-    def _translation(self,ctx,target,axis,speed,tolerance):
+    def _policy_translation(self,ctx,target,axis,speed,tolerance):
         delta=np.asarray(target)-np.asarray(ctx.position[:2]);error=float(np.dot(delta,axis))
         if self.translation_braking:
             if not self._quiet(ctx):return np.zeros(3),False
@@ -344,15 +356,19 @@ class PushAsideSkill:
         executes the corridor and checks the final stopped robot pose.
         """
         layers=ctx.layers
+        evidence=self.backend.passage_evidence(self,ctx)
+        if evidence is None:return False
+        confirming_time=evidence['confirming_observation_time_s']
         if (along<=.25 or layers is None or self.engage_box_position is None or self.initial_box_geometry is None
                 or self.last_box_motion_time is None
-                or getattr(layers,'last_local',-1.)<=self.last_box_motion_time
+                or confirming_time<=self.last_box_motion_time
                 or self.plan.box_id not in getattr(layers,'visible_box_ids',())):
             return False
         tracked=next((box for box in layers.current_boxes if box.id==self.plan.box_id),None)
         if tracked is None:return False
         planner=layers.planner
         if not body_motion_clear(planner,layers.current_boxes,ctx.position,ctx.heading,0.,0.,horizon=0.):return False
+        self._before_contact_planning(ctx,'skill_passage_confirmation')
         confirmation_stage=self.state
         original_passage=planner.passages.get(self.plan.box_id)
         original_active=planner.active_passages.get(self.plan.box_id)
@@ -372,8 +388,7 @@ class PushAsideSkill:
                 'original_box_would_block_corridor':True,'original_box':vars(self.initial_box_geometry),
                 'original_box_xy':list(self.initial_box_geometry.xy),
                 'actual_push_distance_m':along,'nominal_planned_push_m':self.plan.push_distance,
-                'confirming_observation_time_s':float(layers.last_local),
-                'last_box_motion_time_s':float(self.last_box_motion_time)}
+                'last_box_motion_time_s':float(self.last_box_motion_time),**evidence}
         finally:
             if not accepted or not commit:
                 if original_passage is None:planner.passages.pop(self.plan.box_id,None)
@@ -386,7 +401,7 @@ class PushAsideSkill:
     def _recovered_passage_effect(self,ctx,along):
         # A recovered nominal footprint must retain the same observed
         # braking reserve required by the direct withdrawal path.
-        if (getattr(ctx,'policy_command',None) is not None and
+        if (self.backend.requires_braking_reserve(ctx) and
                 not observed_release_braking_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading)):
             return False
         proof=self._observed_passage_effect(ctx,along,commit=True)
@@ -439,7 +454,17 @@ class PushAsideSkill:
             release_pose_recovery=self.release_pose_recoveries)
         return True
 
+    def _new_turn(self,ctx):
+        return self.backend.new_turn(self,ctx)
+
     def step(self,ctx):
+        if self.status!='running':return self._output()
+        reason=self.backend.before_step(self,ctx)
+        if reason:return self._fail(ctx,reason)
+        result=self._step(ctx)
+        return self.backend.after_step(self,ctx,result)
+
+    def _step(self,ctx):
         if self.status!='running':return self._output()
         if ctx.box is None or ctx.box.id!=self.plan.box_id:return self._fail(ctx,'target_track_lost')
         if self.started is None:
@@ -448,7 +473,7 @@ class PushAsideSkill:
                 self.initial_box_geometry=BoxState(ctx.box.id,tuple(ctx.box.xy),tuple(ctx.box.dimensions),
                     getattr(ctx.box,'yaw',0.),getattr(ctx.box,'mass_kg',1.))
         self.max_tilt=max(self.max_tilt,float(ctx.tilt_degrees))
-        if not ctx.healthy or ctx.tilt_degrees>=30:return self._fail(ctx,'robot_unstable')
+        if not ctx.healthy or ctx.tilt_degrees>=self.backend.hard_tilt_limit:return self._fail(ctx,'robot_unstable')
         if ctx.now-self.started>self.config.max_skill_seconds:return self._fail(ctx,'skill_timeout')
         if (self.release_reserve_since is not None and
                 ctx.now-self.release_reserve_since>self.config.max_preparation_recovery_seconds):
@@ -459,22 +484,20 @@ class PushAsideSkill:
                         'alignment_timeout' if self.state=='settle_contact' else 'preparation_settling_timeout')
                 self.used_stages.append(np.asarray(ctx.position[:2]).copy())
                 return self._retry(ctx,reason)
-            if ctx.tilt_degrees>=18.:
+            if ctx.tilt_degrees>=self.movement_tilt_limit:
                 # This phase already requests a stop. Allow its measured
                 # settling gate to finish; do not spend a new retry merely
                 # because braking briefly crosses the movement stop trigger.
                 # The30degree hard limit above and15degree quiet gate remain.
                 self.settled_since=None
                 return self._output()
-        elif self.state in ['turn_at_stage','refine_heading','recover_preparation','align_longitudinal','align_lateral'] and ctx.tilt_degrees>=18.:
+        elif self.state in ['turn_at_stage','refine_heading','recover_preparation','align_longitudinal','align_lateral'] and ctx.tilt_degrees>=self.movement_tilt_limit:
             self.used_stages.append(np.asarray(ctx.position[:2]).copy())
             return self._retry(ctx,'preparation_attitude')
         moved=np.asarray(ctx.box.xy)-self.initial_box;along=float(np.dot(moved,self.direction))
         cross=float(np.dot(moved,self.tangent))
-        if self.last_box is not None and ctx.now>self.last_box_time:
-            if np.linalg.norm(np.asarray(ctx.box.xy)-self.last_box)>1e-5:self.last_box_motion_time=ctx.now
-            observed=float(np.dot(np.asarray(ctx.box.xy)-self.last_box,self.direction))/(ctx.now-self.last_box_time)
-            self.box_velocity=.8*self.box_velocity+.2*observed
+        reason=self.backend.observe_box(self,ctx)
+        if reason:return self._fail(ctx,reason)
         self.last_box=np.asarray(ctx.box.xy).copy();self.last_box_time=ctx.now
         if abs(cross)>.15:return self._fail(ctx,'box_left_safe_push_line')
         gap,lateral,yaw_error=self._box_frame(ctx)
@@ -489,7 +512,7 @@ class PushAsideSkill:
                 if self.preparation_recoveries>=self.config.max_retries:return self._fail(ctx,'no_observed_preparation_pose')
                 self.preparation_recoveries+=1
                 extent=float(np.dot(np.abs(self.direction),np.asarray(ctx.box.dimensions[:2]))/2)
-                self.recovery_waypoint=np.asarray(ctx.box.xy)-self.direction*(extent+.33+self.config.front_gap)
+                self.recovery_waypoint=np.asarray(ctx.box.xy)-self.direction*(extent+self.backend.nose_offset_m+self.config.front_gap)
                 self.recovery_tracker=ForwardExplorationPathTracker(ctx.position[:2],
                     [tuple(self.recovery_waypoint)],guard_motion=False)
                 self.next_stage_probe=ctx.now+.5
@@ -501,8 +524,9 @@ class PushAsideSkill:
             if ctx.now-self.state_since>self.config.max_preparation_recovery_seconds:
                 return self._fail(ctx,'no_observed_preparation_after_recovery')
             if ctx.now>=self.next_stage_probe:
+                selected=self._reuse_alignment_pose(ctx) or self._select_stage(ctx)
                 self.next_stage_probe=ctx.now+.5
-                if self._reuse_alignment_pose(ctx) or self._select_stage(ctx):
+                if selected:
                     self._transition('settle_recovered_preparation',ctx,'observed_preparation_access_restored')
                     return self._output()
             recovery=None
@@ -512,6 +536,7 @@ class PushAsideSkill:
                 recovery=self.recovery_tracker.action(ctx.position[:2],ctx.heading,ctx.planner,ctx.boxes)
                 if recovery[1].get('needs_replan') or not recovery[1].get('recovering_buffer'):recovery=None
             if recovery is None:
+                self._before_contact_planning(ctx,'skill_preparation_recovery')
                 local_free=ctx.planner.free.copy()
                 with ctx.layers.global_planning() as global_boxes:
                     recovery=decision_buffer_recovery(ctx.position[:2],ctx.heading,ctx.planner,
@@ -525,6 +550,7 @@ class PushAsideSkill:
             return self._output(action['move_by_speed'])
         if self.state=='settle_recovered_preparation':
             if self._quiet(ctx):
+                self._before_contact_planning(ctx,'skill_preparation_refresh')
                 if ctx.limiter is not None:ctx.limiter.clear_guidance(ctx.position,ctx.now)
                 ctx.layers.refresh_global(reason='preparation_buffer_recovered')
                 self.recovery_tracker=None;self.recovery_target=None
@@ -548,11 +574,11 @@ class PushAsideSkill:
         if self.state=='settle_at_stage':
             if self._quiet(ctx):
                 if self._recovered_passage_effect(ctx,along):return self._output()
-                self.turn=ContactTurnControl(ctx.position,ctx.heading,self.push_heading,ctx.planner,ctx.boxes,ctx.now)
+                self.turn=self._new_turn(ctx)
                 self._transition('turn_at_stage',ctx)
             return self._output()
         if self.state=='turn_at_stage':
-            result=self.turn.update(ctx.position,ctx.heading,ctx.planner,ctx.boxes,ctx.limiter,ctx.now)
+            result=self.backend.update_turn(self.turn,ctx)
             detail=getattr(self.turn,'last_detail',None)
             if detail is not None and detail.get('staging_phase')!=getattr(self,'_last_turn_phase',None):
                 self._last_turn_phase=detail.get('staging_phase')
@@ -562,7 +588,7 @@ class PushAsideSkill:
                     'heading_error_rad':float(yaw_error),'details':detail})
             if self.turn.failed:
                 if ctx.now-self.state_since<self.config.max_turn_seconds and abs(yaw_error)>.10:
-                    self.turn=ContactTurnControl(ctx.position,ctx.heading,self.push_heading,ctx.planner,ctx.boxes,ctx.now)
+                    self.turn=self._new_turn(ctx)
                     return self._output()
                 self.used_stages.append(np.asarray(ctx.position[:2]).copy())
                 return self._retry(ctx,'turn_preparation_failed')
@@ -586,14 +612,14 @@ class PushAsideSkill:
             if self._quiet(ctx):
                 if self._recovered_passage_effect(ctx,along):return self._output()
                 if abs(yaw_error)>self.config.yaw_tolerance:
-                    self.turn=ContactTurnControl(ctx.position,ctx.heading,self.push_heading,ctx.planner,ctx.boxes,ctx.now)
+                    self.turn=self._new_turn(ctx)
                     self._transition('turn_at_stage',ctx)
                 else:self._transition(self._centering_state_after_stop(ctx),ctx,'settled_heading_ready_for_centering')
             return self._output()
         if self.state=='refine_heading':
             if ctx.now-self.state_since>self.config.max_alignment_seconds:return self._retry(ctx,'heading_refinement_timeout')
             if self.heading_trim is None:
-                self.heading_trim=HeadingTrimControl(self.push_heading,min(self.config.alignment_yaw_tolerance,self.config.yaw_tolerance),acceptance_tolerance=self.config.yaw_tolerance)
+                self.heading_trim=self.backend.heading_trim(self)
             angular=getattr(ctx,'body_angular_velocity',None)
             angular=np.asarray((0.,0.,ctx.yaw_rate) if angular is None else angular,float)
             command,done,_=self.heading_trim.update(ctx.position,ctx.heading,ctx.planner,ctx.boxes,
@@ -708,7 +734,7 @@ class PushAsideSkill:
         if self.state in ['engage','push','settle_push_progress','brake_after_push'] and along>self.plan.push_distance+.25:
             return self._fail(ctx,'safe_push_distance_exceeded')
         if self.state=='settle_push_progress':
-            if self._quiet(ctx,.4,max_tilt=18.):
+            if self._quiet(ctx,.4,max_tilt=self.movement_tilt_limit):
                 clearance=ctx.planner.clearance(ctx.box)
                 if push_completion_state(None,clearance,along,True) and along>=self.plan.push_distance-.035:
                     self.release_origin=np.asarray(ctx.position[:2]).copy();self.release_reason='side_parked'
@@ -723,7 +749,7 @@ class PushAsideSkill:
                 return self._retry(ctx,'push_braking_not_settled')
             return self._output()
         if self.state in ['engage','push']:
-            if ctx.tilt_degrees>18:return self._retry(ctx,'contact_attitude')
+            if ctx.tilt_degrees>self.movement_tilt_limit:return self._retry(ctx,'contact_attitude')
             if abs(yaw_error)>.18 or not self._contact_face_clear(ctx,moving=True):return self._retry(ctx,'contact_alignment_drift')
             if self.state=='engage' and (gap<=self.config.front_contact_reach+.02 or float(np.dot(np.asarray(ctx.box.xy)-self.engage_box_position,self.direction))>.015):
                 self._transition('push',ctx);self.push_progress=along;self.push_progress_time=ctx.now
@@ -737,7 +763,7 @@ class PushAsideSkill:
             push_velocity=float(np.dot(rot@measured[:2],self.direction))
             attempt_progress=(0. if self.engage_box_position is None else
                 float(np.dot(np.asarray(ctx.box.xy)-self.engage_box_position,self.direction)))
-            stopping_distance=push_braking_distance(push_velocity)
+            stopping_distance=self.backend.push_stopping_distance(self,ctx,push_velocity,rot)
             # After a partial push, the robot is accelerating toward contact
             # again. Historical box displacement cannot prove that THIS push
             # is moving the box or will coast with the approaching robot.
@@ -750,25 +776,31 @@ class PushAsideSkill:
                     filtered_push_speed_mps=push_velocity,predicted_coast_m=stopping_distance)
                 return self._output()
             elapsed=ctx.now-self.state_since
-            if self.state=='engage' and elapsed>12:return self._retry(ctx,'contact_not_established')
+            if self.state=='engage' and elapsed>self.backend.contact_timeout('engage'):
+                return self.backend.stalled(self,ctx,'contact_not_established')
             if self.state=='push':
                 if along-self.push_progress>.015:self.push_progress=along;self.push_progress_time=ctx.now
-                if ctx.now-self.push_progress_time>6:return self._retry(ctx,'box_motion_stalled')
+                if ctx.now-self.push_progress_time>self.backend.contact_timeout('push'):
+                    return self.backend.stalled(self,ctx,'box_motion_stalled')
             speed=min(self.config.push_start_speed,self.config.push_max_speed) if self.state=='engage' else min(self.config.push_max_speed,self.config.push_start_speed+self.config.push_acceleration*elapsed)
             c,s=math.cos(ctx.heading),math.sin(ctx.heading);rot=np.array([[c,-s],[s,c]])
             world_v=rot@np.asarray(ctx.body_velocity[:2])
             velocity=push_centerline_velocity(self.direction,speed,lateral,float(np.dot(world_v,self.tangent)))
             rate=float(np.clip(3.*yaw_error-.35*ctx.yaw_rate,-.55,.55))
-            request=np.array([*(rot.T@velocity),rate]);command=ctx.limiter.preview(request,ctx.now)
+            request=np.array([*(rot.T@velocity),rate])
+            request=self.backend.limit_request(request)
+            command=ctx.limiter.preview(request,ctx.now)
             return self._output(command)
         if self.state in ['brake_for_recovery','brake_after_push']:
-            if self._quiet(ctx,.4,max_tilt=18.) or ctx.now-self.state_since>1.5:
+            reason=self.backend.brake_failure(self,ctx)
+            if reason:return self._fail(ctx,reason)
+            if self.backend.brake_complete(self,ctx):
                 if self.release_origin is None:self.release_origin=np.asarray(ctx.position[:2]).copy()
                 self._transition('retreat',ctx)
             return self._output()
         if self.state=='settle_released_corridor':
-            if self._quiet(ctx,.4,max_tilt=18.):
-                if (getattr(ctx,'policy_command',None) is not None and
+            if self._quiet(ctx,.4,max_tilt=self.movement_tilt_limit):
+                if (self.backend.requires_braking_reserve(ctx) and
                         not observed_release_braking_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading)):
                     # The existing checked withdrawal can add the missing
                     # room. Do not certify or stay latched at its first free
@@ -800,7 +832,7 @@ class PushAsideSkill:
                 return self._fail(ctx,'release_pose_recovery_timeout')
             if self.release_axis_pending:
                 self.release_recovery_diagnostic.update(reason='waiting_for_axis_recovery_stop',attempted_axes=list(self.release_axis_attempts))
-                if not self._quiet(ctx,.4,max_tilt=18.):return self._output()
+                if not self._quiet(ctx,.4,max_tilt=self.movement_tilt_limit):return self._output()
                 if self.release_pose_recoveries>=self.config.max_retries:
                     self.release_axis_pending=False
                     self.release_recovery_diagnostic['reason']='axis_recovery_budget_exhausted'
@@ -809,7 +841,7 @@ class PushAsideSkill:
                 # State replay reproduced a no-step state at .35 and gait
                 # at .45. Enable only after the native-policy measured stall
                 # and quiet gate; selection rechecks full stride/braking space.
-                reverse_speed=.45 if getattr(ctx,'policy_command',None) is not None else .35
+                reverse_speed=self.backend.recovery_reverse_speed(ctx)
                 choice=body_axis_recovery_target(ctx.planner,ctx.boxes,ctx.position,ctx.heading,
                     excluded=self.release_axis_attempts,maximum_distance=max(0.,self.config.release_distance-withdrawn),away_direction=-self.direction,reverse_speed=reverse_speed)
                 self.release_axis_pending=False;self.progress_mark=np.asarray(ctx.position[:2]).copy();self.progress_since=ctx.now
@@ -852,7 +884,7 @@ class PushAsideSkill:
             self.release_recovery_diagnostic['nominal_body_free']=bool(current_free)
             maneuver_active=(getattr(self.release_recovery_tracker,'_buffer_active',False)
                 or getattr(self.release_recovery_tracker,'_buffer_turn_target',None) is not None)
-            reserve_ready=(getattr(ctx,'policy_command',None) is not None and current_free
+            reserve_ready=(self.backend.requires_braking_reserve(ctx) and current_free
                 and observed_release_braking_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading))
             self.release_recovery_diagnostic.update(latched_maneuver_active=bool(maneuver_active),release_reserve_ready=bool(reserve_ready))
             # The recovery objective is observed clearance with reserve. A
@@ -864,8 +896,9 @@ class PushAsideSkill:
                 # A free present pose alone is insufficient while the base
                 # is still moving toward a wall. Keep the original measured
                 # stopping sweep, then settle and recheck the fresh map.
+                horizon=self.backend.recovery_horizon(measured)
                 braking_clear=body_motion_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,
-                        measured[0],measured[2],horizon=.8,lateral=measured[1])
+                        measured[0],measured[2],horizon=horizon,lateral=measured[1])
                 self.release_recovery_diagnostic.update(reason='nominal_body_free',measured_braking_clear=bool(braking_clear))
                 if braking_clear:
                     self.release_recovery_tracker=None;self.release_recovery_target=None
@@ -886,10 +919,10 @@ class PushAsideSkill:
             # of real retreat. Brake before asking the existing overlap
             # recovery to move; its measured-stop prerequisite must get an
             # opportunity to become true. Keep all geometry/momentum checks.
-            if self._quiet(ctx,.4,max_tilt=18.):
+            if self._quiet(ctx,.4,max_tilt=self.movement_tilt_limit):
                 if self._begin_release_pose_recovery(ctx,along,blocked_contact=True):
                     return self._output()
-                options=({'speed':self.config.reverse_speed} if getattr(ctx,'policy_command',None) is not None else {})
+                options=self.backend.retreat_options(self,ctx)
                 answer=observed_contact_retreat(ctx.planner,ctx.boxes,ctx.position,ctx.heading,
                     self.direction,ctx.limiter,ctx.now,**options)
                 if answer is not None:
@@ -904,15 +937,16 @@ class PushAsideSkill:
             return self._output()
         if self.state=='retreat':
             if ctx.now-self.last_release_probe>=.25:
-                self.last_release_probe=ctx.now
                 # A barely clear moving pose can relax toward the box after
                 # braking. Keep a checked reserve for the verified 45D gait.
-                release_ready=(getattr(ctx,'policy_command',None) is None or
+                release_ready=(not self.backend.requires_braking_reserve(ctx) or
                     observed_release_braking_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading))
                 if self.release_reserve_origin is not None:
                     net_retreat=float(np.dot(self.release_reserve_origin-np.asarray(ctx.position[:2]),self.direction))
                     release_ready=release_ready and net_retreat>=.08
-                if release_ready and self._observed_passage_effect(ctx,along):
+                observed_effect=release_ready and self._observed_passage_effect(ctx,along)
+                self.last_release_probe=ctx.now
+                if observed_effect:
                     self._transition('settle_released_corridor',ctx,'observed_corridor_and_free_release_pose')
                     return self._output()
             withdrawn=float(np.dot(self.release_origin-np.asarray(ctx.position[:2]),self.direction))
@@ -921,24 +955,25 @@ class PushAsideSkill:
                 self._transition('settle_after_retreat',ctx);return self._output()
             # The verified Unitree profile uses the same configured reverse
             # speed as preparation. Legacy callers retain the 0.20 default.
-            retreat_options=({'speed':self.config.reverse_speed} if getattr(ctx,'policy_command',None) is not None else {})
+            retreat_options=self.backend.retreat_options(self,ctx)
             answer=observed_contact_retreat(ctx.planner,ctx.boxes,ctx.position,ctx.heading,self.direction,ctx.limiter,ctx.now,**retreat_options)
             if answer is not None:
                 self.settled_since=None
                 return self._output(answer[0])
-            if self._quiet(ctx,.4,max_tilt=18.) and self._begin_release_pose_recovery(ctx,along,blocked_contact=True):
+            if self._quiet(ctx,.4,max_tilt=self.movement_tilt_limit) and self._begin_release_pose_recovery(ctx,along,blocked_contact=True):
                 return self._output()
             self._transition('settle_blocked_retreat',ctx,'withdrawal_motion_check_blocked')
             # Preserve an already quiet first sample in the new settling
             # phase; moving samples cannot start this measured hold.
-            self._quiet(ctx,.4,max_tilt=18.)
+            self._quiet(ctx,.4,max_tilt=self.movement_tilt_limit)
             return self._output()
         if self.state=='settle_after_retreat':
-            if self._quiet(ctx,.4,max_tilt=18.):
+            if self._quiet(ctx,.4,max_tilt=self.movement_tilt_limit):
                 if self.release_reason!='side_parked' and self._recovered_passage_effect(ctx,along):
                     return self._output()
                 if self.terminal_release_reason is not None:return self._fail(ctx,self.terminal_release_reason)
                 if self.release_reason=='side_parked':
+                    self._before_contact_planning(ctx,'skill_release_refresh')
                     ctx.layers.refresh_global(reason='skill_release_observe');self.last_verify=-1e9
                     self._transition('verify_passage',ctx)
                 else:
@@ -947,14 +982,14 @@ class PushAsideSkill:
             return self._output()
         if self.state=='verify_passage':
             if ctx.now-self.last_verify>=.25:
-                self.last_verify=ctx.now
+                self._before_contact_planning(ctx,'skill_verify_passage')
                 tracked=next((box for box in ctx.layers.current_boxes if box.id==self.plan.box_id),None)
                 if tracked is not None:
-                    proof,route,full=observed_passage_routes(ctx.layers,tracked,self.task_start,self.task_goal,
-                        np.asarray(ctx.position[:2]),ctx.layers.current_boxes)
-                    if proof and route and full:
+                    proof=self.backend.verify_passage(self,ctx,tracked,along)
+                    if proof:
                         self.certificate=proof;self.status='succeeded';self.reason='observed_passage_created'
                         self._transition('succeeded',ctx,self.reason);return self._output()
+                self.last_verify=ctx.now
             if ctx.now-self.state_since>self.config.max_verify_seconds:
                 if self.observation_moves>=2:return self._fail(ctx,'passage_not_confirmed_after_new_views')
                 hint=getattr(ctx.layers,'passage_observation_hint',None)
@@ -966,6 +1001,7 @@ class PushAsideSkill:
                     options.extend(center-axis*distance for distance in [.8,1.,.6])
                 options.extend([np.asarray(ctx.position[:2])-.30*self.direction,
                                 np.asarray(ctx.position[:2])-.30*self.axis])
+                self._before_contact_planning(ctx,'skill_reobservation_route')
                 target=None
                 with ctx.layers.global_planning() as boxes:
                     saved_heading=ctx.planner.robot_heading;ctx.planner.robot_heading=None
@@ -982,6 +1018,7 @@ class PushAsideSkill:
             return self._output()
         if self.state=='reobserve':
             if not ctx.navigation_reached:return self._output(navigation_goal=self.navigation_goal)
+            self._before_contact_planning(ctx,'skill_reobservation_refresh')
             ctx.layers.refresh_global(reason='skill_reobservation_pose')
             self._transition('verify_passage',ctx);return self._output()
         return self._fail(ctx,'unknown_skill_state')
@@ -994,12 +1031,13 @@ class PushAsideSkill:
                 'measured_yaw_rate_rad_s':float(ctx.yaw_rate),'tilt_degrees':float(ctx.tilt_degrees),
                 'body_angular_velocity_rad_s':None if getattr(ctx,'body_angular_velocity',None) is None else list(map(float,ctx.body_angular_velocity)),
                 'push_braking_cycles':self.push_brakes,'measured_box_speed_mps':float(self.box_velocity),
+                **self.backend.feedback(),
                 'remaining_push_m':None if self.initial_box is None else float(self.plan.push_distance-np.dot(np.asarray(ctx.box.xy)-self.initial_box,self.direction)),
                 'stage_xy':None if self.stage is None else self.stage.tolist(),
                 'preparation_recovery_target':None if self.recovery_target is None else self.recovery_target.tolist(),
             'release_recovery_target':None if self.release_recovery_target is None else self.release_recovery_target.tolist(),
             'release_pose_recoveries':self.release_pose_recoveries,
-            'preparation_attitude_hold':bool(self.state in PREPARATION_SETTLING_STATES and ctx.tilt_degrees>=18.),
+            'preparation_attitude_hold':bool(self.state in PREPARATION_SETTLING_STATES and ctx.tilt_degrees>=self.movement_tilt_limit),
                 'heading_trim':None if self.heading_trim is None else self.heading_trim.last_detail,
                 'turn_control':getattr(getattr(self,'turn',None),'last_detail',None),
                 'anchor_xy':None if self.anchor is None else self.anchor.tolist()}
@@ -1012,4 +1050,4 @@ class PushAsideSkill:
             'source_digest':self.permission.source_digest,
             'recognition_frames':list(self.permission.evidence_frames),'classifier_models':list(self.permission.classifier_models),
             'push_braking_cycles':self.push_brakes,'retries':self.retries,'preparation_recoveries':self.preparation_recoveries,'actual_push_distance_m':moved,'maximum_tilt_degrees':self.max_tilt,
-            'passage_certificate':self.certificate,'object_pose_feedback':'selected permitted simulator rigid body'}
+            'passage_certificate':self.certificate,**self.backend.report(self)}

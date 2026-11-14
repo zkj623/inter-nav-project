@@ -1,4 +1,4 @@
-"""Load the three explicit deployment configurations."""
+"""Load deployment settings and the optional real-interaction profile."""
 from pathlib import Path
 import math
 import yaml
@@ -51,6 +51,8 @@ def load(directory=None):
             if type(result[group][key]) not in (int, float) or float(result[group][key]) <= 0:
                 raise ValueError(f'{group}.{key} must be positive')
     for key, value in result['runtime']['control'].items():
+        if key in ('contact_limits', 'contact_max_duration_s'):
+            continue  # Rebuilt from the validated interaction profile below.
         if not isinstance(value, (int, float)) or value <= 0:
             raise ValueError(f'control.{key} must be positive')
     control = result['runtime']['control']
@@ -94,11 +96,12 @@ def load(directory=None):
         raise ValueError('Map rates must satisfy global_map_hz <= local_map_hz <= tick_hz')
     if nav['success_distance'] > .25 or nav['push_start_speed'] > nav['push_max_speed']:
         raise ValueError('Invalid goal tolerance or push speed range')
-    if nav['interaction_enabled']:
-        if robot['camera_mode'] != 'rgbd' or result['runtime']['perception']['geometry_verified'] is not True:
-            raise ValueError('Interaction requires RGB-D and verified complete object geometry')
-        if robot.get('interaction_motion_verified') is not True:
-            raise ValueError('Interaction requires separate SDK contact-motion acceptance')
+    from deploy.interaction.config import configure
+    path = directory/'interaction.yaml'
+    payload = yaml.safe_load(path.read_text()) if path.exists() else None
+    control.pop('contact_limits', None)
+    control.pop('contact_max_duration_s', None)
+    result['interaction'] = configure(result, payload, directory)
     return result
 
 
