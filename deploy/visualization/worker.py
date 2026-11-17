@@ -1,4 +1,5 @@
 """Read-only scene worker: own display voxels and render detached map snapshots."""
+import json
 import signal
 import time
 
@@ -68,9 +69,13 @@ class FrameRenderer:
                    'source': 'ROS RGB-D colour', 'stamp': snapshot.camera_at, 'source_age': None,
                    'timestamp_basis': 'monotonic_capture_estimate'}
         mapping = map_payload(scene)
+        # Float-to-JSON conversion for 12,000 display points can monopolize
+        # the navigation process's GIL. Serialize this immutable payload here;
+        # the HTTP owner adds only current age/staleness and task metadata.
+        cloud_json = json.dumps(cloud, allow_nan=False, separators=(',', ':')).encode()
         finished_at = time.monotonic()
         return {'snapshot': snapshot, 'scene': scene, 'map': mapping, 'cloud': cloud,
-                'pose': pose, 'rgb': rgb, 'finished_at': finished_at,
+                'cloud_json': cloud_json, 'pose': pose, 'rgb': rgb, 'finished_at': finished_at,
                 'timings': {'capture_ms': item['capture_ms'],
                             'queue_ms': (started-item['queued_at'])*1000,
                             'cloud_update_ms': (cloud_finished-started)*1000,

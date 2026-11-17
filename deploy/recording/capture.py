@@ -47,6 +47,8 @@ def record(url, output=None, wait=30.):
     session_id = None
     session_mode = None
     frame_id = event_id = frame_gap = event_gap = 0
+    observation_id = observation_gap = 0
+    independent_observations = False
     producer_dropped = 0
     cloud_input_dropped = 0
     final = None
@@ -57,7 +59,7 @@ def record(url, output=None, wait=30.):
         print('等待 run.py；只记录，不控制机器人。Ctrl+C 停止记录。', flush=True)
         while not stop.is_set():
             try:
-                batch = client.get(f'/api/record?frame={frame_id}&event={event_id}')
+                batch = client.get(f'/api/record?frame={frame_id}&event={event_id}&observation={observation_id}')
             except requests.RequestException as exc:
                 if writer is None and time.monotonic() < deadline:
                     stop.wait(.25)
@@ -79,12 +81,19 @@ def record(url, output=None, wait=30.):
             event_gap += batch['event_gap']
             producer_dropped = batch['producer_dropped']
             cloud_input_dropped = batch.get('cloud_input_dropped', 0)
+            independent_observations = 'observations' in batch
+            observation_gap += batch.get('observation_gap', 0)
             for event in batch['events']:
                 writer.event(event['event'], **{k: v for k, v in event.items() if k != 'event'})
                 event_id = event['event_id']
+            for item in batch.get('observations', ()):
+                snapshot, _ = decode_packet(item['packet'])
+                writer.observation(snapshot)
+                observation_id = item['observation_id']
             for frame in batch['frames']:
                 snapshot, scene = decode_packet(frame['packet'])
-                writer.observation(snapshot)
+                if not independent_observations:  # Older run.py feeds only visual frames.
+                    writer.observation(snapshot)
                 save_visual(writer.directory / 'frames', frame, snapshot, scene)
                 frame_id = frame['frame_id']
             if batch['summary'] is not None:
@@ -97,15 +106,21 @@ def record(url, output=None, wait=30.):
     finally:
         drained = (final is not None and final.get('telemetry_complete', True)
                    and frame_id == final.get('final_frame_id', frame_id)
-                   and event_id == final.get('final_event_id', event_id))
-        has_data = frame_id > 0 or (session_mode == 'motion_test' and event_id > 0)
+                   and event_id == final.get('final_event_id', event_id)
+                   and observation_id == final.get('final_observation_id', observation_id))
+        has_data = (observation_id > 0 if independent_observations else frame_id > 0) or (session_mode == 'motion_test' and event_id > 0)
         summary = {'reason': reason, 'error': error, 'completed': error is None,
                    'session_id': session_id, 'run_summary': final, 'run_final_received': final is not None,
                    'missing_frames': frame_gap, 'missing_events': event_gap,
+                   'missing_observations': observation_gap, 'last_observation': observation_id,
+                   'observation_source': 'acquisition' if independent_observations else 'visual_frames_legacy',
+                   'observation_stream_complete': (error is None and independent_observations
+                       and final is not None and observation_id > 0 and observation_gap == 0
+                       and observation_id == final.get('final_observation_id')),
                    'producer_dropped': producer_dropped, 'last_frame': frame_id, 'last_event': event_id,
                    'cloud_input_dropped': cloud_input_dropped,
                    'cloud_history_complete': final.get('cloud_history_complete') if final else None,
-                   'recording_complete': error is None and drained and has_data and frame_gap == event_gap == producer_dropped == 0,
+                   'recording_complete': error is None and drained and has_data and frame_gap == event_gap == observation_gap == producer_dropped == 0,
                    'hardware_validated': False}
         try:
             if writer:

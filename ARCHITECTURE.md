@@ -9,6 +9,7 @@
 | `grutopia/demo/go2_online_interactive_navigation.py` → `go2_side_clearance_navigation.py` | 仿真任务入口；对接 Isaac 观测、机器人控制器和仿真记录 |
 | `grutopia_extension/interactive_navigation/` | 共享地图、决策、规划、技能和几何查询；包含原仿真默认执行后端 |
 | `deploy/app/` | 真机会话、任务生命周期、导航调度、启停与命令交接 |
+| `deploy/app/observations.py` | 独立观测线程：坐标适配、持续跟踪、原始观测发布；向导航交付固定的一对观测与证据 |
 | `deploy/perception/` | 当前 LiDAR 的登记箱体跟踪；视觉接口保留为诊断来源 |
 | `deploy/interaction/` | SDK 参数、执行后端、接触检查、箱体停稳和回放交接 |
 | `deploy/robot/` | ROS/SDK 边界、时间与坐标适配、独立运动 writer |
@@ -21,8 +22,10 @@
 ```mermaid
 flowchart TD
     SIM[仿真入口与观测] --> MAP[OnlineNavigationMap]
-    REAL[run / ROS / ExperimentFrame] --> TASK[Tasks / NavigationEngine]
-    TRACK[RegisteredBoxPerception] --> TASK
+    REAL[run / ROS / ExperimentFrame] --> FEED[LiveObservations 独立观测线程]
+    TRACK[RegisteredBoxPerception] --> FEED
+    FEED --> TASK[Tasks / NavigationEngine]
+    FEED --> RECORD[原始观测记录通道]
     TASK --> MAP
     MAP --> SELECT[OnlineGoalSelector]
     SELECT --> PLAN[SidePushPlanner]
@@ -51,7 +54,11 @@ flowchart TD
 | Engine → Controller → Writer | 机身速度、执行代次、源观测期限和绝对预算 | 最终限速、超时、接管和停稳；请求回执不等于物理成功 |
 | Skill → Navigation | 新扫描支持的通道证书 | 完成停稳交接后才能继续决策，不能提前开启下一次推箱 |
 
-耗时规划在 writer 停稳后执行。等待期间只更新观测和地图。技能若在这段无输出期间完成，使用该次匹配的停稳确认交接，不先重新启用再停止。控制周期预算仅用于决定是否提前停稳；真实观测截止时间与 writer 的硬截止独立执行。
+耗时规划在 writer 停稳后执行。观测线程持续采集和更新箱体身份，原始观测以采集频率发布；它不访问地图、技能或运动 writer。导航每轮读取固定的 Snapshot 与箱体证据，后台更新不能改写正在计算的证据；开始/恢复任务通过代次重置，旧代次的拟合结果不能重新出现。地图和技能仍由导航主线程独占，恢复运动前必须用新观测重新检查。
+
+显示最多约 5 Hz，记录的原始观测独立于渲染，默认按 10 Hz 采集。原始观测、显示帧、事件分别有游标和缺失计数；不会通过重打时间戳或补帧掩盖缺失。历史显示降频记录仍可读取，但不能补回当时未保存的观测。
+
+技能若在无输出期间完成，使用该次匹配的停稳确认交接，不先重新启用再停止。控制周期预算仅用于决定是否提前停稳；真实观测截止时间与 writer 的硬截止独立执行。
 
 SDK 的平移与转向停止响应分别配置。接近、转向、恢复中的扫掠检查覆盖相应停止响应；接触阶段还独立检查未被目标图层擦除的实测点云及箱体停止空间。
 

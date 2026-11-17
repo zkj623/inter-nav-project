@@ -75,6 +75,9 @@ class NavigationController:
                     self.planning_hold['stopped_at'] = event.get('worker_at', time.monotonic())
                     self.tasks.engine.interaction_stopped()
             if state in ('stopping', 'fault', 'stop_error', 'rejected') and not planned:
+                requested_stop = self.motion_detail in ('p', 'prepare', 'stop', 'o', 'm', 'task_completed', 'close', 'manual')
+                if self.tasks.mode == 'navigate' and (not requested_stop or state in ('fault', 'stop_error', 'rejected')):
+                    self.task_error = self.motion_detail or state
                 self._clear_hold()
                 if self.tasks.state == 'active':
                     self.tasks.pause()
@@ -83,11 +86,12 @@ class NavigationController:
                 print(f"运动状态异常：{event['detail']}", flush=True)
 
     def pause(self, reason):
+        was_running = self.tasks.state == 'active' or self.planning_hold is not None
         self._clear_hold()
-        if self.tasks.state == 'active':
+        if was_running:
             self.task_error = reason
             self.tasks.pause()
-            if self.motion:
+            if self.motion and self.motion.state not in ('stopped', 'manual', 'disabled'):
                 self.motion.stop(reason)
             self.session.event('task_paused', reason=reason)
 
@@ -243,10 +247,13 @@ class NavigationController:
             self._clear_hold()
             return True
         self._finish_stopped_interaction()
-        # A slow revalidation must itself finish disarmed and request another
-        # fresh observation. Never retimestamp its result or extend sensor age.
+        # The source timestamps, not a nominal 100 ms tick budget, determine
+        # whether this preparation remains valid. An expired result still
+        # requires another fresh observation while the writer stays disarmed.
         remaining = min(snapshot.pose_at, snapshot.lidar_at)+self.robot['max_data_age_s']-finished
-        if finished-started > 1/self.navigation['tick_hz'] or remaining < 1/self.navigation['tick_hz']+.05:
+        interaction = self.tasks.engine.execution.active
+        if remaining <= 0 or (interaction and (finished-started > 1/self.navigation['tick_hz']
+                                               or remaining < 1/self.navigation['tick_hz']+.05)):
             hold['prepared_at'] = finished
             return True
         armed = self.motion.arm()
@@ -299,21 +306,13 @@ class NavigationController:
                 if remaining <= 0:
                     self.pause('control_deadline_missed')
                     return self.task_error
-                # Admit a control cycle only when the preceding lease covers
-                # its recent computation cost and transport reserve. Otherwise
-                # explicitly stop BEFORE computing, preserving the same goal.
-                reserve = max(.05, 2/self.control['poll_hz'])
-                budget = max(1/self.navigation['tick_hz'], self.last_decision_cost*1.5)+reserve
                 if self.tasks.engine.execution.active:
-                    # Fitting runs asynchronously: the accepted target is
-                    # commonly one tick older than this snapshot. Budget the
-                    # computation ahead and one writer poll plus queue slack,
-                    # not a second observation cycle. This is an admission
-                    # estimate only; dispatch and writer enforce both leases.
+                    # Retain the existing contact-skill admission contract.
+                    # This change targets ordinary coordinate navigation.
                     budget = max(.005, self.last_decision_cost*1.5)+1/self.control['poll_hz']+.005
-                if remaining < budget:
-                    self._hold('control_budget')
-                    return self.task_error
+                    if remaining < budget:
+                        self._hold('control_budget')
+                        return self.task_error
             previous_state = self.tasks.state
             decision_started = time.monotonic()
             velocity = self.tasks.update(snapshot, now)

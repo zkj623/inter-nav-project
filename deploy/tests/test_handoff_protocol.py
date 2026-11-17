@@ -80,10 +80,9 @@ def test_command_ack_is_recorded_without_changing_task_state():
     assert controller.session.items[-1]['command_id'] == 7
 
 
-def test_short_previous_lease_yields_before_starting_next_control_cycle(run, monkeypatch):
+def test_short_valid_lease_allows_fresh_control_instead_of_predictive_stop(run, monkeypatch):
     current = run.sample()
     run.controller.last_expires_at = run.clock[0]+.12408  # P4 actual remaining budget.
-    run.controller.last_decision_cost = .09358
     calls = []
     original = run.tasks.update
     def update(*args):
@@ -91,8 +90,9 @@ def test_short_previous_lease_yields_before_starting_next_control_cycle(run, mon
         return original(*args)
     monkeypatch.setattr(run.tasks, 'update', update)
     run.controller.step(current, run.clock[0])
-    assert not calls and not run.motion.commands
-    assert run.controller.planning_hold['reason'] == 'control_budget'
+    assert calls and len(run.motion.commands) == 1
+    assert run.controller.planning_hold is None and not run.motion.stops
+    assert run.tasks.state == 'active'
 
 
 def test_rejected_command_ack_pauses_before_following_state_event(run):

@@ -64,6 +64,9 @@ class Tasks:
         self.update(snapshot, now)
         if self.state != 'active':
             return False
+        with self._measure('local_preparation_s'):
+            self.engine.prepare_tracking()
+        self.last_timings['total_s'] += self.last_timings['local_preparation_s']
         self.state = 'paused'
         # A successful computation may still say "wait, no observed route".
         # Keep that goal/map, but do not arm a writer with nothing to execute.

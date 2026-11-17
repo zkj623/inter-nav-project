@@ -63,6 +63,24 @@ def test_pose_overlay_requires_matching_frame_and_time(frame, stamp, overlay):
     assert frames.snapshot()['pose_overlay'] is overlay
 
 
+def test_historical_map_can_show_current_pose_without_claiming_scan_time_alignment():
+    frames = LatestFrames(stale_after=1.)
+    cloud = {'frame': 'experiment', 'stamp': 9.6, 'source_age': None,
+             'accumulated': True, 'role': 'display_history_only'}
+    pose = {'frame': 'experiment', 'stamp': 9.95, 'source_age': None}
+    frames.put('cloud', cloud, 9.6)
+    frames.put('pose', pose, 9.95)
+    assert frames.snapshot(10.)['pose_overlay']
+    frames.put('cloud', dict(cloud, accumulated=False), 9.6)
+    raw = frames.snapshot(10.)
+    assert not raw['pose_overlay'] and raw['pose_overlay_reason'] == 'timestamp_mismatch'
+    frames.put('cloud', dict(cloud, frame='other'), 9.6)
+    assert frames.snapshot(10.)['pose_overlay_reason'] == 'frame_mismatch'
+    frames.put('cloud', cloud, 9.6)
+    frames.put('pose', pose, 8.)
+    assert frames.snapshot(10.)['pose_overlay_reason'] == 'stale_display'
+
+
 def test_rgb_ros_colour_order_and_no_depth_requirement():
     frames = LatestFrames()
     msg = Message(width=16, height=16, step=48, encoding='rgb8', is_bigendian=False,

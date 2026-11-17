@@ -24,7 +24,9 @@ deploy 复用仿真的完整流程：在线探索/导航 → 比较绕行与推�
 | `app/controller.py` → `robot/motion.py` | 速度和交互约束 | 单个独立 writer 调用 SportClient，超时/接管锁止 |
 | Session → view / record | 同一观测和阶段信息 | 地图、箱体诊断、请求/确认、停止与通道证据 |
 
-拟合在线使用单 worker 和单个待处理扫描，不在导航线程运行模型或积压扫描；回放使用同一拟合器的同步模式。地图原始射线证据只计算一次，接触检查复用这些证据，不修改导航图来制造通路。耗时的准备位置和通道规划走现有停稳后规划流程；等待期间 `Tasks.observe_only()` 持续更新跟踪与地图，不推进技能。一次阻塞计算若仍导致观测过期，则保持停止并要求重新准备。
+在线由 `app/observations.py` 的独立线程持续采集、转换坐标并更新箱体跟踪；导航主线程只读取固定的观测/证据对。登记跟踪在观测线程内同步完成，回放使用同一拟合器，不再依赖导航轮询来推进身份关联。拟合本身过慢、真实断流或遮挡仍会触发原有过期与身份失效检查。
+
+地图原始射线证据只计算一次，接触检查复用这些证据，不修改导航图来制造通路。耗时的准备位置和通道规划仍走停稳后规划流程；计算期间感知与记录继续运行，地图和技能始终由导航主线程管理。恢复前以新观测重新检查，不能直接发送阻塞计算前生成的速度。
 
 共享模块不导入 deploy，也不判断 `is_sdk`。仿真直接构造 `PushAsideSkill` 时使用原有默认后端；deploy 在自己的工厂中选择 SDK 后端并绑定实测几何。后端不直接发送机器人命令，所有请求仍经过 controller 和独立 writer。接口边界与调用约定见 [interaction 模块说明](../interaction/README.md)。
 
@@ -152,6 +154,8 @@ python run.py --replay /实际记录目录 --output ../results/deploy/interactio
 ```
 
 带导航决策的回放可附加 `--task navigate --goal X Y`。回放只能分析记录中的观测与决策，不会模拟新指令引起的箱体运动，不能当作物理成功证据。回放使用当前配置；复现实验时应使用该次保存的登记尺寸、区域和 profile。
+
+新记录的 `observations.jsonl` 来自独立采集通道，目标频率默认 10 Hz；`frames/` 是最多约 5 Hz 的显示证据，二者不要求一一对应。`run_summary.json` 的 `missing_observations` 和 `last_observation` 分别记录原始观测缺失及最终游标。`observation_stream_complete` 检查已发布的观测是否收齐，`recording_complete` 还检查显示与事件是否完整；这些字段不证明 ROS 上游从未丢帧。旧版本中因显示降频未保存的扫描无法补回，不能据此认定实时箱体身份曾经丢失。
 
 推移完成后的回放也会等待停稳：记录必须包含完成后的新扫描，以及连续、新鲜的完整机身线速度和角速度。证据不足时以 `interaction_stop_handoff_required` 结束，不推进后续导航；通过时记录 `recorded_stop_handoff`，不会伪造 SDK 停稳回执。
 

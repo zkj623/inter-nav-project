@@ -5,6 +5,8 @@ side faces with observed end boundaries. A confirmed track may subsequently
 use one complete face only with independent free-ray proof outside both edges.
 A partial or unbounded plane is deliberately not a box estimate. The floor is experiment z=0, already calibrated upstream.
 """
+from __future__ import annotations
+
 from dataclasses import dataclass
 import math
 

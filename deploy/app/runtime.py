@@ -117,6 +117,7 @@ def run_live(args, config):
     import sys
     from .keyboard import Keyboard
     from .session import Session
+    from .observations import LiveObservations
     from deploy.visualization.sources import SdkVideo
     from deploy.robot.sensors import RosSensors
     from deploy.robot.motion import MotionProcess
@@ -130,7 +131,7 @@ def run_live(args, config):
                       mode='synthetic_demo' if args.demo else ('live_motion_enabled' if args.allow_motion else 'live_observe_only'))
     print(f'本轮会话：{session.info["session_id"]}；数据服务：{session.url}', flush=True)
     print('另开终端运行 python view.py 查看三幅图；python record.py 保存实验。', flush=True)
-    sensors = motion = keyboard = perception = tasks = video = controller = None
+    sensors = motion = keyboard = perception = observations = tasks = video = controller = None
     snapshot = None
     started_at = time.monotonic()
     quitting = False
@@ -164,12 +165,16 @@ def run_live(args, config):
         for signum in handlers:
             signal.signal(signum, on_signal)
         if not args.demo:
-            perception = create_perception(config)
-        tasks = Tasks(nav, perception, interaction=config.get('interaction'))
+            # The acquisition worker owns registered tracking synchronously;
+            # replay uses the very same source-timed tracker without a worker.
+            perception = create_perception(config, synchronous=config['interaction']['source'] == 'registered_box_lidar')
+        observations = LiveObservations(sensors, reference, session, hz=nav['tick_hz'],
+                                        max_age=robot['max_data_age_s'], perception=perception)
+        tasks = Tasks(nav, observations if perception is not None else None, interaction=config.get('interaction'))
         if args.allow_motion:
             motion = MotionProcess(robot, control)
         keyboard = Keyboard() if not args.demo or sys.stdin.isatty() else None
-        controller = NavigationController(config, tasks, motion, session, perception)
+        controller = NavigationController(config, tasks, motion, session)
         last_status = 0.
         print(('合成演示：未连接机器人。' if args.demo else 'MCF 保持运行。默认观察；') + ('运动需按任务键启动。' if motion else '本次会话禁止运动。'), flush=True)
         print(f"来源坐标系={'demo_odom' if args.demo else robot['map_frame']}；等待有效观测初始化 experiment；相机={robot['camera_mode']}", flush=True)
@@ -185,23 +190,14 @@ def run_live(args, config):
             if motion:
                 controller.motion_events(motion.events())
             sensor_read_started = time.monotonic()
-            snapshot = sensors.latest()
+            snapshot = observations.latest()
             sensor_read_duration = time.monotonic()-sensor_read_started
+            if observations.failure is not None:
+                raise RuntimeError(observations.failure)
             # Sensor callbacks may advance while keyboard/events/locks run.
             # Compare against time AFTER acquiring the observation.
             now = time.monotonic()
-            observation_error = None
-            if snapshot is not None:
-                try:
-                    initializing = reference.metadata is None
-                    snapshot = reference.apply(snapshot, now, robot['max_data_age_s'])
-                    if initializing and reference.metadata is not None:
-                        session.event('coordinate_frame_initialized', **reference.metadata)
-                        print('实验坐标系已固定：起点 XY=(0,0)，X=初始前方，Y=初始左侧，Z=距地面高度。', flush=True)
-                        print('点导航输入本轮 experiment 坐标；暂停、换任务不重设原点。', flush=True)
-                        print(json.dumps(reference.metadata, ensure_ascii=False), flush=True)
-                except ValueError as exc:
-                    observation_error, snapshot = str(exc), None
+            observation_error = observations.last_error
             if operation:
                 key, value = operation
                 if key == 'q':
@@ -221,7 +217,7 @@ def run_live(args, config):
                 controller.fresh_cycle_required = False
                 continue
             observation_error = observation_error or step_error
-            current_error = sensors.last_error or observation_error
+            current_error = observations.last_error or observation_error
             publish_started = time.monotonic()
             session.update(snapshot, tasks, motion.state if motion else 'disabled', current_error,
                            decision_duration_s=controller.decision_duration_s)
@@ -236,7 +232,7 @@ def run_live(args, config):
                 print(f'状态={tasks.state} 任务={tasks.mode} 运动={motion.state if motion else "disabled"}'
                       f' 观测={"ready" if snapshot else "waiting"} 建图={tasks.map_ready} 最近错误={current_error}', flush=True)
                 last_status = now
-            time.sleep(max(0, 1/nav['tick_hz']-(time.monotonic()-now)))
+            observations.wait_next(snapshot, 1/nav['tick_hz'])
     except Exception as exc:
         reason, error = 'runtime_error', f'{type(exc).__name__}: {exc}'
         print(error, flush=True)
@@ -253,7 +249,8 @@ def run_live(args, config):
             except Exception as exc:
                 error = f'motion cleanup: {exc}; physical stop NOT confirmed'
                 session.event('cleanup_error', reason=error)
-        for name, resource in (('keyboard', keyboard), ('perception', perception),
+        for name, resource in (('keyboard', keyboard), ('observations', observations),
+                               ('perception', perception if observations is None else None),
                                ('video', video), ('sensors', sensors)):
             if resource is not None:
                 try:

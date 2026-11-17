@@ -80,7 +80,8 @@ function draw(){const box=canvas.getBoundingClientRect(),w=box.width,h=box.heigh
  if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);}
  if(autoFit||(follow&&!cameraPose))fitMap(w,h);
  if(follow&&cameraPose)center=[...cameraPose.position];
- $('viewMode').textContent=follow?(cameraPose?(offline||!data?.pose_overlay?'位姿不可用，视角已冻结':''):'等待位姿，暂示全图'):'';
+ const poseNotice=offline?'数据源已断开，视角已冻结':data?.pose_overlay_reason==='timestamp_mismatch'?'点云与位姿时间未对齐，视角已冻结':data?.pose_overlay_reason==='frame_mismatch'?'点云与位姿坐标系不一致，视角已冻结':'位姿显示不可用，视角已冻结';
+ $('viewMode').textContent=follow?(cameraPose?(offline||!data?.pose_overlay?poseNotice:''):'等待位姿，暂示全图'):'';
  canvas.title=follow?'滚轮缩放':'拖动旋转 · 滚轮缩放 · Shift + 拖动平移';
  $('reset').setAttribute('aria-pressed',String(follow));$('fit').setAttribute('aria-pressed',String(autoFit));
  const calibrated=!!data?.cloud?.ground_relative_z, sliced=heightSlice&&calibrated;

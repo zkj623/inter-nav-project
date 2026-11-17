@@ -142,6 +142,51 @@ class _Scan:
     hints: dict
 
 
+class RegisteredBoxEvidence:
+    """Detached evidence for one navigation cycle; reading never renews it."""
+    source = 'registered_box_lidar'
+
+    def __init__(self, provider):
+        self.geometry_verified = provider.geometry_verified
+        self.source_reference, self.source_digest = provider.source_reference, provider.source_digest
+        self.max_age = provider.config['max_age_s']
+        self.entries = {key: {
+            'track': dict(provider._tracks.get(key, {})),
+            'visible': not provider.closed.is_set() and key in provider._visible,
+            'push_allowed': row['push_allowed'],
+        } for key, row in provider.registry.items()}
+
+    def expires_at(self, object_id):
+        entry = self.entries.get(object_id)
+        if entry is None or not entry['visible'] or entry['track'].get('lost', True):
+            return None
+        return entry['track']['captured_at'] + self.max_age
+
+    def permission(self, object_id, now):
+        expiry = self.expires_at(object_id)
+        if expiry is None or not self.geometry_verified or not math.isfinite(now):
+            return None
+        entry = self.entries[object_id]
+        track = entry['track']
+        if not entry['push_allowed'] or not track['captured_at'] <= now < expiry:
+            return None
+        return InteractionPermission(object_id, 'box', 'push_aside', track['evidence'], (), float(now),
+                                     self.source, self.source_reference, self.source_digest)
+
+    def eligible_ids(self, now):
+        return frozenset(key for key in self.entries if self.permission(key, now) is not None)
+
+    def snapshot(self, now):
+        return {key: {'category': 'box', 'confirmed': self.permission(key, now) is not None,
+                     'frames': entry['track'].get('confirmations', 0),
+                     'latest_at': entry['track'].get('captured_at'),
+                     'source': self.source, 'source_reference': self.source_reference,
+                     'source_digest': self.source_digest,
+                     'invalid_reason': entry['track'].get('reason'),
+                     'geometry_verified': self.geometry_verified,
+                     'expires_at': self.expires_at(key)} for key, entry in self.entries.items()}
+
+
 class RegisteredBoxPerception:
     source = 'registered_box_lidar'
 
@@ -202,7 +247,8 @@ class RegisteredBoxPerception:
         if self.thread is not None:
             self.thread.join(timeout=.5)
 
-    def _invalidate(self, reason):
+    def invalidate(self, reason):
+        """Revoke identity after an invalid upstream frame; only reset can recover."""
         self._visible.clear()
         for track in self._tracks.values():
             if track['confirmed']:
@@ -296,7 +342,7 @@ class RegisteredBoxPerception:
         if self.closed.is_set():
             return (), self
         if now < self._last_time:
-            self._invalidate('Tracking clock moved backwards; reset required')
+            self.invalidate('Tracking clock moved backwards; reset required')
             return (), self
         self._last_time = now
         # Capture validation precedes result delivery: changed frames or invalid
@@ -304,7 +350,7 @@ class RegisteredBoxPerception:
         try:
             frame = self._capture(snapshot, now)
         except (KeyError, ValueError, TypeError) as exc:
-            self._invalidate(str(exc))
+            self.invalidate(str(exc))
             return (), self
         self._expire(now)
         if frame is not None and self.synchronous:
@@ -320,11 +366,11 @@ class RegisteredBoxPerception:
         else:
             if completed.generation == self.generation:
                 if error:
-                    self._invalidate(error)
+                    self.invalidate(error)
                 elif not completed.captured_at <= now < completed.captured_at+self.config['max_age_s']:
-                    self._invalidate('Discarded stale or future fitting result')
+                    self.invalidate('Discarded stale or future fitting result')
                 elif self._last_accepted is not None and completed.frame_id <= self._last_accepted:
-                    self._invalidate('Discarded out-of-order fitting result')
+                    self.invalidate('Discarded out-of-order fitting result')
                 else:
                     self._accept(completed, detections, now)
         if frame is not None and not self.synchronous:
@@ -452,27 +498,16 @@ class RegisteredBoxPerception:
             'source_digest': self.source_digest, 'detections': records}
 
     def expires_at(self, object_id):
-        track = self._visible.get(object_id)
-        return None if track is None or track['lost'] else track['captured_at']+self.config['max_age_s']
+        return self.freeze().expires_at(object_id)
 
     def permission(self, object_id, now):
-        track = self._visible.get(object_id)
-        if (self.closed.is_set() or not self.geometry_verified or track is None or track['lost']
-                or not self.registry[object_id]['push_allowed']
-                or not math.isfinite(now) or not track['captured_at'] <= now < track['captured_at']+self.config['max_age_s']):
-            return None
-        return InteractionPermission(object_id, 'box', 'push_aside', track['evidence'], (), float(now),
-                                     self.source, self.source_reference, self.source_digest)
+        return self.freeze().permission(object_id, now)
 
     def eligible_ids(self, now):
-        return frozenset(key for key in self.registry if self.permission(key, now) is not None)
+        return self.freeze().eligible_ids(now)
 
     def snapshot(self, now):
-        return {object_id: {'category': 'box', 'confirmed': self.permission(object_id, now) is not None,
-                    'frames': self._tracks.get(object_id, {}).get('confirmations', 0),
-                    'latest_at': self._tracks.get(object_id, {}).get('captured_at'),
-                    'source': self.source, 'source_reference': self.source_reference,
-                    'source_digest': self.source_digest,
-                    'invalid_reason': self._tracks.get(object_id, {}).get('reason'),
-                    'geometry_verified': self.geometry_verified,
-                    'expires_at': self.expires_at(object_id)} for object_id in self.registry}
+        return self.freeze().snapshot(now)
+
+    def freeze(self):
+        return RegisteredBoxEvidence(self)

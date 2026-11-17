@@ -162,11 +162,11 @@ def test_slow_plan_is_discarded_until_fresh_revalidation_then_same_goal_resumes(
     assert run.motion.commands[0][1] == current.captured_at
 
 
-def test_slow_revalidation_also_stays_disarmed_and_requires_another_frame(run, monkeypatch):
+def test_expired_revalidation_stays_disarmed_and_requires_another_frame(run, monkeypatch):
     prepare_hold(run)
     prepared_at = run.controller.planning_hold['prepared_at']
     with monkeypatch.context() as patch:
-        count_calls(patch, run.tasks.engine, 'update', run.clock, .2)
+        count_calls(patch, run.tasks.engine, 'update', run.clock, .45)
         current = run.sample()
         run.controller.step(current, run.clock[0])
     assert run.controller.planning_hold['prepared_at'] > prepared_at
@@ -174,6 +174,27 @@ def test_slow_revalidation_also_stays_disarmed_and_requires_another_frame(run, m
     current = run.sample()
     run.controller.step(current, run.clock[0])
     assert run.motion.arm_count == 2 and not run.motion.commands
+
+
+def test_revalidation_over_nominal_tick_can_resume_with_valid_observations(run, monkeypatch):
+    prepare_hold(run)
+    count_calls(monkeypatch, run.tasks.engine, 'update', run.clock, .2)
+    current = run.sample()
+    run.controller.step(current, run.clock[0])
+    assert run.motion.arm_count == 2 and run.tasks.state == 'active'
+    assert run.controller.planning_hold is None and not run.motion.commands
+
+
+def test_sensor_fault_during_prepared_hold_is_retained_after_feed_recovers(run):
+    prepare_hold(run)
+    stale = run.sample(.5, pose_at=run.clock[0]-.5)
+    error = run.controller.step(stale, run.clock[0])
+    assert 'observation stale' in error
+    assert run.controller.planning_hold is None
+    current = run.sample()
+    assert run.controller.step(current, run.clock[0]) == error
+    assert run.motion.arm_count == 1 and run.tasks.state == 'paused'
+    assert any(e['event'] == 'task_paused' and e['reason'] == error for e in run.session.items)
 
 
 @pytest.mark.parametrize('reason', ['command_timeout', 'remote_takeover', 'robot_state_stale_or_unsafe'])

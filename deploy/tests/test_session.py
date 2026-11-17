@@ -1,5 +1,6 @@
 """Single-owner map feed, bounded loss accounting, and real entrypoint integration."""
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 import json
 from pathlib import Path
 import signal
@@ -107,6 +108,57 @@ def test_packets_keep_raw_observations_and_count_evicted_frames(session):
     assert requests.get(session.url+'/api/record?frame=-1').status_code == 400
 
 
+def test_raw_observations_survive_display_failure_and_report_ring_gaps(session):
+    original = DemoSensors(session).latest()
+    session.render_failure = 'synthetic stalled renderer'
+    for index in range(36):
+        snapshot = replace(original, sequence=index, captured_at=original.captured_at+index*.1)
+        session.record_observation(snapshot)
+    batch = session.batch(0, 0, 0)
+    assert not batch['frames'] and batch['observation_gap'] == 4
+    assert len(batch['observations']) == 32
+    restored, scene = decode_packet(batch['observations'][-1]['packet'])
+    assert restored.sequence == 35 and scene is None
+    assert restored.lidar_at == original.lidar_at  # never renew an old scan
+    assert session.batch(0, 0, 36)['observations'] == []
+    session.record_observation(snapshot)
+    session.record_observation(original)
+    assert session.observation_id == 36  # main-loop reads cannot duplicate/reorder acquisition
+
+
+def test_record_and_replay_keep_tracking_when_visuals_are_downsampled(session, tmp_path):
+    from deploy.recording.recorder import Recorder
+    from deploy.perception.registered_boxes import RegisteredBoxPerception
+    from deploy.tests.test_registered_boxes import engine, packet, config
+    tracker = engine()
+    writer = Recorder(tmp_path, load(), 'synthetic_tracking', REPO)
+    try:
+        for index in range(1, 9):
+            source_at = 10.+index*.1
+            snapshot = replace(packet(index, source_at), captured_at=source_at+.08)
+            tracker.update(snapshot, snapshot.captured_at)
+            session.record_observation(snapshot)
+        # Only 5 Hz would expire B1 after its third delivered frame. No visual
+        # frames are needed to transfer all eight 10 Hz source observations.
+        batch = session.batch(0, 0)
+        assert len(batch['observations']) == 8 and not batch['frames']
+        for item in batch['observations']:
+            snapshot, _ = decode_packet(item['packet'])
+            writer.observation(snapshot)
+        writer.close({'completed': True})
+        replay = RegisteredBoxPerception(config(), synchronous=True)
+        try:
+            for index, snapshot in enumerate(snapshots(writer.directory)):
+                boxes, evidence = replay.update(snapshot, snapshot.captured_at)
+                if index:
+                    assert len(boxes) == 1
+                    assert evidence.permission('B1', snapshot.captured_at) is not None
+        finally:
+            replay.close()
+    finally:
+        tracker.close()
+
+
 def test_display_does_not_compress_recording_and_keeps_true_map_age(session, monkeypatch):
     import deploy.app.session as module
     calls = []
@@ -127,10 +179,10 @@ def test_display_does_not_compress_recording_and_keeps_true_map_age(session, mon
     assert display['map']['age'] >= 2
     assert display['performance']['encode_ms'] >= 0 and display['fps'] == 5
     batch = session.batch(0, 0)
-    assert len(calls) == 1 and 'packet' in batch['frames'][0]
+    assert len(calls) == 2 and 'packet' in batch['frames'][0]  # raw observation + visual evidence
     assert not any(k.startswith('_') for k in batch['frames'][0])
     session.batch(0, 0)
-    assert len(calls) == 1  # compressed packet reused by another recorder
+    assert len(calls) == 2  # both compressed packets reused by another recorder
 
 
 def test_recorders_share_compression_without_blocking_display(session, monkeypatch):
@@ -161,7 +213,7 @@ def test_recorders_share_compression_without_blocking_display(session, monkeypat
         finally:
             release.set()
         assert first.result(timeout=3)['frames'] == second.result(timeout=3)['frames']
-    assert len(calls) == 1
+    assert len(calls) == 2
 
 
 @pytest.mark.parametrize('extra_queued', [False, True])
@@ -191,6 +243,7 @@ def test_shutdown_freezes_final_cursors_even_if_renderer_finishes_late(monkeypat
         assert not final['summary']['telemetry_complete']
         assert not final['summary']['completed']
         assert final['summary']['final_frame_id'] == 0
+        assert final['summary']['final_observation_id'] == 1
         assert final['summary']['final_event_id'] == final['events'][-1]['event_id']
         assert final['producer_dropped'] == 1 + int(extra_queued)
         release.set()
@@ -329,11 +382,16 @@ def test_real_run_view_record_entrypoints_and_replay(tmp_path):
         summary = json.loads((directory/'run_summary.json').read_text())
         assert summary['run_final_received'] and summary['session_id'] == data['session_id']
         assert summary['missing_frames'] == summary['missing_events'] == 0
+        assert summary['missing_observations'] == 0
+        assert summary['observation_source'] == 'acquisition'
+        assert summary['last_observation'] == summary['run_summary']['final_observation_id']
         assert summary['run_summary']['telemetry_complete']
         assert summary['last_frame'] == summary['run_summary']['final_frame_id']
         assert summary['last_event'] == summary['run_summary']['final_event_id']
         assert list(directory.glob('frames/*.jpg')) and list(directory.glob('frames/*.png'))
         recorded = list(snapshots(directory))
+        assert len(recorded) == summary['last_observation']
+        assert len(recorded) > summary['last_frame']
         assert recorded and all(s.planning_frame == 'experiment' for s in recorded)
         assert recorded[0].coordinate_transform['source_frame'] == 'demo_odom'
         assert summary['run_summary']['coordinate_transform'] == recorded[0].coordinate_transform

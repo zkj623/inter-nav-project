@@ -71,11 +71,25 @@ class LatestFrames:
                     stale = stale or source_age + age > self.stale_after or source_age < -.05
                 result[name] = dict(payload, age=round(age, 3), stale=bool(stale))
         cloud, pose = result['cloud'], result['pose']
-        # No TF guessing and no overlay of mismatched-time/mismatched-frame poses.
-        result['pose_overlay'] = bool(cloud and pose and not cloud['stale'] and not pose['stale']
-                                      and cloud['frame'] == pose['frame']
-                                      and cloud.get('stamp') is not None and pose.get('stamp') is not None
-                                      and abs(cloud['stamp'] - pose['stamp']) <= .1)
+        # A historical map combines many capture times in one fixed frame;
+        # its latest append time need not equal the current robot pose time.
+        # Raw scans still require temporal pairing. Both displays require
+        # fresh pose/cloud publication and an identical coordinate frame.
+        if not cloud or not pose:
+            reason = 'missing_pose_or_cloud'
+        elif cloud['stale'] or pose['stale']:
+            reason = 'stale_display'
+        elif cloud['frame'] != pose['frame']:
+            reason = 'frame_mismatch'
+        elif cloud.get('stamp') is None or pose.get('stamp') is None:
+            reason = 'missing_timestamp'
+        elif (not (cloud.get('accumulated') and cloud.get('role') == 'display_history_only')
+              and abs(cloud['stamp'] - pose['stamp']) > .1):
+            reason = 'timestamp_mismatch'
+        else:
+            reason = None
+        result['pose_overlay'] = reason is None
+        result['pose_overlay_reason'] = reason
         return result
 
 

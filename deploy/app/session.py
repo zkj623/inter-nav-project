@@ -37,40 +37,62 @@ def decode_packet(packet):
     return Snapshot(**data['snapshot']), data['scene']
 
 
-class _RecordedFrame:
-    """Detached frame with a single lazy compression shared by all recorders."""
-    def __init__(self, frame_id, snapshot, scene, visual, mapping):
-        self.frame_id = frame_id
+def encode_display(payload, cloud_json):
+    """Keep the renderer's immutable point array out of HTTP JSON encoding."""
+    def encode(value):
+        return json.dumps(value, default=json_value, allow_nan=False, separators=(',', ':')).encode()
+
+    cloud = payload.get('cloud')
+    if cloud is None or cloud_json is None:
+        return encode(payload)
+    dynamic = encode({key: cloud[key] for key in ('age', 'stale')})
+    current_cloud = cloud_json[:-1] + b',' + dynamic[1:]
+    rest = encode({key: value for key, value in payload.items() if key != 'cloud'})
+    return rest[:-1] + b',"cloud":' + current_cloud + b'}'
+
+
+class _RecordedPacket:
+    """One lazy compression per immutable packet, outside the producer lock."""
+    def __init__(self, snapshot, scene=None):
         self.snapshot, self.scene = snapshot, scene
+        self._packet = None
+        self._lock = threading.Lock()
+
+    def encode(self):
+        with self._lock:
+            if self._packet is None:
+                self._packet = encode_packet(self.snapshot, self.scene)
+            return self._packet
+
+
+class _RecordedFrame(_RecordedPacket):
+    def __init__(self, frame_id, snapshot, scene, visual, mapping):
+        super().__init__(snapshot, scene)
+        self.frame_id = frame_id
         # The numeric packet already contains the measured and display clouds.
         # Re-encoding their Python float lists in each record batch holds the
         # GIL and can stall navigation; only /api/frame needs browser points.
         self.visual = {key: value for key, value in visual.items() if key != 'cloud'}
         self.mapping = mapping
-        self._packet = None
-        self._lock = threading.Lock()
 
     def payload(self):
         # Compression never holds Session.lock or blocks display publication.
-        with self._lock:
-            if self._packet is None:
-                self._packet = encode_packet(self.snapshot, self.scene)
-            packet = self._packet
-        return {'frame_id': self.frame_id, 'packet': packet,
+        return {'frame_id': self.frame_id, 'packet': self.encode(),
                 'visual': self.visual, 'map': self.mapping}
 
 
 class Session:
     def __init__(self, config, repo, port=8765, demo=False, mode='live_observe_only', frame_limit=4, event_limit=4096,
-                 separate_cloud=True):
+                 separate_cloud=True, observation_limit=32):
         # All online planning maps are independent of display-only voxels,
         # including when RGB-D is available. Preserve the argument for callers.
         separate_cloud = True
         self.info = {'session_id': uuid4().hex, 'started_at': datetime.now(timezone.utc).isoformat(),
                      'config': config, 'provenance': provenance(repo), 'mode': mode, 'demo': demo,
-                     'separate_cloud': separate_cloud}
+                     'separate_cloud': separate_cloud, 'recording_version': 2}
         self.lock = threading.Lock()
         self.frames = LatestFrames(stale_after=1., demo=demo)
+        self.cloud_json = None
         self.separate_cloud = separate_cloud
         self.capture = SceneCapture()
         context = mp.get_context('spawn')
@@ -84,6 +106,9 @@ class Session:
         self.render_failure = None
         self.frames_ring, self.events_ring = deque(maxlen=frame_limit), deque(maxlen=event_limit)
         self.frame_id = self.event_id = self.dropped = 0
+        self.observations_ring = deque(maxlen=observation_limit)
+        self.observation_id = 0
+        self.last_observation_at = float('-inf')
         self.unpublished_frames = 0
         self.last_publish = float('-inf')
         self.publish_interval = .2
@@ -153,9 +178,11 @@ class Session:
         with self.lock:
             if self.closing:
                 return
-            self.input_times = (snapshot.pose_at, snapshot.lidar_at) if snapshot is not None else None
         if snapshot is None:
             return
+        # Live acquisition already published this packet. Keep standalone
+        # session producers supported without recording duplicates/older reads.
+        self.record_observation(snapshot)
         lidar = snapshot.observation['sensors']['lidar']
         scan = None
         if (self.separate_cloud and snapshot.geometry_calibrated
@@ -204,6 +231,20 @@ class Session:
         self.dropped += int(frame)
         self.cloud_input_dropped += int(packet['scan'] is not None)
 
+    def record_observation(self, snapshot):
+        """Accept source observations independently of map/display processing.
+
+        The source transfers an immutable snapshot. No compression, rendering
+        or disk I/O runs on its thread. Cursor gaps expose bounded-ring loss.
+        """
+        with self.lock:
+            if self.closing or snapshot.captured_at <= self.last_observation_at:
+                return
+            self.last_observation_at = snapshot.captured_at
+            self.input_times = (snapshot.pose_at, snapshot.lidar_at)
+            self.observation_id += 1
+            self.observations_ring.append((self.observation_id, _RecordedPacket(snapshot)))
+
     def rgb(self, rgba, captured_at=None, source='ROS RGB'):
         payload = {'jpeg': jpeg_from_bgr(rgba[..., :3][..., ::-1]),
                    'source': source, 'stamp': captured_at, 'source_age': None,
@@ -251,6 +292,7 @@ class Session:
             if self.publication_closed:
                 return
             self.frames.put('cloud', result['cloud'], result['cloud']['stamp'])
+            self.cloud_json = result.get('cloud_json')
             self.frames.put('pose', result['pose'], snapshot.pose_at)
             if result['rgb'] is not None:
                 self.frames.put('rgb', result['rgb'], snapshot.camera_at)
@@ -267,7 +309,7 @@ class Session:
             with self.frames.lock:
                 self.frames.errors.pop('session', None)
 
-    def display(self):
+    def display(self, *, encoded=False):
         now = time.monotonic()
         with self.lock:
             mapping = dict(self.map, age=None if self.map_at is None else max(0., now-self.map_at),
@@ -277,6 +319,7 @@ class Session:
             finished = self.summary is not None
             sequence = self.frame_id
             frames = self.frames.snapshot()
+            cloud_json = self.cloud_json
             input_ages = None if self.input_times is None else [now-t for t in self.input_times]
             input_stale = input_ages is None or any(t > self.info['config']['robot']['max_data_age_s'] or t < -.05 for t in input_ages)
             measured_fps = ((len(self.publish_times)-1)/(self.publish_times[-1]-self.publish_times[0])
@@ -285,23 +328,28 @@ class Session:
                                cloud_input_dropped=self.cloud_input_dropped,
                                input_stale=input_stale,
                                display_age_s=None if self.published_at is None else now-self.published_at)
-        return dict(frames, session_id=self.info['session_id'], sequence=sequence,
-                    map=mapping, status=state, session_age=age, finished=finished, fps=5., performance=performance,
-                    cloud_topic=self.info['config']['robot']['lidar_topic'])
+        payload = dict(frames, session_id=self.info['session_id'], sequence=sequence,
+                       map=mapping, status=state, session_age=age, finished=finished, fps=5., performance=performance,
+                       cloud_topic=self.info['config']['robot']['lidar_topic'])
+        return encode_display(payload, cloud_json) if encoded else payload
 
-    def batch(self, after_frame, after_event):
+    def batch(self, after_frame, after_event, after_observation=0):
         with self.lock:
             oldest_frame = self.frames_ring[0].frame_id if self.frames_ring else self.frame_id+1
             oldest_event = self.events_ring[0]['event_id'] if self.events_ring else self.event_id+1
+            oldest_observation = self.observations_ring[0][0] if self.observations_ring else self.observation_id+1
+            observations = [(index, packet) for index, packet in self.observations_ring if index > after_observation]
             result = {'info': self.info, 'frames': [p for p in self.frames_ring if p.frame_id > after_frame],
                     'events': [p for p in self.events_ring if p['event_id'] > after_event],
                     'frame_gap': max(0, oldest_frame-after_frame-1),
                     'event_gap': max(0, oldest_event-after_event-1),
+                    'observation_gap': max(0, oldest_observation-after_observation-1),
                     'producer_dropped': self.dropped, 'cloud_input_dropped': self.cloud_input_dropped,
                     'summary': self.summary}
         # Recording compression is demand-driven and outside the display lock.
         # An unused recorder must not delay every live visual frame.
-        return dict(result, frames=[frame.payload() for frame in result['frames']])
+        return dict(result, frames=[frame.payload() for frame in result['frames']],
+                    observations=[{'observation_id': index, 'packet': packet.encode()} for index, packet in observations])
 
     def _server(self, port):
         session = self
@@ -311,17 +359,18 @@ class Session:
                 parsed = urlsplit(self.path)
                 try:
                     if parsed.path == '/api/frame':
-                        payload = session.display()
+                        body = session.display(encoded=True)
                     elif parsed.path == '/api/record':
                         params = parse_qs(parsed.query)
                         frame, event = int(params.get('frame', ['0'])[0]), int(params.get('event', ['0'])[0])
-                        if min(frame, event) < 0:
+                        observation = int(params.get('observation', ['0'])[0])
+                        if min(frame, event, observation) < 0:
                             raise ValueError('negative cursor')
-                        payload = session.batch(frame, event)
+                        payload = session.batch(frame, event, observation)
+                        body = json.dumps(payload, default=json_value, allow_nan=False, separators=(',', ':')).encode()
                     else:
                         self.send_error(404)
                         return
-                    body = json.dumps(payload, default=json_value, allow_nan=False, separators=(',', ':')).encode()
                 except (ValueError, TypeError):
                     self.send_error(400)
                     return
@@ -367,6 +416,7 @@ class Session:
             self.summary = dict(summary, telemetry_complete=drained,
                                 cloud_input_dropped=self.cloud_input_dropped,
                                 cloud_history_complete=drained and self.cloud_input_dropped == 0,
+                                final_observation_id=self.observation_id,
                                 final_frame_id=self.frame_id, final_event_id=self.event_id+1)
             self._append_event({'event': 'session_finished', 'at': time.monotonic(), 'summary': self.summary})
         self._stop_renderer()

@@ -95,11 +95,14 @@ class LocalTurnManeuver:
                 for _,target in candidates:
                     cell=planner.cell(target)
                     if not planner.valid_cell(cell) or not planner.free[cell]:continue
+                    # Most rejected candidates cannot fit the requested turn.
+                    # Reject that geometry before the two longer stepping arcs;
+                    # all candidates retain the same acceptance conditions.
+                    if not body_rotation_clear(planner,boxes,target,heading,last_heading,margin=margin+self.reserve_margin):continue
                     if require_stepping_arc:
                         from grutopia_extension.interactive_navigation.go2_turn_response import stepping_arc_clear
                         if not stepping_arc_clear(planner,boxes,target,heading,math.copysign(1.,last_heading-heading)):continue
-                    if (body_rotation_clear(planner,boxes,target,heading,last_heading,margin=margin+self.reserve_margin)
-                            and body_translation_recovery_clear(planner,boxes,position,heading,target)):
+                    if body_translation_recovery_clear(planner,boxes,position,heading,target):
                         if require_stable_placement and not turn_placement_clear(planner,boxes,target,heading,last_heading,margin+self.reserve_margin):continue
                         self.stage_margin=margin
                         return target

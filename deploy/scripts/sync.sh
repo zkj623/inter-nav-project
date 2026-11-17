@@ -21,11 +21,16 @@ if [[ $# == 2 ]]; then
     echo 'Preview only. Stop the robot task before applying an update.'
 fi
 manifest="$(mktemp)"
+config_manifest="$(mktemp)"
 source_info="$(mktemp)"
-trap 'rm -f "$manifest" "$source_info"' EXIT
+trap 'rm -f "$manifest" "$config_manifest" "$source_info"' EXIT
 # Include new nonignored deployment files as well as tracked code. No --delete.
-git -C "$repo_dir" ls-files -co --exclude-standard -z > "$manifest"
+git -C "$repo_dir" ls-files -co --exclude-standard -z -- . ':!deploy/configs' > "$manifest"
+git -C "$repo_dir" ls-files -co --exclude-standard -z -- deploy/configs > "$config_manifest"
 rsync "${options[@]}" --from0 --files-from="$manifest" "$repo_dir/" "$remote_host:$remote_path/"
+# Seed missing configuration files only. Existing calibration/acceptance stays
+# device-owned; a code update must never overwrite it with repository defaults.
+rsync "${options[@]}" --ignore-existing --from0 --files-from="$config_manifest" "$repo_dir/" "$remote_host:$remote_path/"
 
 python3 - "$repo_dir" "$source_info" <<'META'
 import json

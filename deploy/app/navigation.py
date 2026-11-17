@@ -9,6 +9,7 @@ from collections import deque
 from dataclasses import replace
 
 import numpy as np
+from scipy.ndimage import label
 from deploy.robot.safety import checked_velocity
 from deploy.interaction.execution import InteractionExecution
 from deploy.interaction.collision import ContactCollisionChecker
@@ -214,6 +215,7 @@ class NavigationEngine:
             linear_acceleration=float(self.config.get('linear_acceleration', .50)),
             yaw_acceleration=float(self.config.get('yaw_acceleration', 1.50)))
         self.tracker = None
+        self._prepared_tracker = None
         self.skill = None
         self.phase = 'idle'
         self.endpoint = None
@@ -361,8 +363,8 @@ class NavigationEngine:
         if not self.config.get('interaction_enabled', False) or not self.full_motion_feedback or not self._fresh_object(object_id) or recognition is None:
             return None
         if self.interaction_source == 'registered_box_lidar':
-            from deploy.perception.registered_boxes import RegisteredBoxPerception
-            if not isinstance(recognition, RegisteredBoxPerception):
+            from deploy.perception.registered_boxes import RegisteredBoxPerception, RegisteredBoxEvidence
+            if not isinstance(recognition, (RegisteredBoxPerception, RegisteredBoxEvidence)):
                 return None
             permission = recognition.permission(object_id, self.now)
             if permission is None or permission.source != 'registered_box_lidar':
@@ -464,6 +466,46 @@ class NavigationEngine:
             max_lateral=float(self.config.get('max_lateral_speed', .18)),
             final_goal_slow_radius=.30 if short_goal else float(self.config.get('final_goal_slow_radius', .75)),
             final_task_goal=None if short_goal else self.goal[:2])
+
+    def prepare_tracking(self):
+        """Construct cold local maneuvers while disarmed, without sending them.
+
+        Global route creation does not execute the first local controller
+        step. That step can search turn placements; retain its checked tracker
+        state so activation does not start with that cold search.
+        """
+        tracker = self.tracker
+        if self.phase != 'navigate' or tracker is None or tracker is self._prepared_tracker:
+            return
+        try:
+            _, self.last_tracking = tracker.action(self.position[:2], self.heading,
+                                                   self.planner, self.layers.current_boxes)
+            self._prepared_tracker = tracker
+        finally:
+            # The preview command was never executed. The next live step must
+            # accelerate from the actual stopped writer and recheck geometry.
+            self.limiter.accept(np.zeros(3), self.now)
+
+    def _task_route_available(self):
+        """Answer an ordinary connectivity query without constructing a route.
+
+        Four-neighbor connectivity is equivalent to the planner's eight-way
+        reachability with diagonal corner cutting prohibited. Use exactly its
+        global blocked mask; this query neither installs a path nor authorizes
+        motion. Box interaction still needs the full decision while stopped.
+        """
+        if self.layers.global_boxes:
+            self._planning_boundary('frontier_reconsideration')
+            return self.selector.task_decision(self.layers, self.position[:2], self.goal[:2]) is not None
+        with self.layers.global_planning():
+            start, goal = self.planner.cell(self.position[:2]), self.planner.cell(self.goal[:2])
+            if not self.planner.valid_cell(start) or not self.planner.valid_cell(goal):
+                return False
+            blocked = self.planner.blocked([])
+            if blocked[start] or blocked[goal]:
+                return False
+            components, _ = label(~blocked)
+            return bool(components[start] == components[goal])
 
     def _reset_subnavigation(self):
         self.subtracker = self.subtarget = self.sub_started = None
@@ -707,6 +749,7 @@ class NavigationEngine:
         self.tracker = self._tracker(path, short_goal=self.goal_kind != 'task')
         self.phase = 'navigate'
         self.last_replan = self.now
+        self.next_reconsider = self.now+1.
         return self._brake()
 
     def update(self, observation, now, boxes=(), recognition=None):
@@ -773,8 +816,7 @@ class NavigationEngine:
             close = np.linalg.norm(self.position[:2]-np.asarray(self.endpoint)) < .35
             reconsider = close
             if self.now >= self.next_reconsider and not self.tracker.staging_active:
-                self._planning_boundary('frontier_reconsideration')
-                reconsider |= self.selector.task_decision(self.layers, self.position[:2], self.goal[:2]) is not None
+                reconsider |= self._task_route_available()
                 self.next_reconsider = self.now+1.
             if reconsider:
                 if close:

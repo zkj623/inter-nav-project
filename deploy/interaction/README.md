@@ -5,15 +5,15 @@
 ## 调用关系
 
 ```text
-Snapshot → RegisteredBoxPerception → Tasks → NavigationEngine
-                                             │
-                                             ├─ OnlineGoalSelector / SidePushPlanner
-                                             │
-                                             └─ create_push_skill(..., profile)
-                                                  └─ PushAsideSkill（唯一状态机）
-                                                       └─ SdkPushBackend
-                                                            ├─ SdkNavigationMotion / SdkHeadingTrim
-                                                            └─ ObservedBoxMotion
+LiveObservations：采集 Snapshot → RegisteredBoxPerception → 固定观测/证据对
+  ↓
+Tasks → NavigationEngine
+          ├─ OnlineGoalSelector / SidePushPlanner
+          └─ create_push_skill(..., profile)
+               └─ PushAsideSkill（唯一状态机）
+                    └─ SdkPushBackend
+                         ├─ SdkNavigationMotion / SdkHeadingTrim
+                         └─ ObservedBoxMotion
 
 SkillCommand → NavigationEngine → NavigationController
              → MotionProcess / ContactGuard → SportClient.Move

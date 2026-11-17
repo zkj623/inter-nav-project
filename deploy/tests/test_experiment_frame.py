@@ -1,5 +1,4 @@
 """Fixed per-run coordinates: geometry, ownership, and live/replay boundaries."""
-from collections import deque
 from dataclasses import replace
 import json
 from types import SimpleNamespace
@@ -144,9 +143,14 @@ def test_live_entrypoint_rebases_before_map_boundary_check(monkeypatch):
         source.lidar[1]['pointcloud'] = np.array([[30., 42., .7], [29., 42., .7]])
         return source
     monkeypatch.setattr(sensors, 'RosSensors', start_sensors)
-    keys = deque([None, ('q', None)])
+    polls = [0]
+    def poll():
+        polls[0] += 1
+        # Acquisition now runs independently. Quit after the first mapped
+        # observation, not after an assumed number of synchronous reads.
+        return ('q', None) if sessions[0].status.get('map_ready') or polls[0] >= 10 else None
     monkeypatch.setattr(keyboard, 'Keyboard', lambda: SimpleNamespace(
-        editing=None, poll=lambda: keys.popleft(), close=lambda: None))
+        editing=None, poll=poll, close=lambda: None))
     sessions = []
     constructor = session.Session
     def create_session(*args, **kwargs):

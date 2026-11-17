@@ -328,6 +328,7 @@ def test_immediate_worker_fault_after_arm_does_not_start_task(control):
 def test_live_start_reacquires_sensors_after_slow_arm(tmp_path, monkeypatch, fresh_after_arm):
     """A slow acknowledgement must neither reuse nor re-date pre-arm sensor data."""
     from deploy.app import controller as controller_module, runtime, session, keyboard
+    from deploy.app import observations
     from deploy.robot import sensors, motion
 
     snapshot = next(snapshots(make_fixture(tmp_path)))
@@ -363,6 +364,25 @@ def test_live_start_reacquires_sensors_after_slow_arm(tmp_path, monkeypatch, fre
         return replace(snapshot, captured_at=clock[0], pose_at=stamp, lidar_at=stamp,
                        planning_frame='odom')
     fake_sensors = SimpleNamespace(latest=latest, close=lambda: None, last_error=None)
+    class ObservationReads:
+        # This test controls the consumer's clock. The independent acquisition
+        # worker and reset races are exercised in test_live_observations.py.
+        last_error = None
+        failure = None
+
+        def __init__(self, sensors, reference, session, *, max_age, **kwargs):
+            self.source, self.reference, self.max_age = sensors, reference, max_age
+
+        def latest(self):
+            return self.reference.apply(self.source.latest(), clock[0], self.max_age)
+
+        def close(self):
+            pass
+
+        def wait_next(self, snapshot, timeout):
+            fake_clock.sleep(timeout)
+
+    monkeypatch.setattr(observations, 'LiveObservations', ObservationReads)
     operations = iter([None, ('navigate', '1,0'), None, ('q', None)])
     monkeypatch.setattr(session, 'Session', lambda *args, **kwargs: events)
     monkeypatch.setattr(motion, 'MotionProcess', lambda *args: fake_motion)

@@ -3,6 +3,8 @@ from collections import OrderedDict
 from dataclasses import replace
 import hashlib
 import math
+from functools import lru_cache
+from types import SimpleNamespace
 from heapq import heappop,heappush
 import numpy as np
 from scipy.ndimage import distance_transform_edt,maximum_filter
@@ -692,6 +694,36 @@ def turn_reduces_overlap(planner,boxes,position,first,last):
     return counts[-1]==0 and max(counts)<=counts[0]
 
 
+@lru_cache(maxsize=128)
+def _fixed_collision_samples(sampler,resolution,half_width,geometry,margin):
+    """Cache only immutable body dimensions, never map or collision results."""
+    shape=SimpleNamespace(resolution=resolution,navigation_half_width=half_width,body_geometry=geometry)
+    xx,yy=sampler(shape,margin)
+    xx.setflags(write=False);yy.setflags(write=False)
+    return xx,yy
+
+
+def _collision_samples(planner,margin):
+    from grutopia_extension.interactive_navigation.body_geometry import BodyFootprint
+    geometry=getattr(planner,'body_geometry',None)
+    if geometry is not None and type(geometry) is not BodyFootprint:
+        return navigation_footprint_samples(planner,margin)
+    return _fixed_collision_samples(navigation_footprint_samples,planner.resolution,
+                                    getattr(planner,'navigation_half_width',.22),geometry,margin)
+
+
+def _body_samples_clear(planner,raw,positions,angles,xx,yy):
+    """Evaluate the existing pose/foot samples together, without subsampling."""
+    cells=np.asarray([planner.cell(position) for position in positions],dtype=int)
+    c=np.asarray([math.cos(angle) for angle in angles])[:,None]
+    s=np.asarray([math.sin(angle) for angle in angles])[:,None]
+    xx=np.asarray(xx).reshape(1,-1);yy=np.asarray(yy).reshape(1,-1)
+    cols=cells[:,1,None]+np.rint((c*xx-s*yy)/planner.resolution).astype(int)
+    rows=cells[:,0,None]+np.rint((s*xx+c*yy)/planner.resolution).astype(int)
+    if rows.min()<0 or cols.min()<0 or rows.max()>=raw.shape[0] or cols.max()>=raw.shape[1]:return False
+    return bool(raw[rows,cols].all())
+
+
 def body_motion_clear(planner,boxes,position,heading,forward,rotation,horizon=.25,lateral=0.,*,margin=0.):
     """Check the body over the next coupled forward/yaw movement, not a full
     future turn about a stationary center. Pose spacing is below one map cell.
@@ -701,21 +733,22 @@ def body_motion_clear(planner,boxes,position,heading,forward,rotation,horizon=.2
         mask=planner.box_mask(box)
         if mask is None:return False
         raw &= ~mask
-    xx,yy=navigation_footprint_samples(planner,margin=margin)
-    for t in np.linspace(0.,horizon,19):
-        angle=heading+rotation*t
-        if abs(rotation)>1e-8:
-            delta=forward/rotation*np.array([math.sin(angle)-math.sin(heading),math.cos(heading)-math.cos(angle)])
-            delta+=lateral/rotation*np.array([math.cos(angle)-math.cos(heading),math.sin(angle)-math.sin(heading)])
-        else:delta=t*np.array([forward*math.cos(heading)-lateral*math.sin(heading),
-            forward*math.sin(heading)+lateral*math.cos(heading)])
-        row,col=planner.cell(np.asarray(position[:2])+delta)
-        c,s=math.cos(angle),math.sin(angle)
-        cols=col+np.rint((c*xx-s*yy)/planner.resolution).astype(int)
-        rows=row+np.rint((s*xx+c*yy)/planner.resolution).astype(int)
-        if rows.min()<0 or cols.min()<0 or rows.max()>=raw.shape[0] or cols.max()>=raw.shape[1]:return False
-        if not raw[rows,cols].all():return False
-    return True
+    xx,yy=_collision_samples(planner,margin)
+    origin=np.asarray(position[:2])
+    # Retain the cheap rejection of an already occupied starting footprint.
+    if not _body_samples_clear(planner,raw,[origin],[heading],xx,yy):return False
+    if horizon==0. or (forward==0. and lateral==0. and rotation==0.):return True
+    times=np.linspace(0.,horizon,19)[1:]
+    angles=heading+rotation*times
+    if abs(rotation)>1e-8:
+        sine=np.asarray([math.sin(angle) for angle in angles])
+        cosine=np.asarray([math.cos(angle) for angle in angles])
+        delta=forward/rotation*np.column_stack((sine-math.sin(heading),math.cos(heading)-cosine))
+        delta+=lateral/rotation*np.column_stack((cosine-math.cos(heading),sine-math.sin(heading)))
+    else:
+        delta=times[:,None]*np.array([forward*math.cos(heading)-lateral*math.sin(heading),
+                                     forward*math.sin(heading)+lateral*math.cos(heading)])
+    return _body_samples_clear(planner,raw,origin+delta,angles,xx,yy)
 
 
 def body_rotation_clear(planner,boxes,position,first_heading,last_heading,margin=0.):
@@ -725,15 +758,11 @@ def body_rotation_clear(planner,boxes,position,first_heading,last_heading,margin
         mask=planner.box_mask(box)
         if mask is None:return False
         raw &= ~mask
-    row,col=planner.cell(position)
-    xx,yy=navigation_footprint_samples(planner,margin=margin)
-    for heading in np.linspace(first_heading,last_heading,19):
-        c,s=math.cos(heading),math.sin(heading)
-        cols=col+np.rint((c*xx-s*yy)/planner.resolution).astype(int)
-        rows=row+np.rint((s*xx+c*yy)/planner.resolution).astype(int)
-        if rows.min()<0 or cols.min()<0 or rows.max()>=raw.shape[0] or cols.max()>=raw.shape[1]:return False
-        if not raw[rows,cols].all():return False
-    return True
+    xx,yy=_collision_samples(planner,margin)
+    if not _body_samples_clear(planner,raw,[position],[first_heading],xx,yy):return False
+    if first_heading==last_heading:return True
+    angles=np.linspace(first_heading,last_heading,19)[1:]
+    return _body_samples_clear(planner,raw,[position]*len(angles),angles,xx,yy)
 
 
 def update_task_cameras(first_camera,third_camera,position,orientation):
