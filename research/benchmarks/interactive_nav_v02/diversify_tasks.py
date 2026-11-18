@@ -16,6 +16,8 @@ def overlap(a,b):
     n=len(a&b)
     return n/(len(a)+len(b)-n)
 
+MIN_ROUTE_M=3.0
+
 def sample(d,gdata,kernels,reserve_controls=False):
     items=d['objects'];origin=gdata['origin'];nominal=gdata['nominal'];initial=gdata['initial_nominal'];final=gdata['cleared_nominal'];opt=gdata['initial_optimistic']
     initial_labels,_=ndi.label(opt,STRUCT);clear=ndi.distance_transform_edt(~gdata['blocked'])*R
@@ -41,14 +43,14 @@ def sample(d,gdata,kernels,reserve_controls=False):
     candidates=[]
     for i,j in itertools.combinations(range(len(landmarks)),2):
         s,t=landmarks[i],landmarks[j];sc,tc=tuple(cells[s]),tuple(cells[t]);ls,lt=int(initial_labels[sc]),int(initial_labels[tc]);length=float(distances[i,t])
-        if not np.isfinite(length) or length<1.5 or not ls or not lt or ls==lt:continue
+        if not np.isfinite(length) or length<MIN_ROUTE_M or not ls or not lt or ls==lt:continue
         if goal_gap[ls][tc]<=.5 or goal_gap[lt][sc]<=.5:continue
         solutions=[(n,ss) for n,ss,ll in subsets if ll[sc] and ll[sc]==ll[tc]]
         if not solutions:continue
         n=solutions[0][0];rr=route(cells,preds[i],s,t)
         candidates.append({'i':i,'j':j,'start':sc,'goal':tc,'length':length,'cells':rr,'corridor':corridor(rr),'zone_pair':tuple(sorted((int(zones[i]),int(zones[j])))),'solutions':[ss for nn,ss in solutions if nn==n],'minimum':n,'class':'interaction_required'})
     assert candidates,d['id']
-    longest=max(c['length'] for c in candidates);short=max(2.5,.35*longest);medium=max(short+.5,.7*longest)
+    longest=max(c['length'] for c in candidates);short=max(MIN_ROUTE_M+.75,.35*longest);medium=max(short+.5,.7*longest)
     def category(length):return 'short' if length<=short else 'medium' if length<=medium else 'long'
     for c in candidates:c['length_band']=category(c['length'])
     selected=[];covered_zones=set();zone_counts=Counter();used_pairs=Counter();used_points=Counter();occupied=set();covered_objects=set();bins=Counter()
@@ -81,7 +83,7 @@ def sample(d,gdata,kernels,reserve_controls=False):
         sc=tuple(cells[s]);dd,pp=dijkstra(bg,indices=int(bi[sc]),return_predecessors=True)
         for j in range(i+1,len(landmarks)):
             tc=tuple(cells[landmarks[j]]);t=int(bi[tc]);length=float(dd[t])
-            if not np.isfinite(length) or length<1.5:continue
+            if not np.isfinite(length) or length<MIN_ROUTE_M:continue
             rr=route(bc,pp,int(bi[sc]),t)
             if not initial[tuple(rr.T)].all():continue
             controls.append({'i':i,'j':j,'start':sc,'goal':tc,'length':length,'cells':rr,'corridor':corridor(rr),'zone_pair':tuple(sorted((int(zones[i]),int(zones[j])))),'minimum':0,'class':'no_interaction_optimal','length_band':category(length)})
@@ -116,6 +118,7 @@ def sample(d,gdata,kernels,reserve_controls=False):
     old_overlaps=[overlap(x,y) for x,y in itertools.combinations(before,2)]
     report={'scene':d['id'],'endpoint_regions_total':len(centers),'endpoint_regions_used':len(covered_zones),'distinct_region_pairs':len(used_pairs),'unique_endpoint_positions':len(used_points),'maximum_endpoint_reuse':max(used_points.values()),'length_band_counts':dict(Counter(t['length_band'] for t in tasks)),'required_length_band_counts':dict(bins- Counter(t['length_band'] for t in tasks[8:])),'length_band_thresholds_m':{'short_max':short,'medium_max':medium},'route_corridor_iou_max_before':max(old_overlaps),'route_corridor_iou_max_after':max(overlaps),'route_corridor_iou_mean_before':float(np.mean(old_overlaps)),'route_corridor_iou_mean_after':float(np.mean(overlaps)),'route_lengths_m':[round(t['cleared_route_length_m'],3) for t in tasks],'layout_unchanged':True,'corridor_definition':'0.25 m cells, one-cell Chebyshev dilation; direction-independent Jaccard overlap'}
     report['required_length_band_counts']=dict(bins)
+    report['minimum_reference_route_m']=MIN_ROUTE_M
     d['tasks']=tasks;d['endpoint_regions']=zone_meta;d['task_diversity']=report;d['long_route_sampling']='spatial endpoint coverage, short/medium/long strata, route-corridor overlap <= 0.65';return d,report
 
 def main():

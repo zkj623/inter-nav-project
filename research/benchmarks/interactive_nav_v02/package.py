@@ -5,6 +5,7 @@ ap=argparse.ArgumentParser();ap.add_argument('--out',type=Path,required=True);ap
 for name in ('object_catalog.json','source_asset_audit.json','environment.json'):shutil.copy2(a.old/name,a.out/name)
 shutil.copy2(a.selected,fixtures/'selected.json');fine=fixtures/'fine_maps';fine.mkdir(exist_ok=True)
 for f in a.fine.glob('S*.npz'):shutil.copy2(f,fine/f.name)
+for f in a.fine.glob('S*.floor_support.json'):shutil.copy2(f,fine/f.name)
 rows=[]
 for ep in sorted(a.out.glob('S*/episodes.json')):
  d=json.loads(ep.read_text());report=ep.parent/'physics_smoke.json'

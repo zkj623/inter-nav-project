@@ -6,7 +6,7 @@
 canvas{max-height:72vh;object-fit:contain}canvas.zoomed{max-height:none}
 .below{overflow-x:auto}
 </style>
-<header><small>RESEARCH BENCHMARK · v0.2 · 多处阻塞布局</small><h1>GRScenes × Genie2</h1><p>一场景，一布局；通过不同起终点检验导航与交互决策。<br>15 种物体来自 genie2-rsi。当前是几何验证版本，尚未完成 G2 全身碰撞与交互闭环验证。</p></header>
+<header><small>RESEARCH BENCHMARK · v0.2 · 地面修正与路径加长</small><h1>GRScenes × Genie2</h1><p>一场景，一布局；通过不同起终点检验导航与交互决策。<br>15 种物体来自 genie2-rsi。当前是几何验证版本，尚未完成 G2 全身碰撞与交互闭环验证。</p></header>
 <main><div class="stats"><div class="stat"><b>10</b><span>场景 / 固定布局</span></div><div class="stat"><b>100</b><span>起终点任务</span></div><div class="stat"><b>80</b><span>模型内必须交互</span></div><div class="stat"><b>20</b><span>无需交互最优对照</span></div></div>
 <div class="workspace"><aside class="panel"><h2>场景分布</h2><div id="scenes">正在加载…</div><p class="hint">面积为地面投影面积。10 个场景均为住宅；切换任务不会改变该场景的初始物体布局。</p></aside>
 <section class="panel"><h2 id="sceneTitle">布局与参考路径</h2><div class="toolbar"><select id="state"><option value="initial">初始固定布局</option><option value="cleared">清障参考状态</option></select><label><input id="regions" type="checkbox">初始连通区域</label><label><input id="route" type="checkbox" checked>参考路径</label></div><div class="figure"><canvas id="map"></canvas></div><div class="legend"><span><i class="swatch" style="--c:#ce803c"></i>物体初始位置</span><span><i class="swatch" style="--c:#428678"></i>候选移开位置</span><span><i class="swatch" style="--c:#2d6f9a"></i>参考路线</span><span>● 起点　◆ 终点</span></div><div id="stateHint" class="notice"></div><p class="hint">物体以外接矩形示意；路径长度仅指导航参考路线，不包含接近物体、操作和搬移过程。坐标单位：米。</p></section>

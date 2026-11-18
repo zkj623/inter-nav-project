@@ -37,10 +37,11 @@ for ep in sorted(a.out.glob('S*/episodes.json')):
  paths=[corridor(np.rint((np.array(t['reference_route_xy_m'])-g['origin'])[:,::-1]/R).astype(int)) for t in d['tasks']];ovs=[overlap(x,y) for x,y in itertools.combinations(paths,2)];assert max(ovs)<=.65+1e-9
  bins=Counter(t['length_band'] for t in needed);assert set(bins)=={'short','medium','long'} and max(bins.values())<=4
  endpoints=[tuple(t[k]) for t in d['tasks'] for k in ('start_cell','goal_cell')];assert max(Counter(endpoints).values())<=2
- d['component_regions']=regions;d['object_connectivity_roles']=roles;d['task_diversity']['layout_unchanged']=False
+ d['component_regions']=regions;d['object_connectivity_roles']=roles
  d['layout_topology'].update(required_task_region_pairs={f'{display[p[0]]}-{display[p[1]]}':n for p,n in pairs.items()},objects_used_in_required_tasks=[d['objects'][j]['instance_id'] for j in sorted(used_objects)],task_component_count=len(used_components))
  dump(ep,d);reports.append({'scene':d['id'],'meaningful_initial_regions':len(major),'retained_initial_regions':len(recovered),'task_component_count':len(used_components),'distinct_required_component_pairs':len(pairs),'objects_used_in_required_tasks':len(used_objects),'unique_endpoint_positions':len(set(endpoints)),'required_length_bands':dict(bins),'maximum_route_corridor_iou':max(ovs),'mean_route_corridor_iou':float(np.mean(ovs)),'object_roles':roles,'passed':True});print(d['id'],len(major),'regions',len(pairs),'pairs',len(used_objects),'objects',flush=True)
 assert len(reports)==10
 dump(a.out/'layout_validation.json',{'passed':True,'scenes':reports,'scope':'projected raster topology and object footprint checks; dynamic G2 interaction remains untested'})
-dump(a.out/'diversity_validation.json',{'passed':True,'scenes':reports,'layout_revision':'multiple_bottlenecks','corridor_iou_limit':.65})
-dump(a.out/'task_diversity.json',{'passed':True,'scenes':[json.loads(ep.read_text())['task_diversity'] for ep in sorted(a.out.glob('S*/episodes.json'))],'layout_changes':10,'route_corridor_iou_limit':.65})
+dump(a.out/'diversity_validation.json',{'passed':True,'scenes':reports,'layout_revision':d['revision'],'corridor_iou_limit':.65,'minimum_reference_route_m':3.0})
+diversities=[json.loads(ep.read_text())['task_diversity'] for ep in sorted(a.out.glob('S*/episodes.json'))]
+dump(a.out/'task_diversity.json',{'passed':True,'scenes':diversities,'layout_changes':sum(not r['layout_unchanged'] for r in diversities),'route_corridor_iou_limit':.65,'minimum_reference_route_m':3.0})

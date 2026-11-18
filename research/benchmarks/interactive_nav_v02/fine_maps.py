@@ -5,13 +5,16 @@ import numpy as np,cv2
 from scipy import ndimage as ndi
 from pxr import Usd
 import scan
-ap=argparse.ArgumentParser();ap.add_argument('--home',type=Path,required=True);ap.add_argument('--selected',type=Path,required=True);ap.add_argument('--out',type=Path,required=True);a=ap.parse_args();a.out.mkdir(parents=True,exist_ok=True)
+from floor_support import augment_floor
+ap=argparse.ArgumentParser();ap.add_argument('--home',type=Path,required=True);ap.add_argument('--selected',type=Path,required=True);ap.add_argument('--out',type=Path,required=True);ap.add_argument('--only');ap.add_argument('--refresh',action='store_true');a=ap.parse_args();a.out.mkdir(parents=True,exist_ok=True)
 scan.R=.025
 bands=[(.12,.4),(.4,.8),(.8,1.15),(1.15,1.8)]
 for row in json.loads(a.selected.read_text()):
+ if a.only and row['id']!=a.only:continue
  target=a.out/(row['id']+'.npz')
- if target.exists():continue
+ if target.exists() and not a.refresh:continue
  path=a.home/row['scene'];floor,origin,z=scan.floor(path);layers=np.zeros((len(bands),*floor.shape),np.uint8);stage=Usd.Stage.Open(str(path))
+ floor,evidence=augment_floor(stage,floor,origin,z,scan.R)
  for prim,m,v in scan.meshes(stage):
   name=str(prim.GetPath())
   if '/ground/' in name or '/ceiling/' in name:continue
@@ -28,5 +31,6 @@ for row in json.loads(a.selected.read_text()):
   for i,(zlo,zhi) in enumerate(bands):
    polys=np.rint((triangles[(hi>zlo)&(lo<zhi),:,:2]-origin)/scan.R).astype(np.int32)
    for polygon in polys:cv2.fillConvexPoly(layers[i],polygon,1)
- np.savez_compressed(target,floor=floor,obstacle_bands=layers,band_limits=bands,origin=origin,z=z,resolution=scan.R)
+ np.savez_compressed(target,floor=floor,obstacle_bands=layers,band_limits=bands,origin=origin,z=z,resolution=scan.R,floor_support_method=evidence['method'])
+ target.with_suffix('.floor_support.json').write_text(json.dumps(evidence,indent=2))
  print(row['id'],floor.shape,'complete',flush=True)

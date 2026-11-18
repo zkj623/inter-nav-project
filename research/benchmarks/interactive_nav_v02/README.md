@@ -1,8 +1,23 @@
-# GRScenes × Genie2 fixed-layout benchmark v0.2 — multiple-bottleneck revision
+# GRScenes × Genie2 fixed-layout benchmark v0.2 — floor support and route length revision
 
 This research prototype contains **10 scenes, 10 fixed initial layouts, and 100 navigation tasks**. Each scene has movable rigid objects and ten distinct, non-reversed start/goal pairs: eight interaction-required tasks and two optimal non-interaction controls. Every episode resets all objects to the same scene-level initial poses. Task selection never changes the layout. The 15 asset types come from `genie2-rsi` commit `c9ce1a5ba405905f4d626fe630c485ca60fe128a`.
 
 This benchmark is separate from the earlier stage-one delivery. Its platform is **Genie2/G2 CRS**, not Go2. It is a geometric task dataset and scene-loading prototype; it does not yet provide a validated G2 navigation/manipulation agent.
+
+This revision sets a **3 m minimum reference-route length for every task**, including controls, while retaining short/medium/long strata and a 0.65 corridor-overlap limit. S08's raster and fixed object layout are rebuilt; the other nine fixed object layouts are unchanged.
+
+## S08 floor-support correction
+
+The previous floor extractor used only the `Base/ground` semantic group. S08 contains actual coplanar architectural floor strips in `Base/other`; omitting them created false gaps around living/dining-room flooring. Robot-radius inflation then disconnected the upper and lower portions of the apartment, and largest-component sampling concentrated tasks in the upper rooms. Total projected floor area is therefore distinct from usable connected robot-center area.
+
+`floor_support.py` additionally rasterizes existing architectural `Base` triangles within 0.04 m of the reference floor, with absolute vertical-normal cosine at least 0.98. It excludes furniture from support inference. No morphological hole filling, obstacle removal, robot-radius reduction, or change to the original USD scene is used. `fine_maps/S08.floor_support.json` lists the source meshes; `floor_support_validation.json` records the before/after connectivity and affected routes. The nominal radius remains 0.36 m.
+
+The frozen cache retains the previous maps for S01–S07 and S09–S10 and the corrected S08 map. Reuse `fixtures/fine_maps` for this exact revision. A full source regeneration with the improved extractor may also update other scenes and creates a new dataset revision. To refresh S08 only in a copied cache:
+
+```bash
+cp -r fixtures/fine_maps fine_maps
+python fine_maps.py --home "$HOME_ASSETS" --selected fixtures/selected.json --out fine_maps --only S08 --refresh
+```
 
 ## Scope and task definitions
 

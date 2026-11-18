@@ -23,6 +23,7 @@ for ep in sorted(a.out.glob('S*/episodes.json')):
   assert tuple(cells[0])==s and tuple(cells[-1])==g
   assert initial[s] and initial[g];step=np.diff(cells,axis=0);assert (np.abs(step)<=1).all() and (np.abs(step).sum(1)>0).all()
   length=float(np.linalg.norm(np.diff(xy,axis=0),axis=1).sum());assert abs(length-t['cleared_route_length_m'])<1e-6
+  assert length>=3.0-1e-9,(t['id'],'reference route shorter than 3 m',length)
   permitted=final if t['class']=='interaction_required' else initial
   assert permitted[tuple(cells.T)].all(),t['id']
   for cell,delta in zip(cells[:-1],step):

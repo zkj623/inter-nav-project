@@ -23,6 +23,9 @@ function loadScene(i){
  const v=s.task_diversity,b=v.length_band_counts;
  const topo=s.layout_topology;
  distribution.innerHTML=`<b>任务分布</b>：短 ${b.short||0} / 中 ${b.medium||0} / 长 ${b.long||0}；${v.unique_endpoint_positions} 个不同端点位置。<br>${topo?`物体阻塞后，任务涉及 ${topo.task_component_count} 个初始连通区域；交互任务覆盖 ${Object.keys(topo.required_task_region_pairs).length} 组区域连接。<br>`:''}C 表示物体未移动时的连通区域；R 表示用于统计端点分布的空间分区。<a href="layout_validation.json">阻塞布局验证</a> · <a href="task_diversity.json">任务分布</a>`;
+ distribution.innerHTML+=`<br>所有任务参考路径 ≥ ${s.minimum_reference_route_m||3} m。添加物体前，选用的机器人中心最大连通区域：${s.largest_robot_component_m2.toFixed(2)} m²；它与整套住宅的地面投影面积不同。`;
+ if(s.floor_support_revision)distribution.innerHTML+=`<br><b>S08 地面提取已修正</b>：原先遗漏了 other 类中的实际地面平面，形成虚假缝隙。补入已有几何后，最大连通区域由 ${s.previous_largest_robot_component_m2.toFixed(2)} 增至 ${s.largest_robot_component_m2.toFixed(2)} m²；未删除障碍或缩小机器人半径。<a href="floor_support_validation.json">修正依据</a>`;
+ distribution.innerHTML+='<br>底图白色为选用的机器人中心连通区域；浅灰为其余地面，包含靠近障碍的边缘和未选用区域；深灰为静态障碍投影。';
  renderTasks();draw();
 }
 function selectTask(i){ti=i;el('allTasks').checked=false;renderTasks();draw()}
