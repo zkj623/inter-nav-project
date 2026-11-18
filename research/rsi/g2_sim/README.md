@@ -2,7 +2,11 @@
 
 智元 G2 CRS + OmniPicker 的 Isaac Sim 4.2 仿真实验归档。机器人模型来自固定版本的 Genie Sim robot model；这里不是完整 Genie Sim 框架的迁移。入口独立于现有 R1 Lite 流程。
 
-## 已验证范围
+## 2026-11-18 更新
+
+[时间步修正、4 种新增通过物体及完整试验记录](iterations/20261118/README.md)。历史累计 11/15 种有同初态三次通过记录；旧 7 种尚未全部按新时间步重测，剩余 4 种未完整通过。以下统计属于冻结旧快照。
+
+## 原快照已验证范围
 
 15 种刚体物体，63 次有效物理试验，另有 1 次取消/无效试验。7 种物体在相同初始条件下连续 3 次满足完整判据：`bin_lidded`、`bin_pedal`、`bin_round_lidded`、`basket_woven`、`basket_rectangular`、`stool_wood_four_leg`、`table_side`。最低保持抬升 15 cm，保持阶段倾斜不超过 20°，并通过对应策略的接触判据。带盖桶接近倾斜阈值，仍需提升裕量。
 
