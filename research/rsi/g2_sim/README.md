@@ -1,8 +1,12 @@
-# G2 rigid-object grasp experiments
+# G2 rigid-object interaction experiments
 
 智元 G2 CRS + OmniPicker 的 Isaac Sim 4.2 仿真实验归档。机器人模型来自固定版本的 Genie Sim robot model；这里不是完整 Genie Sim 框架的迁移。入口独立于现有 R1 Lite 流程。
 
 ## 2026-11-18 更新
+
+<!-- push-iteration -->
+[两把大椅子的推移验证与复现入口](iterations/20261118_push/README.md)：办公椅同初态3次推移通过；餐椅同初态3次推移通过。从预设低姿态开始，沿用1千克与理想躯干驱动；办公椅按刚体滑动测试，未建模脚轮滚动。推移与抬升分别统计。
+<!-- /push-iteration -->
 
 [后续交互方式迭代：镜像侧夹、曲面托底和接触力平衡](iterations/20261118_support/README.md)。本轮结果、完整下降与低姿态范围、毫米级位置偏移结果分别列出；两把椅子未计为成功，圆凳的真实软包接触仍待确认。
 

@@ -1,0 +1,806 @@
+[Warning] [omni.isaac.kit.simulation_app] Modules: ['omni.kit_app'] were loaded before SimulationApp was started and might not be loaded correctly.
+[Warning] [omni.isaac.kit.simulation_app] Please check to make sure no extra omniverse or pxr modules are imported before the call to SimulationApp(...)
+Loading user config located at: '/data20t/embodied/share/inter-nav/envs/isaaclab/lib/python3.10/site-packages/omni/data/Kit/Isaac-Sim/4.2/user.config.json'
+[Info] [carb] Logging to file: /data20t/embodied/share/inter-nav/envs/isaaclab/lib/python3.10/site-packages/omni/logs/Kit/Isaac-Sim/4.2/kit_20261118_221031.log
+2026-11-18 14:10:31 [0ms] [Warning] [omni.kit.app.plugin] No crash reporter present, dumps uploading isn't available.
+[0.228s] [ext: omni.blobkey-1.1.2] startup
+[0.229s] [ext: omni.kit.async_engine-0.0.1] startup
+[0.372s] [ext: omni.stats-1.0.1] startup
+[0.373s] [ext: omni.datastore-0.0.0] startup
+[0.379s] [ext: omni.client-1.2.0] startup
+[0.409s] [ext: omni.ujitso.default-1.0.0] startup
+[0.410s] [ext: omni.gpu_foundation.shadercache.vulkan-1.0.0] startup
+[0.412s] [ext: omni.hsscclient-1.1.1] startup
+[0.413s] [ext: omni.assets.plugins-0.0.0] startup
+[0.414s] [ext: omni.gpu_foundation-0.0.0] startup
+[0.424s] [ext: carb.windowing.plugins-1.0.0] startup
+2026-11-18 14:10:31 [233ms] [Warning] [carb.windowing-glfw.plugin] GLFW initialization failed.
+2026-11-18 14:10:31 [233ms] [Warning] [carb] Failed to startup plugin carb.windowing-glfw.plugin (interfaces: [carb::windowing::IGLContext v1.0],[carb::windowing::IWindowing v1.4]) (impl: carb.windowing-glfw.plugin)
+[0.425s] [ext: omni.kit.renderer.init-0.0.0] startup
+2026-11-18 14:10:31 [320ms] [Warning] [omni.platforminfo.plugin] failed to open the default display.  Can't verify X Server version.
+2026-11-18 14:10:32 [792ms] [Warning] [carb.windowing-glfw.plugin] GLFW initialization failed.
+2026-11-18 14:10:32 [792ms] [Warning] [carb] Failed to startup plugin carb.windowing-glfw.plugin (interfaces: [carb::windowing::IGLContext v1.0],[carb::windowing::IWindowing v1.4]) (impl: carb.windowing-glfw.plugin)
+2026-11-18 14:10:32 [792ms] [Error] [carb.glinterop.plugin] GLInteropContext::init: carb::windowing is not available
+
+|---------------------------------------------------------------------------------------------|
+| Driver Version: 550.107.02    | Graphics API: Vulkan
+|=============================================================================================|
+| GPU | Name                             | Active | LDA | GPU Memory | Vendor-ID | LUID       |
+|     |                                  |        |     |            | Device-ID | UUID       |
+|     |                                  |        |     |            | Bus-ID    |            |
+|---------------------------------------------------------------------------------------------|
+| 0   | NVIDIA GeForce RTX 4090 D        |        |     | 24810   MB | 10de      | 0          |
+|     |                                  |        |     |            | 2685      | 2e5eb292.. |
+|     |                                  |        |     |            | 16        |            |
+|---------------------------------------------------------------------------------------------|
+| 1   | NVIDIA GeForce RTX 4090 D        |        |     | 24810   MB | 10de      | 0          |
+|     |                                  |        |     |            | 2685      | a3815349.. |
+|     |                                  |        |     |            | 38        |            |
+|---------------------------------------------------------------------------------------------|
+| 2   | NVIDIA GeForce RTX 4090 D        |        |     | 24810   MB | 10de      | 0          |
+|     |                                  |        |     |            | 2685      | bdaca317.. |
+|     |                                  |        |     |            | 49        |            |
+|---------------------------------------------------------------------------------------------|
+| 3   | NVIDIA GeForce RTX 4090 D        |        |     | 24810   MB | 10de      | 0          |
+|     |                                  |        |     |            | 2685      | cb5e6810.. |
+|     |                                  |        |     |            | 5a        |            |
+|---------------------------------------------------------------------------------------------|
+| 4   | NVIDIA GeForce RTX 4090 D        |        |     | 24810   MB | 10de      | 0          |
+|     |                                  |        |     |            | 2685      | f5e04e17.. |
+|     |                                  |        |     |            | 98        |            |
+|---------------------------------------------------------------------------------------------|
+| 5   | NVIDIA GeForce RTX 4090 D        |        |     | 24810   MB | 10de      | 0          |
+|     |                                  |        |     |            | 2685      | 89b5a6fb.. |
+|     |                                  |        |     |            | b8        |            |
+|---------------------------------------------------------------------------------------------|
+| 6   | NVIDIA GeForce RTX 4090 D        | Yes: 0 |     | 24810   MB | 10de      | 0          |
+|     |                                  |        |     |            | 2685      | 3929407c.. |
+|     |                                  |        |     |            | c8        |            |
+|---------------------------------------------------------------------------------------------|
+| 7   | NVIDIA GeForce RTX 4090 D        |        |     | 24810   MB | 10de      | 0          |
+|     |                                  |        |     |            | 2685      | 768b855b.. |
+|     |                                  |        |     |            | d8        |            |
+|=============================================================================================|
+| OS: 22.04.5 LTS (Jammy Jellyfish) ubuntu, Version: 22.04.5, Kernel: 6.8.0-138-generic
+| Processor: INTEL(R) XEON(R) GOLD 6530 | Cores: 64 | Logical: 128
+|---------------------------------------------------------------------------------------------|
+| Total Memory (MB): 257552 | Free Memory: 189272
+| Total Page/Swap (MB): 2047 | Free Page/Swap: 1
+|---------------------------------------------------------------------------------------------|
+2026-11-18 14:10:34 [3,209ms] [Warning] [gpu.foundation.plugin] IOMMU is enabled.
+[3.751s] [ext: omni.kit.pipapi-0.0.0] startup
+[3.753s] [ext: omni.kit.pip_archive-0.0.0] startup
+[3.754s] [ext: omni.materialx.libs-1.0.4] startup
+[3.763s] [ext: omni.kit.loop-isaac-1.2.0] startup
+[3.763s] [ext: omni.kit.test-1.1.0] startup
+[3.816s] [ext: omni.kit.telemetry-0.5.0] startup
+[3.866s] [ext: omni.usd.config-1.0.4] startup
+[3.870s] [ext: omni.gpucompute.plugins-0.0.0] startup
+[3.871s] [ext: omni.usd.libs-1.0.1] startup
+[3.974s] [ext: omni.iray.libs-0.0.0] startup
+[3.980s] [ext: omni.mdl.neuraylib-0.2.8] startup
+[3.981s] [ext: omni.mdl-55.0.1] startup
+[4.002s] [ext: omni.kit.usd.mdl-1.0.1] startup
+[4.117s] [ext: omni.appwindow-1.1.8] startup
+2026-11-18 14:10:35 [3,927ms] [Warning] [carb.windowing-glfw.plugin] GLFW initialization failed.
+2026-11-18 14:10:35 [3,927ms] [Warning] [carb] Failed to startup plugin carb.windowing-glfw.plugin (interfaces: [carb::windowing::IGLContext v1.0],[carb::windowing::IWindowing v1.4]) (impl: carb.windowing-glfw.plugin)
+[4.120s] [ext: omni.kit.renderer.core-1.0.2] startup
+2026-11-18 14:10:35 [3,942ms] [Warning] [carb.windowing-glfw.plugin] GLFW initialization failed.
+2026-11-18 14:10:35 [3,942ms] [Warning] [carb] Failed to startup plugin carb.windowing-glfw.plugin (interfaces: [carb::windowing::IGLContext v1.0],[carb::windowing::IWindowing v1.4]) (impl: carb.windowing-glfw.plugin)
+2026-11-18 14:10:35 [3,949ms] [Warning] [carb.windowing-glfw.plugin] GLFW initialization failed.
+2026-11-18 14:10:35 [3,949ms] [Warning] [carb] Failed to startup plugin carb.windowing-glfw.plugin (interfaces: [carb::windowing::IGLContext v1.0],[carb::windowing::IWindowing v1.4]) (impl: carb.windowing-glfw.plugin)
+[4.142s] [ext: omni.kit.renderer.capture-0.0.0] startup
+[4.144s] [ext: omni.kit.renderer.imgui-1.0.1] startup
+2026-11-18 14:10:35 [3,956ms] [Warning] [carb.windowing-glfw.plugin] GLFW initialization failed.
+2026-11-18 14:10:35 [3,956ms] [Warning] [carb] Failed to startup plugin carb.windowing-glfw.plugin (interfaces: [carb::windowing::IGLContext v1.0],[carb::windowing::IWindowing v1.4]) (impl: carb.windowing-glfw.plugin)
+2026-11-18 14:10:35 [3,957ms] [Warning] [carb.windowing-glfw.plugin] GLFW initialization failed.
+2026-11-18 14:10:35 [3,957ms] [Warning] [carb] Failed to startup plugin carb.windowing-glfw.plugin (interfaces: [carb::windowing::IGLContext v1.0],[carb::windowing::IWindowing v1.4]) (impl: carb.windowing-glfw.plugin)
+2026-11-18 14:10:35 [3,959ms] [Warning] [carb.windowing-glfw.plugin] GLFW initialization failed.
+2026-11-18 14:10:35 [3,959ms] [Warning] [carb] Failed to startup plugin carb.windowing-glfw.plugin (interfaces: [carb::windowing::IGLContext v1.0],[carb::windowing::IWindowing v1.4]) (impl: carb.windowing-glfw.plugin)
+[4.229s] [ext: omni.ui-2.25.22] startup
+[4.240s] [ext: omni.kit.mainwindow-1.0.3] startup
+[4.241s] [ext: carb.audio-0.1.0] startup
+[4.248s] [ext: omni.uiaudio-1.0.0] startup
+[4.249s] [ext: omni.kit.uiapp-0.0.0] startup
+[4.249s] [ext: omni.usd.schema.semantics-0.0.0] startup
+[4.253s] [ext: omni.usd.schema.omnigraph-1.0.0] startup
+[4.261s] [ext: omni.usd.schema.geospatial-0.0.0] startup
+[4.264s] [ext: omni.usd.schema.physx-106.1.9] startup
+[4.299s] [ext: omni.usd.schema.audio-0.0.0] startup
+[4.303s] [ext: omni.anim.navigation.schema-106.1.0] startup
+[4.308s] [ext: omni.usd.schema.anim-0.0.0] startup
+[4.333s] [ext: omni.usd.schema.isaac-2.1.0] startup
+[4.342s] [ext: omni.usd.schema.scene.visualization-2.0.2] startup
+[4.343s] [ext: omni.usd.schema.omniscripting-1.0.0] startup
+[4.350s] [ext: omni.usd.schema.forcefield-106.1.9] startup
+[4.358s] [ext: omni.anim.graph.schema-106.1.0] startup
+[4.366s] [ext: omni.kit.actions.core-1.0.0] startup
+[4.368s] [ext: omni.usd_resolver-1.0.0] startup
+[4.374s] [ext: omni.activity.core-1.0.1] startup
+[4.376s] [ext: usdrt.scenegraph-7.5.0] startup
+[4.424s] [ext: omni.usd.core-1.4.1] startup
+[4.427s] [ext: omni.kit.commands-1.4.9] startup
+[4.431s] [ext: omni.resourcemonitor-105.0.1] startup
+[4.433s] [ext: omni.kit.widget.searchfield-1.1.8] startup
+[4.435s] [ext: omni.kit.widget.graph-1.12.15] startup
+[4.442s] [ext: omni.graph.exec-0.9.4] startup
+[4.443s] [ext: omni.hydra.scene_delegate-0.3.3] startup
+[4.449s] [ext: omni.hydra.usdrt_delegate-7.5.1] startup
+[4.468s] [ext: omni.kit.widget.options_menu-1.1.6] startup
+[4.471s] [ext: omni.kit.exec.core-0.13.4] startup
+[4.474s] [ext: omni.kit.window.popup_dialog-2.0.24] startup
+[4.476s] [ext: omni.kit.usd_undo-0.1.8] startup
+[4.477s] [ext: omni.kit.audiodeviceenum-1.0.1] startup
+[4.479s] [ext: omni.kit.widget.filter-1.1.4] startup
+[4.479s] [ext: omni.kit.menu.core-1.0.4] startup
+[4.480s] [ext: omni.kit.widget.nucleus_connector-1.1.9] startup
+[4.482s] [ext: omni.timeline-1.0.10] startup
+[4.484s] [ext: omni.kit.menu.utils-1.5.27] startup
+[4.493s] [ext: omni.kit.clipboard-1.0.4] startup
+[4.494s] [ext: omni.usd-1.12.2] startup
+[4.539s] [ext: omni.kit.window.extensions-1.4.11] startup
+[4.545s] [ext: omni.ui_query-1.1.4] startup
+[4.546s] [ext: omni.kit.widget.text_editor-1.0.2] startup
+[4.548s] [ext: omni.kvdb-106.1.9] startup
+[4.550s] [ext: omni.kit.property.adapter.core-1.0.1] startup
+[4.552s] [ext: omni.convexdecomposition-106.1.9] startup
+[4.558s] [ext: omni.kit.collaboration.telemetry-1.0.0] startup
+[4.559s] [ext: omni.localcache-106.1.9] startup
+[4.561s] [ext: omni.kit.property.adapter.usd-1.0.1] startup
+[4.562s] [ext: omni.inspect-1.0.1] startup
+[4.564s] [ext: omni.kit.collaboration.channel_manager-1.0.12] startup
+[4.566s] [ext: omni.kit.property.adapter.fabric-1.0.1] startup
+[4.567s] [ext: omni.usdphysics-106.1.9] startup
+[4.572s] [ext: omni.kit.widget.prompt-1.0.7] startup
+[4.573s] [ext: omni.kit.usd.layers-2.1.36] startup
+[4.582s] [ext: omni.graph.core-2.179.2] startup
+[4.585s] [ext: omni.ujitso.processor.texture-1.0.0] startup
+[4.586s] [ext: omni.kit.widget.nucleus_info-1.0.2] startup
+[4.587s] [ext: omni.kit.helper.file_utils-0.1.8] startup
+[4.589s] [ext: omni.kit.widget.path_field-2.0.10] startup
+[4.590s] [ext: omni.kit.search_core-1.0.5] startup
+[4.591s] [ext: omni.kit.widget.options_button-1.0.3] startup
+[4.591s] [ext: omni.kit.widget.context_menu-1.2.2] startup
+[4.593s] [ext: omni.kit.widget.filebrowser-2.10.51] startup
+[4.597s] [ext: omni.kit.widget.browser_bar-2.0.10] startup
+[4.598s] [ext: omni.ui.scene-1.10.3] startup
+[4.604s] [ext: omni.kit.widget.search_delegate-1.0.5] startup
+[4.605s] [ext: omni.kit.notification_manager-1.0.9] startup
+[4.607s] [ext: omni.kit.widget.searchable_combobox-1.0.6] startup
+[4.608s] [ext: omni.kit.window.filepicker-2.10.40] startup
+[4.619s] [ext: omni.kit.widget.settings-1.2.2] startup
+[4.621s] [ext: omni.kit.widget.live_session_management.ui-1.0.1] startup
+[4.624s] [ext: omni.kit.collaboration.presence_layer-1.0.9] startup
+[4.626s] [ext: omni.graph.tools-1.79.0] startup
+[4.648s] [ext: omni.graph.image.core-0.4.5] startup
+[4.651s] [ext: omni.ujitso.client-0.0.0] startup
+[4.652s] [ext: omni.kit.window.preferences-1.6.0] startup
+[4.761s] [ext: omni.hydra.rtx.shadercache.vulkan-1.0.0] startup
+[4.762s] [ext: omni.kit.widget.live_session_management-1.2.20] startup
+[4.764s] [ext: omni.physx.foundation-106.1.9] startup
+[4.766s] [ext: omni.graph.image.nodes-1.1.0] startup
+[4.770s] [ext: omni.kit.window.file_exporter-1.0.30] startup
+[4.773s] [ext: omni.kit.hotkeys.core-1.3.5] startup
+[4.774s] [ext: omni.kit.context_menu-1.8.1] startup
+[4.776s] [ext: omni.volume-0.5.0] startup
+[4.780s] [ext: omni.kit.widget.stage-2.11.2] startup
+[4.790s] [ext: omni.hydra.rtx-1.0.0] startup
+[4.813s] [ext: omni.kit.window.file_importer-1.1.12] startup
+[4.815s] [ext: omni.hydra.engine.stats-1.0.2] startup
+[4.818s] [ext: omni.kit.raycast.query-1.0.5] startup
+[4.824s] [ext: omni.kit.material.library-1.5.6] startup
+[4.830s] [ext: omni.kit.widget.highlight_label-1.0.2] startup
+[4.830s] [ext: omni.kit.hydra_texture-1.3.9] startup
+[4.835s] [ext: omni.kit.viewport.registry-104.0.6] startup
+[4.835s] [ext: omni.kit.stage_template.core-1.1.22] startup
+[4.836s] [ext: omni.kit.window.drop_support-1.0.3] startup
+[4.836s] [ext: omni.kit.widget.viewport-106.1.0] startup
+[4.840s] [ext: omni.kit.viewport.legacy_gizmos-1.1.0] startup
+[4.843s] [ext: omni.kit.window.file-1.3.54] startup
+[4.846s] [ext: omni.kit.window.content_browser_registry-0.0.6] startup
+[4.847s] [ext: omni.kit.viewport.window-107.0.6] startup
+[4.863s] [ext: omni.kit.window.property-1.11.3] startup
+[4.865s] [ext: omni.kit.window.content_browser-2.9.18] startup
+[4.880s] [ext: omni.debugdraw-0.1.3] startup
+[4.884s] [ext: omni.kit.viewport.utility-1.0.17] startup
+[4.885s] [ext: omni.kit.property.usd-4.2.8] startup
+[4.894s] [ext: omni.graph-1.140.0] startup
+[4.938s] [ext: omni.physx.cooking-106.1.9] startup
+2026-11-18 14:10:36 [4,762ms] [Error] [omni.datastore] Failed to acquire exclusive lock to data store (64>=64)
+2026-11-18 14:10:36 [4,762ms] [Error] [omni.datastore] Failed to create local file data store at '/data20t/embodied/share/inter-nav/envs/isaaclab/lib/python3.10/site-packages/omni/cache/Kit/106.1/10a4b5c0/PhysXLocalMeshCache/LocalDS0'
+[4.955s] [ext: omni.graph.ui-1.70.2] startup
+[4.974s] [ext: omni.physx-106.1.9] startup
+[4.990s] [ext: omni.graph.nodes-1.146.1] startup
+[5.003s] [ext: omni.physx.stageupdate-106.1.9] startup
+[5.007s] [ext: omni.kit.widget.material_preview-1.0.16] startup
+[5.009s] [ext: omni.isaac.version-1.1.0] startup
+[5.010s] [ext: omni.kit.primitive.mesh-1.0.17] startup
+[5.013s] [ext: omni.isaac.nucleus-0.3.1] startup
+[5.015s] [ext: omni.kit.stage_templates-1.2.5] startup
+[5.017s] [ext: omni.physics.tensors-106.1.9] startup
+[5.027s] [ext: omni.warp.core-1.2.1] startup
+[5.130s] [ext: omni.graph.scriptnode-1.20.1] startup
+[5.133s] [ext: omni.graph.action_core-1.1.6] startup
+[5.141s] [ext: omni.physx.tensors-106.1.9] startup
+[5.150s] [ext: omni.kit.manipulator.viewport-107.0.0] startup
+[5.153s] [ext: omni.graph.action_nodes-1.24.0] startup
+[5.160s] [ext: omni.kit.ui_test-1.3.2] startup
+[5.164s] [ext: omni.isaac.core-3.19.5] startup
+[6.708s] [ext: omni.graph.visualization.nodes-2.1.1] startup
+[6.718s] [ext: omni.graph.action-1.102.1] startup
+[6.722s] [ext: omni.kit.window.cursor-1.1.2] startup
+[6.726s] [ext: omni.isaac.ui-0.16.0] startup
+[6.737s] [ext: omni.kit.viewport.menubar.core-106.1.0] startup
+[6.757s] [ext: omni.kit.graph.delegate.default-1.2.2] startup
+[6.759s] [ext: omni.syntheticdata-0.6.9] startup
+[6.793s] [ext: omni.kit.graph.usd.commands-1.3.1] startup
+[6.795s] [ext: omni.kit.graph.editor.core-1.5.3] startup
+[6.803s] [ext: omni.kit.numpy.common-0.1.2] startup
+[6.806s] [ext: omni.warp-1.2.1] startup
+[6.824s] [ext: omni.kit.window.material_graph-1.8.18] startup
+[6.902s] [ext: omni.isaac.dynamic_control-1.3.8] startup
+[6.919s] [ext: omni.replicator.core-1.11.20] startup
+2026-11-18 14:10:38 [6,762ms] [Warning] [omni.replicator.core.scripts.annotators] Annotator PostProcessDispatch is already registered, overwriting annotator template
+[7.108s] [ext: omni.isaac.lula-3.0.1] startup
+[7.123s] [ext: omni.isaac.surface_gripper-1.0.1] startup
+[7.131s] [ext: omni.isaac.core_nodes-1.16.3] startup
+[7.162s] [ext: omni.isaac.motion_generation-7.1.0] startup
+[7.186s] [ext: omni.isaac.manipulators-2.1.0] startup
+[7.201s] [ext: omni.isaac.franka-0.4.1] startup
+[7.216s] [ext: omni.kit.graph.widget.variables-2.1.0] startup
+[7.225s] [ext: omni.kit.graph.delegate.modern-1.10.6] startup
+[7.244s] [ext: omni.isaac.cortex-0.3.9] startup
+[7.249s] [ext: omni.graph.window.core-1.113.1] startup
+[7.290s] [ext: omni.isaac.wheeled_robots-2.3.3] startup
+[7.320s] [ext: omni.isaac.cortex.sample_behaviors-1.0.6] startup
+[7.321s] [ext: omni.graph.window.generic-1.26.0] startup
+[7.348s] [ext: omni.isaac.menu-0.7.3] startup
+[7.363s] [ext: omni.kit.widget.live-2.1.8] startup
+[7.375s] [ext: omni.kit.actions.window-1.1.1] startup
+[7.390s] [ext: omni.kit.widget.cache_indicator-2.0.10] startup
+2026-11-18 14:10:38 [7,313ms] [Warning] [omni.kit.widget.cache_indicator.cache_state_menu] Unable to detect Omniverse Cache Server. File /data/zkj/.nvidia-omniverse/config/omniverse.toml is not found. Consider installing it for better IO performance.
+[7.507s] [ext: omni.kit.hotkeys.window-1.4.5] startup
+[7.515s] [ext: omni.kit.ui.actions-1.0.2] startup
+[7.516s] [ext: omni.kit.widget.stage_icons-1.0.5] startup
+[7.517s] [ext: omni.kit.menu.common-1.1.7] startup
+[7.519s] [ext: omni.kit.selection-0.1.4] startup
+[7.521s] [ext: omni.isaac.kit-1.13.2] startup
+[7.522s] [ext: omni.isaac.block_world-1.0.0] startup
+[7.525s] [ext: omni.kit.window.stage-2.5.10] startup
+[7.533s] [ext: omni.isaac.debug_draw-1.1.0] startup
+[7.538s] [ext: omni.kit.menu.edit-1.1.24] startup
+[7.547s] [ext: omni.kit.menu.file-1.1.14] startup
+[7.551s] [ext: omni.kit.profiler.window-2.2.3] startup
+[7.722s] [ext: omni.kit.menu.stage-1.2.5] startup
+[7.728s] [ext: omni.isaac.occupancy_map-1.0.3] startup
+[7.735s] [ext: omni.importer.mjcf-1.1.1] startup
+[7.744s] [ext: omni.graph.window.action-1.28.0] startup
+[7.753s] [ext: omni.kit.property.camera-1.0.8] startup
+[7.758s] [ext: omni.kit.property.light-1.0.10] startup
+[7.761s] [ext: omni.kit.property.geometry-1.3.1] startup
+[7.767s] [ext: omni.hydra.scene_api-0.1.2] startup
+[7.774s] [ext: omni.kit.property.audio-1.0.14] startup
+[7.779s] [ext: omni.kit.property.render-1.1.2] startup
+[7.781s] [ext: omni.kit.property.transform-1.5.9] startup
+[7.786s] [ext: omni.kit.property.material-1.10.8] startup
+[7.792s] [ext: omni.kit.widget.layers-1.8.0] startup
+[7.804s] [ext: omni.kit.property.isaac-0.2.3] startup
+[7.809s] [ext: omni.kit.property.bundle-1.3.1] startup
+[7.815s] [ext: omni.sensors.nv.common-1.2.2-isaac-1] startup
+[7.830s] [ext: omni.kit.property.layer-1.1.8] startup
+[7.834s] [ext: omni.kit.stage_column.payload-2.0.0] startup
+[7.838s] [ext: omni.isaac.scene_blox-0.1.2] startup
+[7.839s] [ext: omni.sensors.nv.materials-1.2.1-isaac-1] startup
+[7.842s] [ext: omni.sensors.nv.wpm-1.2.1-isaac-1] startup
+[7.844s] [ext: omni.kit.viewport.actions-106.0.2] startup
+[7.849s] [ext: omni.sensors.nv.lidar-1.2.2-isaac-1] startup
+[7.855s] [ext: omni.sensors.nv.radar-1.2.1-isaac-1] startup
+[7.863s] [ext: omni.kit.viewport.menubar.display-107.0.2] startup
+[7.867s] [ext: omni.kit.manipulator.transform-104.7.4] startup
+[7.870s] [ext: omni.kit.widget.toolbar-1.7.2] startup
+[7.877s] [ext: omni.sensors.tiled-0.0.6] startup
+[7.881s] [ext: omni.sensors.nv.ids-1.1.0-isaac-1] startup
+[7.887s] [ext: omni.isaac.range_sensor-3.1.2] startup
+[7.902s] [ext: omni.usdphysics.ui-106.1.9] startup
+[7.933s] [ext: omni.physx.commands-106.1.9] startup
+[7.940s] [ext: omni.kit.manipulator.tool.snap-1.5.11] startup
+[7.947s] [ext: omni.isaac.sensor-12.9.1] startup
+[8.030s] [ext: omni.kit.manipulator.selector-1.1.1] startup
+[8.036s] [ext: omni.physx.ui-106.1.9] startup
+[8.091s] [ext: omni.isaac.quadruped-2.0.1] startup
+[8.110s] [ext: omni.kit.viewport.manipulator.transform-107.0.2] startup
+[8.112s] [ext: omni.physx.demos-106.1.9] startup
+[8.135s] [ext: omni.kit.property.physx-106.1.9] startup
+[8.235s] [ext: omni.kit.widget.calendar-1.0.8] startup
+[8.240s] [ext: omni.kit.manipulator.prim.core-107.0.4] startup
+[8.249s] [ext: omni.fabric.commands-1.1.5] startup
+[8.255s] [ext: omni.physx.vehicle-106.1.9] startup
+[8.276s] [ext: omni.kit.widget.extended_searchfield-1.0.28] startup
+[8.296s] [ext: omni.kit.manipulator.prim.fabric-107.0.3] startup
+[8.299s] [ext: omni.kit.manipulator.prim.usd-107.0.2] startup
+[8.302s] [ext: omni.kit.widget.timeline-105.0.1] startup
+[8.305s] [ext: omni.kit.window.commands-0.2.6] startup
+[8.307s] [ext: omni.physx.camera-106.1.9] startup
+[8.323s] [ext: omni.kit.manipulator.camera-105.0.5] startup
+[8.328s] [ext: omni.kit.viewport.menubar.camera-107.0.2] startup
+[8.333s] [ext: omni.kit.manipulator.prim-107.0.0] startup
+[8.334s] [ext: omni.kit.manipulator.selection-106.0.1] startup
+[8.335s] [ext: omni.kit.window.toolbar-1.6.1] startup
+[8.339s] [ext: omni.kit.stage_column.variant-1.0.13] startup
+[8.342s] [ext: omni.kit.viewport.menubar.render-106.1.1] startup
+[8.346s] [ext: omni.kit.viewport.menubar.settings-107.0.3] startup
+[8.351s] [ext: omni.physx.cct-106.1.9] startup
+[8.365s] [ext: omni.physx.graph-106.1.9] startup
+[8.394s] [ext: omni.physx.supportui-106.1.9] startup
+[8.419s] [ext: omni.physx.telemetry-106.1.9] startup
+[8.425s] [ext: omni.graph.ui_nodes-1.26.0] startup
+[8.432s] [ext: omni.kit.viewport.bundle-104.0.1] startup
+[8.434s] [ext: omni.isaac.universal_robots-0.3.5] startup
+[8.436s] [ext: omni.kit.window.console-0.2.13] startup
+[8.451s] [ext: omni.kit.window.script_editor-1.7.6] startup
+[8.458s] [ext: omni.kit.menu.create-1.0.16] startup
+[8.461s] [ext: omni.graph.bundle.action-2.4.1] startup
+[8.467s] [ext: omni.physx.bundle-106.1.9] startup
+[8.469s] [ext: omni.rtx.window.settings-0.6.17] startup
+[8.485s] [ext: omni.kit.window.status_bar-0.1.7] startup
+[8.491s] [ext: omni.kit.window.title-1.1.5] startup
+[8.498s] [ext: omni.replicator.isaac-1.15.2] startup
+[8.534s] [ext: omni.replicator.replicator_yaml-2.0.6] startup
+[8.560s] [ext: omni.rtx.settings.core-0.6.3] startup
+[8.576s] [ext: omni.kit.viewport.menubar.lighting-106.0.2] startup
+[8.590s] [ext: semantics.schema.editor-0.3.8] startup
+[8.598s] [ext: semantics.schema.property-1.0.4] startup
+[8.599s] [ext: omni.kit.viewport.rtx-104.0.1] startup
+[8.599s] [ext: omni.isaac.utils-1.0.1] startup
+[8.606s] [ext: omni.isaac.cloner-0.8.1] startup
+[8.609s] [ext: omni.importer.urdf-1.14.1] startup
+[8.665s] [ext: omni.kit.window.stats-0.1.6] startup
+[8.675s] [ext: omni.isaac.sim.python-4.2.0] startup
+[8.678s] Simulation App Starting
+[11.534s] app ready
+2026-11-18 14:10:43 [12,063ms] [Warning] [omni.kit.imgui_renderer.plugin] _createExtendCursor: No windowing.
+2026-11-18 14:10:43 [12,063ms] [Warning] [omni.kit.imgui_renderer.plugin] _createExtendCursor: No windowing.
+[12.547s] Simulation App Startup Complete
+2026-11-18 14:10:54 [22,795ms] [Warning] [omni.hydra] Mesh '/robot/base_link/visuals' has corrupted data in primvar 'st_1': buffer size 1128 doesn't match expected size 17490 in faceVarying primvars
+2026-11-18 14:10:54 [22,795ms] [Warning] [omni.hydra] Mesh '/robot/base_link/visuals' has corrupted data in primvar 'st': buffer size 13110 doesn't match expected size 17490 in faceVarying primvars
+2026-11-18 14:10:54 [22,879ms] [Warning] [omni.hydra] Mesh '/robot/body_link4/visuals' has corrupted data in primvar 'st': buffer size 1242 doesn't match expected size 7908 in faceVarying primvars
+2026-11-18 14:10:54 [22,909ms] [Warning] [omni.hydra] Mesh '/robot/body_link5/visuals' has corrupted data in primvar 'st': buffer size 5970 doesn't match expected size 12918 in faceVarying primvars
+2026-11-18 14:10:56 [25,188ms] [Warning] [omni.physx.cooking.plugin] ConvexMeshCookingTask: failed to cook GPU-compatible mesh, collision detection will fall back to CPU. Collisions with particles and deformables will not work with this mesh. Prim /robot/base_link/AuditedConvexPieces/Hull_120
+2026-11-18 14:10:56 [25,190ms] [Warning] [omni.physx.cooking.plugin] ConvexMeshCookingTask: failed to cook GPU-compatible mesh, collision detection will fall back to CPU. Collisions with particles and deformables will not work with this mesh. Prim /robot/base_link/AuditedConvexPieces/Hull_124
+2026-11-18 14:10:56 [25,192ms] [Warning] [omni.physx.cooking.plugin] ConvexMeshCookingTask: failed to cook GPU-compatible mesh, collision detection will fall back to CPU. Collisions with particles and deformables will not work with this mesh. Prim /robot/body_link1/AuditedConvexPieces/Hull_005
+2026-11-18 14:10:56 [25,199ms] [Warning] [omni.physx.cooking.plugin] ConvexMeshCookingTask: failed to cook GPU-compatible mesh, collision detection will fall back to CPU. Collisions with particles and deformables will not work with this mesh. Prim /robot/body_link1/AuditedConvexPieces/Hull_044
+2026-11-18 14:10:56 [25,204ms] [Warning] [omni.physx.cooking.plugin] ConvexMeshCookingTask: failed to cook GPU-compatible mesh, collision detection will fall back to CPU. Collisions with particles and deformables will not work with this mesh. Prim /robot/body_link1/AuditedConvexPieces/Hull_071
+2026-11-18 14:10:56 [25,206ms] [Warning] [omni.physx.cooking.plugin] ConvexMeshCookingTask: failed to cook GPU-compatible mesh, collision detection will fall back to CPU. Collisions with particles and deformables will not work with this mesh. Prim /robot/body_link1/AuditedConvexPieces/Hull_085
+2026-11-18 14:10:56 [25,209ms] [Warning] [omni.physx.cooking.plugin] ConvexMeshCookingTask: failed to cook GPU-compatible mesh, collision detection will fall back to CPU. Collisions with particles and deformables will not work with this mesh. Prim /robot/body_link1/AuditedConvexPieces/Hull_101
+2026-11-18 14:10:56 [25,210ms] [Warning] [omni.physx.cooking.plugin] ConvexMeshCookingTask: failed to cook GPU-compatible mesh, collision detection will fall back to CPU. Collisions with particles and deformables will not work with this mesh. Prim /robot/body_link1/AuditedConvexPieces/Hull_103
+2026-11-18 14:10:56 [25,210ms] [Warning] [omni.physx.cooking.plugin] ConvexMeshCookingTask: failed to cook GPU-compatible mesh, collision detection will fall back to CPU. Collisions with particles and deformables will not work with this mesh. Prim /robot/body_link1/AuditedConvexPieces/Hull_107
+2026-11-18 14:10:56 [25,211ms] [Warning] [omni.physx.cooking.plugin] ConvexMeshCookingTask: failed to cook GPU-compatible mesh, collision detection will fall back to CPU. Collisions with particles and deformables will not work with this mesh. Prim /robot/body_link1/AuditedConvexPieces/Hull_112
+2026-11-18 14:10:56 [25,213ms] [Warning] [omni.physx.cooking.plugin] ConvexMeshCookingTask: failed to cook GPU-compatible mesh, collision detection will fall back to CPU. Collisions with particles and deformables will not work with this mesh. Prim /robot/body_link1/AuditedConvexPieces/Hull_122
+2026-11-18 14:10:56 [25,213ms] [Warning] [omni.physx.cooking.plugin] ConvexMeshCookingTask: failed to cook GPU-compatible mesh, collision detection will fall back to CPU. Collisions with particles and deformables will not work with this mesh. Prim /robot/body_link1/AuditedConvexPieces/Hull_123
+2026-11-18 14:10:56 [25,216ms] [Warning] [omni.physx.cooking.plugin] ConvexMeshCookingTask: failed to cook GPU-compatible mesh, collision detection will fall back to CPU. Collisions with particles and deformables will not work with this mesh. Prim /robot/body_link2/AuditedConvexPieces/Hull_021
+2026-11-18 14:10:56 [25,224ms] [Warning] [omni.physx.cooking.plugin] ConvexMeshCookingTask: failed to cook GPU-compatible mesh, collision detection will fall back to CPU. Collisions with particles and deformables will not work with this mesh. Prim /robot/body_link2/AuditedConvexPieces/Hull_074
+2026-11-18 14:10:56 [25,224ms] [Warning] [omni.physx.cooking.plugin] ConvexMeshCookingTask: failed to cook GPU-compatible mesh, collision detection will fall back to CPU. Collisions with particles and deformables will not work with this mesh. Prim /robot/body_link2/AuditedConvexPieces/Hull_077
+2026-11-18 14:10:56 [25,300ms] [Warning] [omni.physx.cooking.plugin] ConvexMeshCookingTask: failed to cook GPU-compatible mesh, collision detection will fall back to CPU. Collisions with particles and deformables will not work with this mesh. Prim /robot/head_link1/AuditedConvexPieces/Hull_021
+2026-11-18 14:10:57 [25,845ms] [Warning] [omni.physx.cooking.plugin] ConvexMeshCookingTask: failed to cook GPU-compatible mesh, collision detection will fall back to CPU. Collisions with particles and deformables will not work with this mesh. Prim /World/TestObject/AuditedConvexPieces/Hull_01031
+2026-11-18 14:10:57 [25,866ms] [Warning] [omni.physx.cooking.plugin] ConvexMeshCookingTask: failed to cook GPU-compatible mesh, collision detection will fall back to CPU. Collisions with particles and deformables will not work with this mesh. Prim /World/TestObject/AuditedConvexPieces/Hull_01196
+2026-11-18 14:10:57 [25,877ms] [Warning] [omni.physx.cooking.plugin] ConvexMeshCookingTask: failed to cook GPU-compatible mesh, collision detection will fall back to CPU. Collisions with particles and deformables will not work with this mesh. Prim /World/TestObject/AuditedConvexPieces/Hull_01287
+2026-11-18 14:10:58 [27,042ms] [Warning] [omni.physx.cooking.plugin] ConvexMeshCookingTask: failed to cook GPU-compatible mesh, collision detection will fall back to CPU. Collisions with particles and deformables will not work with this mesh. Prim /World/TestObject/AuditedConvexPieces/Hull_10077
+2026-11-18 14:10:59 [27,714ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/body_link1.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,714ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/body_link1.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,714ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/body_link2.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,714ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/body_link2.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,714ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/body_link3.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,715ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/body_link3.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,715ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/body_link4.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,715ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/body_link4.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,715ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/body_link5.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,715ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/body_link5.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,715ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/head_link1.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,715ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/head_link1.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,715ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/head_link2.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,715ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/head_link2.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,716ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/head_link3.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,716ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/head_link3.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,716ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_l_link1.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,716ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_l_link1.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,716ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_l_link2.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,716ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_l_link2.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,716ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_l_link3.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,716ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_l_link3.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,716ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_l_link4.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,716ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_l_link4.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,717ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_l_link5.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,717ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_l_link5.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,717ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_l_link6.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,717ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_l_link6.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,717ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_l_link7.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,717ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_l_link7.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,718ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_r_link1.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,718ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_r_link1.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,718ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_r_link2.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,718ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_r_link2.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,719ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_r_link3.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,719ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_r_link3.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,719ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_r_link4.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,719ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_r_link4.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,719ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_r_link5.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,719ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_r_link5.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,719ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_r_link6.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,719ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_r_link6.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,719ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_r_link7.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,719ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/arm_r_link7.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,720ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/chassis_lwheel_front_link1.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,720ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/chassis_lwheel_front_link1.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,720ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/chassis_lwheel_front_link2.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,721ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/chassis_lwheel_front_link2.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,721ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/chassis_lwheel_rear_link1.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,721ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/chassis_lwheel_rear_link1.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,721ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/chassis_lwheel_rear_link2.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,721ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/chassis_lwheel_rear_link2.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,721ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/chassis_rwheel_front_link1.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,721ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/chassis_rwheel_front_link1.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,721ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/chassis_rwheel_front_link2.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,721ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/chassis_rwheel_front_link2.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,721ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/chassis_rwheel_rear_link1.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,721ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/chassis_rwheel_rear_link1.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,722ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/chassis_rwheel_rear_link2.xformOp:translate> has typeName 'double3' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,722ms] [Warning] [omni.usd] Coding Error: in AddXformOp at line 208 of /builds/omniverse/usd-ci/USD/pxr/usd/usdGeom/xformable.cpp -- XformOp </robot/chassis_rwheel_rear_link2.xformOp:orient> has typeName 'quatd' which does not match the requested precision 'PrecisionFloat'. Proceeding to use existing typeName / precision.
+
+2026-11-18 14:10:59 [27,748ms] [Warning] [omni.physx.plugin] Detected a rigid at /World/TestObject with more than 4 velocity iterations being added to a TGS scene.The related behavior changed recently, please consult the changelog. This warning will only print once.
+2026-11-18 14:11:00 [29,497ms] [Warning] [omni.physx.plugin] Detected an articulation at /robot/base_link with more than 4 velocity iterations being added to a TGS scene.The related behavior changed recently, please consult the changelog. This warning will only print once.
+2026-11-18 14:11:01 [30,392ms] [Warning] [omni.physx.tensors.plugin] Cannot assign transform to non-root articulation link at '/robot/gripper_l_inner_link1'
+2026-11-18 14:11:01 [30,392ms] [Warning] [omni.physx.tensors.plugin] Cannot assign transform to non-root articulation link at '/robot/gripper_l_inner_link3'
+2026-11-18 14:11:01 [30,392ms] [Warning] [omni.physx.tensors.plugin] Cannot assign transform to non-root articulation link at '/robot/gripper_l_inner_link4'
+2026-11-18 14:11:01 [30,392ms] [Warning] [omni.physx.tensors.plugin] Cannot assign transform to non-root articulation link at '/robot/gripper_l_inner_link2'
+2026-11-18 14:11:01 [30,392ms] [Warning] [omni.physx.tensors.plugin] Cannot assign transform to non-root articulation link at '/robot/gripper_l_outer_link1'
+2026-11-18 14:11:01 [30,392ms] [Warning] [omni.physx.tensors.plugin] Cannot assign transform to non-root articulation link at '/robot/gripper_l_outer_link3'
+2026-11-18 14:11:01 [30,392ms] [Warning] [omni.physx.tensors.plugin] Cannot assign transform to non-root articulation link at '/robot/gripper_l_outer_link4'
+2026-11-18 14:11:01 [30,392ms] [Warning] [omni.physx.tensors.plugin] Cannot assign transform to non-root articulation link at '/robot/gripper_l_outer_link2'
+2026-11-18 14:11:01 [30,392ms] [Warning] [omni.physx.tensors.plugin] Cannot assign transform to non-root articulation link at '/robot/gripper_r_inner_link1'
+2026-11-18 14:11:01 [30,392ms] [Warning] [omni.physx.tensors.plugin] Cannot assign transform to non-root articulation link at '/robot/gripper_r_inner_link3'
+2026-11-18 14:11:01 [30,392ms] [Warning] [omni.physx.tensors.plugin] Cannot assign transform to non-root articulation link at '/robot/gripper_r_inner_link4'
+2026-11-18 14:11:01 [30,392ms] [Warning] [omni.physx.tensors.plugin] Cannot assign transform to non-root articulation link at '/robot/gripper_r_inner_link2'
+2026-11-18 14:11:01 [30,392ms] [Warning] [omni.physx.tensors.plugin] Cannot assign transform to non-root articulation link at '/robot/gripper_r_outer_link1'
+2026-11-18 14:11:01 [30,392ms] [Warning] [omni.physx.tensors.plugin] Cannot assign transform to non-root articulation link at '/robot/gripper_r_outer_link3'
+2026-11-18 14:11:01 [30,392ms] [Warning] [omni.physx.tensors.plugin] Cannot assign transform to non-root articulation link at '/robot/gripper_r_outer_link4'
+2026-11-18 14:11:01 [30,392ms] [Warning] [omni.physx.tensors.plugin] Cannot assign transform to non-root articulation link at '/robot/gripper_r_outer_link2'
+2026-11-18 14:11:01 [30,392ms] [Warning] [omni.physx.tensors.plugin] Cannot assign velocities to rigid body at '/robot/gripper_l_inner_link1'
+2026-11-18 14:11:01 [30,392ms] [Warning] [omni.physx.tensors.plugin] Cannot assign velocities to rigid body at '/robot/gripper_l_inner_link3'
+2026-11-18 14:11:01 [30,392ms] [Warning] [omni.physx.tensors.plugin] Cannot assign velocities to rigid body at '/robot/gripper_l_inner_link4'
+2026-11-18 14:11:01 [30,392ms] [Warning] [omni.physx.tensors.plugin] Cannot assign velocities to rigid body at '/robot/gripper_l_inner_link2'
+2026-11-18 14:11:01 [30,392ms] [Warning] [omni.physx.tensors.plugin] Cannot assign velocities to rigid body at '/robot/gripper_l_outer_link1'
+2026-11-18 14:11:01 [30,392ms] [Warning] [omni.physx.tensors.plugin] Cannot assign velocities to rigid body at '/robot/gripper_l_outer_link3'
+2026-11-18 14:11:01 [30,393ms] [Warning] [omni.physx.tensors.plugin] Cannot assign velocities to rigid body at '/robot/gripper_l_outer_link4'
+2026-11-18 14:11:01 [30,393ms] [Warning] [omni.physx.tensors.plugin] Cannot assign velocities to rigid body at '/robot/gripper_l_outer_link2'
+2026-11-18 14:11:01 [30,393ms] [Warning] [omni.physx.tensors.plugin] Cannot assign velocities to rigid body at '/robot/gripper_r_inner_link1'
+2026-11-18 14:11:01 [30,393ms] [Warning] [omni.physx.tensors.plugin] Cannot assign velocities to rigid body at '/robot/gripper_r_inner_link3'
+2026-11-18 14:11:01 [30,393ms] [Warning] [omni.physx.tensors.plugin] Cannot assign velocities to rigid body at '/robot/gripper_r_inner_link4'
+2026-11-18 14:11:01 [30,393ms] [Warning] [omni.physx.tensors.plugin] Cannot assign velocities to rigid body at '/robot/gripper_r_inner_link2'
+2026-11-18 14:11:01 [30,393ms] [Warning] [omni.physx.tensors.plugin] Cannot assign velocities to rigid body at '/robot/gripper_r_outer_link1'
+2026-11-18 14:11:01 [30,393ms] [Warning] [omni.physx.tensors.plugin] Cannot assign velocities to rigid body at '/robot/gripper_r_outer_link3'
+2026-11-18 14:11:01 [30,393ms] [Warning] [omni.physx.tensors.plugin] Cannot assign velocities to rigid body at '/robot/gripper_r_outer_link4'
+2026-11-18 14:11:01 [30,393ms] [Warning] [omni.physx.tensors.plugin] Cannot assign velocities to rigid body at '/robot/gripper_r_outer_link2'
+2026-11-18 14:11:06Starting kit application with the following args:  ['/data20t/embodied/share/inter-nav/envs/isaaclab/lib/python3.10/site-packages/isaacsim/exts/omni.isaac.kit/omni/isaac/kit/simulation_app.py', '/data20t/embodied/share/inter-nav/envs/isaaclab/lib/python3.10/site-packages/isaacsim/apps/omni.isaac.sim.python.kit', '--/app/tokens/exe-path=/data20t/embodied/share/inter-nav/envs/isaaclab/lib/python3.10/site-packages/omni', '--/persistent/app/viewport/displayOptions=3094', '--/rtx/materialDb/syncLoads=True', '--/rtx/hydra/materialSyncLoads=True', '--/omni.kit.plugin/syncUsdLoads=True', '--/app/renderer/resolution/width=1280', '--/app/renderer/resolution/height=720', '--/app/window/width=1440', '--/app/window/height=900', '--/renderer/multiGpu/enabled=False', '--/app/fastShutdown=True', '--ext-folder', '/data20t/embodied/share/inter-nav/envs/isaaclab/lib/python3.10/site-packages/isaacsim/exts', '--ext-folder', '/data20t/embodied/share/inter-nav/envs/isaaclab/lib/python3.10/site-packages/isaacsim/apps', '--/renderer/activeGpu=6', '--/physics/cudaDevice=6', '--portable', '--no-window', '--/app/window/hideUi=1']
+Passing the following args to the base kit application:  ['--asset', 'chair_wheeled', '--plan-dir', 'strategy15_pushcenter_validated_plans', '--candidate', '0', '--repeat', '3', '--gpu', '6']
+Warp 1.2.1 initialized:
+   CUDA Toolkit 11.8, Driver 12.4
+   Devices:
+     "cpu"      : "x86_64"
+     "cuda:0"   : "NVIDIA GeForce RTX 4090 D" (24 GiB, sm_89, mempool enabled)
+     "cuda:1"   : "NVIDIA GeForce RTX 4090 D" (24 GiB, sm_89, mempool enabled)
+     "cuda:2"   : "NVIDIA GeForce RTX 4090 D" (24 GiB, sm_89, mempool enabled)
+     "cuda:3"   : "NVIDIA GeForce RTX 4090 D" (24 GiB, sm_89, mempool enabled)
+     "cuda:4"   : "NVIDIA GeForce RTX 4090 D" (24 GiB, sm_89, mempool enabled)
+     "cuda:5"   : "NVIDIA GeForce RTX 4090 D" (24 GiB, sm_89, mempool enabled)
+     "cuda:6"   : "NVIDIA GeForce RTX 4090 D" (24 GiB, sm_89, mempool enabled)
+     "cuda:7"   : "NVIDIA GeForce RTX 4090 D" (24 GiB, sm_89, mempool enabled)
+   CUDA peer access:
+     Not supported
+   Kernel cache:
+     /data/zkj/.cache/warp/1.2.1
+G2_TRIAL_RESULT {"test_type": "rigid_chair_push", "asset": "chair_wheeled", "candidate": 0, "repeat": 3, "success": true, "source_sha256": "a345e90c02dd6d14636d361636b11a7cbdfbcfd4bb6d185bcff49bc27f550d8c", "gravity_compensation": true, "cartesian_feedback": "world-frame arm push trajectory; contact force gate; release then stationary hold; no object pose writes", "initialization": "USD joint states, link transforms and drive targets seeded before world.reset per official Genie Sim guidance", "physics_step_protocol": "one explicit 1/120s step per control tick; render does not advance physics; motion duration x1.75; 10fps video", "mass_kg": 1.0, "mass_source": "common screening assumption, not a real measured mass", "static_friction": 1.0, "dynamic_friction": 0.9, "required_forward_push_m": 0.1, "hold_seconds": 3.0, "max_object_tilt_deg": 10.0, "max_lateral_drift_m": 0.0023505622521042824, "max_yaw_error_deg": 0.35070282827996835, "max_final_speed_m_s": 0.02, "self_collision_enabled": true, "max_loaded_visual_gap_m": 0.0015, "max_contact_point_surface_error_m": 0.0025, "robot_fixed_to_world": false, "object_attachment": false, "transport_tested": false, "push_tested": true, "lift_tested": false, "wheel_rolling_modeled": false, "object_articulation_mode": "single rigid body slides on ground", "gripper_coupling": "native PhysX mimic constraints; only master finger joints actuated", "runtime": "Isaac Sim 4.2 compatibility harness, official CRS + OmniPicker geometry", "drive_assumption": "IDEAL body kp100000 kd5000 cap1e7; other joints baseline; corrected inertia; not real hardware validation", "gravity_compensation_method": "URDF dU/dq; ideal body torque cap; other original limits", "envelope": {"max_torso_tilt_deg": 20.0, "max_body_joint_deg": 180.0, "max_static_effort_fraction": 0.8}, "support_height_m": 0.0, "includes_descent": false, "self_collision_exclusions": [["/robot/arm_l_link7", "/robot/gripper_l_inner_link1"], ["/robot/arm_l_link7", "/robot/gripper_l_inner_link3"], ["/robot/arm_l_link7", "/robot/gripper_l_inner_link4"], ["/robot/arm_l_link7", "/robot/gripper_l_inner_link2"], ["/robot/arm_l_link7", "/robot/gripper_l_outer_link1"], ["/robot/arm_l_link7", "/robot/gripper_l_outer_link3"], ["/robot/arm_l_link7", "/robot/gripper_l_outer_link4"], ["/robot/arm_l_link7", "/robot/gripper_l_outer_link2"], ["/robot/gripper_l_inner_link1", "/robot/gripper_l_inner_link3"], ["/robot/gripper_l_inner_link1", "/robot/gripper_l_inner_link4"], ["/robot/gripper_l_inner_link1", "/robot/gripper_l_inner_link2"], ["/robot/gripper_l_inner_link1", "/robot/gripper_l_outer_link1"], ["/robot/gripper_l_inner_link1", "/robot/gripper_l_outer_link3"], ["/robot/gripper_l_inner_link1", "/robot/gripper_l_outer_link4"], ["/robot/gripper_l_inner_link1", "/robot/gripper_l_outer_link2"], ["/robot/gripper_l_inner_link3", "/robot/gripper_l_inner_link4"], ["/robot/gripper_l_inner_link3", "/robot/gripper_l_inner_link2"], ["/robot/gripper_l_inner_link3", "/robot/gripper_l_outer_link1"], ["/robot/gripper_l_inner_link3", "/robot/gripper_l_outer_link3"], ["/robot/gripper_l_inner_link3", "/robot/gripper_l_outer_link4"], ["/robot/gripper_l_inner_link3", "/robot/gripper_l_outer_link2"], ["/robot/gripper_l_inner_link4", "/robot/gripper_l_inner_link2"], ["/robot/gripper_l_inner_link4", "/robot/gripper_l_outer_link1"], ["/robot/gripper_l_inner_link4", "/robot/gripper_l_outer_link3"], ["/robot/gripper_l_inner_link4", "/robot/gripper_l_outer_link4"], ["/robot/gripper_l_inner_link4", "/robot/gripper_l_outer_link2"], ["/robot/gripper_l_inner_link2", "/robot/gripper_l_outer_link1"], ["/robot/gripper_l_inner_link2", "/robot/gripper_l_outer_link3"], ["/robot/gripper_l_inner_link2", "/robot/gripper_l_outer_link4"], ["/robot/gripper_l_inner_link2", "/robot/gripper_l_outer_link2"], ["/robot/gripper_l_outer_link1", "/robot/gripper_l_outer_link3"], ["/robot/gripper_l_outer_link1", "/robot/gripper_l_outer_link4"], ["/robot/gripper_l_outer_link1", "/robot/gripper_l_outer_link2"], ["/robot/gripper_l_outer_link3", "/robot/gripper_l_outer_link4"], ["/robot/gripper_l_outer_link3", "/robot/gripper_l_outer_link2"], ["/robot/gripper_l_outer_link4", "/robot/gripper_l_outer_link2"], ["/robot/arm_r_link7", "/robot/gripper_r_inner_link1"], ["/robot/arm_r_link7", "/robot/gripper_r_inner_link3"], ["/robot/arm_r_link7", "/robot/gripper_r_inner_link4"], ["/robot/arm_r_link7", "/robot/gripper_r_inner_link2"], ["/robot/arm_r_link7", "/robot/gripper_r_outer_link1"], ["/robot/arm_r_link7", "/robot/gripper_r_outer_link3"], ["/robot/arm_r_link7", "/robot/gripper_r_outer_link4"], ["/robot/arm_r_link7", "/robot/gripper_r_outer_link2"], ["/robot/gripper_r_inner_link1", "/robot/gripper_r_inner_link3"], ["/robot/gripper_r_inner_link1", "/robot/gripper_r_inner_link4"], ["/robot/gripper_r_inner_link1", "/robot/gripper_r_inner_link2"], ["/robot/gripper_r_inner_link1", "/robot/gripper_r_outer_link1"], ["/robot/gripper_r_inner_link1", "/robot/gripper_r_outer_link3"], ["/robot/gripper_r_inner_link1", "/robot/gripper_r_outer_link4"], ["/robot/gripper_r_inner_link1", "/robot/gripper_r_outer_link2"], ["/robot/gripper_r_inner_link3", "/robot/gripper_r_inner_link4"], ["/robot/gripper_r_inner_link3", "/robot/gripper_r_inner_link2"], ["/robot/gripper_r_inner_link3", "/robot/gripper_r_outer_link1"], ["/robot/gripper_r_inner_link3", "/robot/gripper_r_outer_link3"], ["/robot/gripper_r_inner_link3", "/robot/gripper_r_outer_link4"], ["/robot/gripper_r_inner_link3", "/robot/gripper_r_outer_link2"], ["/robot/gripper_r_inner_link4", "/robot/gripper_r_inner_link2"], ["/robot/gripper_r_inner_link4", "/robot/gripper_r_outer_link1"], ["/robot/gripper_r_inner_link4", "/robot/gripper_r_outer_link3"], ["/robot/gripper_r_inner_link4", "/robot/gripper_r_outer_link4"], ["/robot/gripper_r_inner_link4", "/robot/gripper_r_outer_link2"], ["/robot/gripper_r_inner_link2", "/robot/gripper_r_outer_link1"], ["/robot/gripper_r_inner_link2", "/robot/gripper_r_outer_link3"], ["/robot/gripper_r_inner_link2", "/robot/gripper_r_outer_link4"], ["/robot/gripper_r_inner_link2", "/robot/gripper_r_outer_link2"], ["/robot/gripper_r_outer_link1", "/robot/gripper_r_outer_link3"], ["/robot/gripper_r_outer_link1", "/robot/gripper_r_outer_link4"], ["/robot/gripper_r_outer_link1", "/robot/gripper_r_outer_link2"], ["/robot/gripper_r_outer_link3", "/robot/gripper_r_outer_link4"], ["/robot/gripper_r_outer_link3", "/robot/gripper_r_outer_link2"], ["/robot/gripper_r_outer_link4", "/robot/gripper_r_outer_link2"], ["/robot/base_link", "/robot/body_link1"], ["/robot/base_link", "/robot/body_link2"], ["/robot/base_link", "/robot/chassis_lwheel_front_link1"], ["/robot/base_link", "/robot/chassis_lwheel_front_link2"], ["/robot/base_link", "/robot/chassis_lwheel_rear_link1"], ["/robot/base_link", "/robot/chassis_lwheel_rear_link2"], ["/robot/base_link", "/robot/chassis_rwheel_front_link1"], ["/robot/base_link", "/robot/chassis_rwheel_front_link2"], ["/robot/base_link", "/robot/chassis_rwheel_rear_link1"], ["/robot/base_link", "/robot/chassis_rwheel_rear_link2"], ["/robot/body_link1", "/robot/body_link2"], ["/robot/body_link1", "/robot/body_link3"], ["/robot/body_link1", "/robot/chassis_lwheel_front_link1"], ["/robot/body_link1", "/robot/chassis_lwheel_rear_link1"], ["/robot/body_link1", "/robot/chassis_rwheel_front_link1"], ["/robot/body_link1", "/robot/chassis_rwheel_rear_link1"], ["/robot/body_link2", "/robot/body_link3"], ["/robot/body_link2", "/robot/body_link4"], ["/robot/body_link3", "/robot/body_link4"], ["/robot/body_link3", "/robot/body_link5"], ["/robot/body_link4", "/robot/body_link5"], ["/robot/body_link4", "/robot/head_link1"], ["/robot/body_link4", "/robot/arm_l_link1"], ["/robot/body_link4", "/robot/arm_r_link1"], ["/robot/body_link5", "/robot/head_link1"], ["/robot/body_link5", "/robot/head_link2"], ["/robot/body_link5", "/robot/head_link3"], ["/robot/body_link5", "/robot/arm_l_link1"], ["/robot/body_link5", "/robot/arm_l_link2"], ["/robot/body_link5", "/robot/arm_r_link1"], ["/robot/body_link5", "/robot/arm_r_link2"], ["/robot/head_link1", "/robot/head_link2"], ["/robot/head_link1", "/robot/head_link3"], ["/robot/head_link1", "/robot/arm_l_link1"], ["/robot/head_link1", "/robot/arm_r_link1"], ["/robot/head_link2", "/robot/head_link3"], ["/robot/arm_l_link1", "/robot/arm_l_link2"], ["/robot/arm_l_link1", "/robot/arm_l_link3"], ["/robot/arm_l_link1", "/robot/arm_r_link1"], ["/robot/arm_l_link2", "/robot/arm_l_link3"], ["/robot/arm_l_link2", "/robot/arm_l_link4"], ["/robot/arm_l_link3", "/robot/arm_l_link4"], ["/robot/arm_l_link3", "/robot/arm_l_link5"], ["/robot/arm_l_link4", "/robot/arm_l_link5"], ["/robot/arm_l_link4", "/robot/arm_l_link6"], ["/robot/arm_l_link5", "/robot/arm_l_link6"], ["/robot/arm_l_link5", "/robot/arm_l_link7"], ["/robot/arm_l_link6", "/robot/arm_l_link7"], ["/robot/arm_l_link6", "/robot/gripper_l_inner_link1"], ["/robot/arm_l_link6", "/robot/gripper_l_outer_link1"], ["/robot/arm_l_link7", "/robot/gripper_l_inner_link1"], ["/robot/arm_l_link7", "/robot/gripper_l_outer_link1"], ["/robot/gripper_l_inner_link1", "/robot/gripper_l_inner_link3"], ["/robot/gripper_l_inner_link1", "/robot/gripper_l_inner_link4"], ["/robot/gripper_l_inner_link1", "/robot/gripper_l_outer_link1"], ["/robot/gripper_l_inner_link3", "/robot/gripper_l_inner_link4"], ["/robot/gripper_l_inner_link3", "/robot/gripper_l_inner_link2"], ["/robot/gripper_l_inner_link4", "/robot/gripper_l_inner_link2"], ["/robot/gripper_l_outer_link1", "/robot/gripper_l_outer_link3"], ["/robot/gripper_l_outer_link1", "/robot/gripper_l_outer_link4"], ["/robot/gripper_l_outer_link3", "/robot/gripper_l_outer_link4"], ["/robot/gripper_l_outer_link3", "/robot/gripper_l_outer_link2"], ["/robot/gripper_l_outer_link4", "/robot/gripper_l_outer_link2"], ["/robot/arm_r_link1", "/robot/arm_r_link2"], ["/robot/arm_r_link1", "/robot/arm_r_link3"], ["/robot/arm_r_link2", "/robot/arm_r_link3"], ["/robot/arm_r_link2", "/robot/arm_r_link4"], ["/robot/arm_r_link3", "/robot/arm_r_link4"], ["/robot/arm_r_link3", "/robot/arm_r_link5"], ["/robot/arm_r_link4", "/robot/arm_r_link5"], ["/robot/arm_r_link4", "/robot/arm_r_link6"], ["/robot/arm_r_link5", "/robot/arm_r_link6"], ["/robot/arm_r_link5", "/robot/arm_r_link7"], ["/robot/arm_r_link6", "/robot/arm_r_link7"], ["/robot/arm_r_link6", "/robot/gripper_r_inner_link1"], ["/robot/arm_r_link6", "/robot/gripper_r_outer_link1"], ["/robot/arm_r_link7", "/robot/gripper_r_inner_link1"], ["/robot/arm_r_link7", "/robot/gripper_r_outer_link1"], ["/robot/gripper_r_inner_link1", "/robot/gripper_r_inner_link3"], ["/robot/gripper_r_inner_link1", "/robot/gripper_r_inner_link4"], ["/robot/gripper_r_inner_link1", "/robot/gripper_r_outer_link1"], ["/robot/gripper_r_inner_link3", "/robot/gripper_r_inner_link4"], ["/robot/gripper_r_inner_link3", "/robot/gripper_r_inner_link2"], ["/robot/gripper_r_inner_link4", "/robot/gripper_r_inner_link2"], ["/robot/gripper_r_outer_link1", "/robot/gripper_r_outer_link3"], ["/robot/gripper_r_outer_link1", "/robot/gripper_r_outer_link4"], ["/robot/gripper_r_outer_link3", "/robot/gripper_r_outer_link4"], ["/robot/gripper_r_outer_link3", "/robot/gripper_r_outer_link2"], ["/robot/gripper_r_outer_link4", "/robot/gripper_r_outer_link2"], ["/robot/chassis_lwheel_front_link1", "/robot/chassis_lwheel_front_link2"], ["/robot/chassis_lwheel_front_link1", "/robot/chassis_lwheel_rear_link1"], ["/robot/chassis_lwheel_front_link1", "/robot/chassis_rwheel_front_link1"], ["/robot/chassis_lwheel_front_link1", "/robot/chassis_rwheel_rear_link1"], ["/robot/chassis_lwheel_rear_link1", "/robot/chassis_lwheel_rear_link2"], ["/robot/chassis_lwheel_rear_link1", "/robot/chassis_rwheel_front_link1"], ["/robot/chassis_lwheel_rear_link1", "/robot/chassis_rwheel_rear_link1"], ["/robot/chassis_rwheel_front_link1", "/robot/chassis_rwheel_front_link2"], ["/robot/chassis_rwheel_front_link1", "/robot/chassis_rwheel_rear_link1"], ["/robot/chassis_rwheel_rear_link1", "/robot/chassis_rwheel_rear_link2"]], "disabled_collision_schemas_removed": 116, "object_joint_count": 0, "object_mass_api_kg": 1.0, "object_initial_position_error_m": 0.0019804657641635604, "object_initial_orientation_dot": 1.0000001192092896, "fk_initial_errors_m": {"gripper_l_inner_link1": 3.3486554209889243e-07, "gripper_l_inner_link3": 3.478374692015316e-07, "gripper_l_inner_link4": 3.683756825145379e-07, "gripper_l_inner_link2": 3.728253558679339e-07, "gripper_l_outer_link1": 3.3215904526914054e-07, "gripper_l_outer_link3": 3.472707170234412e-07, "gripper_l_outer_link4": 3.5910667578438284e-07, "gripper_l_outer_link2": 3.5995276761558116e-07, "gripper_r_inner_link1": 5.126973597588417e-07, "gripper_r_inner_link3": 4.964577856699842e-07, "gripper_r_inner_link4": 5.484798676135637e-07, "gripper_r_inner_link2": 4.77191854544667e-07, "gripper_r_outer_link1": 5.240777001708656e-07, "gripper_r_outer_link3": 5.070533959417552e-07, "gripper_r_outer_link4": 4.5869409377630126e-07, "gripper_r_outer_link2": 4.6348218427904775e-07}, "failure": null, "push_forward_m": 0.1398819088935852, "max_push_tilt_deg": 0.535623911960755, "final_hold_max_speed_m_s": 0.000405956176109612, "final_hold_max_hand_force_n": 0.0, "contact_samples": 124, "max_hand_force_n": 23.226350784301758, "contact_witness_points": 131, "max_contact_surface_error_m": 0.0009094721625086978, "frames": 244, "simulated_seconds": 24.525}
+ [35,192ms] [Warning] [omni.syntheticdata.plugin] OgnSdPostRenderVarToHost : rendervar copy from texture directly to host buffer is counter-performant. Please use copy from texture to device buffer first.
+2026-11-18 14:15:19 [288,212ms] [Warning] [carb.windowing-glfw.plugin] GLFW initialization failed.
+2026-11-18 14:15:19 [288,212ms] [Warning] [carb] Failed to startup plugin carb.windowing-glfw.plugin (interfaces: [carb::windowing::IGLContext v1.0],[carb::windowing::IWindowing v1.4]) (impl: carb.windowing-glfw.plugin)
+2026-11-18 14:15:20 [289,089ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_l_link1
+
+2026-11-18 14:15:20 [289,089ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_l_link1
+
+2026-11-18 14:15:20 [289,089ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_l_link2
+
+2026-11-18 14:15:20 [289,089ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_l_link2
+
+2026-11-18 14:15:20 [289,089ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_l_link3
+
+2026-11-18 14:15:20 [289,089ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_l_link3
+
+2026-11-18 14:15:20 [289,089ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_l_link4
+
+2026-11-18 14:15:20 [289,089ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_l_link4
+
+2026-11-18 14:15:20 [289,089ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_l_link5
+
+2026-11-18 14:15:20 [289,089ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_l_link5
+
+2026-11-18 14:15:20 [289,089ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_l_link6
+
+2026-11-18 14:15:20 [289,089ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_l_link6
+
+2026-11-18 14:15:20 [289,089ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_l_link7
+
+2026-11-18 14:15:20 [289,089ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_l_link7
+
+2026-11-18 14:15:20 [289,089ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_r_link1
+
+2026-11-18 14:15:20 [289,089ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_r_link1
+
+2026-11-18 14:15:20 [289,089ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_r_link2
+
+2026-11-18 14:15:20 [289,089ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_r_link2
+
+2026-11-18 14:15:20 [289,089ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_r_link3
+
+2026-11-18 14:15:20 [289,089ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_r_link3
+
+2026-11-18 14:15:20 [289,089ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_r_link4
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_r_link4
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_r_link5
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_r_link5
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_r_link6
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_r_link6
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_r_link7
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_r_link7
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/body_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/body_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/body_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/body_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/body_link3
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/body_link3
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/body_link4
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/body_link4
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/body_link5
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/body_link5
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/chassis_lwheel_front_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/chassis_lwheel_front_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/chassis_lwheel_front_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/chassis_lwheel_front_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/chassis_lwheel_rear_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/chassis_lwheel_rear_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/chassis_lwheel_rear_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/chassis_lwheel_rear_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/chassis_rwheel_front_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/chassis_rwheel_front_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/chassis_rwheel_front_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/chassis_rwheel_front_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/chassis_rwheel_rear_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/chassis_rwheel_rear_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/chassis_rwheel_rear_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/chassis_rwheel_rear_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/head_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/head_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/head_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/head_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/head_link3
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/head_link3
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_l_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_l_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_l_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_l_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_l_link3
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_l_link3
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_l_link4
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_l_link4
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_l_link5
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_l_link5
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_l_link6
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_l_link6
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_l_link7
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_l_link7
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_r_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_r_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_r_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_r_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_r_link3
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_r_link3
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_r_link4
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_r_link4
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_r_link5
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_r_link5
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_r_link6
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_r_link6
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/arm_r_link7
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/arm_r_link7
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/body_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/body_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/body_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/body_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/body_link3
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/body_link3
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/body_link4
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/body_link4
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/body_link5
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/body_link5
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/chassis_lwheel_front_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/chassis_lwheel_front_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/chassis_lwheel_front_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/chassis_lwheel_front_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/chassis_lwheel_rear_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/chassis_lwheel_rear_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/chassis_lwheel_rear_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/chassis_lwheel_rear_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/chassis_rwheel_front_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/chassis_rwheel_front_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/chassis_rwheel_front_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/chassis_rwheel_front_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/chassis_rwheel_rear_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/chassis_rwheel_rear_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/chassis_rwheel_rear_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/chassis_rwheel_rear_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/head_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/head_link1
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/head_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/head_link2
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:orient for /robot/head_link3
+
+2026-11-18 14:15:20 [289,090ms] [Warning] [omni.hydra.scene_delegate.plugin] cannot find xform op xformOp:translate for /robot/head_link3
+
+2026-11-18 14:15:22 [290,909ms] [Warning] [carb] Plugin interface for a client: omni.hydratexture.plugin was already released.
+2026-11-18 14:15:22 [290,909ms] [Warning] [omni.usd] Unexpected reference count of 2 for UsdStage '/data20t/embodied/zkj/inter-nav-results/g2-push-20261118/strategy15_pushcenterinit_trials/strategy15_pushcenter_validated_plans/chair_wheeled/candidate0_repeat3/prepared_scene.usdc' while being closed in UsdContext (this may indicate it is still resident in memory).
+[291.233s] Simulation App Shutting Down

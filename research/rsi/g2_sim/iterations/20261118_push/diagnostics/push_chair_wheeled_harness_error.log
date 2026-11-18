@@ -1,0 +1,15 @@
+Traceback (most recent call last):
+  File "/data20t/embodied/zkj/inter-nav-results/g2-push-20261118/plan_strategy15_push.py", line 114, in <module>
+    p=argparse.ArgumentParser();p.add_argument('--asset',required=True);a=p.parse_args();d=plan(a.asset)
+  File "/data20t/embodied/zkj/inter-nav-results/g2-push-20261118/plan_strategy15_push.py", line 66, in plan
+    from push_candidates import candidates
+  File "/data20t/embodied/zkj/inter-nav-results/g2-push-20261118/push_candidates.py", line 36
+    groups=[{'l':p} for p in sorted(points,key=lambda p:abs(p[1]))[:4] if points else []
+                                                                                 ^^^^
+SyntaxError: invalid syntax
+Traceback (most recent call last):
+  File "/data20t/embodied/zkj/inter-nav-results/g2-push-20261118/run_push_plan.py", line 4, in <module>
+    for cmd in [['plan_strategy15_push.py','--asset',aid],['strategy15_push_validate_plans.py',aid],['strategy15_push_audit_native_self.py',aid]]:subprocess.run([py,str(R/cmd[0]),*cmd[1:]],cwd=R,env=env,check=True)
+  File "/usr/lib/python3.10/subprocess.py", line 526, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/data20t/embodied/share/inter-nav/envs/isaaclab/bin/python', '/data20t/embodied/zkj/inter-nav-results/g2-push-20261118/plan_strategy15_push.py', '--asset', 'chair_wheeled']' returned non-zero exit status 1.
