@@ -3,6 +3,10 @@ import argparse,json,shutil,os
 from pathlib import Path
 from pxr import Usd,UsdGeom,UsdPhysics,Gf
 ap=argparse.ArgumentParser();ap.add_argument('--fixtures',type=Path,default=Path(__file__).with_name('fixtures'));ap.add_argument('--home',type=Path,required=True);ap.add_argument('--objects',type=Path,required=True);ap.add_argument('--out',type=Path,required=True);a=ap.parse_args();a.out.mkdir(parents=True,exist_ok=True)
+for name in ('object_catalog.json','coverage.json','task_diversity.json','diversity_validation.json','layout_validation.json','selected.json'):
+ source=a.fixtures/name
+ if source.exists():shutil.copy2(source,a.out/name)
+(a.out/'physics_validation.json').write_text(json.dumps({'passed':False,'scenes':[],'scope':'not run on this machine'},indent=2))
 for ep in sorted(a.fixtures.glob('S*/episodes.json')):
  d=json.loads(ep.read_text());dest=a.out/d['id'];dest.mkdir(exist_ok=True)
  assert (a.home/d['scene']).is_file(),a.home/d['scene']

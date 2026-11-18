@@ -1,6 +1,6 @@
-# GRScenes × Genie2 fixed-layout benchmark v0.2
+# GRScenes × Genie2 fixed-layout benchmark v0.2 — multiple-bottleneck revision
 
-This research prototype contains **10 scenes, 10 fixed initial layouts, and 100 navigation tasks**. Each scene has three movable rigid objects and ten distinct, non-reversed start/goal pairs: eight interaction-required tasks and two optimal non-interaction controls. Every episode resets all objects to the same scene-level initial poses. Task selection never changes the layout. The 15 asset types come from `genie2-rsi` commit `c9ce1a5ba405905f4d626fe630c485ca60fe128a`.
+This research prototype contains **10 scenes, 10 fixed initial layouts, and 100 navigation tasks**. Each scene has movable rigid objects and ten distinct, non-reversed start/goal pairs: eight interaction-required tasks and two optimal non-interaction controls. Every episode resets all objects to the same scene-level initial poses. Task selection never changes the layout. The 15 asset types come from `genie2-rsi` commit `c9ce1a5ba405905f4d626fe630c485ca60fe128a`.
 
 This benchmark is separate from the earlier stage-one delivery. Its platform is **Genie2/G2 CRS**, not Go2. It is a geometric task dataset and scene-loading prototype; it does not yet provide a validated G2 navigation/manipulation agent.
 
@@ -71,8 +71,20 @@ Frozen fixtures are preferred for reproducible evaluation. To regenerate the see
 
 ```bash
 python fine_maps.py --home "$HOME_ASSETS" --selected fixtures/selected.json --out fine_maps
-python upgrade_connectivity.py --old fixtures --fine fine_maps --objects "$OBJECT_ASSETS" --home "$HOME_ASSETS" --out generated
+python design_multi_cut.py --source fixtures --fine fine_maps --objects "$OBJECT_ASSETS" --out designed
+python validate_multicut.py --out designed --objects "$OBJECT_ASSETS"
+python materialize.py --fixtures designed --home "$HOME_ASSETS" --objects "$OBJECT_ASSETS" --out generated
 python validate.py --out generated --objects "$OBJECT_ASSETS"
 ```
 
-The placement search fits object footprints to static geometry, seeks global connectivity cuts, and selects parking poses that preserve the remaining connected navigation area. Farthest-point landmarks prioritize long geodesic routes; task selection also covers different connected-region pairs and objects used in minimum-relocation witnesses. Reversed endpoint pairs are not counted as new tasks. `coverage.json` records both asset presence and use in the selected clearing plans. `--reuse-layouts` only resamples tasks from an existing generated layout. Future diversity should be added through new scenes, retaining one frozen layout per scene.
+The placement search fits object footprints to static geometry and rewards new splits of previously connected regions. An existing cut left unchanged by another object is not counted as a new blocking location. Each accepted layout must have at least three meaningful disconnected initial regions (each containing at least 0.65 m² of nominal endpoint core), at least three region-pair combinations among required tasks, and at least two objects used in selected clearing witnesses. Parking must preserve usable endpoint space in at least three initial regions while restoring a nominal connected route network. `validate_multicut.py` recomputes these conditions and checks static/object collisions of initial and parked raster footprints.
+
+`layout_validation.json` records the topology and each object's role: which tasks become connected when only that object moves, and which remain blocked when every other object is parked. These are binary pose-state connectivity tests, not physical object-transfer trajectories. `diversify_tasks.py` selects spatially distributed tasks within a frozen layout and is also used by the placement builder. Future diversity should be added through new scenes, retaining one frozen layout per scene.
+
+## Task diversity revision
+
+Farthest-point samples cover the feasible navigation component. Up to ten endpoint regions are seeded at least 2 m apart in geodesic distance; these are spatial coverage bins, not semantic room labels. Short, medium, and long tasks are defined relative to each scene's candidate routes. The eight required tasks target a 3/3/2 split, with a flexible allocation of one to four tasks per stratum if the feasible route distribution requires it. Both controls are selected for additional coverage.
+
+No endpoint position is used more than twice. Route similarity is checked in both directions using the Jaccard overlap of 0.25 m rasterized route corridors with a one-cell buffer. Every pair of selected tasks has corridor IoU at most 0.65; this is not the fraction of identical trajectory length. `task_diversity.json` and `diversity_validation.json` report the complete scene-wise distributions and checks of the frozen tasks. `coverage.json` separately records asset presence and use in selected clearing plans.
+
+The viewer opens in **all-task overview** mode, with numbered starts and goals. Select one task to inspect its route, length stratum, initial connected regions (C labels), and selected clearing objects. R labels describe spatial endpoint bins; C labels describe actual initial connectivity in the optimistic model. The multiple-bottleneck revision changes object poses, so initial passive placement tests must be rerun for these layouts. G2 robot execution is still pending.
