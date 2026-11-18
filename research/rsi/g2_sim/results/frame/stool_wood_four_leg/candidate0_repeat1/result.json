@@ -1,0 +1,3377 @@
+{
+  "test_type": "upright_grasp",
+  "asset": "stool_wood_four_leg",
+  "candidate": 0,
+  "repeat": 1,
+  "success": false,
+  "source_sha256": "b6c2da0827d02a2c5636439120ebda43efd9495668d6268957001715cb57e72d",
+  "gravity_compensation": true,
+  "cartesian_feedback": "arms-only feedback; fixed torso; no whole-body fallback; no object pose writes",
+  "initialization": "USD joint states, link transforms and drive targets seeded before world.reset per official Genie Sim guidance",
+  "mass_kg": 1.0,
+  "mass_source": "common screening assumption, not a real measured mass",
+  "static_friction": 1.0,
+  "dynamic_friction": 0.9,
+  "required_lift_m": 0.15,
+  "hold_seconds": 3.0,
+  "max_object_tilt_deg": 20.0,
+  "max_hold_relative_drift_m": 0.02,
+  "self_collision_enabled": true,
+  "max_loaded_visual_gap_m": 0.0015,
+  "max_contact_point_surface_error_m": 0.0025,
+  "robot_fixed_to_world": false,
+  "object_attachment": false,
+  "transport_tested": false,
+  "gripper_coupling": "native PhysX mimic constraints; only master finger joints actuated",
+  "runtime": "Isaac Sim 4.2 compatibility harness, official CRS + OmniPicker geometry",
+  "drive_assumption": "IDEAL body kp100000 kd5000 cap1e7; other joints baseline; corrected inertia; not real hardware validation",
+  "gravity_compensation_method": "URDF dU/dq; ideal body torque cap; other original limits",
+  "envelope": {
+    "max_torso_tilt_deg": 20.0,
+    "max_body_joint_deg": 180.0,
+    "max_static_effort_fraction": 0.8
+  },
+  "support_height_m": 0.0,
+  "includes_descent": true,
+  "self_collision_exclusions": [
+    [
+      "/robot/arm_l_link7",
+      "/robot/gripper_l_inner_link1"
+    ],
+    [
+      "/robot/arm_l_link7",
+      "/robot/gripper_l_inner_link3"
+    ],
+    [
+      "/robot/arm_l_link7",
+      "/robot/gripper_l_inner_link4"
+    ],
+    [
+      "/robot/arm_l_link7",
+      "/robot/gripper_l_inner_link2"
+    ],
+    [
+      "/robot/arm_l_link7",
+      "/robot/gripper_l_outer_link1"
+    ],
+    [
+      "/robot/arm_l_link7",
+      "/robot/gripper_l_outer_link3"
+    ],
+    [
+      "/robot/arm_l_link7",
+      "/robot/gripper_l_outer_link4"
+    ],
+    [
+      "/robot/arm_l_link7",
+      "/robot/gripper_l_outer_link2"
+    ],
+    [
+      "/robot/gripper_l_inner_link1",
+      "/robot/gripper_l_inner_link3"
+    ],
+    [
+      "/robot/gripper_l_inner_link1",
+      "/robot/gripper_l_inner_link4"
+    ],
+    [
+      "/robot/gripper_l_inner_link1",
+      "/robot/gripper_l_inner_link2"
+    ],
+    [
+      "/robot/gripper_l_inner_link1",
+      "/robot/gripper_l_outer_link1"
+    ],
+    [
+      "/robot/gripper_l_inner_link1",
+      "/robot/gripper_l_outer_link3"
+    ],
+    [
+      "/robot/gripper_l_inner_link1",
+      "/robot/gripper_l_outer_link4"
+    ],
+    [
+      "/robot/gripper_l_inner_link1",
+      "/robot/gripper_l_outer_link2"
+    ],
+    [
+      "/robot/gripper_l_inner_link3",
+      "/robot/gripper_l_inner_link4"
+    ],
+    [
+      "/robot/gripper_l_inner_link3",
+      "/robot/gripper_l_inner_link2"
+    ],
+    [
+      "/robot/gripper_l_inner_link3",
+      "/robot/gripper_l_outer_link1"
+    ],
+    [
+      "/robot/gripper_l_inner_link3",
+      "/robot/gripper_l_outer_link3"
+    ],
+    [
+      "/robot/gripper_l_inner_link3",
+      "/robot/gripper_l_outer_link4"
+    ],
+    [
+      "/robot/gripper_l_inner_link3",
+      "/robot/gripper_l_outer_link2"
+    ],
+    [
+      "/robot/gripper_l_inner_link4",
+      "/robot/gripper_l_inner_link2"
+    ],
+    [
+      "/robot/gripper_l_inner_link4",
+      "/robot/gripper_l_outer_link1"
+    ],
+    [
+      "/robot/gripper_l_inner_link4",
+      "/robot/gripper_l_outer_link3"
+    ],
+    [
+      "/robot/gripper_l_inner_link4",
+      "/robot/gripper_l_outer_link4"
+    ],
+    [
+      "/robot/gripper_l_inner_link4",
+      "/robot/gripper_l_outer_link2"
+    ],
+    [
+      "/robot/gripper_l_inner_link2",
+      "/robot/gripper_l_outer_link1"
+    ],
+    [
+      "/robot/gripper_l_inner_link2",
+      "/robot/gripper_l_outer_link3"
+    ],
+    [
+      "/robot/gripper_l_inner_link2",
+      "/robot/gripper_l_outer_link4"
+    ],
+    [
+      "/robot/gripper_l_inner_link2",
+      "/robot/gripper_l_outer_link2"
+    ],
+    [
+      "/robot/gripper_l_outer_link1",
+      "/robot/gripper_l_outer_link3"
+    ],
+    [
+      "/robot/gripper_l_outer_link1",
+      "/robot/gripper_l_outer_link4"
+    ],
+    [
+      "/robot/gripper_l_outer_link1",
+      "/robot/gripper_l_outer_link2"
+    ],
+    [
+      "/robot/gripper_l_outer_link3",
+      "/robot/gripper_l_outer_link4"
+    ],
+    [
+      "/robot/gripper_l_outer_link3",
+      "/robot/gripper_l_outer_link2"
+    ],
+    [
+      "/robot/gripper_l_outer_link4",
+      "/robot/gripper_l_outer_link2"
+    ],
+    [
+      "/robot/arm_r_link7",
+      "/robot/gripper_r_inner_link1"
+    ],
+    [
+      "/robot/arm_r_link7",
+      "/robot/gripper_r_inner_link3"
+    ],
+    [
+      "/robot/arm_r_link7",
+      "/robot/gripper_r_inner_link4"
+    ],
+    [
+      "/robot/arm_r_link7",
+      "/robot/gripper_r_inner_link2"
+    ],
+    [
+      "/robot/arm_r_link7",
+      "/robot/gripper_r_outer_link1"
+    ],
+    [
+      "/robot/arm_r_link7",
+      "/robot/gripper_r_outer_link3"
+    ],
+    [
+      "/robot/arm_r_link7",
+      "/robot/gripper_r_outer_link4"
+    ],
+    [
+      "/robot/arm_r_link7",
+      "/robot/gripper_r_outer_link2"
+    ],
+    [
+      "/robot/gripper_r_inner_link1",
+      "/robot/gripper_r_inner_link3"
+    ],
+    [
+      "/robot/gripper_r_inner_link1",
+      "/robot/gripper_r_inner_link4"
+    ],
+    [
+      "/robot/gripper_r_inner_link1",
+      "/robot/gripper_r_inner_link2"
+    ],
+    [
+      "/robot/gripper_r_inner_link1",
+      "/robot/gripper_r_outer_link1"
+    ],
+    [
+      "/robot/gripper_r_inner_link1",
+      "/robot/gripper_r_outer_link3"
+    ],
+    [
+      "/robot/gripper_r_inner_link1",
+      "/robot/gripper_r_outer_link4"
+    ],
+    [
+      "/robot/gripper_r_inner_link1",
+      "/robot/gripper_r_outer_link2"
+    ],
+    [
+      "/robot/gripper_r_inner_link3",
+      "/robot/gripper_r_inner_link4"
+    ],
+    [
+      "/robot/gripper_r_inner_link3",
+      "/robot/gripper_r_inner_link2"
+    ],
+    [
+      "/robot/gripper_r_inner_link3",
+      "/robot/gripper_r_outer_link1"
+    ],
+    [
+      "/robot/gripper_r_inner_link3",
+      "/robot/gripper_r_outer_link3"
+    ],
+    [
+      "/robot/gripper_r_inner_link3",
+      "/robot/gripper_r_outer_link4"
+    ],
+    [
+      "/robot/gripper_r_inner_link3",
+      "/robot/gripper_r_outer_link2"
+    ],
+    [
+      "/robot/gripper_r_inner_link4",
+      "/robot/gripper_r_inner_link2"
+    ],
+    [
+      "/robot/gripper_r_inner_link4",
+      "/robot/gripper_r_outer_link1"
+    ],
+    [
+      "/robot/gripper_r_inner_link4",
+      "/robot/gripper_r_outer_link3"
+    ],
+    [
+      "/robot/gripper_r_inner_link4",
+      "/robot/gripper_r_outer_link4"
+    ],
+    [
+      "/robot/gripper_r_inner_link4",
+      "/robot/gripper_r_outer_link2"
+    ],
+    [
+      "/robot/gripper_r_inner_link2",
+      "/robot/gripper_r_outer_link1"
+    ],
+    [
+      "/robot/gripper_r_inner_link2",
+      "/robot/gripper_r_outer_link3"
+    ],
+    [
+      "/robot/gripper_r_inner_link2",
+      "/robot/gripper_r_outer_link4"
+    ],
+    [
+      "/robot/gripper_r_inner_link2",
+      "/robot/gripper_r_outer_link2"
+    ],
+    [
+      "/robot/gripper_r_outer_link1",
+      "/robot/gripper_r_outer_link3"
+    ],
+    [
+      "/robot/gripper_r_outer_link1",
+      "/robot/gripper_r_outer_link4"
+    ],
+    [
+      "/robot/gripper_r_outer_link1",
+      "/robot/gripper_r_outer_link2"
+    ],
+    [
+      "/robot/gripper_r_outer_link3",
+      "/robot/gripper_r_outer_link4"
+    ],
+    [
+      "/robot/gripper_r_outer_link3",
+      "/robot/gripper_r_outer_link2"
+    ],
+    [
+      "/robot/gripper_r_outer_link4",
+      "/robot/gripper_r_outer_link2"
+    ],
+    [
+      "/robot/base_link",
+      "/robot/body_link1"
+    ],
+    [
+      "/robot/base_link",
+      "/robot/body_link2"
+    ],
+    [
+      "/robot/base_link",
+      "/robot/chassis_lwheel_front_link1"
+    ],
+    [
+      "/robot/base_link",
+      "/robot/chassis_lwheel_front_link2"
+    ],
+    [
+      "/robot/base_link",
+      "/robot/chassis_lwheel_rear_link1"
+    ],
+    [
+      "/robot/base_link",
+      "/robot/chassis_lwheel_rear_link2"
+    ],
+    [
+      "/robot/base_link",
+      "/robot/chassis_rwheel_front_link1"
+    ],
+    [
+      "/robot/base_link",
+      "/robot/chassis_rwheel_front_link2"
+    ],
+    [
+      "/robot/base_link",
+      "/robot/chassis_rwheel_rear_link1"
+    ],
+    [
+      "/robot/base_link",
+      "/robot/chassis_rwheel_rear_link2"
+    ],
+    [
+      "/robot/body_link1",
+      "/robot/body_link2"
+    ],
+    [
+      "/robot/body_link1",
+      "/robot/body_link3"
+    ],
+    [
+      "/robot/body_link1",
+      "/robot/chassis_lwheel_front_link1"
+    ],
+    [
+      "/robot/body_link1",
+      "/robot/chassis_lwheel_rear_link1"
+    ],
+    [
+      "/robot/body_link1",
+      "/robot/chassis_rwheel_front_link1"
+    ],
+    [
+      "/robot/body_link1",
+      "/robot/chassis_rwheel_rear_link1"
+    ],
+    [
+      "/robot/body_link2",
+      "/robot/body_link3"
+    ],
+    [
+      "/robot/body_link2",
+      "/robot/body_link4"
+    ],
+    [
+      "/robot/body_link3",
+      "/robot/body_link4"
+    ],
+    [
+      "/robot/body_link3",
+      "/robot/body_link5"
+    ],
+    [
+      "/robot/body_link4",
+      "/robot/body_link5"
+    ],
+    [
+      "/robot/body_link4",
+      "/robot/head_link1"
+    ],
+    [
+      "/robot/body_link4",
+      "/robot/arm_l_link1"
+    ],
+    [
+      "/robot/body_link4",
+      "/robot/arm_r_link1"
+    ],
+    [
+      "/robot/body_link5",
+      "/robot/head_link1"
+    ],
+    [
+      "/robot/body_link5",
+      "/robot/head_link2"
+    ],
+    [
+      "/robot/body_link5",
+      "/robot/head_link3"
+    ],
+    [
+      "/robot/body_link5",
+      "/robot/arm_l_link1"
+    ],
+    [
+      "/robot/body_link5",
+      "/robot/arm_l_link2"
+    ],
+    [
+      "/robot/body_link5",
+      "/robot/arm_r_link1"
+    ],
+    [
+      "/robot/body_link5",
+      "/robot/arm_r_link2"
+    ],
+    [
+      "/robot/head_link1",
+      "/robot/head_link2"
+    ],
+    [
+      "/robot/head_link1",
+      "/robot/head_link3"
+    ],
+    [
+      "/robot/head_link1",
+      "/robot/arm_l_link1"
+    ],
+    [
+      "/robot/head_link1",
+      "/robot/arm_r_link1"
+    ],
+    [
+      "/robot/head_link2",
+      "/robot/head_link3"
+    ],
+    [
+      "/robot/arm_l_link1",
+      "/robot/arm_l_link2"
+    ],
+    [
+      "/robot/arm_l_link1",
+      "/robot/arm_l_link3"
+    ],
+    [
+      "/robot/arm_l_link1",
+      "/robot/arm_r_link1"
+    ],
+    [
+      "/robot/arm_l_link2",
+      "/robot/arm_l_link3"
+    ],
+    [
+      "/robot/arm_l_link2",
+      "/robot/arm_l_link4"
+    ],
+    [
+      "/robot/arm_l_link3",
+      "/robot/arm_l_link4"
+    ],
+    [
+      "/robot/arm_l_link3",
+      "/robot/arm_l_link5"
+    ],
+    [
+      "/robot/arm_l_link4",
+      "/robot/arm_l_link5"
+    ],
+    [
+      "/robot/arm_l_link4",
+      "/robot/arm_l_link6"
+    ],
+    [
+      "/robot/arm_l_link5",
+      "/robot/arm_l_link6"
+    ],
+    [
+      "/robot/arm_l_link5",
+      "/robot/arm_l_link7"
+    ],
+    [
+      "/robot/arm_l_link6",
+      "/robot/arm_l_link7"
+    ],
+    [
+      "/robot/arm_l_link6",
+      "/robot/gripper_l_inner_link1"
+    ],
+    [
+      "/robot/arm_l_link6",
+      "/robot/gripper_l_outer_link1"
+    ],
+    [
+      "/robot/arm_l_link7",
+      "/robot/gripper_l_inner_link1"
+    ],
+    [
+      "/robot/arm_l_link7",
+      "/robot/gripper_l_outer_link1"
+    ],
+    [
+      "/robot/gripper_l_inner_link1",
+      "/robot/gripper_l_inner_link3"
+    ],
+    [
+      "/robot/gripper_l_inner_link1",
+      "/robot/gripper_l_inner_link4"
+    ],
+    [
+      "/robot/gripper_l_inner_link1",
+      "/robot/gripper_l_outer_link1"
+    ],
+    [
+      "/robot/gripper_l_inner_link3",
+      "/robot/gripper_l_inner_link4"
+    ],
+    [
+      "/robot/gripper_l_inner_link3",
+      "/robot/gripper_l_inner_link2"
+    ],
+    [
+      "/robot/gripper_l_inner_link4",
+      "/robot/gripper_l_inner_link2"
+    ],
+    [
+      "/robot/gripper_l_outer_link1",
+      "/robot/gripper_l_outer_link3"
+    ],
+    [
+      "/robot/gripper_l_outer_link1",
+      "/robot/gripper_l_outer_link4"
+    ],
+    [
+      "/robot/gripper_l_outer_link3",
+      "/robot/gripper_l_outer_link4"
+    ],
+    [
+      "/robot/gripper_l_outer_link3",
+      "/robot/gripper_l_outer_link2"
+    ],
+    [
+      "/robot/gripper_l_outer_link4",
+      "/robot/gripper_l_outer_link2"
+    ],
+    [
+      "/robot/arm_r_link1",
+      "/robot/arm_r_link2"
+    ],
+    [
+      "/robot/arm_r_link1",
+      "/robot/arm_r_link3"
+    ],
+    [
+      "/robot/arm_r_link2",
+      "/robot/arm_r_link3"
+    ],
+    [
+      "/robot/arm_r_link2",
+      "/robot/arm_r_link4"
+    ],
+    [
+      "/robot/arm_r_link3",
+      "/robot/arm_r_link4"
+    ],
+    [
+      "/robot/arm_r_link3",
+      "/robot/arm_r_link5"
+    ],
+    [
+      "/robot/arm_r_link4",
+      "/robot/arm_r_link5"
+    ],
+    [
+      "/robot/arm_r_link4",
+      "/robot/arm_r_link6"
+    ],
+    [
+      "/robot/arm_r_link5",
+      "/robot/arm_r_link6"
+    ],
+    [
+      "/robot/arm_r_link5",
+      "/robot/arm_r_link7"
+    ],
+    [
+      "/robot/arm_r_link6",
+      "/robot/arm_r_link7"
+    ],
+    [
+      "/robot/arm_r_link6",
+      "/robot/gripper_r_inner_link1"
+    ],
+    [
+      "/robot/arm_r_link6",
+      "/robot/gripper_r_outer_link1"
+    ],
+    [
+      "/robot/arm_r_link7",
+      "/robot/gripper_r_inner_link1"
+    ],
+    [
+      "/robot/arm_r_link7",
+      "/robot/gripper_r_outer_link1"
+    ],
+    [
+      "/robot/gripper_r_inner_link1",
+      "/robot/gripper_r_inner_link3"
+    ],
+    [
+      "/robot/gripper_r_inner_link1",
+      "/robot/gripper_r_inner_link4"
+    ],
+    [
+      "/robot/gripper_r_inner_link1",
+      "/robot/gripper_r_outer_link1"
+    ],
+    [
+      "/robot/gripper_r_inner_link3",
+      "/robot/gripper_r_inner_link4"
+    ],
+    [
+      "/robot/gripper_r_inner_link3",
+      "/robot/gripper_r_inner_link2"
+    ],
+    [
+      "/robot/gripper_r_inner_link4",
+      "/robot/gripper_r_inner_link2"
+    ],
+    [
+      "/robot/gripper_r_outer_link1",
+      "/robot/gripper_r_outer_link3"
+    ],
+    [
+      "/robot/gripper_r_outer_link1",
+      "/robot/gripper_r_outer_link4"
+    ],
+    [
+      "/robot/gripper_r_outer_link3",
+      "/robot/gripper_r_outer_link4"
+    ],
+    [
+      "/robot/gripper_r_outer_link3",
+      "/robot/gripper_r_outer_link2"
+    ],
+    [
+      "/robot/gripper_r_outer_link4",
+      "/robot/gripper_r_outer_link2"
+    ],
+    [
+      "/robot/chassis_lwheel_front_link1",
+      "/robot/chassis_lwheel_front_link2"
+    ],
+    [
+      "/robot/chassis_lwheel_front_link1",
+      "/robot/chassis_lwheel_rear_link1"
+    ],
+    [
+      "/robot/chassis_lwheel_front_link1",
+      "/robot/chassis_rwheel_front_link1"
+    ],
+    [
+      "/robot/chassis_lwheel_front_link1",
+      "/robot/chassis_rwheel_rear_link1"
+    ],
+    [
+      "/robot/chassis_lwheel_rear_link1",
+      "/robot/chassis_lwheel_rear_link2"
+    ],
+    [
+      "/robot/chassis_lwheel_rear_link1",
+      "/robot/chassis_rwheel_front_link1"
+    ],
+    [
+      "/robot/chassis_lwheel_rear_link1",
+      "/robot/chassis_rwheel_rear_link1"
+    ],
+    [
+      "/robot/chassis_rwheel_front_link1",
+      "/robot/chassis_rwheel_front_link2"
+    ],
+    [
+      "/robot/chassis_rwheel_front_link1",
+      "/robot/chassis_rwheel_rear_link1"
+    ],
+    [
+      "/robot/chassis_rwheel_rear_link1",
+      "/robot/chassis_rwheel_rear_link2"
+    ]
+  ],
+  "disabled_collision_schemas_removed": 111,
+  "fk_initial_errors_m": {
+    "gripper_l_inner_link1": 2.3778113465821878e-07,
+    "gripper_l_inner_link3": 2.2530091452572817e-07,
+    "gripper_l_inner_link4": 2.1567641222621284e-07,
+    "gripper_l_inner_link2": 2.1421042699541893e-07,
+    "gripper_l_outer_link1": 2.0523144330833774e-07,
+    "gripper_l_outer_link3": 2.2439651541975491e-07,
+    "gripper_l_outer_link4": 1.9173327150525374e-07,
+    "gripper_l_outer_link2": 2.3313158408542714e-07,
+    "gripper_r_inner_link1": 3.697983374895311e-07,
+    "gripper_r_inner_link3": 4.2367897828730197e-07,
+    "gripper_r_inner_link4": 4.093506512676565e-07,
+    "gripper_r_inner_link2": 3.927358690265822e-07,
+    "gripper_r_outer_link1": 3.01446370092554e-07,
+    "gripper_r_outer_link3": 3.315527698624142e-07,
+    "gripper_r_outer_link4": 3.1240776435751574e-07,
+    "gripper_r_outer_link2": 2.9728356798298417e-07
+  },
+  "surface_error_events": [
+    {
+      "t": 21.6,
+      "phase": "close",
+      "link": "gripper_l_outer_link4",
+      "object_error_m": [
+        0.0013742633720332832,
+        0.0012574443285947579,
+        0.0013679198097664767,
+        0.00041684633370914524,
+        0.0004949025031349379,
+        0.0004908961370993552,
+        0.0005411612405135316,
+        0.0007884323501526182,
+        0.0005441608194375931,
+        0.0007909005585573255,
+        0.000902685467956303,
+        0.0006552741763138101,
+        0.0009741156522680987,
+        0.0008410429945152054,
+        0.0007884323501526182,
+        0.0005976628130478616,
+        0.0014847043955854816,
+        0.0002426746885686839,
+        0.001317971948239894,
+        0.0012985244510354092,
+        0.001151705886366241,
+        0.0011442010042217589,
+        0.0009800223520193753,
+        0.00019748854166232378,
+        0.00019675016085699326,
+        0.00042946814453637214,
+        0.0004720314982007494,
+        0.0004567920514407433,
+        0.00018624983154484197,
+        0.0012308623605256064,
+        0.0011022583892673849,
+        0.0022264324400283614,
+        0.0014915653660435737,
+        0.0012189694984915242,
+        0.0012985244510354092,
+        0.0012002660442696923,
+        0.0011364969032418004,
+        0.0006388188703457565,
+        0.00029201744674475094,
+        0.000333501373126353,
+        0.0012599488820122246,
+        0.001351651713508602,
+        0.0008490162695384242,
+        0.000724440668732769,
+        0.0006328343858548008,
+        0.0011012404985904936,
+        0.001080356876550645,
+        0.00044414636011123323,
+        0.0005275094248767118,
+        0.0014614904159089405,
+        0.001829177444117704,
+        0.0013822904821170524,
+        0.0011654117844567917,
+        0.0011520116450560844,
+        0.00043201877641666896,
+        0.0006416308201663696,
+        0.0008279070905757067,
+        0.0009138244796302502,
+        0.0009146982234479424,
+        0.00033937771254545626,
+        0.0006917617762655368,
+        0.0008095742905455837,
+        0.0030251914364321808,
+        0.0027288550984019364,
+        0.00013949621275060052,
+        0.0005381677426386773,
+        0.0014243493260416358,
+        0.0008393650296382021,
+        0.0008477766815613564,
+        0.0004544084707597449,
+        0.00042793388131019585,
+        0.0008691744343290851,
+        0.0007314707396617621,
+        0.0033725218259637586,
+        0.0010156477957142804,
+        0.00016248953977953995,
+        0.0017688602069275714,
+        0.0016606332302536199,
+        0.0007129020496105653,
+        0.0004378188423638392,
+        0.00045804022917085086,
+        0.0004579249934429182,
+        0.0004378383001704734,
+        0.0019229300507867912
+      ],
+      "finger_error_m": [
+        2.4064412870838553e-05,
+        0.00022806945164935042,
+        1.8238196350807725e-05,
+        0.0007203901995089627,
+        0.00042191553998504824,
+        0.000380229666800716,
+        0.0006052677579253825,
+        0.0012398136196005158,
+        0.0005562669502165375,
+        0.0012219248529740368,
+        0.00016792127438657422,
+        0.000418807260638847,
+        0.00012228377057235895,
+        5.721900783957888e-05,
+        0.0012398136196005158,
+        0.00047165845600555424,
+        1.726035211029705e-05,
+        0.00010784898525109928,
+        0.0003592124964820078,
+        0.0011014091890996277,
+        0.00017824525038506012,
+        0.0009250720915592288,
+        0.0005080879700924462,
+        0.0004572862743598885,
+        3.886794453854191e-05,
+        0.0005230311861898377,
+        0.0005529340474326988,
+        0.0005042335689403916,
+        0.00034596585252086385,
+        0.001032546602937711,
+        0.0008302075051114417,
+        0.0006944570442534872,
+        8.939096228829748e-05,
+        0.0011066930105510311,
+        0.0011014091890996277,
+        0.0009358994928876234,
+        0.0008765508142219769,
+        0.00038227882812672643,
+        0.0001291296626720159,
+        0.00031912780133966693,
+        0.0012132380714011432,
+        0.0007132010146930697,
+        0.0010289411616392805,
+        0.0005242106717108287,
+        0.00047355625800761005,
+        0.0008245452117225714,
+        0.0008932802492498361,
+        0.0009222831223657363,
+        0.00034903943400996543,
+        4.3115554558568794e-05,
+        0.0006937021181242981,
+        0.00021750565061814042,
+        0.00018862561906976276,
+        0.00014771391344218826,
+        0.0008820924356869254,
+        0.0005835362566100016,
+        0.001309013442078079,
+        0.00017668609566454574,
+        0.00020329485891486688,
+        0.00017540272460245086,
+        0.0009355523714241352,
+        0.0009942077429548192,
+        0.00043579310955341454,
+        0.0003243513792518992,
+        0.00047368701780018925,
+        0.0008441528182216248,
+        7.006433358051073e-05,
+        0.00024012644134274887,
+        0.00028563316475017025,
+        0.0006704584685064517,
+        0.0002282779447544938,
+        0.00047222230555139967,
+        0.00044470815162280495,
+        0.0006292900144982601,
+        0.00015933335187506484,
+        9.856365669505221e-06,
+        0.0006662208667986518,
+        0.00014261346384231385,
+        0.00018123314636235536,
+        0.0005016485976356924,
+        0.00036609808131921214,
+        0.00048598352907901416,
+        0.0005016787991804373,
+        0.0006492170527622088
+      ],
+      "points_world": [
+        [
+          0.5969670414924622,
+          0.15583692491054535,
+          0.4210202097892761
+        ],
+        [
+          0.6004798412322998,
+          0.15585236251354218,
+          0.4211476743221283
+        ],
+        [
+          0.5969668030738831,
+          0.15581364929676056,
+          0.42101436853408813
+        ],
+        [
+          0.5496646165847778,
+          0.14916543662548065,
+          0.41892126202583313
+        ],
+        [
+          0.5493476986885071,
+          0.15241968631744385,
+          0.41891905665397644
+        ],
+        [
+          0.5491827726364136,
+          0.15243296325206757,
+          0.41891026496887207
+        ],
+        [
+          0.5576135516166687,
+          0.1459437608718872,
+          0.4193330407142639
+        ],
+        [
+          0.5666565895080566,
+          0.14626263082027435,
+          0.4198196530342102
+        ],
+        [
+          0.5576680898666382,
+          0.1460026651620865,
+          0.4193362295627594
+        ],
+        [
+          0.5667017698287964,
+          0.14631153643131256,
+          0.4198222756385803
+        ],
+        [
+          0.5664401650428772,
+          0.15077939629554749,
+          0.4198285937309265
+        ],
+        [
+          0.5573115348815918,
+          0.15054048597812653,
+          0.41933774948120117
+        ],
+        [
+          0.5779895782470703,
+          0.16085414588451385,
+          0.42116186022758484
+        ],
+        [
+          0.5779784321784973,
+          0.1611151099205017,
+          0.42122721672058105
+        ],
+        [
+          0.5666565895080566,
+          0.14626263082027435,
+          0.4198196530342102
+        ],
+        [
+          0.5666694641113281,
+          0.13906827569007874,
+          0.41978758573532104
+        ],
+        [
+          0.5921095013618469,
+          0.1471727043390274,
+          0.4211893081665039
+        ],
+        [
+          0.5496160984039307,
+          0.14265595376491547,
+          0.41888904571533203
+        ],
+        [
+          0.5518926978111267,
+          0.15928640961647034,
+          0.42049217224121094
+        ],
+        [
+          0.553787887096405,
+          0.15948617458343506,
+          0.4205284118652344
+        ],
+        [
+          0.5519890785217285,
+          0.15973496437072754,
+          0.4206826984882355
+        ],
+        [
+          0.5537921190261841,
+          0.15989595651626587,
+          0.42070472240448
+        ],
+        [
+          0.54789799451828,
+          0.15330249071121216,
+          0.41934555768966675
+        ],
+        [
+          0.5477622747421265,
+          0.15297700464725494,
+          0.4185660183429718
+        ],
+        [
+          0.5483835339546204,
+          0.15295641124248505,
+          0.41858264803886414
+        ],
+        [
+          0.5477195978164673,
+          0.15157492458820343,
+          0.4188278615474701
+        ],
+        [
+          0.5490684509277344,
+          0.15183652937412262,
+          0.4189014136791229
+        ],
+        [
+          0.5477779507637024,
+          0.1525459885597229,
+          0.4188354015350342
+        ],
+        [
+          0.5572904944419861,
+          0.1526610255241394,
+          0.41882115602493286
+        ],
+        [
+          0.566206693649292,
+          0.15968801081180573,
+          0.42042088508605957
+        ],
+        [
+          0.5571117997169495,
+          0.1580243706703186,
+          0.4198121130466461
+        ],
+        [
+          0.5573597550392151,
+          0.15175777673721313,
+          0.420884370803833
+        ],
+        [
+          0.5917971134185791,
+          0.14810487627983093,
+          0.42116713523864746
+        ],
+        [
+          0.5643182396888733,
+          0.15976811945438385,
+          0.4203735589981079
+        ],
+        [
+          0.553787887096405,
+          0.15948617458343506,
+          0.4205284118652344
+        ],
+        [
+          0.5661730170249939,
+          0.16021691262722015,
+          0.42051804065704346
+        ],
+        [
+          0.5556310415267944,
+          0.16006016731262207,
+          0.4207271337509155
+        ],
+        [
+          0.5853382349014282,
+          0.13284523785114288,
+          0.4177875220775604
+        ],
+        [
+          0.5486587285995483,
+          0.14546485245227814,
+          0.41885048151016235
+        ],
+        [
+          0.5498713850975037,
+          0.14582161605358124,
+          0.41891714930534363
+        ],
+        [
+          0.5711744427680969,
+          0.15744735300540924,
+          0.42016810178756714
+        ],
+        [
+          0.5810485482215881,
+          0.157617449760437,
+          0.4205249547958374
+        ],
+        [
+          0.5711072087287903,
+          0.1554713100194931,
+          0.4197986125946045
+        ],
+        [
+          0.5712997913360596,
+          0.16113173961639404,
+          0.4208569824695587
+        ],
+        [
+          0.5717279314994812,
+          0.16129566729068756,
+          0.4209015667438507
+        ],
+        [
+          0.5570528507232666,
+          0.1580100804567337,
+          0.419807493686676
+        ],
+        [
+          0.5558210611343384,
+          0.15771202743053436,
+          0.41971150040626526
+        ],
+        [
+          0.5501382946968079,
+          0.1497233361005783,
+          0.4189491868019104
+        ],
+        [
+          0.5506911277770996,
+          0.15231159329414368,
+          0.4189906418323517
+        ],
+        [
+          0.591655969619751,
+          0.15239563584327698,
+          0.4210386872291565
+        ],
+        [
+          0.5665088295936584,
+          0.1510130614042282,
+          0.4207523763179779
+        ],
+        [
+          0.5504519939422607,
+          0.1590031236410141,
+          0.4204080402851105
+        ],
+        [
+          0.5519713163375854,
+          0.15969723463058472,
+          0.4206669330596924
+        ],
+        [
+          0.551922082901001,
+          0.1597289890050888,
+          0.4206819236278534
+        ],
+        [
+          0.5497352480888367,
+          0.14966732263565063,
+          0.41892731189727783
+        ],
+        [
+          0.5573256015777588,
+          0.15001386404037476,
+          0.41933608055114746
+        ],
+        [
+          0.5663461685180664,
+          0.1555006206035614,
+          0.419647216796875
+        ],
+        [
+          0.5663332343101501,
+          0.1510111689567566,
+          0.4198317229747772
+        ],
+        [
+          0.5663678646087646,
+          0.15100842714309692,
+          0.41983360052108765
+        ],
+        [
+          0.5710238814353943,
+          0.1530206948518753,
+          0.4193403720855713
+        ],
+        [
+          0.5896996855735779,
+          0.15420342981815338,
+          0.4201754033565521
+        ],
+        [
+          0.5711007714271545,
+          0.1552816927433014,
+          0.41976314783096313
+        ],
+        [
+          0.5664340853691101,
+          0.1538582742214203,
+          0.4218844175338745
+        ],
+        [
+          0.5710118412971497,
+          0.15412570536136627,
+          0.4217066466808319
+        ],
+        [
+          0.5969399213790894,
+          0.15134619176387787,
+          0.4198828637599945
+        ],
+        [
+          0.5917133092880249,
+          0.15340879559516907,
+          0.4200940430164337
+        ],
+        [
+          0.5969680547714233,
+          0.15601898729801178,
+          0.4210663437843323
+        ],
+        [
+          0.5488924384117126,
+          0.15603546798229218,
+          0.41917169094085693
+        ],
+        [
+          0.5490429401397705,
+          0.15607188642024994,
+          0.4191834032535553
+        ],
+        [
+          0.5490615963935852,
+          0.15117903053760529,
+          0.4188980758190155
+        ],
+        [
+          0.5480186939239502,
+          0.1512187272310257,
+          0.4188423156738281
+        ],
+        [
+          0.585110068321228,
+          0.1327386349439621,
+          0.416589617729187
+        ],
+        [
+          0.5846120715141296,
+          0.1327349841594696,
+          0.41662323474884033
+        ],
+        [
+          0.584457278251648,
+          0.12953589856624603,
+          0.4165092408657074
+        ],
+        [
+          0.5802280306816101,
+          0.12922468781471252,
+          0.41643479466438293
+        ],
+        [
+          0.5808975100517273,
+          0.1310395747423172,
+          0.41748151183128357
+        ],
+        [
+          0.5850367546081543,
+          0.1317249834537506,
+          0.41685250401496887
+        ],
+        [
+          0.5827735066413879,
+          0.13061396777629852,
+          0.417418509721756
+        ],
+        [
+          0.5843077301979065,
+          0.132805734872818,
+          0.4155883491039276
+        ],
+        [
+          0.5863166451454163,
+          0.13351298868656158,
+          0.4162294268608093
+        ],
+        [
+          0.5861605405807495,
+          0.1336286962032318,
+          0.41528019309043884
+        ],
+        [
+          0.5862334966659546,
+          0.13347503542900085,
+          0.416248619556427
+        ],
+        [
+          0.5863166451454163,
+          0.1335129737854004,
+          0.41622939705848694
+        ],
+        [
+          0.5870539546012878,
+          0.1319982409477234,
+          0.41673311591148376
+        ]
+      ],
+      "object_points": [
+        [
+          0.01930370184301962,
+          0.15888420520174681,
+          0.4193272663017208
+        ],
+        [
+          0.02281600163811351,
+          0.15902191704349286,
+          0.4193594087495318
+        ],
+        [
+          0.01930411449025782,
+          0.15886106389144095,
+          0.419320922739454
+        ],
+        [
+          -0.0277765865167533,
+          0.15057977624041002,
+          0.41836984926339665
+        ],
+        [
+          -0.028207085317495283,
+          0.15382001710973728,
+          0.41844790543282245
+        ],
+        [
+          -0.028372556211251773,
+          0.1538276003629802,
+          0.41844389906678686
+        ],
+        [
+          -0.01971141303066238,
+          0.14763497625841435,
+          0.418494164170201
+        ],
+        [
+          -0.01067499372120146,
+          0.14826504527124204,
+          0.41874143527984015
+        ],
+        [
+          -0.019658900854957227,
+          0.14769570334295934,
+          0.4184971637491251
+        ],
+        [
+          -0.010631496157036548,
+          0.14831546122195052,
+          0.4187439034882448
+        ],
+        [
+          -0.011048952376971203,
+          0.15277006369436225,
+          0.4188556883976438
+        ],
+        [
+          -0.02017379350759272,
+          0.152216930046431,
+          0.4186082771060013
+        ],
+        [
+          0.00017373659051861216,
+          0.16321902817044595,
+          0.4200956552960739
+        ],
+        [
+          0.00015530092028078965,
+          0.1634779976278723,
+          0.420167019714965
+        ],
+        [
+          -0.01067499372120146,
+          0.14826504527124204,
+          0.41874143527984015
+        ],
+        [
+          -0.010411362472713072,
+          0.14107797038955527,
+          0.41855066574273536
+        ],
+        [
+          0.014758849964868223,
+          0.15005102159221997,
+          0.41943770732527297
+        ],
+        [
+          -0.027598248200765948,
+          0.14407480747033843,
+          0.4181956776182562
+        ],
+        [
+          -0.025860845577641737,
+          0.16073831476726272,
+          0.420101966693882
+        ],
+        [
+          -0.02397353249759606,
+          0.16100456866579355,
+          0.4200910132097253
+        ],
+        [
+          -0.02577492350030342,
+          0.16118590646016942,
+          0.4202996278504477
+        ],
+        [
+          -0.0239787080271624,
+          0.16141044152977907,
+          0.42027612123258545
+        ],
+        [
+          -0.029674286927784184,
+          0.15464152004902554,
+          0.4189330252817069
+        ],
+        [
+          -0.029820288389704096,
+          0.15432788485125543,
+          0.4181504914713498
+        ],
+        [
+          -0.02919846709995494,
+          0.15432906070094965,
+          0.4181497530905445
+        ],
+        [
+          -0.02980655241619846,
+          0.15291997559899595,
+          0.4183824710742239
+        ],
+        [
+          -0.02846614685275627,
+          0.15322779532266462,
+          0.41842503442788825
+        ],
+        [
+          -0.029782016022884106,
+          0.1538921270913886,
+          0.41840979498112824
+        ],
+        [
+          -0.020283440785664967,
+          0.15434577788124396,
+          0.4181392527612323
+        ],
+        [
+          -0.011577256246078303,
+          0.1616502985515969,
+          0.41965007774960916
+        ],
+        [
+          -0.020621854823817343,
+          0.15967733381334417,
+          0.4192525299335265
+        ],
+        [
+          -0.020124944861231148,
+          0.153402356135012,
+          0.42017943536971586
+        ],
+        [
+          0.014413546922460989,
+          0.150971750178199,
+          0.41944456829573107
+        ],
+        [
+          -0.013467941136950497,
+          0.16166415197558112,
+          0.41965592923737804
+        ],
+        [
+          -0.02397353249759606,
+          0.16100456866579355,
+          0.4200910132097253
+        ],
+        [
+          -0.01162668320066189,
+          0.16217550627045682,
+          0.4197597330210581
+        ],
+        [
+          -0.022146748321109883,
+          0.16163946086443176,
+          0.4202520963060463
+        ],
+        [
+          0.008400421020829881,
+          0.13556647892708543,
+          0.41590685768532965
+        ],
+        [
+          -0.02865399430154112,
+          0.14684805852984328,
+          0.41824502037643224
+        ],
+        [
+          -0.02745316999319069,
+          0.14724625535113778,
+          0.41828650430281383
+        ],
+        [
+          -0.006543181955294415,
+          0.15959360337291217,
+          0.4192129518116997
+        ],
+        [
+          0.003325045814911831,
+          0.16010732192258034,
+          0.4193046546431961
+        ],
+        [
+          -0.006551558984645989,
+          0.15762463085524447,
+          0.41880201919922594
+        ],
+        [
+          -0.006527575071019637,
+          0.16326480739005814,
+          0.41997910522086157
+        ],
+        [
+          -0.006104351895244204,
+          0.1634428882146105,
+          0.420015621010069
+        ],
+        [
+          -0.020680373978169325,
+          0.15966105586599103,
+          0.419249202840057
+        ],
+        [
+          -0.021903186172983223,
+          0.15932145577467494,
+          0.4191802244239031
+        ],
+        [
+          -0.02732211862534985,
+          0.1511534627536656,
+          0.4183971492897987
+        ],
+        [
+          -0.026859220911765947,
+          0.15375830335156176,
+          0.41848051235456424
+        ],
+        [
+          0.014118856558052735,
+          0.15525652452241975,
+          0.41941449334559644
+        ],
+        [
+          -0.010962692363290514,
+          0.15298653609407303,
+          0.4197821803738052
+        ],
+        [
+          -0.02729254721220755,
+          0.16040578734738575,
+          0.42005085199634423
+        ],
+        [
+          -0.025791788991639517,
+          0.16114790875822813,
+          0.420283524836348
+        ],
+        [
+          -0.02584166453865469,
+          0.16117756910801426,
+          0.4203005448884147
+        ],
+        [
+          -0.02772341320351234,
+          0.15108361884803242,
+          0.41838502170610414
+        ],
+        [
+          -0.020141365790419745,
+          0.15169129364683337,
+          0.4185946337498539
+        ],
+        [
+          -0.011313081335921864,
+          0.15748772582647638,
+          0.4187809100202632
+        ],
+        [
+          -0.011163795942917618,
+          0.15299776836720014,
+          0.41886682740931774
+        ],
+        [
+          -0.011129051969232062,
+          0.1529962213802253,
+          0.41886770115313543
+        ],
+        [
+          -0.006561894436825947,
+          0.1551827864250327,
+          0.41829238064223295
+        ],
+        [
+          0.012077150939991574,
+          0.15701134113964788,
+          0.418644764705953
+        ],
+        [
+          -0.006552348755369815,
+          0.15743569275348046,
+          0.4187625772202331
+        ],
+        [
+          -0.011105227035703744,
+          0.15580284118870574,
+          0.42097819436611966
+        ],
+        [
+          -0.006546392196747389,
+          0.15623663942911964,
+          0.42068185802808944
+        ],
+        [
+          0.019401888141497466,
+          0.15442027361640656,
+          0.4180924991424381
+        ],
+        [
+          0.014114275506604,
+          0.1562907331396896,
+          0.41849117067232616
+        ],
+        [
+          0.019299635731227744,
+          0.15906517743472756,
+          0.41937735225572914
+        ],
+        [
+          -0.028781306585108864,
+          0.1574111977727008,
+          0.41879236795932573
+        ],
+        [
+          -0.02863190224948725,
+          0.1574526928284282,
+          0.41880077961124884
+        ],
+        [
+          -0.028450087832929665,
+          0.15257068469061233,
+          0.41840741140044724
+        ],
+        [
+          -0.029494891993402057,
+          0.1525744189647964,
+          0.4183809368109977
+        ],
+        [
+          0.008142707067121304,
+          0.13547705315972466,
+          0.4147135490302922
+        ],
+        [
+          0.007646277979404821,
+          0.13545498178530252,
+          0.4147606156577268
+        ],
+        [
+          0.007600359186956372,
+          0.1322555213309093,
+          0.41458048110372375
+        ],
+        [
+          0.0033841599157863993,
+          0.13179568569745992,
+          0.414614308214577
+        ],
+        [
+          0.004018757427762301,
+          0.13361081651878878,
+          0.4156821191125095
+        ],
+        [
+          0.008112278512018593,
+          0.13445612870403068,
+          0.41495595530534535
+        ],
+        [
+          0.005905997478258668,
+          0.13325363805942894,
+          0.41555874042829416
+        ],
+        [
+          0.007310821344679243,
+          0.13553661833270592,
+          0.4137362026948096
+        ],
+        [
+          0.009310910786412876,
+          0.13630124784676934,
+          0.41433779378935826
+        ],
+        [
+          0.009124365194427535,
+          0.13643127429947963,
+          0.41339593632719
+        ],
+        [
+          0.009229710214007565,
+          0.13625996517857225,
+          0.41435840173221805
+        ],
+        [
+          0.009310910474099942,
+          0.13630123358536345,
+          0.4143377636772712
+        ],
+        [
+          0.010114556098907785,
+          0.13480342721892985,
+          0.4147877673267201
+        ]
+      ],
+      "finger_points": [
+        [
+          0.020363904624578315,
+          0.01994161663175047,
+          -0.01896128689366764
+        ],
+        [
+          0.02040453047983458,
+          0.020132050920759405,
+          -0.022471035012889207
+        ],
+        [
+          0.02038787889805508,
+          0.019940881649550855,
+          -0.018960496125005957
+        ],
+        [
+          0.02621055785927516,
+          0.01838515477859532,
+          0.028471062955896145
+        ],
+        [
+          0.023025734584564785,
+          0.017681204939906603,
+          0.028698962512186756
+        ],
+        [
+          0.023010755598745807,
+          0.017666529582838444,
+          0.028863323204743958
+        ],
+        [
+          0.029456181867868438,
+          0.01963260301312968,
+          0.020619685867272808
+        ],
+        [
+          0.029254251554025272,
+          0.020217965559354942,
+          0.011579133962836118
+        ],
+        [
+          0.029399266900177495,
+          0.0196242025855364,
+          0.020563610702205463
+        ],
+        [
+          0.029207000562210227,
+          0.0202109647069071,
+          0.011532677208059797
+        ],
+        [
+          0.02483655621649697,
+          0.019257038187976562,
+          0.011672280812068028
+        ],
+        [
+          0.024959289141995678,
+          0.018648765029479677,
+          0.020796141575606615
+        ],
+        [
+          0.014985801947516366,
+          0.018633545160069306,
+          -0.0001277624492506073
+        ],
+        [
+          0.01471670702366041,
+          0.018641381352642466,
+          -0.0001228177408283178
+        ],
+        [
+          0.029254251554025272,
+          0.020217965559354942,
+          0.011579133962836118
+        ],
+        [
+          0.03628678368270404,
+          0.021724589562717403,
+          0.011762207112239126
+        ],
+        [
+          0.028673613071582844,
+          0.0218628804196683,
+          -0.013867123618246394
+        ],
+        [
+          0.032572886671652965,
+          0.01974404152509744,
+          0.028696801543414956
+        ],
+        [
+          0.016043525325937037,
+          0.01780015589489747,
+          0.025990050075549536
+        ],
+        [
+          0.015885470722216695,
+          0.017830209720234125,
+          0.02409081936570016
+        ],
+        [
+          0.015566978897817697,
+          0.0178922690863178,
+          0.025884175047515723
+        ],
+        [
+          0.015447653671252396,
+          0.01791490933964737,
+          0.024077906104707517
+        ],
+        [
+          0.0220380689055212,
+          0.01788050374094133,
+          0.03012993609916198
+        ],
+        [
+          0.022519658440654827,
+          0.017186026205478485,
+          0.030263409320829642
+        ],
+        [
+          0.022550885560085412,
+          0.017218915383714187,
+          0.02964324255843337
+        ],
+        [
+          0.02383171570421617,
+          0.017740599829650736,
+          0.03034805864583527
+        ],
+        [
+          0.023592373783228836,
+          0.017783110397136564,
+          0.028993747015385492
+        ],
+        [
+          0.022883225891434832,
+          0.017541563281201142,
+          0.030263331542273633
+        ],
+        [
+          0.022998703971266948,
+          0.017690562380277074,
+          0.020751949531727105
+        ],
+        [
+          0.016004835745594123,
+          0.017926834430607906,
+          0.01167085673588963
+        ],
+        [
+          0.017544885653745446,
+          0.017508562581135145,
+          0.020798216293682985
+        ],
+        [
+          0.023440488055766456,
+          0.019900110761782625,
+          0.020736672170914402
+        ],
+        [
+          0.027760705562727715,
+          0.021635828489160142,
+          -0.013580645531512532
+        ],
+        [
+          0.01589212451829297,
+          0.01782626632981683,
+          0.01355555770691425
+        ],
+        [
+          0.015885470722216695,
+          0.017830209720234125,
+          0.02409081936570016
+        ],
+        [
+          0.015466754051529268,
+          0.017908016599548732,
+          0.011691458437094137
+        ],
+        [
+          0.01532595024069362,
+          0.017937947316542992,
+          0.0222356897916892
+        ],
+        [
+          0.043233105904859494,
+          0.02146920394009517,
+          -0.006756238912278271
+        ],
+        [
+          0.02981560762508967,
+          0.019087143829139733,
+          0.02957649106396159
+        ],
+        [
+          0.029481598555736354,
+          0.01909990713736387,
+          0.028355616097507093
+        ],
+        [
+          0.018364377508506884,
+          0.0182567697114765,
+          0.006763038127968377
+        ],
+        [
+          0.018355153006331348,
+          0.01876357645170428,
+          -0.003105968778446609
+        ],
+        [
+          0.02037154914705634,
+          0.018316917910291802,
+          0.006878937953369445
+        ],
+        [
+          0.014621959420358313,
+          0.018144580396307265,
+          0.006546950257471625
+        ],
+        [
+          0.014462449745814798,
+          0.018161527338633417,
+          0.0061151707948741765
+        ],
+        [
+          0.017558436687281104,
+          0.017505943280854624,
+          0.020857461895234602
+        ],
+        [
+          0.017840942928253188,
+          0.01745161231476027,
+          0.02209544181334218
+        ],
+        [
+          0.025670974741694115,
+          0.018302522285061774,
+          0.027982775641414725
+        ],
+        [
+          0.023147699393766895,
+          0.017800705086085902,
+          0.02736013669980295
+        ],
+        [
+          0.02359491087909595,
+          0.020590503939715826,
+          -0.013558524624030137
+        ],
+        [
+          0.024412153450606752,
+          0.02011070073519465,
+          0.011610385582284272
+        ],
+        [
+          0.01630413480937376,
+          0.01775013567930502,
+          0.027436610631788986
+        ],
+        [
+          0.01560677920544664,
+          0.017884585190951964,
+          0.025902734963425354
+        ],
+        [
+          0.015571396887475882,
+          0.017891468895535608,
+          0.025951291063949125
+        ],
+        [
+          0.025720834293828744,
+          0.018285184919061333,
+          0.02838684992753557
+        ],
+        [
+          0.025474230555934514,
+          0.01875997014315303,
+          0.020796433968458785
+        ],
+        [
+          0.020262858303428746,
+          0.01806894199835426,
+          0.011634774150469646
+        ],
+        [
+          0.024607031135307815,
+          0.019208448725423505,
+          0.011772878234930095
+        ],
+        [
+          0.024610124667740863,
+          0.01921155112619505,
+          0.011738365839027171
+        ],
+        [
+          0.02286077312678126,
+          0.01839149912964045,
+          0.0070226185790119005
+        ],
+        [
+          0.021968250633180773,
+          0.019322390932665297,
+          -0.011664774055629414
+        ],
+        [
+          0.020564155798025112,
+          0.018322680822044753,
+          0.006890045004894079
+        ],
+        [
+          0.021389556405857317,
+          0.02060676041952456,
+          0.011623496011742774
+        ],
+        [
+          0.021274643798028237,
+          0.020466204710763623,
+          0.00703808322631089
+        ],
+        [
+          0.024992098087630768,
+          0.01979007429297548,
+          -0.018827735878818884
+        ],
+        [
+          0.022809221861652608,
+          0.019452458727844887,
+          -0.01365690690215476
+        ],
+        [
+          0.020176262183611085,
+          0.01994778211708697,
+          -0.018966614773405173
+        ],
+        [
+          0.019430023312113204,
+          0.01714615601445761,
+          0.029058887702925647
+        ],
+        [
+          0.019395507932549433,
+          0.017152777939257798,
+          0.028907629348690452
+        ],
+        [
+          0.02423498091574958,
+          0.01792024616265734,
+          0.029018499813583617
+        ],
+        [
+          0.02418351734756,
+          0.01783674457152596,
+          0.030059033122929533
+        ],
+        [
+          0.04358837179915161,
+          0.020317507041752763,
+          -0.006542277713242373
+        ],
+        [
+          0.04357297034522096,
+          0.020341304913043493,
+          -0.00604393976700827
+        ],
+        [
+          0.04671766644696828,
+          0.020910675441648853,
+          -0.0058035071962469825
+        ],
+        [
+          0.046937582782272974,
+          0.020821119254720216,
+          -0.0015688235159372428
+        ],
+        [
+          0.04495696784875716,
+          0.02146873019544583,
+          -0.0022726690736230124
+        ],
+        [
+          0.044520177383005476,
+          0.02078947452893784,
+          -0.00643759491463742
+        ],
+        [
+          0.045430396582625605,
+          0.021535141316999448,
+          -0.0041370533035039216
+        ],
+        [
+          0.043718334670280204,
+          0.019309418929015207,
+          -0.005756366946296354
+        ],
+        [
+          0.042937859510695536,
+          0.019823986891865986,
+          -0.007774535980502954
+        ],
+        [
+          0.04302448131773818,
+          0.018869069462607156,
+          -0.007635140926150501
+        ],
+        [
+          0.04296884607218765,
+          0.019849205295688607,
+          -0.007690118304173489
+        ],
+        [
+          0.042937880444667474,
+          0.019823960969065663,
+          -0.007774535996843791
+        ],
+        [
+          0.04432657063347341,
+          0.020654224853773724,
+          -0.008462994366959764
+        ]
+      ],
+      "separation": [
+        [
+          0.0004409480025060475
+        ],
+        [
+          0.0007135369814932346
+        ],
+        [
+          0.0007120578666217625
+        ],
+        [
+          0.0009267214336432517
+        ],
+        [
+          0.0007098681526258588
+        ],
+        [
+          0.0001726895570755005
+        ],
+        [
+          -0.0019133687019348145
+        ],
+        [
+          -0.002369821071624756
+        ],
+        [
+          -0.0012585818767547607
+        ],
+        [
+          -0.001221388578414917
+        ],
+        [
+          0.0003929734230041504
+        ],
+        [
+          0.0006078481674194336
+        ],
+        [
+          -0.0017742812633514404
+        ],
+        [
+          -0.0011004805564880371
+        ],
+        [
+          -0.00047728419303894043
+        ],
+        [
+          -0.0011573433876037598
+        ],
+        [
+          -0.0017708241939544678
+        ],
+        [
+          -0.001154184341430664
+        ],
+        [
+          -0.0009405612945556641
+        ],
+        [
+          -0.001566469669342041
+        ],
+        [
+          0.0006786584854125977
+        ],
+        [
+          -0.0006100237369537354
+        ],
+        [
+          0.0006078481674194336
+        ],
+        [
+          -0.0007109940052032471
+        ],
+        [
+          -0.00042122602462768555
+        ],
+        [
+          -0.0006397366523742676
+        ],
+        [
+          -8.64863395690918e-05
+        ],
+        [
+          -0.0008915066719055176
+        ],
+        [
+          -0.0007109940052032471
+        ],
+        [
+          -0.0006397366523742676
+        ],
+        [
+          0.000524371862411499
+        ],
+        [
+          0.000590205192565918
+        ],
+        [
+          0.0008413195610046387
+        ],
+        [
+          -0.0011573433876037598
+        ],
+        [
+          0.00030934810638427734
+        ],
+        [
+          0.0006219446659088135
+        ],
+        [
+          -0.000443190336227417
+        ],
+        [
+          0.0003732442855834961
+        ],
+        [
+          -0.00047728419303894043
+        ],
+        [
+          -0.0017110705375671387
+        ],
+        [
+          -3.9070844650268555e-05
+        ],
+        [
+          -0.0005124509334564209
+        ],
+        [
+          0.00020563602447509766
+        ],
+        [
+          -0.000262528657913208
+        ],
+        [
+          -0.0015225261449813843
+        ],
+        [
+          -0.0021422328427433968
+        ],
+        [
+          -0.002176187001168728
+        ],
+        [
+          0.0008548200130462646
+        ],
+        [
+          5.7578086853027344e-05
+        ],
+        [
+          0.0006255805492401123
+        ],
+        [
+          6.768107414245605e-05
+        ],
+        [
+          0.00014916062355041504
+        ],
+        [
+          0.000524371862411499
+        ],
+        [
+          0.0008164346218109131
+        ],
+        [
+          -0.0021295249462127686
+        ],
+        [
+          -0.00040715932846069336
+        ],
+        [
+          -0.0011519193649291992
+        ],
+        [
+          -0.0017409920692443848
+        ],
+        [
+          -0.00017420636140741408
+        ],
+        [
+          -0.0011604272294789553
+        ],
+        [
+          -0.000112640525912866
+        ],
+        [
+          -0.0010605802526697516
+        ],
+        [
+          0.0007895843591541052
+        ],
+        [
+          0.000536550534889102
+        ],
+        [
+          -0.001154184341430664
+        ],
+        [
+          0.0006322562694549561
+        ],
+        [
+          -0.0009391307830810547
+        ],
+        [
+          -0.00043076276779174805
+        ],
+        [
+          -0.0005164146423339844
+        ],
+        [
+          -0.0005124509334564209
+        ],
+        [
+          -0.0003326833248138428
+        ],
+        [
+          -0.0002707540988922119
+        ],
+        [
+          0.00030934810638427734
+        ],
+        [
+          0.0007856470765545964
+        ],
+        [
+          0.0005353974411264062
+        ],
+        [
+          0.0003846585750579834
+        ],
+        [
+          0.000539138913154602
+        ],
+        [
+          -0.002369821071624756
+        ],
+        [
+          -0.0016599595546722412
+        ],
+        [
+          -0.0023023486137390137
+        ],
+        [
+          -0.0005778670310974121
+        ],
+        [
+          -6.714463233947754e-05
+        ],
+        [
+          -0.0009436607360839844
+        ],
+        [
+          -0.00018146634101867676
+        ],
+        [
+          -0.0008307695388793945
+        ],
+        [
+          -0.0011897385120391846
+        ],
+        [
+          -0.0005778670310974121
+        ],
+        [
+          -0.0009436607360839844
+        ],
+        [
+          0.00010412372648715973
+        ],
+        [
+          5.015917122364044e-05
+        ],
+        [
+          0.00015479885041713715
+        ],
+        [
+          0.000668773427605629
+        ],
+        [
+          -0.0005000829696655273
+        ],
+        [
+          0.00010484457015991211
+        ],
+        [
+          5.0455331802368164e-05
+        ],
+        [
+          -0.001137726940214634
+        ],
+        [
+          -0.0012501170858740807
+        ],
+        [
+          -0.002097710035741329
+        ],
+        [
+          -0.0023004813119769096
+        ],
+        [
+          -0.002056211233139038
+        ],
+        [
+          -0.001924276351928711
+        ],
+        [
+          -0.0019358992576599121
+        ],
+        [
+          0.00011712312698364258
+        ],
+        [
+          0.0003549158573150635
+        ],
+        [
+          -8.046627044677734e-05
+        ],
+        [
+          0.00012102723121643066
+        ],
+        [
+          0.0003141600755043328
+        ],
+        [
+          2.1766254576505162e-05
+        ],
+        [
+          3.3929165510926396e-05
+        ],
+        [
+          0.00029221217846497893
+        ],
+        [
+          0.0002907104790210724
+        ],
+        [
+          0.0002925824373960495
+        ],
+        [
+          -0.0011264979839324951
+        ],
+        [
+          0.0009984670905396342
+        ],
+        [
+          0.00019948184490203857
+        ],
+        [
+          0.0005977675318717957
+        ],
+        [
+          0.0009764116257429123
+        ],
+        [
+          0.00047012418508529663
+        ],
+        [
+          0.00033033639192581177
+        ],
+        [
+          -0.000812038779258728
+        ],
+        [
+          -0.0007141232490539551
+        ],
+        [
+          0.0006773173809051514
+        ],
+        [
+          0.0007484257221221924
+        ],
+        [
+          0.00019159913063049316
+        ],
+        [
+          0.00023886561393737793
+        ],
+        [
+          -0.0018700957298278809
+        ],
+        [
+          -0.0023375749588012695
+        ],
+        [
+          -0.0015650391578674316
+        ],
+        [
+          -0.0009230673313140869
+        ],
+        [
+          0.0003586709499359131
+        ],
+        [
+          -0.00017502903938293457
+        ],
+        [
+          -0.0008806884288787842
+        ],
+        [
+          -0.0011695027351379395
+        ],
+        [
+          -0.0009230673313140869
+        ],
+        [
+          -0.0008806884288787842
+        ],
+        [
+          0.00041113875340670347
+        ],
+        [
+          0.00041583701386116445
+        ],
+        [
+          -0.0015529990196228027
+        ],
+        [
+          -0.0010629594326019287
+        ],
+        [
+          -0.0011395812034606934
+        ],
+        [
+          -0.0010265111923217773
+        ],
+        [
+          -0.0018002241849899292
+        ],
+        [
+          0.0006188824772834778
+        ],
+        [
+          0.0005140602588653564
+        ],
+        [
+          -0.0016173198819160461
+        ],
+        [
+          2.757217771431897e-05
+        ],
+        [
+          3.9540882426081225e-06
+        ],
+        [
+          -0.0003647402336355299
+        ],
+        [
+          -0.00032138824462890625
+        ],
+        [
+          -0.0006653368473052979
+        ],
+        [
+          -8.352100849151611e-06
+        ],
+        [
+          -0.00035739410668611526
+        ],
+        [
+          0.0008749598637223244
+        ],
+        [
+          0.0007895845337770879
+        ],
+        [
+          0.0007961065857671201
+        ],
+        [
+          -0.0001729847863316536
+        ],
+        [
+          -0.0001598978415131569
+        ],
+        [
+          -0.0008963178843259811
+        ],
+        [
+          -0.0008794087916612625
+        ],
+        [
+          -0.000713646411895752
+        ],
+        [
+          -0.0006610751152038574
+        ],
+        [
+          -0.0006393790245056152
+        ],
+        [
+          -0.0006003379821777344
+        ],
+        [
+          -0.0006610751152038574
+        ],
+        [
+          -0.000713646411895752
+        ],
+        [
+          -0.0007471144199371338
+        ],
+        [
+          -0.0013392865657806396
+        ],
+        [
+          -0.0013110637664794922
+        ],
+        [
+          -1.8477439880371094e-06
+        ],
+        [
+          0.0009129643440246582
+        ],
+        [
+          -0.0005304962396621704
+        ],
+        [
+          -0.001906348392367363
+        ],
+        [
+          -0.0017315818695351481
+        ],
+        [
+          -0.0017698928713798523
+        ],
+        [
+          -0.001690467819571495
+        ],
+        [
+          -0.0019235759973526
+        ],
+        [
+          -0.00184535956941545
+        ],
+        [
+          -0.0018956810235977173
+        ],
+        [
+          -0.0018463283777236938
+        ],
+        [
+          -0.001613423228263855
+        ],
+        [
+          -0.001408575102686882
+        ],
+        [
+          -0.0012425370514392853
+        ],
+        [
+          -0.0007554516196250916
+        ]
+      ]
+    }
+  ],
+  "failure": "CONTACT_POINT_OFF_VISIBLE_SURFACE",
+  "max_lift_m": 0.005561232566833496,
+  "simulated_seconds": 21.6,
+  "frames": 646,
+  "contact_witness_points": 164,
+  "max_contact_surface_error_m": 0.0033725218259637586,
+  "grasp_attempted": true,
+  "plan": {
+    "asset": "stool_wood_four_leg",
+    "mode": "bimanual_top",
+    "candidate": {
+      "left": {
+        "score": -9.999490997314453,
+        "width": 0.03449099731445315,
+        "pose": [
+          [
+            0.0,
+            -1.0,
+            -6.123233995736766e-17,
+            -1.8032131533332945e-17
+          ],
+          [
+            0.0,
+            6.123233995736766e-17,
+            -1.0,
+            0.15879597371381193
+          ],
+          [
+            1.0,
+            0.0,
+            -0.0,
+            0.4351985015869141
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "axis": 2,
+        "contact_pair_object_m": [
+          [
+            -1.8032131533332945e-17,
+            0.15879597371381193,
+            0.4179530029296875
+          ],
+          [
+            -1.8032131533332945e-17,
+            0.15879597371381193,
+            0.45244400024414066
+          ]
+        ],
+        "region_height_fraction": 0.9618836836206893,
+        "feature": "vertical_edge_thickness",
+        "approach_object": [
+          -6.123233995736766e-17,
+          -1.0,
+          -0.0
+        ]
+      },
+      "right": {
+        "score": -9.817185325585408,
+        "width": 0.03449099731445315,
+        "pose": [
+          [
+            0.0,
+            0.9238795325112865,
+            0.38268343236509034,
+            -0.060768557243014956
+          ],
+          [
+            0.0,
+            -0.38268343236509034,
+            0.9238795325112865,
+            -0.1467083499593911
+          ],
+          [
+            1.0,
+            0.0,
+            -0.0,
+            0.4351985015869141
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "axis": 2,
+        "contact_pair_object_m": [
+          [
+            -0.060768557243014956,
+            -0.1467083499593911,
+            0.4179530029296875
+          ],
+          [
+            -0.060768557243014956,
+            -0.1467083499593911,
+            0.45244400024414066
+          ]
+        ],
+        "region_height_fraction": 0.9618836836206893,
+        "feature": "vertical_edge_thickness",
+        "approach_object": [
+          0.38268343236509034,
+          0.9238795325112865,
+          -0.0
+        ]
+      },
+      "gap": 0.025
+    },
+    "object_position": [
+      0.5718186972298666,
+      0.0,
+      0.002
+    ],
+    "base_pose": [
+      [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0,
+        0.04
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "tcp": [
+      [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0,
+        0.13
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "q_pre": {
+      "idx01_body_joint1": -0.9970307495709358,
+      "idx02_body_joint2": 2.5357928145574635,
+      "idx03_body_joint3": -1.2246028743128905,
+      "idx22_arm_l_joint2": -0.4832832109603586,
+      "idx62_arm_r_joint2": -0.47127667769278797,
+      "idx24_arm_l_joint4": -1.194499135073278,
+      "idx64_arm_r_joint4": -1.620624207274358,
+      "idx31_gripper_l_inner_joint1": -0.785,
+      "idx71_gripper_r_inner_joint1": -0.785,
+      "idx21_arm_l_joint1": 0.7154607905040977,
+      "idx23_arm_l_joint3": -0.04775143358521168,
+      "idx25_arm_l_joint5": -1.3896473027533567,
+      "idx26_arm_l_joint6": -0.9764820053556615,
+      "idx27_arm_l_joint7": -1.3798153603781025,
+      "idx61_arm_r_joint1": -1.9463590657598817,
+      "idx63_arm_r_joint3": 1.13614967706827,
+      "idx65_arm_r_joint5": 0.7353262398798528,
+      "idx66_arm_r_joint6": -1.012299999971693,
+      "idx67_arm_r_joint7": 0.7179238199698231
+    },
+    "q_grasp": {
+      "idx01_body_joint1": -0.9970307495709358,
+      "idx02_body_joint2": 2.5357928145574635,
+      "idx03_body_joint3": -1.2246028743128905,
+      "idx22_arm_l_joint2": -0.5436923547077614,
+      "idx62_arm_r_joint2": -0.39182444471676214,
+      "idx24_arm_l_joint4": -1.3947003437751646,
+      "idx64_arm_r_joint4": -1.7279309148030237,
+      "idx31_gripper_l_inner_joint1": -0.785,
+      "idx71_gripper_r_inner_joint1": -0.785,
+      "idx21_arm_l_joint1": 0.6698062704509393,
+      "idx23_arm_l_joint3": 0.02058087300412714,
+      "idx25_arm_l_joint5": -1.0667126382151015,
+      "idx26_arm_l_joint6": -0.9077828486208737,
+      "idx27_arm_l_joint7": -0.9475067531672784,
+      "idx61_arm_r_joint1": -1.1082403732455197,
+      "idx63_arm_r_joint3": 0.13757861636147772,
+      "idx65_arm_r_joint5": 0.48842193670790673,
+      "idx66_arm_r_joint6": -0.9529511478551309,
+      "idx67_arm_r_joint7": 0.07049121621550748
+    },
+    "q_close": {
+      "idx01_body_joint1": -0.9970307495709358,
+      "idx02_body_joint2": 2.5357928145574635,
+      "idx03_body_joint3": -1.2246028743128905,
+      "idx22_arm_l_joint2": -0.5436923547077614,
+      "idx62_arm_r_joint2": -0.39182444471676214,
+      "idx24_arm_l_joint4": -1.3947003437751646,
+      "idx64_arm_r_joint4": -1.7279309148030237,
+      "idx31_gripper_l_inner_joint1": 0.0,
+      "idx71_gripper_r_inner_joint1": 0.0,
+      "idx21_arm_l_joint1": 0.6698062704509393,
+      "idx23_arm_l_joint3": 0.02058087300412714,
+      "idx25_arm_l_joint5": -1.0667126382151015,
+      "idx26_arm_l_joint6": -0.9077828486208737,
+      "idx27_arm_l_joint7": -0.9475067531672784,
+      "idx61_arm_r_joint1": -1.1082403732455197,
+      "idx63_arm_r_joint3": 0.13757861636147772,
+      "idx65_arm_r_joint5": 0.48842193670790673,
+      "idx66_arm_r_joint6": -0.9529511478551309,
+      "idx67_arm_r_joint7": 0.07049121621550748
+    },
+    "q_lift": [
+      {
+        "idx01_body_joint1": -0.9970307495709358,
+        "idx02_body_joint2": 2.5357928145574635,
+        "idx03_body_joint3": -1.2246028743128905,
+        "idx22_arm_l_joint2": -0.4730885673134275,
+        "idx62_arm_r_joint2": -0.3180024109416663,
+        "idx24_arm_l_joint4": -1.5020696641514228,
+        "idx64_arm_r_joint4": -1.8325938954707517,
+        "idx31_gripper_l_inner_joint1": 0.0,
+        "idx71_gripper_r_inner_joint1": 0.0,
+        "idx21_arm_l_joint1": 0.6452399342089079,
+        "idx23_arm_l_joint3": 0.011201412315869368,
+        "idx25_arm_l_joint5": -1.0537895747809998,
+        "idx26_arm_l_joint6": -0.8620567030910566,
+        "idx27_arm_l_joint7": -0.9217751156843529,
+        "idx61_arm_r_joint1": -1.1028564957142537,
+        "idx63_arm_r_joint3": 0.14487240705117285,
+        "idx65_arm_r_joint5": 0.49396185831007094,
+        "idx66_arm_r_joint6": -0.9203977870008425,
+        "idx67_arm_r_joint7": 0.059315921425890296
+      },
+      {
+        "idx01_body_joint1": -0.9970307495709358,
+        "idx02_body_joint2": 2.5357928145574635,
+        "idx03_body_joint3": -1.2246028743128905,
+        "idx22_arm_l_joint2": -0.40623819342102196,
+        "idx62_arm_r_joint2": -0.2445340022191003,
+        "idx24_arm_l_joint4": -1.6003591191760185,
+        "idx64_arm_r_joint4": -1.9317412048063298,
+        "idx31_gripper_l_inner_joint1": 0.0,
+        "idx71_gripper_r_inner_joint1": 0.0,
+        "idx21_arm_l_joint1": 0.6201628217791557,
+        "idx23_arm_l_joint3": -0.00020267254718409167,
+        "idx25_arm_l_joint5": -1.0519671389594636,
+        "idx26_arm_l_joint6": -0.8167340904136497,
+        "idx27_arm_l_joint7": -0.9063791832195555,
+        "idx61_arm_r_joint1": -1.0954425622518904,
+        "idx63_arm_r_joint3": 0.15235365009707563,
+        "idx65_arm_r_joint5": 0.5054779016686184,
+        "idx66_arm_r_joint6": -0.8921198612567558,
+        "idx67_arm_r_joint7": 0.05264933792937285
+      },
+      {
+        "idx01_body_joint1": -0.9970307495709358,
+        "idx02_body_joint2": 2.5357928145574635,
+        "idx03_body_joint3": -1.2246028743128905,
+        "idx22_arm_l_joint2": -0.3424645517475889,
+        "idx62_arm_r_joint2": -0.17066294079618408,
+        "idx24_arm_l_joint4": -1.6908670950419806,
+        "idx64_arm_r_joint4": -2.026049354602535,
+        "idx31_gripper_l_inner_joint1": 0.0,
+        "idx71_gripper_r_inner_joint1": 0.0,
+        "idx21_arm_l_joint1": 0.5944687108106278,
+        "idx23_arm_l_joint3": -0.013834123929260428,
+        "idx25_arm_l_joint5": -1.059264904976186,
+        "idx26_arm_l_joint6": -0.7715980482096213,
+        "idx27_arm_l_joint7": -0.8989138360644263,
+        "idx61_arm_r_joint1": -1.0862069991981746,
+        "idx63_arm_r_joint3": 0.16068985425042642,
+        "idx65_arm_r_joint5": 0.5229852905767295,
+        "idx66_arm_r_joint6": -0.8680581035961281,
+        "idx67_arm_r_joint7": 0.05047014043669143
+      },
+      {
+        "idx01_body_joint1": -0.9970307495709358,
+        "idx02_body_joint2": 2.5357928145574635,
+        "idx03_body_joint3": -1.2246028743128905,
+        "idx22_arm_l_joint2": -0.281348368213812,
+        "idx62_arm_r_joint2": -0.0956425231248928,
+        "idx24_arm_l_joint4": -1.7744396025372569,
+        "idx64_arm_r_joint4": -2.1159778617618294,
+        "idx31_gripper_l_inner_joint1": 0.0,
+        "idx71_gripper_r_inner_joint1": 0.0,
+        "idx21_arm_l_joint1": 0.5680546108815687,
+        "idx23_arm_l_joint3": -0.029928622229612276,
+        "idx25_arm_l_joint5": -1.0743848409542216,
+        "idx26_arm_l_joint6": -0.7263696111455298,
+        "idx27_arm_l_joint7": -0.8976738086456014,
+        "idx61_arm_r_joint1": -1.0753130507748552,
+        "idx63_arm_r_joint3": 0.1705458792289801,
+        "idx65_arm_r_joint5": 0.5469037184455049,
+        "idx66_arm_r_joint6": -0.8482850629702352,
+        "idx67_arm_r_joint7": 0.05299822234337454
+      },
+      {
+        "idx01_body_joint1": -0.9970307495709358,
+        "idx02_body_joint2": 2.5357928145574635,
+        "idx03_body_joint3": -1.2246028743128905,
+        "idx22_arm_l_joint2": -0.2226679420880268,
+        "idx62_arm_r_joint2": -0.01869162700640179,
+        "idx24_arm_l_joint4": -1.8515993485712676,
+        "idx64_arm_r_joint4": -2.2018015650057428,
+        "idx31_gripper_l_inner_joint1": 0.0,
+        "idx71_gripper_r_inner_joint1": 0.0,
+        "idx21_arm_l_joint1": 0.5408372855870747,
+        "idx23_arm_l_joint3": -0.048767523045057805,
+        "idx25_arm_l_joint5": -1.0964619421925463,
+        "idx26_arm_l_joint6": -0.6807351251645263,
+        "idx27_arm_l_joint7": -0.9013983231660911,
+        "idx61_arm_r_joint1": -1.0629023185469682,
+        "idx63_arm_r_joint3": 0.18264605912881476,
+        "idx65_arm_r_joint5": 0.5780396166407004,
+        "idx66_arm_r_joint6": -0.8330096639498514,
+        "idx67_arm_r_joint7": 0.06068514764248883
+      },
+      {
+        "idx01_body_joint1": -0.9970307495709358,
+        "idx02_body_joint2": 2.5357928145574635,
+        "idx03_body_joint3": -1.2246028743128905,
+        "idx22_arm_l_joint2": -0.16636191043609308,
+        "idx62_arm_r_joint2": 0.0610479819430692,
+        "idx24_arm_l_joint4": -1.922633629688667,
+        "idx64_arm_r_joint4": -2.2836288856645726,
+        "idx31_gripper_l_inner_joint1": 0.0,
+        "idx71_gripper_r_inner_joint1": 0.0,
+        "idx21_arm_l_joint1": 0.512718777091941,
+        "idx23_arm_l_joint3": -0.07062866612320488,
+        "idx25_arm_l_joint5": -1.1248970532144171,
+        "idx26_arm_l_joint6": -0.634361115943768,
+        "idx27_arm_l_joint7": -0.9090899742177416,
+        "idx61_arm_r_joint1": -1.049105370605017,
+        "idx63_arm_r_joint3": 0.1978230539240774,
+        "idx65_arm_r_joint5": 0.6176281624970232,
+        "idx66_arm_r_joint6": -0.8225719941788191,
+        "idx67_arm_r_joint7": 0.0742479563755626
+      },
+      {
+        "idx01_body_joint1": -0.9970307495709358,
+        "idx02_body_joint2": 2.5357928145574635,
+        "idx03_body_joint3": -1.2246028743128905,
+        "idx22_arm_l_joint2": -0.11251215754182856,
+        "idx62_arm_r_joint2": 0.14455324310302803,
+        "idx24_arm_l_joint4": -1.9876480422394027,
+        "idx64_arm_r_joint4": -2.3614018899602525,
+        "idx31_gripper_l_inner_joint1": 0.0,
+        "idx71_gripper_r_inner_joint1": 0.0,
+        "idx21_arm_l_joint1": 0.48347991936380047,
+        "idx23_arm_l_joint3": -0.09566225836745393,
+        "idx25_arm_l_joint5": -1.159244121818356,
+        "idx26_arm_l_joint6": -0.5869036819401766,
+        "idx27_arm_l_joint7": -0.9199028285916268,
+        "idx61_arm_r_joint1": -1.0340378196598978,
+        "idx63_arm_r_joint3": 0.21704922727698214,
+        "idx65_arm_r_joint5": 0.6674269354363259,
+        "idx66_arm_r_joint6": -0.8174384935322752,
+        "idx67_arm_r_joint7": 0.09474921360619955
+      },
+      {
+        "idx01_body_joint1": -0.9970307495709358,
+        "idx02_body_joint2": 2.5357928145574635,
+        "idx03_body_joint3": -1.2246028743128905,
+        "idx22_arm_l_joint2": -0.06134090750904994,
+        "idx62_arm_r_joint2": 0.2329279804620778,
+        "idx24_arm_l_joint4": -2.0466021809874326,
+        "idx64_arm_r_joint4": -2.43488053751266,
+        "idx31_gripper_l_inner_joint1": 0.0,
+        "idx71_gripper_r_inner_joint1": 0.0,
+        "idx21_arm_l_joint1": 0.45288195751125715,
+        "idx23_arm_l_joint3": -0.12398954173668535,
+        "idx25_arm_l_joint5": -1.199106547974683,
+        "idx26_arm_l_joint6": -0.5379791993123193,
+        "idx27_arm_l_joint7": -0.9330878797476153,
+        "idx61_arm_r_joint1": -1.017228121585838,
+        "idx63_arm_r_joint3": 0.24094283481553638,
+        "idx65_arm_r_joint5": 0.7299056095914952,
+        "idx66_arm_r_joint6": -0.818099284043013,
+        "idx67_arm_r_joint7": 0.12388017269241122
+      }
+    ],
+    "fixed_body": {
+      "idx01_body_joint1": -0.9970307495709358,
+      "idx02_body_joint2": 2.5357928145574635,
+      "idx03_body_joint3": -1.2246028743128905
+    },
+    "support_height_m": 0.0,
+    "torso_envelope": {
+      "max_tilt_deg": 20,
+      "max_body_joint_deg": 180,
+      "static_effort_fraction": 0.8
+    },
+    "envelope_checks": [
+      {
+        "ok": true,
+        "torso_tilt_deg": 17.9999957208451,
+        "max_body_joint_deg": 145.2902259937429,
+        "maximum_static_effort_fraction": 0.16166485492462274,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 5.658269922361796,
+          "limit_nm": 35.0,
+          "ratio": 0.16166485492462274
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 17.999995720845085,
+        "max_body_joint_deg": 145.2902259937429,
+        "maximum_static_effort_fraction": 0.16338747407943752,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 5.718561592780313,
+          "limit_nm": 35.0,
+          "ratio": 0.16338747407943752
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 17.999995720845085,
+        "max_body_joint_deg": 145.2902259937429,
+        "maximum_static_effort_fraction": 0.16497885977424434,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 5.774260092098552,
+          "limit_nm": 35.0,
+          "ratio": 0.16497885977424434
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 17.9999957208451,
+        "max_body_joint_deg": 145.2902259937429,
+        "maximum_static_effort_fraction": 0.16644219216245815,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 5.825476725686035,
+          "limit_nm": 35.0,
+          "ratio": 0.16644219216245815
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 17.9999957208451,
+        "max_body_joint_deg": 145.2902259937429,
+        "maximum_static_effort_fraction": 0.16778079417577493,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 5.872327796152122,
+          "limit_nm": 35.0,
+          "ratio": 0.16778079417577493
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 17.9999957208451,
+        "max_body_joint_deg": 145.2902259937429,
+        "maximum_static_effort_fraction": 0.16899801326039432,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 5.914930464113802,
+          "limit_nm": 35.0,
+          "ratio": 0.16899801326039432
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 17.9999957208451,
+        "max_body_joint_deg": 145.2902259937429,
+        "maximum_static_effort_fraction": 0.17009709204642004,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 5.953398221624702,
+          "limit_nm": 35.0,
+          "ratio": 0.17009709204642004
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 17.9999957208451,
+        "max_body_joint_deg": 145.2902259937429,
+        "maximum_static_effort_fraction": 0.20373241374254808,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 7.130634480989182,
+          "limit_nm": 35.0,
+          "ratio": 0.20373241374254808
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 17.9999957208451,
+        "max_body_joint_deg": 145.2902259937429,
+        "maximum_static_effort_fraction": 0.21520216303481235,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 7.532075706218432,
+          "limit_nm": 35.0,
+          "ratio": 0.21520216303481235
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 17.9999957208451,
+        "max_body_joint_deg": 145.2902259937429,
+        "maximum_static_effort_fraction": 0.2253182839987208,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 7.886139939955228,
+          "limit_nm": 35.0,
+          "ratio": 0.2253182839987208
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 17.9999957208451,
+        "max_body_joint_deg": 145.2902259937429,
+        "maximum_static_effort_fraction": 0.2342761055757732,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 8.199663695152061,
+          "limit_nm": 35.0,
+          "ratio": 0.2342761055757732
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 17.9999957208451,
+        "max_body_joint_deg": 145.2902259937429,
+        "maximum_static_effort_fraction": 0.24221103350419568,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 8.477386172646849,
+          "limit_nm": 35.0,
+          "ratio": 0.24221103350419568
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 17.9999957208451,
+        "max_body_joint_deg": 145.2902259937429,
+        "maximum_static_effort_fraction": 0.24921968398617145,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 8.722688939516,
+          "limit_nm": 35.0,
+          "ratio": 0.24921968398617145
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 17.9999957208451,
+        "max_body_joint_deg": 145.2902259937429,
+        "maximum_static_effort_fraction": 0.25537293429158164,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 8.938052700205358,
+          "limit_nm": 35.0,
+          "ratio": 0.25537293429158164
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 17.9999957208451,
+        "max_body_joint_deg": 145.2902259937429,
+        "maximum_static_effort_fraction": 0.2607248106140094,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 9.125368371490328,
+          "limit_nm": 35.0,
+          "ratio": 0.2607248106140094
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 17.9999957208451,
+        "max_body_joint_deg": 145.2902259937429,
+        "maximum_static_effort_fraction": 0.2653212839000718,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 9.286244936502513,
+          "limit_nm": 35.0,
+          "ratio": 0.2653212839000718
+        }
+      }
+    ],
+    "scope": "fixed torso; arms-only IK/lift; initial stance search; no navigation or object attachment",
+    "object_yaw_deg": 0.0,
+    "strategy": "geometry_feature_side_approach",
+    "hold_gripper_q": 0.0,
+    "original_candidate": 2,
+    "self_collision_audit_waypoints": 16,
+    "descent_self_audit": [],
+    "q_start": {
+      "idx01_body_joint1": 0.0,
+      "idx02_body_joint2": 0.0,
+      "idx03_body_joint3": 0.0,
+      "idx22_arm_l_joint2": -0.4832832109603586,
+      "idx62_arm_r_joint2": -0.47127667769278797,
+      "idx24_arm_l_joint4": -1.194499135073278,
+      "idx64_arm_r_joint4": -1.620624207274358,
+      "idx31_gripper_l_inner_joint1": -0.785,
+      "idx71_gripper_r_inner_joint1": -0.785,
+      "idx21_arm_l_joint1": 0.7154607905040977,
+      "idx23_arm_l_joint3": -0.04775143358521168,
+      "idx25_arm_l_joint5": -1.3896473027533567,
+      "idx26_arm_l_joint6": -0.9764820053556615,
+      "idx27_arm_l_joint7": -1.3798153603781025,
+      "idx61_arm_r_joint1": -1.9463590657598817,
+      "idx63_arm_r_joint3": 1.13614967706827,
+      "idx65_arm_r_joint5": 0.7353262398798528,
+      "idx66_arm_r_joint6": -1.012299999971693,
+      "idx67_arm_r_joint7": 0.7179238199698231
+    },
+    "native_self_collision_checked": true,
+    "whole_robot_object_clearance_checked": true
+  },
+  "frozen_tail_frames": 60
+}

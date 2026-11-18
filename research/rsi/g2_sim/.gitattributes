@@ -1,0 +1,10 @@
+# Frozen evidence must retain its original bytes, including historical whitespace.
+snapshot/** -text -whitespace
+fixtures/** -text -whitespace
+results/** -text -whitespace
+snapshot_manifest.json -text
+baselines.json -text
+upstream.json -text
+*.py text eol=lf
+snapshot/*.py -text -whitespace
+*.md text eol=lf

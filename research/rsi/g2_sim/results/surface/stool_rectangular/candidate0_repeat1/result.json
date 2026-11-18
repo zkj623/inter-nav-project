@@ -1,0 +1,1373 @@
+{
+  "test_type": "upright_grasp",
+  "asset": "stool_rectangular",
+  "candidate": 0,
+  "repeat": 1,
+  "success": false,
+  "source_sha256": "5c9c832c36b396c633ba9559f3da2aafd2edeff7af20a817f44ed16585ccf0ac",
+  "gravity_compensation": true,
+  "cartesian_feedback": "arms-only feedback; fixed torso; no whole-body fallback; no object pose writes",
+  "initialization": "USD joint states, link transforms and drive targets seeded before world.reset per official Genie Sim guidance",
+  "mass_kg": 1.0,
+  "mass_source": "common screening assumption, not a real measured mass",
+  "static_friction": 1.0,
+  "dynamic_friction": 0.9,
+  "required_lift_m": 0.15,
+  "hold_seconds": 3.0,
+  "max_object_tilt_deg": 20.0,
+  "max_hold_relative_drift_m": 0.02,
+  "self_collision_enabled": true,
+  "max_loaded_visual_gap_m": 0.0015,
+  "max_contact_point_surface_error_m": 0.0025,
+  "robot_fixed_to_world": false,
+  "object_attachment": false,
+  "transport_tested": false,
+  "gripper_coupling": "native PhysX mimic constraints; only master finger joints actuated",
+  "runtime": "Isaac Sim 4.2 compatibility harness, official CRS + OmniPicker geometry",
+  "drive_assumption": "IDEAL body kp100000 kd5000 cap1e7; other joints baseline; corrected inertia; not real hardware validation",
+  "gravity_compensation_method": "URDF dU/dq; ideal body torque cap; other original limits",
+  "envelope": {
+    "max_torso_tilt_deg": 20.0,
+    "max_body_joint_deg": 180.0,
+    "max_static_effort_fraction": 0.8
+  },
+  "support_height_m": 0.0,
+  "includes_descent": true,
+  "self_collision_exclusions": [
+    [
+      "/robot/arm_l_link7",
+      "/robot/gripper_l_inner_link1"
+    ],
+    [
+      "/robot/arm_l_link7",
+      "/robot/gripper_l_inner_link3"
+    ],
+    [
+      "/robot/arm_l_link7",
+      "/robot/gripper_l_inner_link4"
+    ],
+    [
+      "/robot/arm_l_link7",
+      "/robot/gripper_l_inner_link2"
+    ],
+    [
+      "/robot/arm_l_link7",
+      "/robot/gripper_l_outer_link1"
+    ],
+    [
+      "/robot/arm_l_link7",
+      "/robot/gripper_l_outer_link3"
+    ],
+    [
+      "/robot/arm_l_link7",
+      "/robot/gripper_l_outer_link4"
+    ],
+    [
+      "/robot/arm_l_link7",
+      "/robot/gripper_l_outer_link2"
+    ],
+    [
+      "/robot/gripper_l_inner_link1",
+      "/robot/gripper_l_inner_link3"
+    ],
+    [
+      "/robot/gripper_l_inner_link1",
+      "/robot/gripper_l_inner_link4"
+    ],
+    [
+      "/robot/gripper_l_inner_link1",
+      "/robot/gripper_l_inner_link2"
+    ],
+    [
+      "/robot/gripper_l_inner_link1",
+      "/robot/gripper_l_outer_link1"
+    ],
+    [
+      "/robot/gripper_l_inner_link1",
+      "/robot/gripper_l_outer_link3"
+    ],
+    [
+      "/robot/gripper_l_inner_link1",
+      "/robot/gripper_l_outer_link4"
+    ],
+    [
+      "/robot/gripper_l_inner_link1",
+      "/robot/gripper_l_outer_link2"
+    ],
+    [
+      "/robot/gripper_l_inner_link3",
+      "/robot/gripper_l_inner_link4"
+    ],
+    [
+      "/robot/gripper_l_inner_link3",
+      "/robot/gripper_l_inner_link2"
+    ],
+    [
+      "/robot/gripper_l_inner_link3",
+      "/robot/gripper_l_outer_link1"
+    ],
+    [
+      "/robot/gripper_l_inner_link3",
+      "/robot/gripper_l_outer_link3"
+    ],
+    [
+      "/robot/gripper_l_inner_link3",
+      "/robot/gripper_l_outer_link4"
+    ],
+    [
+      "/robot/gripper_l_inner_link3",
+      "/robot/gripper_l_outer_link2"
+    ],
+    [
+      "/robot/gripper_l_inner_link4",
+      "/robot/gripper_l_inner_link2"
+    ],
+    [
+      "/robot/gripper_l_inner_link4",
+      "/robot/gripper_l_outer_link1"
+    ],
+    [
+      "/robot/gripper_l_inner_link4",
+      "/robot/gripper_l_outer_link3"
+    ],
+    [
+      "/robot/gripper_l_inner_link4",
+      "/robot/gripper_l_outer_link4"
+    ],
+    [
+      "/robot/gripper_l_inner_link4",
+      "/robot/gripper_l_outer_link2"
+    ],
+    [
+      "/robot/gripper_l_inner_link2",
+      "/robot/gripper_l_outer_link1"
+    ],
+    [
+      "/robot/gripper_l_inner_link2",
+      "/robot/gripper_l_outer_link3"
+    ],
+    [
+      "/robot/gripper_l_inner_link2",
+      "/robot/gripper_l_outer_link4"
+    ],
+    [
+      "/robot/gripper_l_inner_link2",
+      "/robot/gripper_l_outer_link2"
+    ],
+    [
+      "/robot/gripper_l_outer_link1",
+      "/robot/gripper_l_outer_link3"
+    ],
+    [
+      "/robot/gripper_l_outer_link1",
+      "/robot/gripper_l_outer_link4"
+    ],
+    [
+      "/robot/gripper_l_outer_link1",
+      "/robot/gripper_l_outer_link2"
+    ],
+    [
+      "/robot/gripper_l_outer_link3",
+      "/robot/gripper_l_outer_link4"
+    ],
+    [
+      "/robot/gripper_l_outer_link3",
+      "/robot/gripper_l_outer_link2"
+    ],
+    [
+      "/robot/gripper_l_outer_link4",
+      "/robot/gripper_l_outer_link2"
+    ],
+    [
+      "/robot/arm_r_link7",
+      "/robot/gripper_r_inner_link1"
+    ],
+    [
+      "/robot/arm_r_link7",
+      "/robot/gripper_r_inner_link3"
+    ],
+    [
+      "/robot/arm_r_link7",
+      "/robot/gripper_r_inner_link4"
+    ],
+    [
+      "/robot/arm_r_link7",
+      "/robot/gripper_r_inner_link2"
+    ],
+    [
+      "/robot/arm_r_link7",
+      "/robot/gripper_r_outer_link1"
+    ],
+    [
+      "/robot/arm_r_link7",
+      "/robot/gripper_r_outer_link3"
+    ],
+    [
+      "/robot/arm_r_link7",
+      "/robot/gripper_r_outer_link4"
+    ],
+    [
+      "/robot/arm_r_link7",
+      "/robot/gripper_r_outer_link2"
+    ],
+    [
+      "/robot/gripper_r_inner_link1",
+      "/robot/gripper_r_inner_link3"
+    ],
+    [
+      "/robot/gripper_r_inner_link1",
+      "/robot/gripper_r_inner_link4"
+    ],
+    [
+      "/robot/gripper_r_inner_link1",
+      "/robot/gripper_r_inner_link2"
+    ],
+    [
+      "/robot/gripper_r_inner_link1",
+      "/robot/gripper_r_outer_link1"
+    ],
+    [
+      "/robot/gripper_r_inner_link1",
+      "/robot/gripper_r_outer_link3"
+    ],
+    [
+      "/robot/gripper_r_inner_link1",
+      "/robot/gripper_r_outer_link4"
+    ],
+    [
+      "/robot/gripper_r_inner_link1",
+      "/robot/gripper_r_outer_link2"
+    ],
+    [
+      "/robot/gripper_r_inner_link3",
+      "/robot/gripper_r_inner_link4"
+    ],
+    [
+      "/robot/gripper_r_inner_link3",
+      "/robot/gripper_r_inner_link2"
+    ],
+    [
+      "/robot/gripper_r_inner_link3",
+      "/robot/gripper_r_outer_link1"
+    ],
+    [
+      "/robot/gripper_r_inner_link3",
+      "/robot/gripper_r_outer_link3"
+    ],
+    [
+      "/robot/gripper_r_inner_link3",
+      "/robot/gripper_r_outer_link4"
+    ],
+    [
+      "/robot/gripper_r_inner_link3",
+      "/robot/gripper_r_outer_link2"
+    ],
+    [
+      "/robot/gripper_r_inner_link4",
+      "/robot/gripper_r_inner_link2"
+    ],
+    [
+      "/robot/gripper_r_inner_link4",
+      "/robot/gripper_r_outer_link1"
+    ],
+    [
+      "/robot/gripper_r_inner_link4",
+      "/robot/gripper_r_outer_link3"
+    ],
+    [
+      "/robot/gripper_r_inner_link4",
+      "/robot/gripper_r_outer_link4"
+    ],
+    [
+      "/robot/gripper_r_inner_link4",
+      "/robot/gripper_r_outer_link2"
+    ],
+    [
+      "/robot/gripper_r_inner_link2",
+      "/robot/gripper_r_outer_link1"
+    ],
+    [
+      "/robot/gripper_r_inner_link2",
+      "/robot/gripper_r_outer_link3"
+    ],
+    [
+      "/robot/gripper_r_inner_link2",
+      "/robot/gripper_r_outer_link4"
+    ],
+    [
+      "/robot/gripper_r_inner_link2",
+      "/robot/gripper_r_outer_link2"
+    ],
+    [
+      "/robot/gripper_r_outer_link1",
+      "/robot/gripper_r_outer_link3"
+    ],
+    [
+      "/robot/gripper_r_outer_link1",
+      "/robot/gripper_r_outer_link4"
+    ],
+    [
+      "/robot/gripper_r_outer_link1",
+      "/robot/gripper_r_outer_link2"
+    ],
+    [
+      "/robot/gripper_r_outer_link3",
+      "/robot/gripper_r_outer_link4"
+    ],
+    [
+      "/robot/gripper_r_outer_link3",
+      "/robot/gripper_r_outer_link2"
+    ],
+    [
+      "/robot/gripper_r_outer_link4",
+      "/robot/gripper_r_outer_link2"
+    ],
+    [
+      "/robot/base_link",
+      "/robot/body_link1"
+    ],
+    [
+      "/robot/base_link",
+      "/robot/body_link2"
+    ],
+    [
+      "/robot/base_link",
+      "/robot/chassis_lwheel_front_link1"
+    ],
+    [
+      "/robot/base_link",
+      "/robot/chassis_lwheel_front_link2"
+    ],
+    [
+      "/robot/base_link",
+      "/robot/chassis_lwheel_rear_link1"
+    ],
+    [
+      "/robot/base_link",
+      "/robot/chassis_lwheel_rear_link2"
+    ],
+    [
+      "/robot/base_link",
+      "/robot/chassis_rwheel_front_link1"
+    ],
+    [
+      "/robot/base_link",
+      "/robot/chassis_rwheel_front_link2"
+    ],
+    [
+      "/robot/base_link",
+      "/robot/chassis_rwheel_rear_link1"
+    ],
+    [
+      "/robot/base_link",
+      "/robot/chassis_rwheel_rear_link2"
+    ],
+    [
+      "/robot/body_link1",
+      "/robot/body_link2"
+    ],
+    [
+      "/robot/body_link1",
+      "/robot/body_link3"
+    ],
+    [
+      "/robot/body_link1",
+      "/robot/chassis_lwheel_front_link1"
+    ],
+    [
+      "/robot/body_link1",
+      "/robot/chassis_lwheel_rear_link1"
+    ],
+    [
+      "/robot/body_link1",
+      "/robot/chassis_rwheel_front_link1"
+    ],
+    [
+      "/robot/body_link1",
+      "/robot/chassis_rwheel_rear_link1"
+    ],
+    [
+      "/robot/body_link2",
+      "/robot/body_link3"
+    ],
+    [
+      "/robot/body_link2",
+      "/robot/body_link4"
+    ],
+    [
+      "/robot/body_link3",
+      "/robot/body_link4"
+    ],
+    [
+      "/robot/body_link3",
+      "/robot/body_link5"
+    ],
+    [
+      "/robot/body_link4",
+      "/robot/body_link5"
+    ],
+    [
+      "/robot/body_link4",
+      "/robot/head_link1"
+    ],
+    [
+      "/robot/body_link4",
+      "/robot/arm_l_link1"
+    ],
+    [
+      "/robot/body_link4",
+      "/robot/arm_r_link1"
+    ],
+    [
+      "/robot/body_link5",
+      "/robot/head_link1"
+    ],
+    [
+      "/robot/body_link5",
+      "/robot/head_link2"
+    ],
+    [
+      "/robot/body_link5",
+      "/robot/head_link3"
+    ],
+    [
+      "/robot/body_link5",
+      "/robot/arm_l_link1"
+    ],
+    [
+      "/robot/body_link5",
+      "/robot/arm_l_link2"
+    ],
+    [
+      "/robot/body_link5",
+      "/robot/arm_r_link1"
+    ],
+    [
+      "/robot/body_link5",
+      "/robot/arm_r_link2"
+    ],
+    [
+      "/robot/head_link1",
+      "/robot/head_link2"
+    ],
+    [
+      "/robot/head_link1",
+      "/robot/head_link3"
+    ],
+    [
+      "/robot/head_link1",
+      "/robot/arm_l_link1"
+    ],
+    [
+      "/robot/head_link1",
+      "/robot/arm_r_link1"
+    ],
+    [
+      "/robot/head_link2",
+      "/robot/head_link3"
+    ],
+    [
+      "/robot/arm_l_link1",
+      "/robot/arm_l_link2"
+    ],
+    [
+      "/robot/arm_l_link1",
+      "/robot/arm_l_link3"
+    ],
+    [
+      "/robot/arm_l_link1",
+      "/robot/arm_r_link1"
+    ],
+    [
+      "/robot/arm_l_link2",
+      "/robot/arm_l_link3"
+    ],
+    [
+      "/robot/arm_l_link2",
+      "/robot/arm_l_link4"
+    ],
+    [
+      "/robot/arm_l_link3",
+      "/robot/arm_l_link4"
+    ],
+    [
+      "/robot/arm_l_link3",
+      "/robot/arm_l_link5"
+    ],
+    [
+      "/robot/arm_l_link4",
+      "/robot/arm_l_link5"
+    ],
+    [
+      "/robot/arm_l_link4",
+      "/robot/arm_l_link6"
+    ],
+    [
+      "/robot/arm_l_link5",
+      "/robot/arm_l_link6"
+    ],
+    [
+      "/robot/arm_l_link5",
+      "/robot/arm_l_link7"
+    ],
+    [
+      "/robot/arm_l_link6",
+      "/robot/arm_l_link7"
+    ],
+    [
+      "/robot/arm_l_link6",
+      "/robot/gripper_l_inner_link1"
+    ],
+    [
+      "/robot/arm_l_link6",
+      "/robot/gripper_l_outer_link1"
+    ],
+    [
+      "/robot/arm_l_link7",
+      "/robot/gripper_l_inner_link1"
+    ],
+    [
+      "/robot/arm_l_link7",
+      "/robot/gripper_l_outer_link1"
+    ],
+    [
+      "/robot/gripper_l_inner_link1",
+      "/robot/gripper_l_inner_link3"
+    ],
+    [
+      "/robot/gripper_l_inner_link1",
+      "/robot/gripper_l_inner_link4"
+    ],
+    [
+      "/robot/gripper_l_inner_link1",
+      "/robot/gripper_l_outer_link1"
+    ],
+    [
+      "/robot/gripper_l_inner_link3",
+      "/robot/gripper_l_inner_link4"
+    ],
+    [
+      "/robot/gripper_l_inner_link3",
+      "/robot/gripper_l_inner_link2"
+    ],
+    [
+      "/robot/gripper_l_inner_link4",
+      "/robot/gripper_l_inner_link2"
+    ],
+    [
+      "/robot/gripper_l_outer_link1",
+      "/robot/gripper_l_outer_link3"
+    ],
+    [
+      "/robot/gripper_l_outer_link1",
+      "/robot/gripper_l_outer_link4"
+    ],
+    [
+      "/robot/gripper_l_outer_link3",
+      "/robot/gripper_l_outer_link4"
+    ],
+    [
+      "/robot/gripper_l_outer_link3",
+      "/robot/gripper_l_outer_link2"
+    ],
+    [
+      "/robot/gripper_l_outer_link4",
+      "/robot/gripper_l_outer_link2"
+    ],
+    [
+      "/robot/arm_r_link1",
+      "/robot/arm_r_link2"
+    ],
+    [
+      "/robot/arm_r_link1",
+      "/robot/arm_r_link3"
+    ],
+    [
+      "/robot/arm_r_link2",
+      "/robot/arm_r_link3"
+    ],
+    [
+      "/robot/arm_r_link2",
+      "/robot/arm_r_link4"
+    ],
+    [
+      "/robot/arm_r_link3",
+      "/robot/arm_r_link4"
+    ],
+    [
+      "/robot/arm_r_link3",
+      "/robot/arm_r_link5"
+    ],
+    [
+      "/robot/arm_r_link4",
+      "/robot/arm_r_link5"
+    ],
+    [
+      "/robot/arm_r_link4",
+      "/robot/arm_r_link6"
+    ],
+    [
+      "/robot/arm_r_link5",
+      "/robot/arm_r_link6"
+    ],
+    [
+      "/robot/arm_r_link5",
+      "/robot/arm_r_link7"
+    ],
+    [
+      "/robot/arm_r_link6",
+      "/robot/arm_r_link7"
+    ],
+    [
+      "/robot/arm_r_link6",
+      "/robot/gripper_r_inner_link1"
+    ],
+    [
+      "/robot/arm_r_link6",
+      "/robot/gripper_r_outer_link1"
+    ],
+    [
+      "/robot/arm_r_link7",
+      "/robot/gripper_r_inner_link1"
+    ],
+    [
+      "/robot/arm_r_link7",
+      "/robot/gripper_r_outer_link1"
+    ],
+    [
+      "/robot/gripper_r_inner_link1",
+      "/robot/gripper_r_inner_link3"
+    ],
+    [
+      "/robot/gripper_r_inner_link1",
+      "/robot/gripper_r_inner_link4"
+    ],
+    [
+      "/robot/gripper_r_inner_link1",
+      "/robot/gripper_r_outer_link1"
+    ],
+    [
+      "/robot/gripper_r_inner_link3",
+      "/robot/gripper_r_inner_link4"
+    ],
+    [
+      "/robot/gripper_r_inner_link3",
+      "/robot/gripper_r_inner_link2"
+    ],
+    [
+      "/robot/gripper_r_inner_link4",
+      "/robot/gripper_r_inner_link2"
+    ],
+    [
+      "/robot/gripper_r_outer_link1",
+      "/robot/gripper_r_outer_link3"
+    ],
+    [
+      "/robot/gripper_r_outer_link1",
+      "/robot/gripper_r_outer_link4"
+    ],
+    [
+      "/robot/gripper_r_outer_link3",
+      "/robot/gripper_r_outer_link4"
+    ],
+    [
+      "/robot/gripper_r_outer_link3",
+      "/robot/gripper_r_outer_link2"
+    ],
+    [
+      "/robot/gripper_r_outer_link4",
+      "/robot/gripper_r_outer_link2"
+    ],
+    [
+      "/robot/chassis_lwheel_front_link1",
+      "/robot/chassis_lwheel_front_link2"
+    ],
+    [
+      "/robot/chassis_lwheel_front_link1",
+      "/robot/chassis_lwheel_rear_link1"
+    ],
+    [
+      "/robot/chassis_lwheel_front_link1",
+      "/robot/chassis_rwheel_front_link1"
+    ],
+    [
+      "/robot/chassis_lwheel_front_link1",
+      "/robot/chassis_rwheel_rear_link1"
+    ],
+    [
+      "/robot/chassis_lwheel_rear_link1",
+      "/robot/chassis_lwheel_rear_link2"
+    ],
+    [
+      "/robot/chassis_lwheel_rear_link1",
+      "/robot/chassis_rwheel_front_link1"
+    ],
+    [
+      "/robot/chassis_lwheel_rear_link1",
+      "/robot/chassis_rwheel_rear_link1"
+    ],
+    [
+      "/robot/chassis_rwheel_front_link1",
+      "/robot/chassis_rwheel_front_link2"
+    ],
+    [
+      "/robot/chassis_rwheel_front_link1",
+      "/robot/chassis_rwheel_rear_link1"
+    ],
+    [
+      "/robot/chassis_rwheel_rear_link1",
+      "/robot/chassis_rwheel_rear_link2"
+    ]
+  ],
+  "disabled_collision_schemas_removed": 124,
+  "object_collision_variant": "visible triangle prisms, 0.15mm normal half-thickness",
+  "fk_initial_errors_m": {
+    "gripper_l_inner_link1": 3.3954972510358456e-07,
+    "gripper_l_inner_link3": 3.391914331825143e-07,
+    "gripper_l_inner_link4": 3.144160781886586e-07,
+    "gripper_l_inner_link2": 3.7523569028573545e-07,
+    "gripper_l_outer_link1": 4.3005784279113823e-07,
+    "gripper_l_outer_link3": 5.0810613033617e-07,
+    "gripper_l_outer_link4": 4.3758287224505004e-07,
+    "gripper_l_outer_link2": 4.3300908673305255e-07,
+    "gripper_r_inner_link1": 6.06935028572447e-07,
+    "gripper_r_inner_link3": 7.080557724753169e-07,
+    "gripper_r_inner_link4": 6.706870799010905e-07,
+    "gripper_r_inner_link2": 6.748841464182464e-07,
+    "gripper_r_outer_link1": 6.391267537016285e-07,
+    "gripper_r_outer_link3": 5.682373753664091e-07,
+    "gripper_r_outer_link4": 5.982708448320022e-07,
+    "gripper_r_outer_link2": 5.892098901018366e-07
+  },
+  "hold_four_finger_contact_fraction": 0.0,
+  "failure": "LIFT_HOLD_CRITERIA_NOT_MET",
+  "max_lift_m": 0.0077614933252334595,
+  "min_hold_lift_m": -1.341104507446289e-07,
+  "max_hold_tilt_deg": 0.05221186411540923,
+  "hold_relative_drift_m": 0.014074037111252921,
+  "hold_bilateral_contact_fraction": 0.0,
+  "contact_witness_points": 3428,
+  "max_contact_surface_error_m": 0.0019421531678830725,
+  "frames": 1078,
+  "simulated_seconds": 36.0,
+  "plan": {
+    "asset": "stool_rectangular",
+    "mode": "bimanual_top",
+    "candidate": {
+      "left": {
+        "score": 0.1548735262515447,
+        "width": 0.008663446027678212,
+        "pose": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.20004184614875564
+          ],
+          [
+            0.0,
+            -1.0,
+            0.0,
+            0.05411963445490056
+          ],
+          [
+            0.0,
+            0.0,
+            -1.0,
+            0.40703125244140625
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "axis": 0,
+        "contact_pair_object_m": [
+          [
+            0.19571012313491654,
+            0.05411963445490056,
+            0.40703125244140625
+          ],
+          [
+            0.20437356916259475,
+            0.05411963445490056,
+            0.40703125244140625
+          ]
+        ],
+        "region_height_fraction": 0.98
+      },
+      "right": {
+        "score": 0.1552659547910079,
+        "width": 0.00866584756256683,
+        "pose": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.20085978109586905
+          ],
+          [
+            0.0,
+            -1.0,
+            0.0,
+            -0.05411963445490056
+          ],
+          [
+            0.0,
+            0.0,
+            -1.0,
+            0.40703125244140625
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "axis": 0,
+        "contact_pair_object_m": [
+          [
+            0.19652685731458563,
+            -0.05411963445490056,
+            0.40703125244140625
+          ],
+          [
+            0.20519270487715247,
+            -0.05411963445490056,
+            0.40703125244140625
+          ]
+        ],
+        "region_height_fraction": 0.98
+      },
+      "gap": 0.025
+    },
+    "object_position": [
+      0.5911089935302735,
+      0.0,
+      0.002
+    ],
+    "base_pose": [
+      [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0,
+        0.04
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "tcp": [
+      [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0,
+        0.13
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "q_pre": {
+      "idx01_body_joint1": -1.0471975511965976,
+      "idx02_body_joint2": 2.443460952792061,
+      "idx03_body_joint3": -1.0471975511965976,
+      "idx22_arm_l_joint2": -1.3627321382807402,
+      "idx62_arm_r_joint2": -1.3650616639298268,
+      "idx24_arm_l_joint4": -1.145419289098055,
+      "idx64_arm_r_joint4": -1.1404340000660196,
+      "idx31_gripper_l_inner_joint1": -0.785,
+      "idx71_gripper_r_inner_joint1": -0.785,
+      "idx21_arm_l_joint1": 0.10100990859709492,
+      "idx23_arm_l_joint3": -0.28093020920559836,
+      "idx25_arm_l_joint5": -2.6467225068135227,
+      "idx26_arm_l_joint6": 0.6895542017145506,
+      "idx27_arm_l_joint7": 1.5358999999931027,
+      "idx61_arm_r_joint1": -0.1009650533573008,
+      "idx63_arm_r_joint3": 0.2828086959463513,
+      "idx65_arm_r_joint5": 2.6453752876578083,
+      "idx66_arm_r_joint6": 0.6926637748137785,
+      "idx67_arm_r_joint7": -1.5358998004924942
+    },
+    "q_grasp": {
+      "idx01_body_joint1": -1.0471975511965976,
+      "idx02_body_joint2": 2.443460952792061,
+      "idx03_body_joint3": -1.0471975511965976,
+      "idx22_arm_l_joint2": -1.4732763681029273,
+      "idx62_arm_r_joint2": -1.4766495008504799,
+      "idx24_arm_l_joint4": -0.9172373140652214,
+      "idx64_arm_r_joint4": -0.9112716931833417,
+      "idx31_gripper_l_inner_joint1": -0.785,
+      "idx71_gripper_r_inner_joint1": -0.785,
+      "idx21_arm_l_joint1": 0.28020206515755136,
+      "idx23_arm_l_joint3": -0.37605805097773837,
+      "idx25_arm_l_joint5": -2.2995300515128996,
+      "idx26_arm_l_joint6": 0.8022873378427848,
+      "idx27_arm_l_joint7": 1.3344271483370214,
+      "idx61_arm_r_joint1": -0.2806445239754123,
+      "idx63_arm_r_joint3": 0.3809372229580656,
+      "idx65_arm_r_joint5": 2.2948838946589394,
+      "idx66_arm_r_joint6": 0.8063904186130523,
+      "idx67_arm_r_joint7": -1.3339145866394404
+    },
+    "q_close": {
+      "idx01_body_joint1": -1.0471975511965976,
+      "idx02_body_joint2": 2.443460952792061,
+      "idx03_body_joint3": -1.0471975511965976,
+      "idx22_arm_l_joint2": -1.4732763681029273,
+      "idx62_arm_r_joint2": -1.4766495008504799,
+      "idx24_arm_l_joint4": -0.9172373140652214,
+      "idx64_arm_r_joint4": -0.9112716931833417,
+      "idx31_gripper_l_inner_joint1": 0.0,
+      "idx71_gripper_r_inner_joint1": 0.0,
+      "idx21_arm_l_joint1": 0.28020206515755136,
+      "idx23_arm_l_joint3": -0.37605805097773837,
+      "idx25_arm_l_joint5": -2.2995300515128996,
+      "idx26_arm_l_joint6": 0.8022873378427848,
+      "idx27_arm_l_joint7": 1.3344271483370214,
+      "idx61_arm_r_joint1": -0.2806445239754123,
+      "idx63_arm_r_joint3": 0.3809372229580656,
+      "idx65_arm_r_joint5": 2.2948838946589394,
+      "idx66_arm_r_joint6": 0.8063904186130523,
+      "idx67_arm_r_joint7": -1.3339145866394404
+    },
+    "q_lift": [
+      {
+        "idx01_body_joint1": -1.0471975511965976,
+        "idx02_body_joint2": 2.443460952792061,
+        "idx03_body_joint3": -1.0471975511965976,
+        "idx22_arm_l_joint2": -1.4447464409902975,
+        "idx62_arm_r_joint2": -1.4480254957332113,
+        "idx24_arm_l_joint4": -0.9966478454850181,
+        "idx64_arm_r_joint4": -0.9910982968358851,
+        "idx31_gripper_l_inner_joint1": 0.0,
+        "idx71_gripper_r_inner_joint1": 0.0,
+        "idx21_arm_l_joint1": 0.2614206314495881,
+        "idx23_arm_l_joint3": -0.3964409590248838,
+        "idx25_arm_l_joint5": -2.3778696437623736,
+        "idx26_arm_l_joint6": 0.7854302443716484,
+        "idx27_arm_l_joint7": 1.4302467640787873,
+        "idx61_arm_r_joint1": -0.262173210562522,
+        "idx63_arm_r_joint3": 0.4014184852938388,
+        "idx65_arm_r_joint5": 2.3737848454978066,
+        "idx66_arm_r_joint6": 0.7895638652307582,
+        "idx67_arm_r_joint7": -1.4305805126642097
+      },
+      {
+        "idx01_body_joint1": -1.0471975511965976,
+        "idx02_body_joint2": 2.443460952792061,
+        "idx03_body_joint3": -1.0471975511965976,
+        "idx22_arm_l_joint2": -1.4224132630033515,
+        "idx62_arm_r_joint2": -1.4256365610574293,
+        "idx24_arm_l_joint4": -1.0626230933182206,
+        "idx64_arm_r_joint4": -1.057353409633646,
+        "idx31_gripper_l_inner_joint1": 0.0,
+        "idx71_gripper_r_inner_joint1": 0.0,
+        "idx21_arm_l_joint1": 0.23820077491059974,
+        "idx23_arm_l_joint3": -0.4142908224632675,
+        "idx25_arm_l_joint5": -2.452832199934776,
+        "idx26_arm_l_joint6": 0.7668689417584801,
+        "idx27_arm_l_joint7": 1.5160351231659823,
+        "idx61_arm_r_joint1": -0.23917712303077826,
+        "idx63_arm_r_joint3": 0.41927016457549593,
+        "idx65_arm_r_joint5": 2.4492323418991955,
+        "idx66_arm_r_joint6": 0.770973313324009,
+        "idx67_arm_r_joint7": -1.5170220187465326
+      },
+      {
+        "idx01_body_joint1": -1.0471975511965976,
+        "idx02_body_joint2": 2.443460952792061,
+        "idx03_body_joint3": -1.0471975511965976,
+        "idx22_arm_l_joint2": -1.3838016855703898,
+        "idx62_arm_r_joint2": -1.3864853577594165,
+        "idx24_arm_l_joint4": -1.1173698695100098,
+        "idx64_arm_r_joint4": -1.1122956623418685,
+        "idx31_gripper_l_inner_joint1": 0.0,
+        "idx71_gripper_r_inner_joint1": 0.0,
+        "idx21_arm_l_joint1": 0.15733184687295879,
+        "idx23_arm_l_joint3": -0.33505456381877063,
+        "idx25_arm_l_joint5": -2.5745138945213264,
+        "idx26_arm_l_joint6": 0.7178698425466992,
+        "idx27_arm_l_joint7": 1.5351677819202478,
+        "idx61_arm_r_joint1": -0.15788085338760585,
+        "idx63_arm_r_joint3": 0.3383886917226134,
+        "idx65_arm_r_joint5": 2.5722408813722906,
+        "idx66_arm_r_joint6": 0.7213994067875922,
+        "idx67_arm_r_joint7": -1.5357997451281022
+      },
+      {
+        "idx01_body_joint1": -1.0471975511965976,
+        "idx02_body_joint2": 2.443460952792061,
+        "idx03_body_joint3": -1.0471975511965976,
+        "idx22_arm_l_joint2": -1.3506891738345121,
+        "idx62_arm_r_joint2": -1.3529379852270613,
+        "idx24_arm_l_joint4": -1.1622609119165719,
+        "idx64_arm_r_joint4": -1.1573257544498647,
+        "idx31_gripper_l_inner_joint1": 0.0,
+        "idx71_gripper_r_inner_joint1": 0.0,
+        "idx21_arm_l_joint1": 0.06369362318051111,
+        "idx23_arm_l_joint3": -0.24777712835455287,
+        "idx25_arm_l_joint5": -2.6919979018871616,
+        "idx26_arm_l_joint6": 0.6730001779372907,
+        "idx27_arm_l_joint7": 1.5358999999969483,
+        "idx61_arm_r_joint1": -0.06365169208672279,
+        "idx63_arm_r_joint3": 0.24942576045398668,
+        "idx65_arm_r_joint5": 2.690852135980806,
+        "idx66_arm_r_joint6": 0.676049804441363,
+        "idx67_arm_r_joint7": -1.535899999320925
+      },
+      {
+        "idx01_body_joint1": -1.0471975511965976,
+        "idx02_body_joint2": 2.443460952792061,
+        "idx03_body_joint3": -1.0471975511965976,
+        "idx22_arm_l_joint2": -1.3267377160436218,
+        "idx62_arm_r_joint2": -1.3288346168227878,
+        "idx24_arm_l_joint4": -1.1981776656191108,
+        "idx64_arm_r_joint4": -1.1933414879138504,
+        "idx31_gripper_l_inner_joint1": 0.0,
+        "idx71_gripper_r_inner_joint1": 0.0,
+        "idx21_arm_l_joint1": -0.027711536237516543,
+        "idx23_arm_l_joint3": -0.17469867554935564,
+        "idx25_arm_l_joint5": -2.7968881702600563,
+        "idx26_arm_l_joint6": 0.6392567433207134,
+        "idx27_arm_l_joint7": 1.5358999962803979,
+        "idx61_arm_r_joint1": 0.02773827203361277,
+        "idx63_arm_r_joint3": 0.175881817976154,
+        "idx65_arm_r_joint5": 2.7961234688988883,
+        "idx66_arm_r_joint6": 0.6421981376394548,
+        "idx67_arm_r_joint7": -1.5358999997931906
+      },
+      {
+        "idx01_body_joint1": -1.0471975511965976,
+        "idx02_body_joint2": 2.443460952792061,
+        "idx03_body_joint3": -1.0471975511965976,
+        "idx22_arm_l_joint2": -1.3099729654807304,
+        "idx62_arm_r_joint2": -1.3119689207110214,
+        "idx24_arm_l_joint4": -1.2256983283178464,
+        "idx64_arm_r_joint4": -1.2209312371704042,
+        "idx31_gripper_l_inner_joint1": 0.0,
+        "idx71_gripper_r_inner_joint1": 0.0,
+        "idx21_arm_l_joint1": -0.1171055178002626,
+        "idx23_arm_l_joint3": -0.111705765400048,
+        "idx25_arm_l_joint5": -2.8936229175235537,
+        "idx26_arm_l_joint6": 0.6149357109795367,
+        "idx27_arm_l_joint7": 1.5358995536787385,
+        "idx61_arm_r_joint1": 0.11711063184109881,
+        "idx63_arm_r_joint3": 0.1125206163316505,
+        "idx65_arm_r_joint5": 2.8931272836850135,
+        "idx66_arm_r_joint6": 0.617808676900888,
+        "idx67_arm_r_joint7": -1.535899556086238
+      },
+      {
+        "idx01_body_joint1": -1.0471975511965976,
+        "idx02_body_joint2": 2.443460952792061,
+        "idx03_body_joint3": -1.0471975511965976,
+        "idx22_arm_l_joint2": -1.2991116347881748,
+        "idx62_arm_r_joint2": -1.3010435924664894,
+        "idx24_arm_l_joint4": -1.2451999748794116,
+        "idx64_arm_r_joint4": -1.2404785077332117,
+        "idx31_gripper_l_inner_joint1": 0.0,
+        "idx71_gripper_r_inner_joint1": 0.0,
+        "idx21_arm_l_joint1": -0.20512143131993182,
+        "idx23_arm_l_joint3": -0.055287322728890136,
+        "idx25_arm_l_joint5": -2.9853225416081646,
+        "idx26_arm_l_joint6": 0.5988612032972728,
+        "idx27_arm_l_joint7": 1.5358997534929613,
+        "idx61_arm_r_joint1": 0.20510185552116134,
+        "idx63_arm_r_joint3": 0.05578773054552686,
+        "idx65_arm_r_joint5": 2.985031389534652,
+        "idx66_arm_r_joint6": 0.6016917776462369,
+        "idx67_arm_r_joint7": -1.535899754957633
+      },
+      {
+        "idx01_body_joint1": -1.0471975511965976,
+        "idx02_body_joint2": 2.443460952792061,
+        "idx03_body_joint3": -1.0471975511965976,
+        "idx22_arm_l_joint2": -1.2926460312130272,
+        "idx62_arm_r_joint2": -1.2945830851153566,
+        "idx24_arm_l_joint4": -1.2583251231303247,
+        "idx64_arm_r_joint4": -1.2535585013831352,
+        "idx31_gripper_l_inner_joint1": 0.0,
+        "idx71_gripper_r_inner_joint1": 0.0,
+        "idx21_arm_l_joint1": -0.290795416134359,
+        "idx23_arm_l_joint3": -0.004565282832183903,
+        "idx25_arm_l_joint5": -3.071793478743064,
+        "idx26_arm_l_joint6": 0.5897823954041412,
+        "idx27_arm_l_joint7": 1.535899999928932,
+        "idx61_arm_r_joint1": 0.2908283749634706,
+        "idx63_arm_r_joint3": 0.004692946536953607,
+        "idx65_arm_r_joint5": 3.0717914581682564,
+        "idx66_arm_r_joint6": 0.5926184849865596,
+        "idx67_arm_r_joint7": -1.535899999907311
+      }
+    ],
+    "fixed_body": {
+      "idx01_body_joint1": -1.0471975511965976,
+      "idx02_body_joint2": 2.443460952792061,
+      "idx03_body_joint3": -1.0471975511965976
+    },
+    "support_height_m": 0.0,
+    "torso_envelope": {
+      "max_tilt_deg": 20,
+      "max_body_joint_deg": 180,
+      "static_effort_fraction": 0.8
+    },
+    "envelope_checks": [
+      {
+        "ok": true,
+        "torso_tilt_deg": 19.99999999999997,
+        "max_body_joint_deg": 140.0,
+        "maximum_static_effort_fraction": 0.23968545296844498,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 8.388990853895574,
+          "limit_nm": 35.0,
+          "ratio": 0.23968545296844498
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 19.99999999999997,
+        "max_body_joint_deg": 140.0,
+        "maximum_static_effort_fraction": 0.23090131722529028,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 8.08154610288516,
+          "limit_nm": 35.0,
+          "ratio": 0.23090131722529028
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 19.99999999999997,
+        "max_body_joint_deg": 140.0,
+        "maximum_static_effort_fraction": 0.2215951586072086,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 7.755830551252301,
+          "limit_nm": 35.0,
+          "ratio": 0.2215951586072086
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 19.99999999999997,
+        "max_body_joint_deg": 140.0,
+        "maximum_static_effort_fraction": 0.21966615531412964,
+        "worst_joint": {
+          "joint": "idx21_arm_l_joint1",
+          "required_nm": 23.723944773926,
+          "limit_nm": 108.0,
+          "ratio": 0.21966615531412964
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 19.99999999999997,
+        "max_body_joint_deg": 140.0,
+        "maximum_static_effort_fraction": 0.2182110036967518,
+        "worst_joint": {
+          "joint": "idx21_arm_l_joint1",
+          "required_nm": 23.566788399249194,
+          "limit_nm": 108.0,
+          "ratio": 0.2182110036967518
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 19.99999999999997,
+        "max_body_joint_deg": 140.0,
+        "maximum_static_effort_fraction": 0.21639339680597314,
+        "worst_joint": {
+          "joint": "idx21_arm_l_joint1",
+          "required_nm": 23.370486855045097,
+          "limit_nm": 108.0,
+          "ratio": 0.21639339680597314
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 19.99999999999997,
+        "max_body_joint_deg": 140.0,
+        "maximum_static_effort_fraction": 0.21420505512482194,
+        "worst_joint": {
+          "joint": "idx21_arm_l_joint1",
+          "required_nm": 23.13414595348077,
+          "limit_nm": 108.0,
+          "ratio": 0.21420505512482194
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 19.99999999999997,
+        "max_body_joint_deg": 140.0,
+        "maximum_static_effort_fraction": 0.23568168324731406,
+        "worst_joint": {
+          "joint": "idx21_arm_l_joint1",
+          "required_nm": 25.453621790709917,
+          "limit_nm": 108.0,
+          "ratio": 0.23568168324731406
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 19.99999999999997,
+        "max_body_joint_deg": 140.0,
+        "maximum_static_effort_fraction": 0.23667514010965968,
+        "worst_joint": {
+          "joint": "idx21_arm_l_joint1",
+          "required_nm": 25.560915131843245,
+          "limit_nm": 108.0,
+          "ratio": 0.23667514010965968
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 19.99999999999997,
+        "max_body_joint_deg": 140.0,
+        "maximum_static_effort_fraction": 0.2378380824615349,
+        "worst_joint": {
+          "joint": "idx21_arm_l_joint1",
+          "required_nm": 25.68651290584577,
+          "limit_nm": 108.0,
+          "ratio": 0.2378380824615349
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 19.99999999999997,
+        "max_body_joint_deg": 140.0,
+        "maximum_static_effort_fraction": 0.26215251064195266,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 9.175337872468344,
+          "limit_nm": 35.0,
+          "ratio": 0.26215251064195266
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 19.99999999999997,
+        "max_body_joint_deg": 140.0,
+        "maximum_static_effort_fraction": 0.28518514014625046,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 9.981479905118766,
+          "limit_nm": 35.0,
+          "ratio": 0.28518514014625046
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 19.99999999999997,
+        "max_body_joint_deg": 140.0,
+        "maximum_static_effort_fraction": 0.3021487245641869,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 10.57520535974654,
+          "limit_nm": 35.0,
+          "ratio": 0.3021487245641869
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 19.99999999999997,
+        "max_body_joint_deg": 140.0,
+        "maximum_static_effort_fraction": 0.31418952507234454,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 10.99663337753206,
+          "limit_nm": 35.0,
+          "ratio": 0.31418952507234454
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 19.99999999999997,
+        "max_body_joint_deg": 140.0,
+        "maximum_static_effort_fraction": 0.3220781383491893,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 11.272734842221626,
+          "limit_nm": 35.0,
+          "ratio": 0.3220781383491893
+        }
+      },
+      {
+        "ok": true,
+        "torso_tilt_deg": 19.99999999999997,
+        "max_body_joint_deg": 140.0,
+        "maximum_static_effort_fraction": 0.32644578734124285,
+        "worst_joint": {
+          "joint": "idx23_arm_l_joint3",
+          "required_nm": 11.4256025569435,
+          "limit_nm": 35.0,
+          "ratio": 0.32644578734124285
+        }
+      }
+    ],
+    "scope": "fixed torso; arms-only IK/lift; initial stance search; no navigation or object attachment",
+    "object_yaw_deg": 0.0,
+    "strategy": "geometry_feature_pinch",
+    "hold_gripper_q": 0.0,
+    "original_candidate": 0,
+    "self_collision_audit_waypoints": 16,
+    "descent_self_audit": [],
+    "q_start": {
+      "idx01_body_joint1": 0.0,
+      "idx02_body_joint2": 0.0,
+      "idx03_body_joint3": 0.0,
+      "idx22_arm_l_joint2": -1.3627321382807402,
+      "idx62_arm_r_joint2": -1.3650616639298268,
+      "idx24_arm_l_joint4": -1.145419289098055,
+      "idx64_arm_r_joint4": -1.1404340000660196,
+      "idx31_gripper_l_inner_joint1": -0.785,
+      "idx71_gripper_r_inner_joint1": -0.785,
+      "idx21_arm_l_joint1": 0.10100990859709492,
+      "idx23_arm_l_joint3": -0.28093020920559836,
+      "idx25_arm_l_joint5": -2.6467225068135227,
+      "idx26_arm_l_joint6": 0.6895542017145506,
+      "idx27_arm_l_joint7": 1.5358999999931027,
+      "idx61_arm_r_joint1": -0.1009650533573008,
+      "idx63_arm_r_joint3": 0.2828086959463513,
+      "idx65_arm_r_joint5": 2.6453752876578083,
+      "idx66_arm_r_joint6": 0.6926637748137785,
+      "idx67_arm_r_joint7": -1.5358998004924942
+    },
+    "native_self_collision_checked": true,
+    "whole_robot_object_clearance_checked": true
+  }
+}
