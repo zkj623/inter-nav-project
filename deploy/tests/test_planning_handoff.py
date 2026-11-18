@@ -112,8 +112,10 @@ def test_active_global_decision_yields_before_selector_or_route(run, monkeypatch
     decisions = count_calls(monkeypatch, run.tasks.engine.selector, 'decide')
     routes = count_calls(monkeypatch, run.tasks.engine.routes, 'plan')
     token = run.hold()
-    assert token.endswith(':decision_buffer_recovery')
-    assert not buffer_queries and not decisions and not routes
+    # A free global seed needs no buffer search. Its cheap eligibility check
+    # may run while active; the actual route/decision search remains disarmed.
+    assert token.endswith(':global_decision')
+    assert len(buffer_queries) == 1 and not decisions and not routes
     assert run.motion.stops == [token] and run.motion.state == 'stopping'
     assert run.tasks.state == 'active' and not run.motion.commands
 

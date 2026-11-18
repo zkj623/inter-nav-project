@@ -176,6 +176,12 @@ def run_live(args, config):
         keyboard = Keyboard() if not args.demo or sys.stdin.isatty() else None
         controller = NavigationController(config, tasks, motion, session)
         last_status = 0.
+        # Decisions run at an average tick_hz (the shared algorithm counts
+        # ticks), but each starts on a scan published at or after its due time,
+        # never on one that sat waiting while the previous decision ran.
+        period = 1/nav['tick_hz']
+        decision_due = float('-inf')
+        consumed = None
         print(('合成演示：未连接机器人。' if args.demo else 'MCF 保持运行。默认观察；') + ('运动需按任务键启动。' if motion else '本次会话禁止运动。'), flush=True)
         print(f"来源坐标系={'demo_odom' if args.demo else robot['map_frame']}；等待有效观测初始化 experiment；相机={robot['camera_mode']}", flush=True)
         if not args.demo and (robot['ground_z'] is None or robot['lidar_origin_offset_base_m'] is None):
@@ -197,6 +203,9 @@ def run_live(args, config):
             # Sensor callbacks may advance while keyboard/events/locks run.
             # Compare against time AFTER acquiring the observation.
             now = time.monotonic()
+            if snapshot is not None and snapshot is not consumed:
+                consumed = snapshot
+                decision_due = max(decision_due, now-.5*period)+period
             observation_error = observations.last_error
             if operation:
                 key, value = operation
@@ -232,7 +241,7 @@ def run_live(args, config):
                 print(f'状态={tasks.state} 任务={tasks.mode} 运动={motion.state if motion else "disabled"}'
                       f' 观测={"ready" if snapshot else "waiting"} 建图={tasks.map_ready} 最近错误={current_error}', flush=True)
                 last_status = now
-            observations.wait_next(snapshot, 1/nav['tick_hz'])
+            observations.wait_next(snapshot, period, not_before=decision_due)
     except Exception as exc:
         reason, error = 'runtime_error', f'{type(exc).__name__}: {exc}'
         print(error, flush=True)

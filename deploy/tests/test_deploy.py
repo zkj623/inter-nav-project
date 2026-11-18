@@ -192,6 +192,43 @@ def test_independent_writer_stops_when_parent_produces_no_new_commands():
             process.join(1)
         parent.close()
 
+def test_writer_receives_commands_on_arrival_not_on_its_next_tick():
+    """Receipt after the previous expiry rejects a command; a fixed 20 ms
+    sleep in the writer once delayed receipt by up to one tick (11 ms median
+    on the Go2) and turned a command queued 13 ms early into command_timeout."""
+    context = mp.get_context('spawn')
+    parent, child = context.Pipe()
+    process = context.Process(target=_worker, args=(child, {}, load()['runtime']['control'], FakeSport))
+    process.start()
+    child.close()
+    delays = []
+    try:
+        assert parent.poll(5) and parent.recv()['state'] == 'manual'
+        parent.send({'op': 'arm'})
+        assert parent.poll(1) and parent.recv()['state'] == 'active'
+        for command_id in range(1, 26):
+            time.sleep(.037)  # Incommensurate with the 20 ms writer tick.
+            sent = time.monotonic()
+            parent.send({'op': 'velocity', 'velocity': [.1, 0, 0], 'generated_at': sent,
+                         'expires_at': sent+.3, 'command_id': command_id})
+            while True:
+                assert parent.poll(1)
+                event = parent.recv()
+                if event.get('kind') == 'command_ack':
+                    assert event['accepted'] and event['command_id'] == command_id
+                    delays.append(event['worker_at']-sent)
+                    break
+        delays.sort()
+        assert delays[len(delays)//2] < .004 and delays[int(.9*len(delays))] < .008
+        parent.send({'op': 'close'})
+        process.join(2)
+        assert process.exitcode == 0
+    finally:
+        if process.is_alive():
+            process.terminate()
+            process.join(1)
+        parent.close()
+
 def test_actual_cli_replay_runs_existing_planner_without_hardware(tmp_path):
     fixture = make_fixture(tmp_path / 'input')
     output = tmp_path / 'output'

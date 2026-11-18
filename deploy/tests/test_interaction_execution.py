@@ -212,7 +212,7 @@ def test_passage_route_yields_before_global_search_or_guidance_mutation(run, mon
     engine.before_planning = boundary
     with pytest.raises(navigation.PlanningRequired, match='passage_route'):
         engine._decide(None)
-    assert 'decision_buffer_recovery' in seen
+    assert seen == ['passage_route']
     assert not searched and engine.passage is passage and engine.phase == 'decide'
 
 

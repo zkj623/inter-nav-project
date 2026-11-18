@@ -7,13 +7,14 @@ from grutopia_extension.interactive_navigation.mapping import AStarMapPlanner
 from grutopia_extension.interactive_navigation.state_machine import StateMachineDecision,InteractionState,ControllerCommand
 
 
-def decision_buffer_recovery(position,heading,planner,boxes,goal,fixed_heading,*,local_free=None,local_boxes=None,require_goal_connection=True):
+def decision_buffer_recovery(position,heading,planner,boxes,goal,fixed_heading,*,local_free=None,local_boxes=None,require_goal_connection=True,before_search=None):
     """Exit a footprint buffer before a new decision declares the route blocked."""
     if (getattr(planner,'layered_local_control',False) and
             getattr(planner,'planning_scope','local')=='global' and
             getattr(planner,'navigation_pose_heading',None) is None):
         return _body_safe_global_buffer_exit(position,heading,planner,boxes,goal,
-            local_free=local_free,local_boxes=local_boxes,require_goal_connection=require_goal_connection)
+            local_free=local_free,local_boxes=local_boxes,require_goal_connection=require_goal_connection,
+            before_search=before_search)
     cell=planner.cell(position)
     raw_free=planner.free.copy()
     for box in boxes:raw_free &= ~planner.box_mask(box)
@@ -34,7 +35,7 @@ def decision_buffer_recovery(position,heading,planner,boxes,goal,fixed_heading,*
     return action,state
 
 
-def _body_safe_global_buffer_exit(position,heading,planner,boxes,goal,*,local_free=None,local_boxes=None,require_goal_connection=True):
+def _body_safe_global_buffer_exit(position,heading,planner,boxes,goal,*,local_free=None,local_boxes=None,require_goal_connection=True,before_search=None):
     """Connect an oriented local pose to a usable circular global-plan seed.
 
     The nearest global free point can require dragging a paw through another
@@ -77,6 +78,9 @@ def _body_safe_global_buffer_exit(position,heading,planner,boxes,goal,*,local_fr
             return {'move_by_speed':command},{'target':list(cached['target']),
                 'recovering_buffer':True,'needs_replan':False,'controller':'body_safe_global_buffer_exit',
                 'reused_exit_target':True,'goal_connection_checked':require_goal_connection}
+    # Revalidate an existing target without interrupting its execution. Only
+    # an actual new candidate search needs a caller-provided planning boundary.
+    if before_search is not None:before_search()
     planner._global_buffer_exit=None
     candidates=[]
     for angle in np.linspace(-np.pi,np.pi,32,endpoint=False):

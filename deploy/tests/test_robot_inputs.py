@@ -43,6 +43,8 @@ def sensor(calibrated=True):
     else:
         source.config.update(ground_z=None, lidar_origin_offset_base_m=None)
     source.lock = threading.Lock()
+    source.frame_ready = threading.Condition(source.lock)
+    source.lidar_frames = 0
     source.pose_history = PoseHistory(.05)
     source.continuity = PoseContinuity(.5, .7)
     source.last_stamps = {}

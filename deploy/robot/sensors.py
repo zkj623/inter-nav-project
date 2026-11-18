@@ -84,6 +84,10 @@ class RosSensors:
         self.buffer = Buffer()
         self.listener = TransformListener(self.buffer, self.node)
         self.lock = threading.Lock()
+        # Signals each stored LiDAR frame, so acquisition can run on arrival
+        # instead of aliasing a fixed poll against the driver's cadence.
+        self.frame_ready = threading.Condition(self.lock)
+        self.lidar_frames = 0
         self.pose = self.lidar = self.camera = None
         self.images = {}
         self.last_error = None
@@ -232,6 +236,14 @@ class RosSensors:
             self.last_stamps['lidar'] = seq
             self.lidar = (received, {'pointcloud': points, 'physics_step': seq,
                                      'max_range': self.config['lidar_max_range']})
+            self.lidar_frames += 1
+            self.frame_ready.notify_all()
+
+    def wait_frame(self, seen, timeout):
+        """Block until a LiDAR frame other than count ``seen`` is stored; return the count."""
+        with self.frame_ready:
+            self.frame_ready.wait_for(lambda: self.lidar_frames != seen, timeout=max(0., timeout))
+            return self.lidar_frames
 
     def _image(self, kind, message):
         if kind != 'info':

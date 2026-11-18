@@ -23,7 +23,8 @@ from grutopia_extension.interactive_navigation.online_navigation_map import Onli
 from grutopia_extension.interactive_navigation.online_navigation_decision import OnlineGoalSelector
 from grutopia_extension.interactive_navigation.side_push_navigation import SidePushPlanner
 from grutopia_extension.interactive_navigation.go2_voronoi_navigation import (
-    ExplorationVoronoiRoutes, ForwardExplorationPathTracker, decision_recovery_required, body_motion_clear)
+    ExplorationVoronoiRoutes, ForwardExplorationPathTracker, decision_recovery_required, body_motion_clear,
+    route_blocked)
 from grutopia_extension.interactive_navigation.go2_exploration_tracking import decision_buffer_recovery
 from grutopia_extension.interactive_navigation.smooth_go2_navigation import (
     SmoothExplorationTracker, VelocitySlewLimiter, smooth_recovery_action)
@@ -453,6 +454,34 @@ class NavigationEngine:
         self.layers.guidance_revision = self.layers.global_revision
         return path
 
+    def _tracker_route_start_blocked(self, boxes):
+        """Whether the route tracker will reject a segment from this pose.
+
+        SmoothExplorationTracker checks route segments with the global route
+        clearance applied to the current (local, 10 Hz) map. The decision's
+        buffer exit uses the 1 Hz global map. When only the fresher local map
+        puts the robot cell inside that clearance, the decision keeps choosing
+        an ordinary route that the tracker refuses to start, forever.
+        """
+        scope = getattr(self.planner, 'planning_scope', 'local')
+        try:
+            self.planner.planning_scope = 'global'
+            return bool(route_blocked(self.planner, boxes)[self.planner.cell(self.position[:2])])
+        finally:
+            self.planner.planning_scope = scope
+
+    def _tracker_view_buffer_exit(self, boxes, local_free):
+        """Run the same body-checked buffer exit in the tracker's own view."""
+        scope = getattr(self.planner, 'planning_scope', 'local')
+        try:
+            self.planner.planning_scope = 'global'
+            return decision_buffer_recovery(
+                self.position[:2], self.heading, self.planner, boxes, self.goal[:2], self.heading,
+                local_free=local_free, local_boxes=boxes, require_goal_connection=False,
+                before_search=lambda: self._planning_boundary('decision_buffer_recovery'))
+        finally:
+            self.planner.planning_scope = scope
+
     def _planning_boundary(self, reason):
         # The live controller installs this hook; offline replay/simulation
         # keep their synchronous algorithm. A yield occurs BEFORE mutations.
@@ -643,12 +672,22 @@ class NavigationEngine:
         if recovery is not None and recovery[1].get('needs_replan'):
             recovery = None
         if recovery is None:
-            self._planning_boundary('decision_buffer_recovery')
+            # Yield only before a new exit-target search. The target selected
+            # while stopped is reused and rechecked while moving; an
+            # unconditional boundary here stopped again on every resume.
             local_free = self.planner.free.copy()
+            cached_exit = getattr(self.planner, '_global_buffer_exit', None)
             with self.layers.global_planning() as global_boxes:
                 recovery = decision_buffer_recovery(
                     self.position[:2], self.heading, self.planner, global_boxes, self.goal[:2], self.heading,
-                    local_free=local_free, local_boxes=current, require_goal_connection=False)
+                    local_free=local_free, local_boxes=current, require_goal_connection=False,
+                    before_search=lambda: self._planning_boundary('decision_buffer_recovery'))
+            if recovery is None and self._tracker_route_start_blocked(current):
+                # The global view saw no buffer and dropped the cached exit.
+                # Restore it: the tracker view rechecks it with the body
+                # sweep before reuse, and a fresh search would stop again.
+                self.planner._global_buffer_exit = cached_exit
+                recovery = self._tracker_view_buffer_exit(current, local_free)
         if recovery is not None:
             if self.recovery_started is None:
                 self.recovery_started = self.now

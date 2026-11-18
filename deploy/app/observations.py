@@ -4,6 +4,12 @@ This worker owns coordinate initialization and perception state. Navigation read
 one detached observation/evidence pair. Reset is a generation request, so an
 in-flight fit can never restore evidence from the preceding task. No map, skill
 or motion writer is touched here.
+
+Each LiDAR frame is processed when the driver stores it (``wait_frame``), not
+on a fixed poll. Commands expire at ``lidar_at + max_data_age_s``; a 10 Hz poll
+against the 15.4 Hz Go2 cloud added up to one cloud period of age before
+planning even began. The raw record keeps an average ``hz`` cadence, and the
+consumer paces its own decisions with ``wait_next(not_before=...)``.
 """
 from copy import deepcopy
 import json
@@ -44,18 +50,35 @@ class LiveObservations:
             self.generation += 1
             self.packet = self.delivered = None
 
-    def wait_next(self, snapshot, timeout):
-        """Wake the consumer on fresh evidence, rather than drift one tick behind."""
+    def wait_next(self, snapshot, timeout, not_before=None):
+        """Wake the consumer on fresh evidence, rather than drift one tick behind.
+
+        With ``not_before``, only a packet published at or after that monotonic
+        time qualifies: the consumer keeps its decision cadence yet starts each
+        decision on a just-arrived scan instead of one that waited for it.
+        """
+        def ready():
+            packet = self.packet
+            return (self.closed.is_set() or self.failure is not None
+                    or (packet is not None and packet[1] is not snapshot
+                        and (not_before is None or packet[3] >= not_before)))
         with self.changed:
-            self.changed.wait_for(lambda: self.closed.is_set() or self.failure is not None
-                                  or (self.packet is not None and self.packet[1] is not snapshot),
-                                  timeout=max(0., timeout))
+            return self.changed.wait_for(ready, timeout=max(0., timeout))
 
     def _work(self):
         applied_generation = -1
         last_delivery = None
+        wait_frame = getattr(self.sensors, 'wait_frame', None)
+        seen = None
+        record_due = float('-inf')
         try:
             while not self.closed.is_set():
+                if wait_frame is not None:
+                    # Without a new frame for a whole period, still publish so
+                    # staleness and adapter errors reach the consumer.
+                    seen = wait_frame(seen, self.period)
+                    if self.closed.is_set():
+                        break
                 started = time.monotonic()
                 with self.lock:
                     generation = self.generation
@@ -74,8 +97,11 @@ class LiveObservations:
                             print('实验坐标系已固定：起点 XY=(0,0)，X=初始前方，Y=初始左侧，Z=距地面高度。', flush=True)
                             print('点导航输入本轮 experiment 坐标；暂停、换任务不重设原点。', flush=True)
                             print(json.dumps(self.reference.metadata, ensure_ascii=False), flush=True)
-                        # Record before fitting/planning, at the acquisition cadence.
-                        self.session.record_observation(snapshot)
+                        # Record before fitting/planning at an average ``hz``:
+                        # frames arrive faster, the raw record keeps its rate.
+                        if snapshot.captured_at >= record_due:
+                            record_due = max(record_due, snapshot.captured_at - .5*self.period) + self.period
+                            self.session.record_observation(snapshot)
                         if self.perception is not None:
                             boxes, evidence = self.perception.update(snapshot, time.monotonic())
                             frozen = evidence.freeze() if hasattr(evidence, 'freeze') else deepcopy(evidence)
@@ -90,10 +116,11 @@ class LiveObservations:
                         snapshot, error = None, str(exc)
                 with self.lock:
                     if generation == self.generation:
-                        self.packet = (generation, snapshot, result)
+                        self.packet = (generation, snapshot, result, time.monotonic())
                         self.last_error = error
                         self.changed.notify_all()
-                self.closed.wait(max(0., self.period - (time.monotonic() - started)))
+                if wait_frame is None:
+                    self.closed.wait(max(0., self.period - (time.monotonic() - started)))
         except Exception as exc:
             with self.lock:
                 self.packet = None

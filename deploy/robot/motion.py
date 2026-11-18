@@ -1,5 +1,6 @@
 """Independent high-level SportClient writer. Never releases MCF or publishes LowCmd."""
 import fcntl
+import inspect
 import math
 import multiprocessing as mp
 import os
@@ -109,6 +110,20 @@ def _telemetry(sdk, now):
             'received_at': now}
 
 
+def _idle(pipe):
+    """Wait for the next tick, waking at once when a command arrives.
+
+    A command is accepted only if received before the previous one expires.
+    A fixed ``sleep(1/poll_hz)`` held arrivals up to one 20 ms tick, which the
+    controller's deadline check cannot see. Offline fake pipes keep ``sleep``.
+    """
+    try:
+        waits = 'timeout' in inspect.signature(pipe.poll).parameters
+    except (TypeError, ValueError):
+        waits = False
+    return pipe.poll if waits else time.sleep
+
+
 def _worker(pipe, robot, control, sdk_factory=UnitreeSport, test_mode=False):
     """One SDK writer; a test deadline and command TTL are enforced here."""
     control = dict(control)
@@ -143,6 +158,7 @@ def _worker(pipe, robot, control, sdk_factory=UnitreeSport, test_mode=False):
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         sdk = sdk_factory(robot, control)
         report('manual', 'MCF unchanged; joystick settings unchanged')
+        idle = _idle(pipe)
         while True:
             now = time.monotonic()
             was_armed = guard.armed
@@ -155,6 +171,7 @@ def _worker(pipe, robot, control, sdk_factory=UnitreeSport, test_mode=False):
                 except EOFError:
                     quit_requested = True
                     guard.stop('parent_disconnected')
+                    idle = time.sleep  # A closed pipe always polls readable.
                     break
                 now = time.monotonic()
                 operation = packet['op']
@@ -278,7 +295,7 @@ def _worker(pipe, robot, control, sdk_factory=UnitreeSport, test_mode=False):
                         break
             if quit_requested and stopping is None:
                 break
-            time.sleep(1/control['poll_hz'])
+            idle(1/control['poll_hz'])
     except BaseException as error:
         report('fault', f'{type(error).__name__}: {error}')
     finally:

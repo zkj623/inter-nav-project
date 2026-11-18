@@ -306,5 +306,5 @@ bash scripts/sync.sh go2 /home/unitree/inter-nav-project --apply
 
 `--goal` 仅用于离线回放；真机目标通过 `n` 输入。回放使用保存的观测，不模拟机器人对命令的响应，不能代替闭环验收。
 
-原始观测由独立线程按 `tick_hz` 采集并供 record 保存，默认 10 Hz，耗时规划期间也继续工作。view 的显示最多约 5 Hz，不决定观测记录频率。记录中的 `observations.jsonl` 与 `frames/` 分别用于原始回放和显示对照；完整性检查包含 `missing_observations`，不为缺失的数据补帧或更新时间戳。
+原始观测由独立线程在每帧点云到达时处理（Go2 实测约 15.4 Hz），耗时规划期间也继续工作；record 保存观测线程按平均 `tick_hz`（默认 10 Hz）选出的帧，以及每次导航决策实际使用的帧，实测合计约 13 Hz。导航决策同样平均按 `tick_hz` 进行，但每次都从到期后新到的一帧开始，不使用排队等待过的点云。view 的显示最多约 5 Hz，不决定观测记录频率。记录中的 `observations.jsonl` 与 `frames/` 分别用于原始回放和显示对照；完整性检查包含 `missing_observations`，不为缺失的数据补帧或更新时间戳。
 `--motion-test` 与正常 run 分开运行，不启用地图或避障；按 `a` 准备，再按 `f` 前行、`j` 左转或 `t` 测试命令超时停车，空格停止、`q` 退出。

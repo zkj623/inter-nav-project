@@ -379,7 +379,7 @@ def test_live_start_reacquires_sensors_after_slow_arm(tmp_path, monkeypatch, fre
         def close(self):
             pass
 
-        def wait_next(self, snapshot, timeout):
+        def wait_next(self, snapshot, timeout, not_before=None):
             fake_clock.sleep(timeout)
 
     monkeypatch.setattr(observations, 'LiveObservations', ObservationReads)
