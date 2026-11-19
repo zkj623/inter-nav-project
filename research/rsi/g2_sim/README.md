@@ -1,3 +1,7 @@
+<!-- commonstart -->
+Common full initial joint pose and executed approach: 10/12 passed [validation](iterations/20261119_commonstart/README.md). Earlier pregrasp results remain historical. Training collection awaits video review.
+<!-- /commonstart -->
+
 <!-- liftpair-evaluation -->
 两种箱体继续验证后，当前 12/12 种抬升候选拥有通过基线：[本轮对照结果](iterations/20261119_liftpair/README.md)。
 <!-- /liftpair-evaluation -->
