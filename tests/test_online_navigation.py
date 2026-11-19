@@ -221,6 +221,24 @@ class OnlineMapTests(unittest.TestCase):
         self.assertEqual(decision.kind,'wait')
         json.dumps(decision.explanation)
 
+    def test_disconnected_islands_do_not_hide_the_reachable_frontier(self):
+        p, layers = self.make()
+        hits = np.zeros_like(layers.observed)
+        hits[:, 60] = True
+        free = np.zeros_like(hits)
+        free[:, 9:60] = True
+        # Many isolated returns near the goal score ahead of the left-hand exit.
+        free[6:-5:9, 69::9] = True
+        layers.ingest_scan_masks(hits, free)
+        layers.refresh_global()
+        start, goal = (-.6, 0.), (2.8, 0.)
+        decision, endpoint = OnlineGoalSelector().decide(layers, start, goal)
+        self.assertEqual(decision.kind, 'explore')
+        self.assertEqual(p.cell(endpoint)[1], 9)
+        self.assertFalse(layers.global_observed[p.cell(goal)])
+        with layers.global_planning() as boxes:
+            self.assertTrue(ExplorationVoronoiRoutes(p).plan(start, endpoint, boxes))
+
     def test_local_exit_does_not_require_an_unobserved_goal_to_be_connected(self):
         res=.025;xx=-3+(np.arange(240)+.5)*res
         observed=np.broadcast_to(xx<1.5,(240,240)).copy()

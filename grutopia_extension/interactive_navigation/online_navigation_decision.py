@@ -2,10 +2,40 @@
 import math
 import copy
 import numpy as np
-from scipy.ndimage import distance_transform_edt,label
+from scipy.ndimage import binary_dilation, binary_propagation, label
+from scipy.spatial import cKDTree
 from grutopia_extension.interactive_navigation.box_push_navigation import BoxDecision
+from grutopia_extension.interactive_navigation.mapping import AStarMapPlanner
 from grutopia_extension.interactive_navigation.semantic_voronoi import SemanticVoronoiGraph
 from grutopia_extension.interactive_navigation.exploration_frontiers import local_unknown
+
+
+def _frontier_viewpoints(grid, reachable, available_poses, view_radius):
+    """Yield reachable observation poses and the unknown boundary cells visible from them."""
+    occupied = grid.occupied_mask()
+    # Sightlines can cross an obstacle's clearance buffer. Robot waypoints
+    # come from the reachable component of the inflated navigation map.
+    connected_free = binary_propagation(reachable, mask=grid.observed & ~occupied)
+    boundary = np.argwhere(~grid.observed & ~occupied & binary_dilation(connected_free))
+    if not len(boundary):
+        return
+    poses = np.asarray(list(available_poses))
+    if not len(poses):
+        return
+    tree = cKDTree(poses)
+    radius_cells = view_radius / grid.config.grid_resolution
+    sight_blocked = ~grid.observed | occupied
+    for row, col in boundary:
+        edge = (row, col)
+        sight_blocked[edge] = False  # Only the last cell of the sightline can be unknown.
+        nearby = poses[tree.query_ball_point(edge, radius_cells)]
+        distances = np.sum((nearby - edge) ** 2, axis=1)
+        for index in np.argsort(distances, kind='stable'):
+            pose = tuple(nearby[index])
+            if AStarMapPlanner.segment_clear(pose, edge, sight_blocked):
+                yield pose, edge
+                break
+        sight_blocked[edge] = True
 
 
 class OnlineGoalSelector:
@@ -148,13 +178,46 @@ class OnlineGoalSelector:
                     return decision
         return None
 
+    def _available_frontier_cells(self, layers, grid, start, cells):
+        now = float(getattr(layers.planner, 'control_time', getattr(layers, 'now', 0.)))
+        observed_count = int(layers.observed.sum())
+        for cell in cells:
+            xy = np.asarray(grid.cell_to_world(cell))
+            if np.linalg.norm(xy - start) < .45:
+                continue
+            key = self.key(xy)
+            if any(now < until and np.linalg.norm(xy - point) < .50 for point, until in self.deferred.values()):
+                continue
+            if key in self.visited and observed_count - self.visited[key] < 30:
+                continue
+            yield cell
+
+    def _frontier_choices(self, layers, grid, start, goal, boxes, viewpoints):
+        p = layers.planner
+        proposals = {}
+        for cell, boundary in viewpoints:
+            xy = np.asarray(grid.cell_to_world(cell))
+            gain = local_unknown(grid, xy, radius=.8) * p.resolution**2
+            score = np.linalg.norm(xy - start) + 1.25 * np.linalg.norm(xy - goal) - .8 * gain
+            proposals[self.key(xy)] = (score, xy, gain, boundary)
+
+        choices = []
+        for _, xy, gain, boundary in sorted(proposals.values(), key=lambda entry: entry[0])[:32]:
+            path = p.path(start, xy, boxes)
+            if path:
+                cost = (p.length(start, path) + 1.25 * np.linalg.norm(xy - goal) - .8 * gain
+                        + self.initial_turn_cost(layers, start, path))
+                choices.append((cost, xy, gain, path, boundary))
+                if len(choices) >= 8:
+                    break
+        return choices
+
     def decide(self,layers,start,goal):
         p=layers.planner;self.selection_count+=1
         task_decision=self.task_decision(layers,start,goal)
         if task_decision is not None:return task_decision,tuple(goal)
         with layers.global_planning() as boxes:
-            grid=layers.frontier_grid();graph=SemanticVoronoiGraph(grid);graph.update()
-            snapshot=graph.cached_snapshot()
+            grid = layers.frontier_grid()
             blocked=p.blocked(boxes);safe=~blocked
             if not safe.any():return BoxDecision('wait','insufficient_observed_space'),None
             # Observed-only A* forbids diagonal corner cuts, so its reachable
@@ -164,35 +227,27 @@ class OnlineGoalSelector:
             components,_=label(safe)
             start_cell=p.cell(start)
             component=components[start_cell] if p.valid_cell(start_cell) else 0
-            _,nearest=distance_transform_edt(~safe,return_indices=True)
-            proposals={}
-            for frontier in snapshot.frontiers:
-                cells=frontier.cells
-                for rc in cells[::max(1,len(cells)//16)]:
-                    row,col=nearest[:,rc[0],rc[1]]
-                    xy=np.asarray(grid.cell_to_world((int(row),int(col))))
-                    if np.linalg.norm(xy-np.asarray(start))<.45:continue
-                    key=self.key(xy)
-                    now=float(getattr(p,'control_time',getattr(layers,'now',0.)))
-                    if any(now<until and np.linalg.norm(xy-point)<.50 for point,until in self.deferred.values()):continue
-                    if key in self.visited and int(layers.observed.sum())-self.visited[key]<30:continue
-                    gain=local_unknown(grid,xy,radius=.8)*p.resolution**2
-                    score=np.linalg.norm(xy-np.asarray(start))+1.25*np.linalg.norm(xy-np.asarray(goal))-.8*gain
-                    proposals[key]=(float(score),xy,float(gain))
-            candidates=sorted(proposals.values(),key=lambda entry:entry[0])
-            choices=[]
-            for _,xy,gain in candidates[:32]:
-                if not component or components[p.cell(xy)]!=component:continue
-                path=p.path(start,xy,boxes)
-                if not path:continue
-                cost=p.length(start,path)+1.25*float(np.linalg.norm(xy-np.asarray(goal)))-.8*gain+self.initial_turn_cost(layers,start,path)
-                choices.append((cost,xy,gain,path))
-                if len(choices)>=8:break
+            choices = []
+            if component:
+                reachable = components == component
+                sampled = []
+                for frontier in SemanticVoronoiGraph(grid).update().frontiers:
+                    cells = [cell for cell in frontier.cells if reachable[cell]]
+                    sampled.extend(cells[::max(1, len(cells) // 16)])
+                available = self._available_frontier_cells(layers, grid, start, sampled)
+                viewpoints = ((cell, None) for cell in available)
+                choices = self._frontier_choices(layers, grid, start, goal, boxes, viewpoints)
+                if not choices:
+                    perimeter = np.argwhere(reachable & binary_dilation(~reachable))
+                    available = self._available_frontier_cells(layers, grid, start, perimeter)
+                    viewpoints = _frontier_viewpoints(grid, reachable, available, layers.local_radius)
+                    choices = self._frontier_choices(layers, grid, start, goal, boxes, viewpoints)
             if not choices:
                 return BoxDecision('wait','no_reachable_observed_frontier',explanation={
                     'kind':'wait','reason':'no_reachable_observed_frontier','start':list(map(float,start)),'goal':list(map(float,goal)),
                     'observed_cells':int(layers.observed.sum())}),None
-            _,xy,gain,path=min(choices,key=lambda entry:entry[0]);self.last_frontier=tuple(xy)
+            _, xy, gain, path, boundary = min(choices, key=lambda entry: entry[0])
+            self.last_frontier = tuple(xy)
             details={'kind':'explore','reason':'goal_not_connected_in_observed_map',
                 'start':list(map(float,start)),'goal':list(map(float,goal)),
                 'frontier_goal':xy.tolist(),'before_path':path,'before_length_m':p.length(start,path),
@@ -200,4 +255,6 @@ class OnlineGoalSelector:
                 'initial_turn_cost_m':self.initial_turn_cost(layers,start,path),
                 'map_source':'online_lidar_observed_cells_only',
                 'goal_observed':bool(grid.observed[p.cell(goal)])}
+            if boundary is not None:
+                details['observation_boundary'] = list(grid.cell_to_world(boundary))
             return BoxDecision('explore','goal_not_connected_in_observed_map',path=path,explanation=details),tuple(xy)

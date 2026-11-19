@@ -12,6 +12,7 @@
 .panelhead{padding:10px 14px;display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid #e6eaec}h2{font-size:14px;font-weight:600;margin:0}
 .viewport{position:relative;aspect-ratio:16/9;background:#f9f9f9;overflow:hidden}
 .viewport canvas,.viewport img{position:absolute;inset:0;width:100%;height:100%;display:block}.viewport canvas{touch-action:none;cursor:grab}.viewport img{object-fit:contain;display:none}
+#tagBoxes{object-fit:contain;pointer-events:none}#tagStatus{color:#526675;font-size:12px}
 .empty{position:absolute;inset:0;display:grid;place-content:center;text-align:center;color:#657580;pointer-events:none;padding:16px}
 .stale{position:absolute;top:10px;left:10px;color:#754300;background:#fff0cf;padding:4px 8px;display:none}
 .tools{display:flex;gap:6px;padding:8px 12px 0;flex-wrap:wrap;align-items:center}
@@ -26,8 +27,8 @@ button{border:1px solid #cbd4da;background:#fff;color:#405461;padding:4px 10px;b
 @media(max-width:1000px){body{padding:8px}.grid{grid-template-columns:1fr}.panel:first-child{grid-column:auto}}
 </style>
 <main class="grid">
- <section class="panel"><div class="panelhead"><h2>前置 RGB</h2></div>
- <div class="viewport"><img id="rgb" alt="前置 RGB"><div id="rgbEmpty" class="empty">等待图像</div><div id="rgbStale" class="stale">图像已过期</div></div></section>
+ <section class="panel"><div class="panelhead"><h2>前置 RGB</h2><span id="tagStatus"></span><button id="tagToggle" aria-pressed="false">AprilTag 识别框</button></div>
+ <div class="viewport"><img id="rgb" alt="前置 RGB"><canvas id="tagBoxes" aria-hidden="true"></canvas><div id="rgbEmpty" class="empty">等待图像</div><div id="rgbStale" class="stale">图像已过期</div></div></section>
  <section class="panel"><div class="panelhead"><h2>全局路线与局部碰撞地图</h2><button id="mapSize" aria-pressed="false">放大地图</button></div>
  <div class="viewport"><img id="mapImage" alt="导航地图"><div id="mapEmpty" class="empty">等待建图</div><div id="mapStale" class="stale">地图已过期</div></div>
  <div class="legend"><span><i class="dot" style="--color:#afa8a4"></i>未知</span><span><i class="dot" style="--color:#f2f2f2"></i>自由</span><span><i class="dot" style="--color:#5e5853"></i>全局障碍</span><span><i class="dot" style="--color:#df4137"></i>局部障碍</span><span><i class="dot" style="--color:#1969eb"></i>当前路线</span><span><i class="dot" style="--color:#46785a"></i>轨迹</span></div></section>
@@ -39,9 +40,11 @@ button{border:1px solid #cbd4da;background:#fff;color:#405461;padding:4px 10px;b
 <div class="status"><span id="connection">连接中</span><button id="reconnect" hidden>重新连接</button><span id="demo"></span><span id="task"></span><span id="performance"></span></div>
 <div id="errors" role="status"></div>
 <div id="interaction" role="status"></div>
+<script src="/tags/overlay.js"></script>
 <script>
 'use strict';
 const $=id=>document.getElementById(id), canvas=$('cloud'), ctx=canvas.getContext('2d');
+const boxTags=new BoxTagOverlay($('rgb'),$('tagBoxes'),$('tagToggle'),$('tagStatus'));
 let data=null, yaw=-.75, pitch=.7, scale=42, center=[0,0,0], pan=[0,0], drag=null, autoFit=false, offline=true;
 let follow=true, heightSlice=true;
 let pollTimer=null, polling=false, cameraPose=null, cameraZoom=1;
@@ -154,10 +157,17 @@ async function poll(){if(polling)return;polling=true;clearTimeout(pollTimer);$('
    const quality=Number.isFinite(o.fit_residual_m)?` · 拟合残差 ${(o.fit_residual_m*100).toFixed(1)} cm`:'';
    const measured=o.geometry_verified?'几何已核验':'仅观测 · 几何待核验';
    const observationAge=data.map?.interaction_observation_age_s;
-   const ageSeconds=Number.isFinite(observationAge)?observationAge+(data.map?.age||0):Infinity;
+   const ageSeconds=Number.isFinite(data.map?.updated_at)&&Number.isFinite(o.captured_at)
+    ?Math.max(0,data.map.updated_at+(data.map.age||0)-o.captured_at)
+    :Number.isFinite(observationAge)?observationAge+(data.map?.age||0):Infinity;
    const age=Number.isFinite(ageSeconds)?` · 观测年龄 ${(ageSeconds*1000).toFixed(0)} ms`:'';
    const lease=Number.isFinite(o.expires_at)&&Number.isFinite(o.captured_at)?o.expires_at-o.captured_at:0;
    const valid=o.valid&&!offline&&!data.map?.stale&&ageSeconds<lease;
+   if(perception.geometry_source==='window_two_faces'){
+    const states={confirming:'等待独立窗口复核',missing:'本次缺测',searching:'搜索中',tracked:'观测已过期'};
+    const pose=valid&&o.center?' · 中心 ('+o.center.slice(0,2).map(v=>v.toFixed(3)).join(', ')+') m':'';
+    return [o.object_id,valid?'已跟踪':states[o.tracking_state],o.track_id,pose.trim(),o.invalid_reason].filter(Boolean).join(' ');
+   }
    return `${o.object_id}: ${valid?'已跟踪':o.invalid_reason||'观测已过期'} · ${measured}${quality}${age}`;
   }).join('\n')+(data.map?.interaction_perception_error?`\n跟踪：${data.map.interaction_perception_error}`:'')+
    (data.map?.contact_collision&&skill?`\n接触检查：${data.map.contact_collision.reason}`:'');
@@ -172,8 +182,9 @@ async function poll(){if(polling)return;polling=true;clearTimeout(pollTimer);$('
 }
   if(!data.rgb){$('rgb').style.display='none';$('rgbEmpty').style.display='grid';}
   markStale('rgb',offline||!!data.rgb?.stale);
+  boxTags.update(offline||data.rgb?.stale?null:data.rgb?.jpeg, data.session_id);
   $('errors').textContent=Object.entries({...data.errors,...(data.status?.error?{run:data.status.error}:{})}).map(([k,v])=>k+': '+v).join('\n');draw();
- }catch(error){offline=true;delay=null;$('connection').textContent='连接中断 · 已停止刷新';$('reconnect').hidden=false;markStale('cloud',true);markStale('rgb',true);markStale('map',true);$('errors').textContent='数据源不可用，请恢复连接后重试。';draw();}
+ }catch(error){offline=true;boxTags.update(null);delay=null;$('connection').textContent='连接中断 · 已停止刷新';$('reconnect').hidden=false;markStale('cloud',true);markStale('rgb',true);markStale('map',true);$('errors').textContent='数据源不可用，请恢复连接后重试。';draw();}
  finally{clearTimeout(timer);polling=false;$('reconnect').disabled=false;if(delay!==null)pollTimer=setTimeout(poll,Math.max(0,delay-(performance.now()-started)));}}
 $('reconnect').onclick=()=>{$('connection').textContent='正在重新连接…';poll();};
 poll();

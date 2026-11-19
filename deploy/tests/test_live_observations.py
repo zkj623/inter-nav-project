@@ -129,9 +129,12 @@ def test_reset_during_fit_drops_old_generation(live, monkeypatch):
 def test_navigation_reads_one_pair_even_when_worker_publishes_again(live):
     feed, source, _, _ = live
     snapshot, boxes, evidence = wait_for(lambda: read(feed))
+    delivery = feed.last_delivery
+    assert delivery['scan_id'] == snapshot.observation['sensors']['lidar']['physics_step']
     wait_for(lambda: source.count > snapshot.sequence + 1)
     other_boxes, other_evidence = feed.update(snapshot, time.monotonic())
     assert other_boxes is boxes and other_evidence is evidence
+    assert feed.last_delivery is delivery
     newer = feed.latest()
     assert newer.sequence > snapshot.sequence
     assert feed.update(snapshot, time.monotonic()) == ((), None)

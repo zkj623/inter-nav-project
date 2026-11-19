@@ -142,6 +142,59 @@ class _Scan:
     hints: dict
 
 
+class RegisteredScanReader:
+    """Validate one experiment-frame scan and retain its original clock and identity."""
+
+    def __init__(self, config):
+        self.config = config
+        self._last_submitted = None
+        self._coordinate_transform = None
+
+    def capture(self, snapshot, now, generation):
+        if not snapshot.geometry_calibrated or snapshot.planning_frame != 'experiment':
+            raise ValueError('Registered boxes require calibrated experiment-frame geometry')
+        transform = json.dumps(snapshot.coordinate_transform, sort_keys=True)
+        if self._coordinate_transform is not None and self._coordinate_transform != transform:
+            raise ValueError('Experiment transform changed; reset tracking and reassociate identities')
+        lidar = snapshot.observation['sensors']['lidar']
+        if lidar.get('pointcloud_frame', 'experiment') != 'experiment':
+            raise ValueError('LiDAR points must be in experiment coordinates')
+        stamp = float(snapshot.lidar_at)
+        age = now-stamp
+        pose_age = now-float(snapshot.pose_at)
+        if not math.isfinite(age) or not stamp <= now < stamp+self.config['max_age_s']:
+            raise ValueError('LiDAR capture is stale, future or invalid')
+        if not math.isfinite(pose_age) or not float(snapshot.pose_at) <= now < float(snapshot.pose_at)+self.config['max_age_s']:
+            raise ValueError('LiDAR tracking requires fresh robot pose feedback')
+        frame_id = lidar['physics_step']
+        if isinstance(frame_id, bool) or not isinstance(frame_id, (int, np.integer)) or frame_id < 0:
+            raise ValueError('LiDAR physics_step must be a nonnegative source scan identifier')
+        frame_id = int(frame_id)
+        if self._last_submitted is not None:
+            previous_id, previous_stamp = self._last_submitted
+            if frame_id == previous_id and stamp == previous_stamp:
+                return None  # repeated polling cannot renew geometry or votes
+            if frame_id <= previous_id or stamp <= previous_stamp:
+                raise ValueError('Non-increasing LiDAR scan id or capture time')
+        points = np.asarray(lidar['pointcloud'], dtype=float)
+        origin = np.asarray(lidar['position'], dtype=float)
+        if (points.ndim != 2 or points.shape[1] != 3 or not np.isfinite(points).all()
+                or len(points) > self.config['max_scan_points']
+                or origin.shape != (3,) or not np.isfinite(origin).all()):
+            raise ValueError('Invalid LiDAR points or paired origin')
+        maximum = lidar.get('max_range')
+        if maximum is not None:
+            if isinstance(maximum, bool) or not isinstance(maximum, (int, float)) or not math.isfinite(maximum) or maximum <= 0:
+                raise ValueError('Invalid LiDAR maximum range')
+            # Match navigation: range-limit/no-hit shells cannot prove the
+            # independent background returns needed by a bounded-face fit.
+            points = points[np.linalg.norm(points-origin, axis=1) < .99*maximum]
+        self._coordinate_transform = transform
+        self._last_submitted = (frame_id, stamp)
+        return _Scan(generation, frame_id, stamp, points.copy(), origin.copy(),
+                     lidar.get('source_stamp', frame_id), {})
+
+
 class RegisteredBoxEvidence:
     """Detached evidence for one navigation cycle; reading never renews it."""
     source = 'registered_box_lidar'
@@ -213,9 +266,9 @@ class RegisteredBoxPerception:
         self.last_delivery = self.last_error = self.last_success = None
         self.last_query_status = 'idle'
         self._tracks, self._visible = {}, {}
-        self._last_submitted = self._last_accepted = None
+        self.reader = RegisteredScanReader(self.config)
+        self._last_accepted = None
         self._last_time = -math.inf
-        self._coordinate_transform = None
 
     @staticmethod
     def _clear(channel):
@@ -257,48 +310,10 @@ class RegisteredBoxPerception:
         self.last_error, self.last_query_status = reason, 'invalid_lidar'
 
     def _capture(self, snapshot, now):
-        if not snapshot.geometry_calibrated or snapshot.planning_frame != 'experiment':
-            raise ValueError('Registered boxes require calibrated experiment-frame geometry')
-        transform = json.dumps(snapshot.coordinate_transform, sort_keys=True)
-        if self._coordinate_transform is not None and self._coordinate_transform != transform:
-            raise ValueError('Experiment transform changed; reset tracking and reassociate identities')
-        lidar = snapshot.observation['sensors']['lidar']
-        if lidar.get('pointcloud_frame', 'experiment') != 'experiment':
-            raise ValueError('LiDAR points must be in experiment coordinates')
-        stamp = float(snapshot.lidar_at)
-        age = now-stamp
-        pose_age = now-float(snapshot.pose_at)
-        if not math.isfinite(age) or not stamp <= now < stamp+self.config['max_age_s']:
-            raise ValueError('LiDAR capture is stale, future or invalid')
-        if not math.isfinite(pose_age) or not float(snapshot.pose_at) <= now < float(snapshot.pose_at)+self.config['max_age_s']:
-            raise ValueError('LiDAR tracking requires fresh robot pose feedback')
-        frame_id = lidar['physics_step']
-        if isinstance(frame_id, bool) or not isinstance(frame_id, (int, np.integer)) or frame_id < 0:
-            raise ValueError('LiDAR physics_step must be a nonnegative source scan identifier')
-        frame_id = int(frame_id)
-        if self._last_submitted is not None:
-            previous_id, previous_stamp = self._last_submitted
-            if frame_id == previous_id and stamp == previous_stamp:
-                return None  # repeated polling cannot renew geometry or votes
-            if frame_id <= previous_id or stamp <= previous_stamp:
-                raise ValueError('Non-increasing LiDAR scan id or capture time')
-        points = np.asarray(lidar['pointcloud'], dtype=float)
-        origin = np.asarray(lidar['position'], dtype=float)
-        if (points.ndim != 2 or points.shape[1] != 3 or not np.isfinite(points).all()
-                or len(points) > self.config['max_scan_points']
-                or origin.shape != (3,) or not np.isfinite(origin).all()):
-            raise ValueError('Invalid LiDAR points or paired origin')
-        maximum = lidar.get('max_range')
-        if maximum is not None:
-            if isinstance(maximum, bool) or not isinstance(maximum, (int, float)) or not math.isfinite(maximum) or maximum <= 0:
-                raise ValueError('Invalid LiDAR maximum range')
-            # Match navigation: range-limit/no-hit shells cannot prove the
-            # independent background returns needed by a bounded-face fit.
-            points = points[np.linalg.norm(points-origin, axis=1) < .99*maximum]
-        self._coordinate_transform = transform
-        self._last_submitted = (frame_id, stamp)
-        return _Scan(self.generation, frame_id, stamp, points.copy(), origin.copy(),
-                     lidar.get('source_stamp', frame_id), self._tracking_hints(stamp))
+        frame = self.reader.capture(snapshot, now, self.generation)
+        if frame is not None:
+            frame = replace(frame, hints=self._tracking_hints(frame.captured_at))
+        return frame
 
     def _tracking_hints(self, stamp):
         return {key: track['fit'] for key, track in self._tracks.items()

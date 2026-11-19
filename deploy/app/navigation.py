@@ -746,6 +746,8 @@ class NavigationEngine:
         if decision.kind == 'failed':
             return self._finish(False, decision.reason)
         if decision.kind == 'wait':
+            self.tracker = self.endpoint = None
+            self.layers.global_path = self.layers.local_path = ()
             self.next_decision = self.now+self.layers.global_period
             return self._brake()
         if decision.kind == 'push':

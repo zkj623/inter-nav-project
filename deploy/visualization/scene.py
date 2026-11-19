@@ -62,7 +62,7 @@ class SceneCapture:
         perception = getattr(tasks, 'perception', None)
         if perception is not None:
             result['interaction_perception'] = _payload(getattr(perception, 'last_delivery', None))
-            result['interaction_perception_error'] = getattr(perception, 'last_error', None)
+            result['interaction_perception_error'] = getattr(perception, 'perception_error', getattr(perception, 'last_error', None))
             delivery = result['interaction_perception']
             result['interaction_observation_age_s'] = (max(0., snapshot.captured_at-delivery['captured_at'])
                 if delivery is not None and delivery.get('captured_at') is not None else None)
@@ -125,6 +125,7 @@ def map_payload(scene):
     if not ok:
         raise ValueError('Map PNG encoding failed')
     return {'ready': True, 'png': base64.b64encode(image).decode(), 'revision': scene['revision'],
+            'updated_at': scene.get('updated_at'),
             'frame': scene['frame'], 'voxel_count': scene['voxel_count'],
             'resolution': scene['config']['grid_resolution'], 'path_points': len(scene['path']),
             'global_revision': scene.get('global_revision'), 'phase': scene.get('phase'),

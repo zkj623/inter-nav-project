@@ -20,6 +20,8 @@ def main(argv=None):
     mode.add_argument('--observe-only', dest='allow_motion', action='store_false',
                       help='observe and map without enabling motion through task keys')
     mode.add_argument('--replay', type=Path, help='recorded run directory; hardware is never initialized')
+    parser.add_argument('--box-window', action='store_true',
+                        help='observe registered boxes with a 1 s sliding LiDAR window')
     mode.add_argument('--motion-test', action='store_true', help='bounded SDK acceptance trials; no ROS, map or autonomous tasks')
     parser.add_argument('--task', choices=('observe', 'navigate'), default='observe', help='replay task only')
     parser.add_argument('--goal', nargs=2, type=float, metavar=('X', 'Y'))
@@ -31,6 +33,8 @@ def main(argv=None):
     parser.add_argument('--demo-seconds', type=float, default=0., help='optional demo time limit; 0 runs until Ctrl+C')
     parser.set_defaults(allow_motion=True)
     args = parser.parse_args(argv)
+    if args.box_window and not (args.allow_motion is False or (args.replay is not None and args.task == 'observe')):
+        parser.error('--box-window requires --observe-only or --replay with --task observe')
     args.allow_motion = args.allow_motion and not (
         args.check or args.diagnose or args.demo or args.replay is not None or args.motion_test)
     if not 1 <= args.session_port <= 65535 or not 0 <= args.demo_seconds <= 86400:

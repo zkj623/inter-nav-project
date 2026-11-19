@@ -45,6 +45,17 @@ class LiveObservations:
                 return (), None
             return packet[2]
 
+    @property
+    def last_delivery(self):
+        """Diagnostics paired with the snapshot last handed to the main loop."""
+        with self.lock:
+            return self.delivered[4] if self.delivered is not None else None
+
+    @property
+    def perception_error(self):
+        with self.lock:
+            return self.delivered[5] if self.delivered is not None else None
+
     def reset(self):
         with self.lock:
             self.generation += 1
@@ -87,6 +98,7 @@ class LiveObservations:
                         self.perception.reset()
                     applied_generation, last_delivery = generation, None
                 snapshot = self.sensors.latest()
+                delivery = None
                 result, error = ((), None), getattr(self.sensors, 'last_error', None)
                 if snapshot is not None:
                     try:
@@ -116,7 +128,8 @@ class LiveObservations:
                         snapshot, error = None, str(exc)
                 with self.lock:
                     if generation == self.generation:
-                        self.packet = (generation, snapshot, result, time.monotonic())
+                        fit_error = getattr(self.perception, 'last_error', None)
+                        self.packet = (generation, snapshot, result, time.monotonic(), delivery, fit_error)
                         self.last_error = error
                         self.changed.notify_all()
                 if wait_frame is None:

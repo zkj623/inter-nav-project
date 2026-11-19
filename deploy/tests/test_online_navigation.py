@@ -5,9 +5,11 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from deploy.app.config import load
 from deploy.app.navigation import NavigationEngine
 from grutopia_extension.interactive_navigation.box_push_navigation import BoxState, BoxDecision, PushPlan
 from grutopia_extension.interactive_navigation.interaction_catalog import RecognitionEvidence, RecognitionStore
+from grutopia_extension.interactive_navigation.mapping import AStarMapPlanner
 
 
 def config(**overrides):
@@ -121,6 +123,80 @@ def test_unknown_target_selects_observed_frontier_without_marking_goal_free():
     assert engine.goal_kind == 'frontier'
     assert not engine.layers.observed[engine.planner.cell(target)]
     assert np.isfinite(command).all()
+
+
+def corridor_scan(step, x, doorway):
+    angles = np.linspace(-np.pi, np.pi, 720, endpoint=False)
+    dx, dy = np.cos(angles), np.sin(angles)
+    end_wall = 4.3 if doorway == 'open' else 2.5
+    wall_distance_x = np.where(dx > 0, end_wall - x, x + 1.5)
+    ranges = np.minimum(wall_distance_x / np.maximum(abs(dx), 1e-9),
+                        1.05 / np.maximum(abs(dy), 1e-9))
+    points = np.column_stack((x + ranges * dx, ranges * dy, np.full_like(dx, .35)))
+    if doorway == 'slit':
+        # The floor is visible beyond the gap, but its edges are too close for the body.
+        slit = (points[:, 0] > 2.49) & (abs(points[:, 1]) < .21)
+        points[slit, 0] = 4.05
+        points[slit, 1] = (4.05 - x) * dy[slit] / dx[slit]
+        points[slit, 2] = 0.
+    packet = observation(step, position=(x, 0., .4), points=points)
+    packet['sensors']['lidar']['position'] = packet['position']
+    return packet
+
+
+@pytest.mark.parametrize('doorway', ['open', 'closed'])
+def test_unseen_goal_follows_voronoi_to_an_observation_point_and_replans(doorway):
+    engine = NavigationEngine(load()['navigation'])
+    first = corridor_scan(0, 0., 'slit')
+    goal = (3.5, 0., .4)
+    engine.observe(first, 0.)
+    observed = engine.layers.global_observed.copy()
+    engine.set_goal(goal, .1)
+    engine.update(first, .1)
+    assert engine.goal_kind == 'frontier' and engine.decision['kind'] == 'explore'
+    assert engine.routes.last_plan['engine'] == 'exploration_voronoi'
+    planner = engine.planner
+    start = planner.cell(first['position'])
+    with engine.layers.global_planning() as boxes:
+        blocked = planner.blocked(boxes)
+        cells = [start, *(planner.cell(point) for point in engine.path)]
+        assert len(cells) > 1 and cells[-1] == planner.cell(engine.endpoint)
+        assert all(AStarMapPlanner.segment_clear(a, b, blocked) for a, b in zip(cells, cells[1:]))
+    boundary = planner.cell(engine.decision['observation_boundary'])
+    assert not observed[boundary]
+    sight_blocked = ~observed | engine.layers.global_occupied
+    sight_blocked[boundary] = False
+    assert AStarMapPlanner.segment_clear(cells[-1], boundary, sight_blocked)
+    assert not observed[planner.cell(goal)]
+    np.testing.assert_array_equal(engine.layers.global_observed, observed)
+    assert engine.update(first, .2)[0] > 0.
+
+    # New scans either reveal the continuation or close the gap as the robot approaches.
+    for step in range(1, 9):
+        x = min(.3 * step, 1.9)
+        engine.update(corridor_scan(step, x, doorway), step * .75)
+    assert engine.goal == goal and engine.result is None
+    if doorway == 'open':
+        assert engine.layers.global_observed[planner.cell(goal)]
+        assert engine.decision['kind'] == 'navigate' and engine.endpoint == goal[:2]
+        assert engine.goal_kind == 'task' and engine.path
+    else:
+        assert engine.decision['kind'] == 'wait'
+        assert not engine.layers.global_observed[planner.cell(goal)]
+        assert not engine.path and not engine.layers.local_path
+
+
+def test_deferred_observation_point_allows_another_view_of_the_same_opening():
+    engine = NavigationEngine(load()['navigation'])
+    start, goal = (0., 0.), (3.5, 0.)
+    engine.set_goal(goal, 0.)
+    engine.update(corridor_scan(0, 0., 'slit'), 0.)
+    first = engine.endpoint
+    engine.selector.defer_frontier(first, engine.now)
+    decision, alternate = engine.selector.decide(engine.layers, start, goal)
+    assert decision.kind == 'explore'
+    assert np.linalg.norm(np.asarray(alternate) - first) >= .50
+    assert decision.path and not engine.layers.global_observed[engine.planner.cell(goal)]
 
 
 def test_goal_requires_measured_stopping_inside_release_bound():

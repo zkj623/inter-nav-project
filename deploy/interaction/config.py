@@ -92,9 +92,14 @@ def tracking_config(settings):
             'registry_reference': settings['registry_reference']}
 
 
-def create_perception(config, *, synchronous=False):
+def create_perception(config, *, synchronous=False, box_window=False, live=False):
     """The only provider factory used by live run and deterministic replay."""
     settings = config.get('interaction', DEFAULTS)
+    if box_window:
+        if settings['source'] != 'registered_box_lidar' or not settings['tracking_enabled']:
+            raise ValueError('Window observation requires registered_box_lidar and tracking_enabled')
+        from deploy.perception.window_observer import WindowBoxObserver
+        return WindowBoxObserver(tracking_config(settings), live=live)
     if settings['source'] == 'registered_box_lidar':
         if not (settings['tracking_enabled'] or config['navigation']['interaction_enabled']):
             return None

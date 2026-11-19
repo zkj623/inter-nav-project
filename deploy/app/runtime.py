@@ -52,13 +52,17 @@ def _recorder(args, config, mode):
 def run_replay(args, config):
     from deploy.recording.replay import snapshots
     from deploy.interaction.replay import RecordedInteractionHandoff
-    perception = create_perception(config, synchronous=True)
+    box_window = getattr(args, 'box_window', False)
+    if box_window and args.task != 'observe':
+        raise ValueError('Window tracking requires an observe replay')
+    perception = create_perception(config, synchronous=True, box_window=box_window)
     tasks = Tasks(config['navigation'], perception, interaction=config.get('interaction'))
     handoff = RecordedInteractionHandoff(config['runtime']['control'], config['robot']['max_data_age_s'])
     recorder = _recorder(args, config, 'offline_replay_no_motion')
     started = False
     reason, error = 'recording_exhausted', None
     count = 0
+    previous_delivery = None
     try:
         for snapshot in snapshots(args.replay):
             now = snapshot.captured_at
@@ -74,8 +78,11 @@ def run_replay(args, config):
             velocity, handoff_event = handoff.update(tasks, snapshot, now)
             if handoff_event is not None:
                 recorder.event(handoff_event.pop('event'), **handoff_event)
-            if perception is not None and perception.last_delivery is not None:
-                recorder.event('perception_result', **perception.last_delivery)
+            if perception is not None:
+                delivery = perception.last_delivery
+                if delivery is not None and (not box_window or delivery is not previous_delivery):
+                    recorder.event('perception_result', **delivery)
+                previous_delivery = delivery
             while tasks.engine.events:
                 event = dict(tasks.engine.events.popleft())
                 kind = event.pop('event', 'navigation_event')
@@ -122,6 +129,8 @@ def run_live(args, config):
     from deploy.robot.sensors import RosSensors
     from deploy.robot.motion import MotionProcess
     if args.allow_motion:
+        if getattr(args, 'box_window', False):
+            raise ValueError('Window tracking requires --observe-only')
         check_motion_configuration(config)
     robot, nav, runtime = config['robot'], config['navigation'], config['runtime']
     control = runtime['control']
@@ -167,7 +176,8 @@ def run_live(args, config):
         if not args.demo:
             # The acquisition worker owns registered tracking synchronously;
             # replay uses the very same source-timed tracker without a worker.
-            perception = create_perception(config, synchronous=config['interaction']['source'] == 'registered_box_lidar')
+            perception = create_perception(config, synchronous=config['interaction']['source'] == 'registered_box_lidar',
+                                           box_window=getattr(args, 'box_window', False), live=True)
         observations = LiveObservations(sensors, reference, session, hz=nav['tick_hz'],
                                         max_age=robot['max_data_age_s'], perception=perception)
         tasks = Tasks(nav, observations if perception is not None else None, interaction=config.get('interaction'))
