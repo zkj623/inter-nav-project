@@ -1,0 +1,277 @@
+{
+  "name": "g2_ground_lift_margin_pose_v2",
+  "task": "in_place_lift_only",
+  "candidate_profile_id": 7,
+  "fixed_joint_positions_rad": {
+    "idx01_body_joint1": -0.6981317007977318,
+    "idx02_body_joint2": 2.478367537831948,
+    "idx03_body_joint3": -1.5184364492350666,
+    "idx04_body_joint4": 0.0,
+    "idx05_body_joint5": 0.0,
+    "idx11_head_joint1": 0.0,
+    "idx12_head_joint2": 0.0,
+    "idx13_head_joint3": 0.0,
+    "idx111_chassis_lwheel_front_joint1": 0.0,
+    "idx112_chassis_lwheel_front_joint2": 0.0,
+    "idx131_chassis_rwheel_front_joint1": 0.0,
+    "idx132_chassis_rwheel_front_joint2": 0.0,
+    "idx141_chassis_rwheel_rear_joint1": 0.0,
+    "idx142_chassis_rwheel_rear_joint2": 0.0,
+    "idx121_chassis_lwheel_rear_joint1": 0.0,
+    "idx122_chassis_lwheel_rear_joint2": 0.0
+  },
+  "body_joint_positions_deg": {
+    "idx01_body_joint1": -40.0,
+    "idx02_body_joint2": 142.0,
+    "idx03_body_joint3": -87.0,
+    "idx04_body_joint4": 0.0,
+    "idx05_body_joint5": 0.0
+  },
+  "fixed_base_pose": {
+    "position_m": [
+      0,
+      0,
+      0.04
+    ],
+    "quaternion_wxyz": [
+      1,
+      0,
+      0,
+      0
+    ]
+  },
+  "policy_action_joint_names": [
+    "idx21_arm_l_joint1",
+    "idx22_arm_l_joint2",
+    "idx23_arm_l_joint3",
+    "idx24_arm_l_joint4",
+    "idx25_arm_l_joint5",
+    "idx26_arm_l_joint6",
+    "idx27_arm_l_joint7",
+    "idx61_arm_r_joint1",
+    "idx62_arm_r_joint2",
+    "idx63_arm_r_joint3",
+    "idx64_arm_r_joint4",
+    "idx65_arm_r_joint5",
+    "idx66_arm_r_joint6",
+    "idx67_arm_r_joint7",
+    "idx31_gripper_l_inner_joint1",
+    "idx71_gripper_r_inner_joint1"
+  ],
+  "policy_action_dimension": 16,
+  "policy_action_type": "absolute_joint_position_targets_rad",
+  "shoulder_height_m": 0.8226806225393324,
+  "torso_tilt_deg": 15.000000000000043,
+  "joint_lock_method": "non-arm/non-gripper angular limits set to initial position; world fixed joint on root; no object attachment",
+  "initialization_scope": "one identical full joint target for all objects; executed common-start arm/gripper approach before per-object grasp",
+  "excluded_from_initial_lift_set": {
+    "chair_dining": "no verified lift; push only",
+    "chair_wheeled": "no verified lift; push only",
+    "stool_small": "rigid substrate unconfirmed"
+  },
+  "assumptions": {
+    "mass_kg": 1.0,
+    "ideal_torso_drive": true,
+    "training_not_started": true,
+    "geometry_screen_not_physics_success": true
+  },
+  "plan_directory": "commonstart_plans",
+  "body_joint_margin_deg": {
+    "idx01_body_joint1": 22.005492589057695,
+    "idx02_body_joint2": 10.005703048207408,
+    "idx03_body_joint3": 22.263051531447996,
+    "idx04_body_joint4": 25.003878179509126,
+    "idx05_body_joint5": 174.50002608504352
+  },
+  "status": "12/12 common-start full approach+grasp+lift validations; collecting data awaits review",
+  "geometry_screen_pass_assets": [
+    "basket_rectangular",
+    "basket_woven",
+    "bin_lidded",
+    "bin_pedal",
+    "bin_round_lidded",
+    "bin_round_pedal",
+    "box_reinforced",
+    "box_white",
+    "case_handheld",
+    "stool_rectangular",
+    "stool_wood_four_leg",
+    "table_side"
+  ],
+  "geometry_screen_fail_assets": [],
+  "validated_assets": [
+    "basket_rectangular",
+    "basket_woven",
+    "bin_lidded",
+    "bin_pedal",
+    "bin_round_lidded",
+    "bin_round_pedal",
+    "box_reinforced",
+    "box_white",
+    "case_handheld",
+    "stool_rectangular",
+    "stool_wood_four_leg",
+    "table_side"
+  ],
+  "pending_adaptation_assets": [],
+  "validated_simulation_baselines": {
+    "basket_woven": {
+      "iteration": "20261119_commonstart",
+      "harness": "commonstartslow_basket_woven_trial.py",
+      "plan_dir": "commonstart_plans",
+      "candidate": 0,
+      "repeat": 1
+    },
+    "bin_lidded": {
+      "iteration": "20261119_commonstart",
+      "harness": "commonstarthold_bin_lidded_trial.py",
+      "plan_dir": "commonstart_plans",
+      "candidate": 0,
+      "repeat": 1
+    },
+    "bin_pedal": {
+      "iteration": "20261119_commonstart",
+      "harness": "commonstartslow_bin_pedal_trial.py",
+      "plan_dir": "commonstart_plans",
+      "candidate": 0,
+      "repeat": 1
+    },
+    "bin_round_lidded": {
+      "iteration": "20261119_commonstart",
+      "harness": "commonstartslow_bin_round_lidded_trial.py",
+      "plan_dir": "commonstart_plans",
+      "candidate": 0,
+      "repeat": 1
+    },
+    "bin_round_pedal": {
+      "iteration": "20261119_commonstart",
+      "harness": "commonstartslow_bin_round_pedal_trial.py",
+      "plan_dir": "commonstart_plans",
+      "candidate": 0,
+      "repeat": 1
+    },
+    "box_reinforced": {
+      "iteration": "20261119_commonstart",
+      "harness": "commonstartslow_box_reinforced_trial.py",
+      "plan_dir": "commonstart_plans",
+      "candidate": 0,
+      "repeat": 1
+    },
+    "box_white": {
+      "iteration": "20261119_commonstart",
+      "harness": "commonstartslow_box_white_trial.py",
+      "plan_dir": "commonstart_plans",
+      "candidate": 0,
+      "repeat": 1
+    },
+    "stool_rectangular": {
+      "iteration": "20261119_commonstart",
+      "harness": "commonstartslow_stool_rectangular_trial.py",
+      "plan_dir": "commonstart_extra_plans",
+      "candidate": 0,
+      "repeat": 1
+    },
+    "stool_wood_four_leg": {
+      "iteration": "20261119_commonstart",
+      "harness": "commonstartslow_stool_wood_four_leg_trial.py",
+      "plan_dir": "commonstart_plans",
+      "candidate": 0,
+      "repeat": 1
+    },
+    "table_side": {
+      "iteration": "20261119_commonstart",
+      "harness": "commonstartslow_table_side_trial.py",
+      "plan_dir": "commonstart_plans",
+      "candidate": 0,
+      "repeat": 1
+    },
+    "basket_rectangular": {
+      "iteration": "20261119_commonfix",
+      "harness": "commonfix_solver_basket_rectangular_trial.py",
+      "plan_dir": "commonstart_plans",
+      "candidate": 0,
+      "repeat": 2
+    },
+    "case_handheld": {
+      "iteration": "20261119_caseyaw",
+      "harness": "caseyaw_damped_trial.py",
+      "plan_dir": "caseyaw_reverse_plans",
+      "candidate": 1,
+      "repeat": 1,
+      "object_yaw_deg": 90,
+      "controller_feedback": "privileged measured object orientation; opposite tilt gain0.4 bounded8deg, rate1deg/s",
+      "capture_gate": "bilateral >12N for 3 updates, 15mm physical test lift, four actual contact manifolds within original visible tolerances; final hold still requires original four positive forces >=90%",
+      "final_acceptance": "original four positive forces >=90%; original lift/tilt/drift/contact limits",
+      "damped_feedback": "load balance0.4deg/s; load average0.5s; target28N/side; settle requires four forces>2N for8 updates; final acceptance unchanged"
+    }
+  },
+  "validation_scope": "One common reset target including arms/grippers; object-specific collision-audited approach then lift. Fixed root/non-arm joints, assumed mass 1kg. No random robustness or hardware validation.",
+  "previous_config_archive": "iterations/20261119_commonfix/fixtures/commonfix_ground_lift_config.json",
+  "source_iteration": "iterations/20261119_caseyaw",
+  "planning_excluded_assets": [],
+  "per_asset_plan_directory_overrides": {
+    "basket_woven": "commonstart_plans",
+    "bin_lidded": "commonstart_plans",
+    "bin_pedal": "commonstart_plans",
+    "bin_round_lidded": "commonstart_plans",
+    "bin_round_pedal": "commonstart_plans",
+    "box_reinforced": "commonstart_plans",
+    "box_white": "commonstart_plans",
+    "stool_rectangular": "commonstart_extra_plans",
+    "stool_wood_four_leg": "commonstart_plans",
+    "table_side": "commonstart_plans",
+    "basket_rectangular": "commonstart_plans",
+    "case_handheld": "caseyaw_reverse_plans"
+  },
+  "additional_acceptance": "Non-hand contact impulse <=0.001 Ns; sampled non-hand penetration <=1 mm; held visual mesh floor clearance >5 mm. Four loaded contacts: distal fingers for spread, inner/outer branches for pinch and under-support.",
+  "plan_resolution": "Use each validated_simulation_baselines entry for authoritative iteration, harness, plan_dir and candidate; plan_directory is the legacy default.",
+  "controller_scope": "Per-asset archived baseline including controller gains and solver iterations; physical geometry/material/actuator caps recorded in protocol; all start from identical full q_start.",
+  "latest_baseline_verified_repeat_counts": {
+    "basket_woven": 1,
+    "bin_lidded": 1,
+    "bin_pedal": 1,
+    "bin_round_lidded": 1,
+    "bin_round_pedal": 1,
+    "box_reinforced": 1,
+    "box_white": 1,
+    "stool_rectangular": 1,
+    "stool_wood_four_leg": 1,
+    "table_side": 1,
+    "basket_rectangular": 2,
+    "case_handheld": 2
+  },
+  "common_initial_joint_positions_rad": {
+    "idx01_body_joint1": -0.6981317007977318,
+    "idx02_body_joint2": 2.478367537831948,
+    "idx03_body_joint3": -1.5184364492350666,
+    "idx22_arm_l_joint2": -0.16180438159946842,
+    "idx62_arm_r_joint2": 0.1621450881753195,
+    "idx24_arm_l_joint4": -1.9294437233375088,
+    "idx64_arm_r_joint4": -2.372998619851346,
+    "idx31_gripper_l_inner_joint1": -0.785,
+    "idx71_gripper_r_inner_joint1": -0.785,
+    "idx21_arm_l_joint1": 0.43053310416849516,
+    "idx23_arm_l_joint3": -0.13566518543123238,
+    "idx25_arm_l_joint5": -1.2530682731713163,
+    "idx26_arm_l_joint6": -0.46779200564883017,
+    "idx27_arm_l_joint7": -0.9817555238127986,
+    "idx61_arm_r_joint1": -0.9814830782411952,
+    "idx63_arm_r_joint3": 0.3137305701995376,
+    "idx65_arm_r_joint5": 0.910740152711039,
+    "idx66_arm_r_joint6": -0.7191089953887743,
+    "idx67_arm_r_joint7": 0.2490166320980864,
+    "idx04_body_joint4": 0.0,
+    "idx05_body_joint5": 0.0,
+    "idx11_head_joint1": 0.0,
+    "idx12_head_joint2": 0.0,
+    "idx13_head_joint3": 0.0,
+    "idx111_chassis_lwheel_front_joint1": 0.0,
+    "idx112_chassis_lwheel_front_joint2": 0.0,
+    "idx131_chassis_rwheel_front_joint1": 0.0,
+    "idx132_chassis_rwheel_front_joint2": 0.0,
+    "idx141_chassis_rwheel_rear_joint1": 0.0,
+    "idx142_chassis_rwheel_rear_joint2": 0.0,
+    "idx121_chassis_lwheel_rear_joint1": 0.0,
+    "idx122_chassis_lwheel_rear_joint2": 0.0
+  }
+}

@@ -83,7 +83,7 @@
     "idx04_body_joint4": 25.003878179509126,
     "idx05_body_joint5": 174.50002608504352
   },
-  "status": "11/12 common-start full approach+grasp+lift validations; collecting data awaits user review",
+  "status": "12/12 common-start full approach+grasp+lift validations; collecting data awaits review",
   "geometry_screen_pass_assets": [
     "basket_rectangular",
     "basket_woven",
@@ -108,13 +108,12 @@
     "bin_round_pedal",
     "box_reinforced",
     "box_white",
+    "case_handheld",
     "stool_rectangular",
     "stool_wood_four_leg",
     "table_side"
   ],
-  "pending_adaptation_assets": [
-    "case_handheld"
-  ],
+  "pending_adaptation_assets": [],
   "validated_simulation_baselines": {
     "basket_woven": {
       "iteration": "20261119_commonstart",
@@ -192,11 +191,23 @@
       "plan_dir": "commonstart_plans",
       "candidate": 0,
       "repeat": 2
+    },
+    "case_handheld": {
+      "iteration": "20261119_caseyaw",
+      "harness": "caseyaw_damped_trial.py",
+      "plan_dir": "caseyaw_reverse_plans",
+      "candidate": 1,
+      "repeat": 1,
+      "object_yaw_deg": 90,
+      "controller_feedback": "privileged measured object orientation; opposite tilt gain0.4 bounded8deg, rate1deg/s",
+      "capture_gate": "bilateral >12N for 3 updates, 15mm physical test lift, four actual contact manifolds within original visible tolerances; final hold still requires original four positive forces >=90%",
+      "final_acceptance": "original four positive forces >=90%; original lift/tilt/drift/contact limits",
+      "damped_feedback": "load balance0.4deg/s; load average0.5s; target28N/side; settle requires four forces>2N for8 updates; final acceptance unchanged"
     }
   },
   "validation_scope": "One common reset target including arms/grippers; object-specific collision-audited approach then lift. Fixed root/non-arm joints, assumed mass 1kg. No random robustness or hardware validation.",
-  "previous_config_archive": "iterations/20261119_commonstart/fixtures/commonstart_ground_lift_config.json",
-  "source_iteration": "iterations/20261119_commonfix",
+  "previous_config_archive": "iterations/20261119_commonfix/fixtures/commonfix_ground_lift_config.json",
+  "source_iteration": "iterations/20261119_caseyaw",
   "planning_excluded_assets": [],
   "per_asset_plan_directory_overrides": {
     "basket_woven": "commonstart_plans",
@@ -209,7 +220,8 @@
     "stool_rectangular": "commonstart_extra_plans",
     "stool_wood_four_leg": "commonstart_plans",
     "table_side": "commonstart_plans",
-    "basket_rectangular": "commonstart_plans"
+    "basket_rectangular": "commonstart_plans",
+    "case_handheld": "caseyaw_reverse_plans"
   },
   "additional_acceptance": "Non-hand contact impulse <=0.001 Ns; sampled non-hand penetration <=1 mm; held visual mesh floor clearance >5 mm. Four loaded contacts: distal fingers for spread, inner/outer branches for pinch and under-support.",
   "plan_resolution": "Use each validated_simulation_baselines entry for authoritative iteration, harness, plan_dir and candidate; plan_directory is the legacy default.",
@@ -225,7 +237,8 @@
     "stool_rectangular": 1,
     "stool_wood_four_leg": 1,
     "table_side": 1,
-    "basket_rectangular": 2
+    "basket_rectangular": 2,
+    "case_handheld": 2
   },
   "common_initial_joint_positions_rad": {
     "idx01_body_joint1": -0.6981317007977318,

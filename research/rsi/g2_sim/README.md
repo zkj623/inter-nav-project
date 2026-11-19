@@ -1,3 +1,7 @@
+<!-- caseyaw -->
+Latest hard-case iteration: 12/12 common-start baselines verified. [Contact-layout and leveling tests](iterations/20261119_caseyaw/README.md). Data collection awaits review.
+<!-- /caseyaw -->
+
 <!-- commonfix -->
 Latest common-start validation: 11/12 passed. [Remaining-object iteration](iterations/20261119_commonfix/README.md); collection awaits review.
 <!-- /commonfix -->
