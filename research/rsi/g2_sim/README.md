@@ -1,3 +1,7 @@
+<!-- liftfix-evaluation -->
+固定姿态迭代后 10/12 种抬升候选通过各自归档基线：[六种物体的调整结果](iterations/20261119_liftfix/README.md)。
+<!-- /liftfix-evaluation -->
+
 <!-- liftall-evaluation -->
 固定姿态全物体抬升结果：6/12 候选通过当前检查，详见 [逐物体验证](iterations/20261119_liftall/README.md) 和 [当前训练配置](ground_lift_training_config.json)。
 <!-- /liftall-evaluation -->

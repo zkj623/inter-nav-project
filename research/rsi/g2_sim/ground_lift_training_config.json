@@ -67,8 +67,7 @@
   "excluded_from_initial_lift_set": {
     "chair_dining": "no verified lift; push only",
     "chair_wheeled": "no verified lift; push only",
-    "stool_small": "rigid substrate unconfirmed",
-    "bin_pedal": "no valid retargeted path in current bounded search"
+    "stool_small": "rigid substrate unconfirmed"
   },
   "assumptions": {
     "mass_kg": 1.0,
@@ -84,35 +83,35 @@
     "idx04_body_joint4": 25.003878179509126,
     "idx05_body_joint5": 174.50002608504352
   },
-  "status": "fixed posture screened on all 12 rigid lift candidates; partial success",
+  "status": "10/12 rigid candidates validated across archived fixed-posture baselines; no policy training started",
   "geometry_screen_pass_assets": [
-    "bin_lidded",
-    "bin_round_lidded",
-    "stool_wood_four_leg",
-    "table_side",
-    "basket_woven",
     "basket_rectangular",
-    "box_white",
-    "box_reinforced",
-    "bin_round_pedal",
-    "case_handheld",
-    "stool_rectangular"
-  ],
-  "geometry_screen_fail_assets": [
-    "bin_pedal"
-  ],
-  "validated_assets": [
+    "basket_woven",
     "bin_lidded",
+    "bin_pedal",
     "bin_round_lidded",
+    "bin_round_pedal",
+    "box_reinforced",
+    "box_white",
+    "case_handheld",
+    "stool_rectangular",
+    "stool_wood_four_leg",
+    "table_side"
+  ],
+  "geometry_screen_fail_assets": [],
+  "validated_assets": [
+    "basket_rectangular",
+    "basket_woven",
+    "bin_lidded",
+    "bin_pedal",
+    "bin_round_lidded",
+    "bin_round_pedal",
     "box_white",
     "stool_rectangular",
     "stool_wood_four_leg",
     "table_side"
   ],
   "pending_adaptation_assets": [
-    "basket_rectangular",
-    "basket_woven",
-    "bin_round_pedal",
     "box_reinforced",
     "case_handheld"
   ],
@@ -121,47 +120,90 @@
       "harness": "liftall_general_trial.py",
       "plan_dir": "liftall_validated_plans",
       "candidate": 0,
-      "repeat": 1
+      "repeat": 1,
+      "iteration": "20261119_liftall"
     },
     "bin_round_lidded": {
       "harness": "liftall_general_trial.py",
       "plan_dir": "liftall_metadata_plans",
       "candidate": 0,
-      "repeat": 1
+      "repeat": 1,
+      "iteration": "20261119_liftall"
     },
     "box_white": {
       "harness": "liftall_general_trial.py",
       "plan_dir": "liftall_validated_plans",
       "candidate": 0,
-      "repeat": 1
+      "repeat": 1,
+      "iteration": "20261119_liftall"
     },
     "stool_rectangular": {
       "harness": "liftall_under_trial.py",
       "plan_dir": "liftall_validated_plans",
       "candidate": 0,
-      "repeat": 1
+      "repeat": 1,
+      "iteration": "20261119_liftall"
     },
     "stool_wood_four_leg": {
       "harness": "liftall_general_trial.py",
       "plan_dir": "liftall_validated_plans",
       "candidate": 0,
-      "repeat": 1
+      "repeat": 1,
+      "iteration": "20261119_liftall"
     },
     "table_side": {
       "harness": "liftall_general_trial.py",
       "plan_dir": "liftall_validated_plans",
       "candidate": 0,
+      "repeat": 1,
+      "iteration": "20261119_liftall"
+    },
+    "bin_pedal": {
+      "iteration": "20261119_liftfix",
+      "harness": "liftfix_balance_trial.py",
+      "plan_dir": "liftfix_pedal_plans",
+      "candidate": 1,
+      "repeat": 1
+    },
+    "bin_round_pedal": {
+      "iteration": "20261119_liftfix",
+      "harness": "liftfix_preload_trial.py",
+      "plan_dir": "liftfix_arc_plans",
+      "candidate": 1,
+      "repeat": 1
+    },
+    "basket_rectangular": {
+      "iteration": "20261119_liftfix",
+      "harness": "liftfix_trial.py",
+      "plan_dir": "liftfix_plans",
+      "candidate": 0,
+      "repeat": 1
+    },
+    "basket_woven": {
+      "iteration": "20261119_liftfix",
+      "harness": "liftfix_trial.py",
+      "plan_dir": "liftfix_plans",
+      "candidate": 1,
       "repeat": 1
     }
   },
   "validation_scope": "One deterministic trial per accepted asset, 1 kg common assumed mass, fixed root and non-arm joints, per-object pregrasp initialization; no common arm reset, randomized robustness, navigation or hardware validation.",
-  "previous_config_archive": "iterations/20261119_marginpose/fixtures/margin_ground_lift_config.json",
-  "source_iteration": "iterations/20261119_liftall",
-  "planning_excluded_assets": [
-    "bin_pedal"
-  ],
+  "previous_config_archive": "iterations/20261119_liftall/fixtures/liftall_ground_lift_config.json",
+  "source_iteration": "iterations/20261119_liftfix",
+  "planning_excluded_assets": [],
   "per_asset_plan_directory_overrides": {
-    "bin_round_lidded": "liftall_metadata_plans"
+    "bin_lidded": "liftall_validated_plans",
+    "bin_round_lidded": "liftall_metadata_plans",
+    "box_white": "liftall_validated_plans",
+    "stool_rectangular": "liftall_validated_plans",
+    "stool_wood_four_leg": "liftall_validated_plans",
+    "table_side": "liftall_validated_plans",
+    "bin_pedal": "liftfix_pedal_plans",
+    "bin_round_pedal": "liftfix_arc_plans",
+    "basket_rectangular": "liftfix_plans",
+    "basket_woven": "liftfix_plans"
   },
-  "additional_acceptance": "Non-hand contact impulse <=0.001 Ns; sampled non-hand penetration <=1 mm; held visual mesh floor clearance >5 mm. Four loaded contacts: distal fingers for spread, inner/outer branches for pinch and under-support."
+  "additional_acceptance": "Non-hand contact impulse <=0.001 Ns; sampled non-hand penetration <=1 mm; held visual mesh floor clearance >5 mm. Four loaded contacts: distal fingers for spread, inner/outer branches for pinch and under-support.",
+  "plan_resolution": "Use each validated_simulation_baselines entry for authoritative iteration, harness, plan_dir and candidate; plan_directory is the legacy default.",
+  "controller_scope": "Per-asset archived harness; balance variant adds weak-finger squeeze and active hold feedback. Acceptance criteria unchanged. Baseline trial harness remains frozen."
 }
