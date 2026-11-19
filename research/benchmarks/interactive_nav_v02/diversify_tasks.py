@@ -16,17 +16,17 @@ def overlap(a,b):
     n=len(a&b)
     return n/(len(a)+len(b)-n)
 
-MIN_ROUTE_M=3.0
+MIN_ROUTE_M=5.0
 
 def sample(d,gdata,kernels,reserve_controls=False):
     items=d['objects'];origin=gdata['origin'];nominal=gdata['nominal'];initial=gdata['initial_nominal'];final=gdata['cleared_nominal'];opt=gdata['initial_optimistic']
     initial_labels,_=ndi.label(opt,STRUCT);clear=ndi.distance_transform_edt(~gdata['blocked'])*R
     g,cells,index=graph(final);safe=initial&final&(clear>.40);eligible=np.flatnonzero(safe[tuple(cells.T)])
     landmarks=[int(eligible[0])];minimum=np.full(len(cells),np.inf);distances=[];preds=[]
-    for _ in range(80):
+    for _ in range(200):
         dd,pp=dijkstra(g,indices=landmarks[-1],return_predecessors=True);distances.append(dd);preds.append(pp);minimum=np.minimum(minimum,dd)
         remaining=np.where(np.isfinite(minimum[eligible]),minimum[eligible],-1);nxt=int(eligible[np.argmax(remaining)])
-        if minimum[nxt]<.7:break
+        if minimum[nxt]<.35:break
         landmarks.append(nxt)
     landmarks=landmarks[:len(distances)];distances=np.array(distances);preds=np.array(preds)
     # The early farthest-point samples form spatial zones separated by >= 2 m geodesic distance.
@@ -86,6 +86,8 @@ def sample(d,gdata,kernels,reserve_controls=False):
             if not np.isfinite(length) or length<MIN_ROUTE_M:continue
             rr=route(bc,pp,int(bi[sc]),t)
             if not initial[tuple(rr.T)].all():continue
+            steps=np.diff(rr,axis=0);diagonal=np.all(steps!=0,axis=1);corners=rr[:-1][diagonal];delta=steps[diagonal]
+            if not (initial[corners[:,0]+delta[:,0],corners[:,1]].all() and initial[corners[:,0],corners[:,1]+delta[:,1]].all()):continue
             controls.append({'i':i,'j':j,'start':sc,'goal':tc,'length':length,'cells':rr,'corridor':corridor(rr),'zone_pair':tuple(sorted((int(zones[i]),int(zones[j])))),'minimum':0,'class':'no_interaction_optimal','length_band':category(length)})
     if reserve_controls:
         for _ in range(2):

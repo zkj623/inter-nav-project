@@ -16,7 +16,7 @@ def design(old,fine,kernels,asset_names,objects):
  sid=old['id'];floor=fine['floor'].astype(bool);bands=fine['obstacle_bands'].astype(bool);origin=fine['origin'];static=floor&~bands.any(0);clear=ndi.distance_transform_edt(static)*R
  nominal=largest(clear>=.36);optimistic=ndi.distance_transform_edt(floor&~bands[0])*R>=.25;core=nominal&(clear>.40)
  points=np.argwhere(nominal);candidates=points[(points[:,0]%3==0)&(points[:,1]%3==0)&(clear[nominal]<1.2)]
- rng=np.random.default_rng(20261120+int(sid[1:]));
+ rng=np.random.default_rng(old.get('placement_seed',20261120+int(sid[1:])));
  if len(candidates)>1500:candidates=candidates[rng.choice(len(candidates),1500,replace=False)]
  aids=[o['asset_id'] for o in old['objects']][:3]
  if int(sid[1:])>5:aids=aids[1:]+aids[:1]
@@ -37,7 +37,7 @@ def design(old,fine,kernels,asset_names,objects):
     # Evaluate new splits, not an old split left unchanged by this candidate.
     retained=core&mask;old_sizes=np.bincount(before[retained]);old_sizes[0]=0;new_sizes=np.bincount(labels[retained]);new_sizes[0]=0
     gain=float((np.square(old_sizes.astype(float)).sum()-np.square(new_sizes.astype(float)).sum())*R**4)
-    score=(len(ids),gain,float(np.sort(counts[ids])[0])*R*R if len(ids) else 0,-float(clear[tuple(cell)]))
+    score=(len(ids),float(counts[ids].max()) if old.get('preserve_large_control_region') and len(ids) else gain,float(np.sort(counts[ids])[0])*R*R if len(ids) else 0,-float(clear[tuple(cell)]))
     if best is None or score>best[0]:best=(score,yaw,cell.tolist(),len(before_ids))
   return best
  for aid in aids:

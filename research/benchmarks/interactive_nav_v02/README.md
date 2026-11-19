@@ -4,7 +4,7 @@ This research prototype contains **10 scenes, 10 fixed initial layouts, and 100 
 
 This benchmark is separate from the earlier stage-one delivery. Its platform is **Genie2/G2 CRS**, not Go2. It is a geometric task dataset and scene-loading prototype; it does not yet provide a validated G2 navigation/manipulation agent.
 
-This revision sets a **3 m minimum reference-route length for every task**, including controls, while retaining short/medium/long strata and a 0.65 corridor-overlap limit. S08's raster and fixed object layout are rebuilt; the other nine fixed object layouts are unchanged.
+This revision sets a **5 m minimum reference-route length for every task**, including controls, while retaining short/medium/long strata and a 0.65 corridor-overlap limit. S08's raster and fixed object layout are rebuilt; S04 is also redesigned to accommodate longer controls; the other eight fixed object layouts are unchanged.
 
 ## S08 floor-support correction
 
