@@ -1,3 +1,7 @@
+<!-- liftpair-evaluation -->
+两种箱体继续验证后，当前 12/12 种抬升候选拥有通过基线：[本轮对照结果](iterations/20261119_liftpair/README.md)。
+<!-- /liftpair-evaluation -->
+
 <!-- liftfix-evaluation -->
 固定姿态迭代后 10/12 种抬升候选通过各自归档基线：[六种物体的调整结果](iterations/20261119_liftfix/README.md)。
 <!-- /liftfix-evaluation -->

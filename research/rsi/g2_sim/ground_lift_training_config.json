@@ -83,7 +83,7 @@
     "idx04_body_joint4": 25.003878179509126,
     "idx05_body_joint5": 174.50002608504352
   },
-  "status": "10/12 rigid candidates validated across archived fixed-posture baselines; no policy training started",
+  "status": "12/12 rigid candidates validated across archived fixed-posture baselines; no policy training started",
   "geometry_screen_pass_assets": [
     "basket_rectangular",
     "basket_woven",
@@ -106,15 +106,14 @@
     "bin_pedal",
     "bin_round_lidded",
     "bin_round_pedal",
+    "box_reinforced",
     "box_white",
+    "case_handheld",
     "stool_rectangular",
     "stool_wood_four_leg",
     "table_side"
   ],
-  "pending_adaptation_assets": [
-    "box_reinforced",
-    "case_handheld"
-  ],
+  "pending_adaptation_assets": [],
   "validated_simulation_baselines": {
     "bin_lidded": {
       "harness": "liftall_general_trial.py",
@@ -185,11 +184,25 @@
       "plan_dir": "liftfix_plans",
       "candidate": 1,
       "repeat": 1
+    },
+    "box_reinforced": {
+      "iteration": "20261119_liftpair",
+      "harness": "liftpair_soft_trial.py",
+      "plan_dir": "liftpair_geometry_plans",
+      "candidate": 2,
+      "repeat": 1
+    },
+    "case_handheld": {
+      "iteration": "20261119_liftpair",
+      "harness": "liftpair_range_trial.py",
+      "plan_dir": "liftfix_arc_plans",
+      "candidate": 1,
+      "repeat": 1
     }
   },
-  "validation_scope": "One deterministic trial per accepted asset, 1 kg common assumed mass, fixed root and non-arm joints, per-object pregrasp initialization; no common arm reset, randomized robustness, navigation or hardware validation.",
-  "previous_config_archive": "iterations/20261119_liftall/fixtures/liftall_ground_lift_config.json",
-  "source_iteration": "iterations/20261119_liftfix",
+  "validation_scope": "Deterministic fixed-initialization screening; per-asset trial counts in archives; 1 kg assumed mass, fixed root/non-arm joints, per-object pregrasp arm pose. No randomized robustness, common arm reset, navigation or hardware validation.",
+  "previous_config_archive": "iterations/20261119_liftfix/fixtures/liftfix_ground_lift_config.json",
+  "source_iteration": "iterations/20261119_liftpair",
   "planning_excluded_assets": [],
   "per_asset_plan_directory_overrides": {
     "bin_lidded": "liftall_validated_plans",
@@ -201,9 +214,15 @@
     "bin_pedal": "liftfix_pedal_plans",
     "bin_round_pedal": "liftfix_arc_plans",
     "basket_rectangular": "liftfix_plans",
-    "basket_woven": "liftfix_plans"
+    "basket_woven": "liftfix_plans",
+    "box_reinforced": "liftpair_geometry_plans",
+    "case_handheld": "liftfix_arc_plans"
   },
   "additional_acceptance": "Non-hand contact impulse <=0.001 Ns; sampled non-hand penetration <=1 mm; held visual mesh floor clearance >5 mm. Four loaded contacts: distal fingers for spread, inner/outer branches for pinch and under-support.",
   "plan_resolution": "Use each validated_simulation_baselines entry for authoritative iteration, harness, plan_dir and candidate; plan_directory is the legacy default.",
-  "controller_scope": "Per-asset archived harness; balance variant adds weak-finger squeeze and active hold feedback. Acceptance criteria unchanged. Baseline trial harness remains frozen."
+  "controller_scope": "Per-asset archived baseline; new pair trials test continuous load balancing, gradual total-load control, and geometry changes. Original acceptance and physical parameters unchanged.",
+  "latest_baseline_verified_repeat_counts": {
+    "box_reinforced": 2,
+    "case_handheld": 2
+  }
 }
