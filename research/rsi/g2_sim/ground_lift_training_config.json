@@ -76,7 +76,7 @@
     "training_not_started": true,
     "geometry_screen_not_physics_success": true
   },
-  "plan_directory": "marginpose_selected7_validated_plans",
+  "plan_directory": "liftall_validated_plans",
   "body_joint_margin_deg": {
     "idx01_body_joint1": 22.005492589057695,
     "idx02_body_joint2": 10.005703048207408,
@@ -84,7 +84,7 @@
     "idx04_body_joint4": 25.003878179509126,
     "idx05_body_joint5": 174.50002608504352
   },
-  "status": "selected training posture; partial object validation",
+  "status": "fixed posture screened on all 12 rigid lift candidates; partial success",
   "geometry_screen_pass_assets": [
     "bin_lidded",
     "bin_round_lidded",
@@ -102,27 +102,66 @@
     "bin_pedal"
   ],
   "validated_assets": [
-    "box_reinforced",
-    "stool_rectangular"
+    "bin_lidded",
+    "bin_round_lidded",
+    "box_white",
+    "stool_rectangular",
+    "stool_wood_four_leg",
+    "table_side"
   ],
   "pending_adaptation_assets": [
+    "basket_rectangular",
+    "basket_woven",
+    "bin_round_pedal",
+    "box_reinforced",
     "case_handheld"
   ],
   "validated_simulation_baselines": {
-    "box_reinforced": {
-      "harness": "marginpose_steady_trial.py",
-      "plan_dir": "marginpose_selected7_validated_plans",
+    "bin_lidded": {
+      "harness": "liftall_general_trial.py",
+      "plan_dir": "liftall_validated_plans",
+      "candidate": 0,
+      "repeat": 1
+    },
+    "bin_round_lidded": {
+      "harness": "liftall_general_trial.py",
+      "plan_dir": "liftall_metadata_plans",
+      "candidate": 0,
+      "repeat": 1
+    },
+    "box_white": {
+      "harness": "liftall_general_trial.py",
+      "plan_dir": "liftall_validated_plans",
       "candidate": 0,
       "repeat": 1
     },
     "stool_rectangular": {
-      "harness": "marginpose_supportsettle_trial.py",
-      "plan_dir": "marginpose_selected7_validated_plans",
+      "harness": "liftall_under_trial.py",
+      "plan_dir": "liftall_validated_plans",
+      "candidate": 0,
+      "repeat": 1
+    },
+    "stool_wood_four_leg": {
+      "harness": "liftall_general_trial.py",
+      "plan_dir": "liftall_validated_plans",
+      "candidate": 0,
+      "repeat": 1
+    },
+    "table_side": {
+      "harness": "liftall_general_trial.py",
+      "plan_dir": "liftall_validated_plans",
       "candidate": 0,
       "repeat": 1
     }
   },
-  "validation_scope": "1 kg rigid objects; fixed root/non-arm joints; per-object pregrasp arm initialization; no random robustness or real hardware validation",
-  "previous_config_archive": "iterations/20261119_fixedpose/fixtures/fixed_ground_lift_config.json",
-  "source_iteration": "iterations/20261119_marginpose"
+  "validation_scope": "One deterministic trial per accepted asset, 1 kg common assumed mass, fixed root and non-arm joints, per-object pregrasp initialization; no common arm reset, randomized robustness, navigation or hardware validation.",
+  "previous_config_archive": "iterations/20261119_marginpose/fixtures/margin_ground_lift_config.json",
+  "source_iteration": "iterations/20261119_liftall",
+  "planning_excluded_assets": [
+    "bin_pedal"
+  ],
+  "per_asset_plan_directory_overrides": {
+    "bin_round_lidded": "liftall_metadata_plans"
+  },
+  "additional_acceptance": "Non-hand contact impulse <=0.001 Ns; sampled non-hand penetration <=1 mm; held visual mesh floor clearance >5 mm. Four loaded contacts: distal fingers for spread, inner/outer branches for pinch and under-support."
 }

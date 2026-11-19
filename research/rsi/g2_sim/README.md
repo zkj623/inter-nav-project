@@ -1,3 +1,7 @@
+<!-- liftall-evaluation -->
+固定姿态全物体抬升结果：6/12 候选通过当前检查，详见 [逐物体验证](iterations/20261119_liftall/README.md) 和 [当前训练配置](ground_lift_training_config.json)。
+<!-- /liftall-evaluation -->
+
 # G2 rigid-object interaction experiments
 
 智元 G2 CRS + OmniPicker 的 Isaac Sim 4.2 仿真实验归档。机器人模型来自固定版本的 Genie Sim robot model；这里不是完整 Genie Sim 框架的迁移。入口独立于现有 R1 Lite 流程。

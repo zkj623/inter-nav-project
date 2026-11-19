@@ -1,0 +1,167 @@
+{
+  "name": "g2_ground_lift_margin_pose_v2",
+  "task": "in_place_lift_only",
+  "candidate_profile_id": 7,
+  "fixed_joint_positions_rad": {
+    "idx01_body_joint1": -0.6981317007977318,
+    "idx02_body_joint2": 2.478367537831948,
+    "idx03_body_joint3": -1.5184364492350666,
+    "idx04_body_joint4": 0.0,
+    "idx05_body_joint5": 0.0,
+    "idx11_head_joint1": 0.0,
+    "idx12_head_joint2": 0.0,
+    "idx13_head_joint3": 0.0,
+    "idx111_chassis_lwheel_front_joint1": 0.0,
+    "idx112_chassis_lwheel_front_joint2": 0.0,
+    "idx131_chassis_rwheel_front_joint1": 0.0,
+    "idx132_chassis_rwheel_front_joint2": 0.0,
+    "idx141_chassis_rwheel_rear_joint1": 0.0,
+    "idx142_chassis_rwheel_rear_joint2": 0.0,
+    "idx121_chassis_lwheel_rear_joint1": 0.0,
+    "idx122_chassis_lwheel_rear_joint2": 0.0
+  },
+  "body_joint_positions_deg": {
+    "idx01_body_joint1": -40.0,
+    "idx02_body_joint2": 142.0,
+    "idx03_body_joint3": -87.0,
+    "idx04_body_joint4": 0.0,
+    "idx05_body_joint5": 0.0
+  },
+  "fixed_base_pose": {
+    "position_m": [
+      0,
+      0,
+      0.04
+    ],
+    "quaternion_wxyz": [
+      1,
+      0,
+      0,
+      0
+    ]
+  },
+  "policy_action_joint_names": [
+    "idx21_arm_l_joint1",
+    "idx22_arm_l_joint2",
+    "idx23_arm_l_joint3",
+    "idx24_arm_l_joint4",
+    "idx25_arm_l_joint5",
+    "idx26_arm_l_joint6",
+    "idx27_arm_l_joint7",
+    "idx61_arm_r_joint1",
+    "idx62_arm_r_joint2",
+    "idx63_arm_r_joint3",
+    "idx64_arm_r_joint4",
+    "idx65_arm_r_joint5",
+    "idx66_arm_r_joint6",
+    "idx67_arm_r_joint7",
+    "idx31_gripper_l_inner_joint1",
+    "idx71_gripper_r_inner_joint1"
+  ],
+  "policy_action_dimension": 16,
+  "policy_action_type": "absolute_joint_position_targets_rad",
+  "shoulder_height_m": 0.8226806225393324,
+  "torso_tilt_deg": 15.000000000000043,
+  "joint_lock_method": "non-arm/non-gripper angular limits set to initial position; world fixed joint on root; no object attachment",
+  "initialization_scope": "common torso/head/chassis; arms initialize from each object collision-checked pregrasp; a common arm reset/approach is not yet validated",
+  "excluded_from_initial_lift_set": {
+    "chair_dining": "no verified lift; push only",
+    "chair_wheeled": "no verified lift; push only",
+    "stool_small": "rigid substrate unconfirmed",
+    "bin_pedal": "no valid retargeted path in current bounded search"
+  },
+  "assumptions": {
+    "mass_kg": 1.0,
+    "ideal_torso_drive": true,
+    "training_not_started": true,
+    "geometry_screen_not_physics_success": true
+  },
+  "plan_directory": "liftall_validated_plans",
+  "body_joint_margin_deg": {
+    "idx01_body_joint1": 22.005492589057695,
+    "idx02_body_joint2": 10.005703048207408,
+    "idx03_body_joint3": 22.263051531447996,
+    "idx04_body_joint4": 25.003878179509126,
+    "idx05_body_joint5": 174.50002608504352
+  },
+  "status": "fixed posture screened on all 12 rigid lift candidates; partial success",
+  "geometry_screen_pass_assets": [
+    "bin_lidded",
+    "bin_round_lidded",
+    "stool_wood_four_leg",
+    "table_side",
+    "basket_woven",
+    "basket_rectangular",
+    "box_white",
+    "box_reinforced",
+    "bin_round_pedal",
+    "case_handheld",
+    "stool_rectangular"
+  ],
+  "geometry_screen_fail_assets": [
+    "bin_pedal"
+  ],
+  "validated_assets": [
+    "bin_lidded",
+    "bin_round_lidded",
+    "box_white",
+    "stool_rectangular",
+    "stool_wood_four_leg",
+    "table_side"
+  ],
+  "pending_adaptation_assets": [
+    "basket_rectangular",
+    "basket_woven",
+    "bin_round_pedal",
+    "box_reinforced",
+    "case_handheld"
+  ],
+  "validated_simulation_baselines": {
+    "bin_lidded": {
+      "harness": "liftall_general_trial.py",
+      "plan_dir": "liftall_validated_plans",
+      "candidate": 0,
+      "repeat": 1
+    },
+    "bin_round_lidded": {
+      "harness": "liftall_general_trial.py",
+      "plan_dir": "liftall_metadata_plans",
+      "candidate": 0,
+      "repeat": 1
+    },
+    "box_white": {
+      "harness": "liftall_general_trial.py",
+      "plan_dir": "liftall_validated_plans",
+      "candidate": 0,
+      "repeat": 1
+    },
+    "stool_rectangular": {
+      "harness": "liftall_under_trial.py",
+      "plan_dir": "liftall_validated_plans",
+      "candidate": 0,
+      "repeat": 1
+    },
+    "stool_wood_four_leg": {
+      "harness": "liftall_general_trial.py",
+      "plan_dir": "liftall_validated_plans",
+      "candidate": 0,
+      "repeat": 1
+    },
+    "table_side": {
+      "harness": "liftall_general_trial.py",
+      "plan_dir": "liftall_validated_plans",
+      "candidate": 0,
+      "repeat": 1
+    }
+  },
+  "validation_scope": "One deterministic trial per accepted asset, 1 kg common assumed mass, fixed root and non-arm joints, per-object pregrasp initialization; no common arm reset, randomized robustness, navigation or hardware validation.",
+  "previous_config_archive": "iterations/20261119_marginpose/fixtures/margin_ground_lift_config.json",
+  "source_iteration": "iterations/20261119_liftall",
+  "planning_excluded_assets": [
+    "bin_pedal"
+  ],
+  "per_asset_plan_directory_overrides": {
+    "bin_round_lidded": "liftall_metadata_plans"
+  },
+  "additional_acceptance": "Non-hand contact impulse <=0.001 Ns; sampled non-hand penetration <=1 mm; held visual mesh floor clearance >5 mm. Four loaded contacts: distal fingers for spread, inner/outer branches for pinch and under-support."
+}
