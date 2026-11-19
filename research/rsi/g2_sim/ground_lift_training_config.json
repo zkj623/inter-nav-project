@@ -83,7 +83,7 @@
     "idx04_body_joint4": 25.003878179509126,
     "idx05_body_joint5": 174.50002608504352
   },
-  "status": "10/12 complete common-start approach+grasp+lift validations; collecting training data awaits user video review",
+  "status": "11/12 common-start full approach+grasp+lift validations; collecting data awaits user review",
   "geometry_screen_pass_assets": [
     "basket_rectangular",
     "basket_woven",
@@ -100,6 +100,7 @@
   ],
   "geometry_screen_fail_assets": [],
   "validated_assets": [
+    "basket_rectangular",
     "basket_woven",
     "bin_lidded",
     "bin_pedal",
@@ -112,7 +113,6 @@
     "table_side"
   ],
   "pending_adaptation_assets": [
-    "basket_rectangular",
     "case_handheld"
   ],
   "validated_simulation_baselines": {
@@ -185,11 +185,18 @@
       "plan_dir": "commonstart_plans",
       "candidate": 0,
       "repeat": 1
+    },
+    "basket_rectangular": {
+      "iteration": "20261119_commonfix",
+      "harness": "commonfix_solver_basket_rectangular_trial.py",
+      "plan_dir": "commonstart_plans",
+      "candidate": 0,
+      "repeat": 2
     }
   },
   "validation_scope": "One common reset target including arms/grippers; object-specific collision-audited approach then lift. Fixed root/non-arm joints, assumed mass 1kg. No random robustness or hardware validation.",
-  "previous_config_archive": "iterations/20261119_liftpair/fixtures/liftpair_ground_lift_config.json",
-  "source_iteration": "iterations/20261119_commonstart",
+  "previous_config_archive": "iterations/20261119_commonstart/fixtures/commonstart_ground_lift_config.json",
+  "source_iteration": "iterations/20261119_commonfix",
   "planning_excluded_assets": [],
   "per_asset_plan_directory_overrides": {
     "basket_woven": "commonstart_plans",
@@ -201,11 +208,12 @@
     "box_white": "commonstart_plans",
     "stool_rectangular": "commonstart_extra_plans",
     "stool_wood_four_leg": "commonstart_plans",
-    "table_side": "commonstart_plans"
+    "table_side": "commonstart_plans",
+    "basket_rectangular": "commonstart_plans"
   },
   "additional_acceptance": "Non-hand contact impulse <=0.001 Ns; sampled non-hand penetration <=1 mm; held visual mesh floor clearance >5 mm. Four loaded contacts: distal fingers for spread, inner/outer branches for pinch and under-support.",
   "plan_resolution": "Use each validated_simulation_baselines entry for authoritative iteration, harness, plan_dir and candidate; plan_directory is the legacy default.",
-  "controller_scope": "Per-object previously validated lift controller, extended with common initial state and joint approach; results revalidated over full physical trajectory.",
+  "controller_scope": "Per-asset archived baseline including controller gains and solver iterations; physical geometry/material/actuator caps recorded in protocol; all start from identical full q_start.",
   "latest_baseline_verified_repeat_counts": {
     "basket_woven": 1,
     "bin_lidded": 1,
@@ -216,7 +224,8 @@
     "box_white": 1,
     "stool_rectangular": 1,
     "stool_wood_four_leg": 1,
-    "table_side": 1
+    "table_side": 1,
+    "basket_rectangular": 2
   },
   "common_initial_joint_positions_rad": {
     "idx01_body_joint1": -0.6981317007977318,

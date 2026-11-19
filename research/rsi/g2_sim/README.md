@@ -1,3 +1,7 @@
+<!-- commonfix -->
+Latest common-start validation: 11/12 passed. [Remaining-object iteration](iterations/20261119_commonfix/README.md); collection awaits review.
+<!-- /commonfix -->
+
 <!-- commonstart -->
 Common full initial joint pose and executed approach: 10/12 passed [validation](iterations/20261119_commonstart/README.md). Earlier pregrasp results remain historical. Training collection awaits video review.
 <!-- /commonstart -->
