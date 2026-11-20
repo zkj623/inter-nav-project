@@ -1,0 +1,12 @@
+﻿from pathlib import Path
+import json,numpy as np,hashlib
+from gravity_compensation import GravityCompensation
+R=Path(__file__).resolve().parent;f=R/'effortpose_trials/effortpose_validation_plans/box_white/candidate0_repeat1/result.json';d=json.loads(f.read_text());ss=json.loads(f.with_name('samples.json').read_text());g=GravityCompensation();k=g.e.k;source=R/'effortpose_validation_trial.py';qtarget=json.loads((R/'effortpose_candidate_path.json').read_text())['selected']['q'];cfg=json.loads((R/'roundretry_ground_lift_config.json').read_text());hold=[s for s in ss if s['phase']=='pose_hold'];sc=json.loads(f.with_name('self_contacts.json').read_text());names=[n for n in qtarget if 'body_joint' in n];peaks={n:0. for n in names}
+for s in ss:
+ t=g.torques(s['joint_positions'])
+ for n in names:peaks[n]=max(peaks[n],abs(t[n]))
+violations=[(s['t'],n) for s in ss for n,j in k.by_name.items() if j['kind']=='revolute' and not j['mimic'] and (s['joint_positions'].get(n,0)<j['lower']-.005 or s['joint_positions'].get(n,0)>j['upper']+.005)]
+tracking=max(s['max_tracking_error_rad'] for s in ss);holdtracking=max(s['max_tracking_error_rad'] for s in hold);sourcehash=hashlib.sha256(source.read_bytes()).hexdigest();assert sourcehash==d['source_sha256'];assert d['success'];assert d['waist_hold_is_unlocked'];assert all(v==50 for v in d['waist_effort_limits_nm'].values());assert len(hold)>=49 and holdtracking<.03;assert not violations;assert max(x['impulse'] for x in sc) <=.001 if sc else True;assert max(peaks.values())<50
+report=dict(verified_success=True,test_scope='EMPTY original50Nm free-waist transition/hold;1kg payload static estimate only; no grasp or loaded physics test',result=str(f.relative_to(R)),source_sha256=sourcehash,waist_effort_limits_nm=d['waist_effort_limits_nm'],waist_artificial_joint_lock=False,empty_actual_waist_gravity_peaks_nm=peaks,max_tracking_rad=tracking,hold_max_tracking_rad=holdtracking,hold_samples=len(hold),original_limit_violations=violations,max_self_contact_impulse_ns=max((x['impulse'] for x in sc),default=0.),default_q_unchanged=d['plan']['q_default']==cfg['default_joint_positions_rad'],candidate_q=qtarget)
+for n in ['samples.json','review.mp4']:report[n]=dict(server_path=str(f.with_name(n)),sha256=hashlib.sha256(f.with_name(n).read_bytes()).hexdigest())
+(R/'effortpose_verified.json').write_text(json.dumps(report,indent=2));print(json.dumps(report),flush=True)

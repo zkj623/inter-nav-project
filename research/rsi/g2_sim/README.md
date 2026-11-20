@@ -1,3 +1,7 @@
+<!-- effortpose -->
+[Experimental original50Nm posture investigation](iterations/20261120_effortpose/README.md): upright raised-work candidate only; accepted standby/low-home and12 lift baselines remain unchanged.
+<!-- /effortpose -->
+
 <!-- roundretry -->
 All12 assets now have nominal verified lifts from the same low work home. [Round-lidded-bin fix and validation scope](iterations/20261120_roundretry/README.md). Latest preferred standby complete workflows verified for two assets only; default/work postures unchanged.
 <!-- /roundretry -->

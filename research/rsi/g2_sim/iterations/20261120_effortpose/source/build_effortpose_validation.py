@@ -1,0 +1,11 @@
+﻿from pathlib import Path
+import json,ast
+R=Path(__file__).resolve().parent;a=json.loads((R/'effortpose_candidate_path.json').read_text());assert a['empty_static_path_within50'] and a['geometry_path_clear'];chosen=a['selected'];p=json.loads((R/'directprep_plans/box_white.json').read_text());plan=p['plans'][0];plan['q_start']=chosen['q'];plan['q_prepare']=[chosen['q']];plan['object_position']=[1.2,0,.002];plan['effortpose_scope']='empty hold with free original-range waist and original50Nm effort;1kg payload only in separate static estimate';out=R/'effortpose_validation_plans';out.mkdir(exist_ok=True);(out/'box_white.json').write_text(json.dumps(p,indent=2))
+s=(R/'roundretry_trial.py').read_text().replace("ROOT/'roundretry_trials'","ROOT/'effortpose_trials'");s=s.replace("joint['effort']=1e7","joint['effort']=50.")
+s=s.replace("    envelope=Envelope()","    envelope=Envelope()\n    for joint in envelope.k.joints:\n        if 'body_joint' in joint['name']:joint['effort']=50.")
+s=s.replace("IDEAL body kp100000 kd5000 cap1e7; other joints baseline; corrected inertia; not real hardware validation","ORIGINAL50Nm waist cap; kp100000 kd5000; no torso joint locking; empty hold validation only")
+s=s.replace("URDF dU/dq; ideal body torque cap; other original limits","URDF dU/dq; original waist and arm torque caps")
+s=s.replace("joint=UsdPhysics.RevoluteJoint(prim);joint.CreateLowerLimitAttr(float(np.degrees(value)));joint.CreateUpperLimitAttr(float(np.degrees(value)))","# Original torso range retained: no artificial joint lock.")
+s=s.replace("    result['frozen_joint_targets_rad']=frozen.copy()","    result['frozen_joint_targets_rad']=frozen.copy()\n    result['waist_hold_is_unlocked']=True\n    result['waist_effort_limits_nm']={n:float(effort_limits[i]) for i,n in enumerate(names) if 'body_joint' in n}")
+s=s.replace("    segment(qpre,qpre,2.,'settle')","    set_camera_view(eye=np.array([3.4,3.4,2.0]),target=np.array([0.,0.,.95]),camera_prim_path='/World/GraspReview')\n    for _ in range(12):world.render()\n    rgba=camera.get_rgba()\n    if rgba is not None and rgba.size:cv2.imwrite(str(OUT/'effortpose_oblique.png'),cv2.cvtColor(rgba[:,:,:3],cv2.COLOR_RGB2BGR))\n    segment(qpre,qpre,2.,'settle')")
+ast.parse(s);(R/'effortpose_validation_trial.py').write_text(s);print('EFFORTPOSE_ORIGINAL50_HOLD_BUILT',flush=True)
