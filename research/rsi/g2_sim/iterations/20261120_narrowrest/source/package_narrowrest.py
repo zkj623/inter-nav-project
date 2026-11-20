@@ -1,0 +1,41 @@
+from pathlib import Path
+import json,hashlib,shutil,ast
+R=Path(__file__).resolve().parent;root=R.parent/'g2-publish-20261118/research/rsi/g2_sim';I=root/'iterations/20261120_narrowrest';I.mkdir(exist_ok=True);sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
+rows=json.loads((R/'narrowrest_verified_results.json').read_text());assert len(rows)==1;r=rows[0];assert r['verified_success']
+old=json.loads((R/'ground_lift_training_config.json').read_text());previous_stand=json.loads((root/'standby_preparation_config.json').read_text());candidate=json.loads((R/'narrowrest_candidate_config.json').read_text());audit=json.loads((R/'narrowrest_path_audit.json').read_text());assert len(audit)==12 and all(x['standby_preparation_approach_clear'] for x in audit)
+stand={**previous_stand,**candidate,**dict(source_iteration='iterations/20261120_narrowrest',preferred_standby=True,standby_is_official=False,preparation_verified=True,end_to_end_verified_assets=['box_white'],end_to_end_tested_assets=['box_white'],other_assets_not_end_to_end_retested=sorted(x['asset'] for x in audit if x['asset']!='box_white'),geometrically_audited_assets=[x['asset'] for x in audit],previous_config_archive='iterations/20261120_restpose/fixtures/restpose_preparation_config.json',status='narrow arms-down standby inside chassis frontal envelope;20s transition and white-box full example independently verified; other complete workflows not rerun')}
+stand['width_validation']={k:r[k] for k in ['visual_arm_width_m','visual_base_width_m','left_inset_m','right_inset_m','arms_within_chassis_projection','nonadjacent_arm_body_visual_gap_m']};stand['width_validation']['scope']='settled standby only; world-Y union of all arm/gripper visual meshes vs root and chassis/wheel visual meshes; working/grasping states may widen'
+stand['execution']={a:dict(iteration='20261120_narrowrest',harness=f'narrowrest_{a}_trial.py',plan_dir='narrowrest_plans',candidate=0,verified_end_to_end=a=='box_white') for a in old['validated_assets']}
+(R/'narrowrest_preparation_config.json').write_text(json.dumps(stand,indent=2));(root/'standby_preparation_config.json').write_text(json.dumps(stand,indent=2))
+cfg=json.loads(json.dumps(old));cfg.update(default_joint_positions_rad=candidate['standby_joint_positions_rad'],previous_standby_joint_positions_rad=old['default_joint_positions_rad'],standby_end_to_end_validated_assets=['box_white'],source_iteration='iterations/20261120_narrowrest',previous_config_archive='iterations/20261120_restpose/fixtures/restpose_ground_lift_config.json',status='narrow standby/preparation and one complete white-box example verified;11/12 archived low-work-home lift baselines; other new-start workflows not rerun; collection awaits review',validation_scope='Fixed-root ideal-torso simulation; narrowed custom standby, unchanged low work home. Current new-start full validation is white box only; archived11/12 lift baselines retain their own startup. No hardware verification.',plan_directory='narrowrest_plans')
+cfg['per_asset_plan_directory_overrides']={a:'narrowrest_plans' for a in cfg['per_asset_plan_directory_overrides']};cfg['preparation_trajectory']['waypoints']=candidate['preparation_waypoints'];cfg['standby_width_validation']=stand['width_validation']
+cfg['initialization_scope']='Preferred startup: custom narrow symmetric arms-down standby ->20s preparation -> unchanged archived low work home; lock torso before arm/gripper policy'
+cfg['validation_scope']='Fixed-root ideal-torso simulation. Current narrowed standby/preparation and one complete white-box example verified. Archived11/12 low-work-home lift baselines retain their own prior startup; other narrowed-start workflows not rerun. Original50Nm torso effort feasibility and hardware execution are not verified.'
+(R/'narrowrest_ground_lift_config.json').write_text(json.dumps(cfg,indent=2));(root/'ground_lift_training_config.json').write_text(json.dumps(cfg,indent=2))
+def cp(p,rel):
+ dst=I/rel;dst.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(p,dst)
+for p in R.glob('*narrowrest*.py'):ast.parse(p.read_text());cp(p,Path('source')/p.name)
+for pat in ['narrowrest*.json','narrowrest_plans/*.json']:
+ for p in R.glob(pat):cp(p,Path('fixtures')/p.relative_to(R))
+for name in ['result.json','protocol.json','self_contacts.json','nonhand_contacts.json']:
+ p=(R/r['result']).with_name(name)
+ if p.exists():cp(p,Path('results')/p.relative_to(R))
+geometry=[R/'generated/g2_crs_omnipicker.urdf']+list((R/'robot_assets').glob('*.npz'));(I/'geometry_input_index.json').write_text(json.dumps([dict(server_path=str(p),sha256=sha(p)) for p in geometry],indent=2));(I/'trial_index.json').write_text(json.dumps(rows,indent=2));(I/'.gitattributes').write_text('*.json -text\nsource/** -text -whitespace\n')
+(I/'README.md').write_text(f'''# Narrower arms-down standby inside the chassis projection
+
+The preceding custom standby's visual arm/gripper projection was0.88863m wide vs chassis0.63551m. This revision minimizes BOTH sides' complete visual geometry, preserving full arm/end-link mirror mapping[-1,+1,-1,+1,-1,+1,-1]. Left-only width optimization initially missed the right wrist housing; the selected final candidate constrains both sides. It reduces shoulder abduction and adjusts forearm/wrist placement, retaining original visual/collision assets, materials and effort caps.
+
+Actual settled-state widths: arms/grippers {r['visual_arm_width_m']:.8f}m, chassis/wheels {r['visual_base_width_m']:.8f}m. Left/right insets are {r['left_inset_m']:.8f}/{r['right_inset_m']:.8f}m. Non-connected arm/body visual gap under the established assembly exclusions is {r['nonadjacent_arm_body_visual_gap_m']:.8f}m. Actual geometry and original joint/velocity limits, mirror position/orientation, physical self contacts, root/frozen posture and unchanged work-home target were independently checked. Width containment applies only to standby, not manipulation postures.
+
+The20s seventh-order preparation and a complete white-box grasp/lift passed. All12 object-inclusive standby/preparation/approach paths passed geometry screening. Other complete grasp workflows were NOT rerun from this narrower start. Historical11/12 low-work-home lift baselines remain archived with their original startup; the active config separates archived validation from current startup evidence. No data collection/training started.
+
+Work-home targets, torso work angles and16-dimensional arm/gripper policy remain unchanged. This is custom simulation standby, NOT official factory posture. Existing pinned root and ideal torso drive remain; original50Nm torso feasibility to the low work home is unresolved. No hardware or randomized robustness claim. All original lift/contact acceptance thresholds remain unchanged.
+
+Overlay prior restpose runtime dependencies, then source/fixtures here. Run ISAAC_PY narrowrest_box_white_trial.py --asset box_white --plan-dir narrowrest_plans --gpu GPU. Asset-specific entries for the preferred start are in ../../standby_preparation_config.json.execution. Full samples/video server paths and SHA256 are indexed; geometry input hashes make width measurements reproducible. The prior-stance comparison refers to the archived custom arms-down start.
+''')
+(I/'manifest.json').write_text(json.dumps({str(p.relative_to(I)):sha(p) for p in I.rglob('*') if p.is_file() and p.name!='manifest.json'},indent=2))
+f=root/'README.md';s=f.read_text();marker='<!-- narrowrest -->'
+if marker not in s:f.write_text(marker+'\nPreferred standby now narrows the full arm/gripper frontal envelope inside the chassis. [Configuration](standby_preparation_config.json) · [Width and transition verification](iterations/20261120_narrowrest/README.md). Work home unchanged; one new-start full grasp example verified.\n<!-- /narrowrest -->\n\n'+s)
+out=R/'narrowrest_review';out.mkdir(exist_ok=True)
+for n in ['standby_front.png','standby_oblique.png','review.mp4']:shutil.copy2((R/r['result']).with_name(n),out/('full_sequence.mp4' if n=='review.mp4' else n))
+prior=R.parent/'g2-restpose-20261120/restpose_v2_trials/restpose_v2_plans/box_white/candidate0_repeat1/standby_front.png';shutil.copy2(prior,out/'previous_front.png');print('NARROWREST_PACKAGED',r['visual_arm_width_m'],r['visual_base_width_m'])

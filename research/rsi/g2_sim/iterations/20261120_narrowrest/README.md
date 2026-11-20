@@ -1,0 +1,11 @@
+# Narrower arms-down standby inside the chassis projection
+
+The preceding custom standby's visual arm/gripper projection was0.88863m wide vs chassis0.63551m. This revision minimizes BOTH sides' complete visual geometry, preserving full arm/end-link mirror mapping[-1,+1,-1,+1,-1,+1,-1]. Left-only width optimization initially missed the right wrist housing; the selected final candidate constrains both sides. It reduces shoulder abduction and adjusts forearm/wrist placement, retaining original visual/collision assets, materials and effort caps.
+
+Actual settled-state widths: arms/grippers 0.62948876m, chassis/wheels 0.63550800m. Left/right insets are 0.00269307/0.00332617m. Non-connected arm/body visual gap under the established assembly exclusions is 0.02124209m. Actual geometry and original joint/velocity limits, mirror position/orientation, physical self contacts, root/frozen posture and unchanged work-home target were independently checked. Width containment applies only to standby, not manipulation postures.
+
+The20s seventh-order preparation and a complete white-box grasp/lift passed. All12 object-inclusive standby/preparation/approach paths passed geometry screening. Other complete grasp workflows were NOT rerun from this narrower start. Historical11/12 low-work-home lift baselines remain archived with their original startup; the active config separates archived validation from current startup evidence. No data collection/training started.
+
+Work-home targets, torso work angles and16-dimensional arm/gripper policy remain unchanged. This is custom simulation standby, NOT official factory posture. Existing pinned root and ideal torso drive remain; original50Nm torso feasibility to the low work home is unresolved. No hardware or randomized robustness claim. All original lift/contact acceptance thresholds remain unchanged.
+
+Overlay prior restpose runtime dependencies, then source/fixtures here. Run ISAAC_PY narrowrest_box_white_trial.py --asset box_white --plan-dir narrowrest_plans --gpu GPU. Asset-specific entries for the preferred start are in ../../standby_preparation_config.json.execution. Full samples/video server paths and SHA256 are indexed; geometry input hashes make width measurements reproducible. The prior-stance comparison refers to the archived custom arms-down start.

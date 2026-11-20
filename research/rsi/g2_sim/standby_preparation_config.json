@@ -4,22 +4,22 @@
     "idx01_body_joint1": 0.0,
     "idx02_body_joint2": 0.0,
     "idx03_body_joint3": 0.0,
-    "idx22_arm_l_joint2": -1.2322996747874826,
-    "idx62_arm_r_joint2": -1.2322996747874826,
-    "idx24_arm_l_joint4": -0.9190642835972205,
-    "idx64_arm_r_joint4": -0.9190642835972205,
+    "idx22_arm_l_joint2": -1.5277146209493753,
+    "idx62_arm_r_joint2": -1.5277146209493753,
+    "idx24_arm_l_joint4": -0.19885839745643,
+    "idx64_arm_r_joint4": -0.19885839745643,
     "idx31_gripper_l_inner_joint1": -0.3,
     "idx71_gripper_r_inner_joint1": -0.3,
-    "idx21_arm_l_joint1": 2.1235485481361276,
-    "idx23_arm_l_joint3": -1.5111315869596187,
-    "idx25_arm_l_joint5": -1.0896904065875828,
-    "idx26_arm_l_joint6": -0.8322999969478406,
-    "idx27_arm_l_joint7": -1.3558999999904566,
-    "idx61_arm_r_joint1": -2.1235485481361276,
-    "idx63_arm_r_joint3": 1.5111315869596187,
-    "idx65_arm_r_joint5": 1.0896904065875828,
-    "idx66_arm_r_joint6": -0.8322999969478406,
-    "idx67_arm_r_joint7": 1.3558999999904566,
+    "idx21_arm_l_joint1": 1.6891537001501065,
+    "idx23_arm_l_joint3": -1.3235106809930828,
+    "idx25_arm_l_joint5": -1.4070105071792107,
+    "idx26_arm_l_joint6": -0.5219934500558099,
+    "idx27_arm_l_joint7": -1.3558991658072037,
+    "idx61_arm_r_joint1": -1.6891537001501065,
+    "idx63_arm_r_joint3": 1.3235106809930828,
+    "idx65_arm_r_joint5": 1.4070105071792107,
+    "idx66_arm_r_joint6": -0.5219934500558099,
+    "idx67_arm_r_joint7": 1.3558991658072037,
     "idx04_body_joint4": 0.0,
     "idx05_body_joint5": 0.0,
     "idx11_head_joint1": 0.0,
@@ -108,17 +108,15 @@
   "work_pose_changed": false,
   "validation_scope": "standby holding and preparation under existing pinned-root ideal-torso simulation; old per-asset lift validation does not automatically transfer to the new start",
   "previous_work_config": "iterations/20261120_symhome/fixtures/symhome_ground_lift_config.json",
-  "source_iteration": "iterations/20261120_restpose",
+  "source_iteration": "iterations/20261120_narrowrest",
   "preferred_standby": true,
   "standby_is_official": false,
   "preparation_verified": true,
   "end_to_end_verified_assets": [
-    "box_white",
-    "case_handheld"
+    "box_white"
   ],
   "end_to_end_tested_assets": [
-    "box_white",
-    "case_handheld"
+    "box_white"
   ],
   "other_assets_not_end_to_end_retested": [
     "basket_rectangular",
@@ -128,6 +126,7 @@
     "bin_round_lidded",
     "bin_round_pedal",
     "box_reinforced",
+    "case_handheld",
     "stool_rectangular",
     "stool_wood_four_leg",
     "table_side"
@@ -146,85 +145,98 @@
     "stool_wood_four_leg",
     "table_side"
   ],
-  "status": "custom arms-down standby and20s preparation verified; 2/2 complete example runs verified; remaining workflows not rerun",
+  "status": "narrow arms-down standby inside chassis frontal envelope;20s transition and white-box full example independently verified; other complete workflows not rerun",
   "physics_scope": "pinned root, existing ideal torso drive; not hardware verification; work home and original angular limits/arm effort/contact acceptance retained",
   "execution": {
     "basket_rectangular": {
-      "iteration": "20261120_restpose",
-      "harness": "restpose_v2_basket_rectangular_trial.py",
-      "plan_dir": "restpose_v2_plans",
+      "iteration": "20261120_narrowrest",
+      "harness": "narrowrest_basket_rectangular_trial.py",
+      "plan_dir": "narrowrest_plans",
       "candidate": 0,
       "verified_end_to_end": false
     },
     "basket_woven": {
-      "iteration": "20261120_restpose",
-      "harness": "restpose_v2_basket_woven_trial.py",
-      "plan_dir": "restpose_v2_plans",
+      "iteration": "20261120_narrowrest",
+      "harness": "narrowrest_basket_woven_trial.py",
+      "plan_dir": "narrowrest_plans",
       "candidate": 0,
       "verified_end_to_end": false
     },
     "bin_lidded": {
-      "iteration": "20261120_restpose",
-      "harness": "restpose_v2_bin_lidded_trial.py",
-      "plan_dir": "restpose_v2_plans",
+      "iteration": "20261120_narrowrest",
+      "harness": "narrowrest_bin_lidded_trial.py",
+      "plan_dir": "narrowrest_plans",
       "candidate": 0,
       "verified_end_to_end": false
     },
     "bin_pedal": {
-      "iteration": "20261120_restpose",
-      "harness": "restpose_v2_bin_pedal_trial.py",
-      "plan_dir": "restpose_v2_plans",
+      "iteration": "20261120_narrowrest",
+      "harness": "narrowrest_bin_pedal_trial.py",
+      "plan_dir": "narrowrest_plans",
       "candidate": 0,
       "verified_end_to_end": false
     },
     "bin_round_pedal": {
-      "iteration": "20261120_restpose",
-      "harness": "restpose_v2_bin_round_pedal_trial.py",
-      "plan_dir": "restpose_v2_plans",
+      "iteration": "20261120_narrowrest",
+      "harness": "narrowrest_bin_round_pedal_trial.py",
+      "plan_dir": "narrowrest_plans",
       "candidate": 0,
       "verified_end_to_end": false
     },
     "box_reinforced": {
-      "iteration": "20261120_restpose",
-      "harness": "restpose_v2_box_reinforced_trial.py",
-      "plan_dir": "restpose_v2_plans",
+      "iteration": "20261120_narrowrest",
+      "harness": "narrowrest_box_reinforced_trial.py",
+      "plan_dir": "narrowrest_plans",
       "candidate": 0,
       "verified_end_to_end": false
     },
     "box_white": {
-      "iteration": "20261120_restpose",
-      "harness": "restpose_v2_box_white_trial.py",
-      "plan_dir": "restpose_v2_plans",
+      "iteration": "20261120_narrowrest",
+      "harness": "narrowrest_box_white_trial.py",
+      "plan_dir": "narrowrest_plans",
       "candidate": 0,
       "verified_end_to_end": true
     },
     "case_handheld": {
-      "iteration": "20261120_restpose",
-      "harness": "restpose_v2_case_handheld_trial.py",
-      "plan_dir": "restpose_v2_plans",
+      "iteration": "20261120_narrowrest",
+      "harness": "narrowrest_case_handheld_trial.py",
+      "plan_dir": "narrowrest_plans",
       "candidate": 0,
-      "verified_end_to_end": true
+      "verified_end_to_end": false
     },
     "stool_rectangular": {
-      "iteration": "20261120_restpose",
-      "harness": "restpose_v2_stool_rectangular_trial.py",
-      "plan_dir": "restpose_v2_plans",
+      "iteration": "20261120_narrowrest",
+      "harness": "narrowrest_stool_rectangular_trial.py",
+      "plan_dir": "narrowrest_plans",
       "candidate": 0,
       "verified_end_to_end": false
     },
     "stool_wood_four_leg": {
-      "iteration": "20261120_restpose",
-      "harness": "restpose_v2_stool_wood_four_leg_trial.py",
-      "plan_dir": "restpose_v2_plans",
+      "iteration": "20261120_narrowrest",
+      "harness": "narrowrest_stool_wood_four_leg_trial.py",
+      "plan_dir": "narrowrest_plans",
       "candidate": 0,
       "verified_end_to_end": false
     },
     "table_side": {
-      "iteration": "20261120_restpose",
-      "harness": "restpose_v2_table_side_trial.py",
-      "plan_dir": "restpose_v2_plans",
+      "iteration": "20261120_narrowrest",
+      "harness": "narrowrest_table_side_trial.py",
+      "plan_dir": "narrowrest_plans",
       "candidate": 0,
       "verified_end_to_end": false
     }
+  },
+  "planned_visual_arm_width_m": 0.6298197320997652,
+  "planned_visual_base_width_m": 0.6355080008506775,
+  "previous_visual_arm_width_m": 0.8886288089887614,
+  "previous_config_archive": "iterations/20261120_restpose/fixtures/restpose_preparation_config.json",
+  "width_validation": {
+    "visual_arm_width_m": 0.6294887646449021,
+    "visual_base_width_m": 0.6355080008506775,
+    "left_inset_m": 0.002693068842162305,
+    "right_inset_m": 0.0033261673636130196,
+    "arms_within_chassis_projection": true,
+    "nonadjacent_arm_body_visual_gap_m": 0.021242093116411873,
+    "scope": "settled standby only; world-Y union of all arm/gripper visual meshes vs root and chassis/wheel visual meshes; working/grasping states may widen"
   }
 }
