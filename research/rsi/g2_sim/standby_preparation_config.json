@@ -113,9 +113,11 @@
   "standby_is_official": false,
   "preparation_verified": true,
   "end_to_end_verified_assets": [
+    "bin_round_lidded",
     "box_white"
   ],
   "end_to_end_tested_assets": [
+    "bin_round_lidded",
     "box_white"
   ],
   "other_assets_not_end_to_end_retested": [
@@ -123,7 +125,6 @@
     "basket_woven",
     "bin_lidded",
     "bin_pedal",
-    "bin_round_lidded",
     "bin_round_pedal",
     "box_reinforced",
     "case_handheld",
@@ -145,7 +146,7 @@
     "stool_wood_four_leg",
     "table_side"
   ],
-  "status": "Equivalent shoulder IK branch removes shoulder reconfiguration detour;20s smooth transition and one white-box full grasp verified;others geometry only",
+  "status": "Preferred narrow standby unchanged;20s preparation and full white-box and round-lidded-bin workflows independently verified; other ten new-start workflows not rerun",
   "physics_scope": "pinned root, existing ideal torso drive; not hardware verification; work home and original angular limits/arm effort/contact acceptance retained",
   "execution": {
     "basket_rectangular": {
@@ -224,6 +225,13 @@
       "plan_dir": "directprep_plans",
       "candidate": 0,
       "verified_end_to_end": false
+    },
+    "bin_round_lidded": {
+      "iteration": "20261120_roundretry",
+      "harness": "roundretry_trial.py",
+      "plan_dir": "roundretry_diagonal_validation_plans",
+      "candidate": 0,
+      "verified_end_to_end": true
     }
   },
   "planned_visual_arm_width_m": 0.6298197320997652,

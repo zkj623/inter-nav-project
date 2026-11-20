@@ -1,3 +1,7 @@
+<!-- roundretry -->
+All12 assets now have nominal verified lifts from the same low work home. [Round-lidded-bin fix and validation scope](iterations/20261120_roundretry/README.md). Latest preferred standby complete workflows verified for two assets only; default/work postures unchanged.
+<!-- /roundretry -->
+
 <!-- directprep -->
 Preferred startup uses a work-compatible shoulder IK branch to remove the arm swing detour. [Verification](iterations/20261120_directprep/README.md). Low work home unchanged; one white-box full workflow verified.
 <!-- /directprep -->

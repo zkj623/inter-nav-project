@@ -84,7 +84,7 @@
     "idx04_body_joint4": 25.003878179509126,
     "idx05_body_joint5": 174.50002608504352
   },
-  "status": "Equivalent shoulder IK branch removes shoulder reconfiguration detour;20s smooth transition and one white-box full grasp verified;others geometry only",
+  "status": "12/12 unchanged-low-home simulation lift baselines;current preferred startup full verification for white box and round-lidded bin only; no data collection",
   "geometry_screen_pass_assets": [
     "basket_rectangular",
     "basket_woven",
@@ -105,6 +105,7 @@
     "basket_woven",
     "bin_lidded",
     "bin_pedal",
+    "bin_round_lidded",
     "bin_round_pedal",
     "box_reinforced",
     "box_white",
@@ -113,9 +114,7 @@
     "stool_wood_four_leg",
     "table_side"
   ],
-  "pending_adaptation_assets": [
-    "bin_round_lidded"
-  ],
+  "pending_adaptation_assets": [],
   "validated_simulation_baselines": {
     "basket_rectangular": {
       "iteration": "20261120_symhome",
@@ -199,11 +198,21 @@
       "plan_dir": "symhome_plans",
       "candidate": 0,
       "repeat": 1
+    },
+    "bin_round_lidded": {
+      "iteration": "20261120_roundretry",
+      "harness": "roundretry_trial.py",
+      "plan_dir": "roundretry_diagonal_validation_plans",
+      "candidate": 0,
+      "repeat": 1,
+      "controller": "correct wrist contact pivot (remove duplicated TCP offset);28N/hand damped force; normalized0.4deg/s finger load balance; bounded20mm measured-object XY follow; original acceptance retained",
+      "controller_observation": "privileged measured object XY/orientation and finger contact forces; no object state writes",
+      "same_common_low_home": true
     }
   },
-  "validation_scope": "Fixed-root ideal-torso simulation. Only one complete white-box workflow rerun from equivalent shoulder-branch standby;12 preparation paths geometry screened. Archived11/12 baselines retain prior startup. Original torso torque/hardware feasibility not verified.",
-  "previous_config_archive": "iterations/20261120_narrowrest/fixtures/narrowrest_ground_lift_config.json",
-  "source_iteration": "iterations/20261120_directprep",
+  "validation_scope": "Same low work home:12/12 assets have verified simulation lifts. Latest standby-to-lift complete workflows verified for box_white and bin_round_lidded only. Fixed root, ideal torso drive,1kg screening mass; original hardware torso torque feasibility unresolved.",
+  "previous_config_archive": "iterations/20261120_directprep/fixtures/directprep_ground_lift_config.json",
+  "source_iteration": "iterations/20261120_roundretry",
   "planning_excluded_assets": [],
   "per_asset_plan_directory_overrides": {
     "basket_rectangular": "directprep_plans",
@@ -216,7 +225,8 @@
     "case_handheld": "directprep_plans",
     "stool_rectangular": "directprep_plans",
     "stool_wood_four_leg": "directprep_plans",
-    "table_side": "directprep_plans"
+    "table_side": "directprep_plans",
+    "bin_round_lidded": "roundretry_diagonal_validation_plans"
   },
   "additional_acceptance": "Non-hand contact impulse <=0.001 Ns; sampled non-hand penetration <=1 mm; held visual mesh floor clearance >5 mm. Four loaded contacts: distal fingers for spread, inner/outer branches for pinch and under-support.",
   "plan_resolution": "Archived validated_simulation_baselines reproduce the previous startup; current preferred arms-down startup uses execution entries in standby_preparation_config.json.",
@@ -232,7 +242,8 @@
     "case_handheld": 1,
     "stool_rectangular": 1,
     "stool_wood_four_leg": 1,
-    "table_side": 1
+    "table_side": 1,
+    "bin_round_lidded": 1
   },
   "common_initial_joint_positions_rad": {
     "idx01_body_joint1": -0.6981317007977318,
@@ -394,9 +405,10 @@
   "standby_preparation_config": "standby_preparation_config.json",
   "standby_label": "CUSTOM_SIMULATION_STANDBY_NOT_OFFICIAL",
   "standby_end_to_end_validated_assets": [
+    "bin_round_lidded",
     "box_white"
   ],
-  "validated_assets_scope": "Archived lift baselines from the unchanged low work pose using prior scene startup; NOT all revalidated from the new arms-down standby. See standby_end_to_end_validated_assets.",
+  "validated_assets_scope": "11 archived symmetric-low-home baselines with prior startup plus round-lidded bin newly verified from current narrow standby through same low home. These are nominal simulation successes, not randomized robustness.",
   "previous_validation_plan_directory": "symhome_plans",
   "previous_validation_plan_directory_overrides": {
     "basket_rectangular": "symhome_plans",

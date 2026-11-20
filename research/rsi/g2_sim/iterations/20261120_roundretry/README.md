@@ -1,0 +1,11 @@
+# Round-lidded bin from the unchanged shared low home
+
+Prior trials could lift about19cm but failed to sustain four loaded distal fingers, or failed four-finger preload. This iteration corrects a duplicated TCP translation in the finger-load-balancing rotation pivot, adds bounded20mm measured-object XY following, and uses damped28N/hand squeeze control with normalized0.4deg/s load balancing. It retains original geometry/materials,1kg screening mass, arm effort caps, enabled self collisions, all four-finger/preload/settle/hold acceptance gates, and no object attachment or state writes after initialization. Expert feedback uses privileged measured object pose and finger force; this is not a trained vision policy.
+
+Alternative vertical and diagonal finger arrangements were geometrically screened. Full90deg alignment had no accepted arm IK under the chosen fixed torso; several closer placements would collide with the torso on lift. See source and fixtures for the retained alternatives and physics results. Selected successful result: roundretry_trials/roundretry_diagonal_validation_plans/bin_round_lidded/candidate0_repeat1/result.json; source roundretry_trial.py; plan directory roundretry_diagonal_validation_plans;candidate0;repeat1.
+
+Independent full verification: minimum held lift 0.196075m; maximum held tilt 1.749deg; four positive distal-force coverage 1.000. Original mesh witnesses/nonhand penetration, floor clearance, contact impulses, joint/velocity limits, mirroring, fixed root, torso lock and unchanged work home were checked. Source/sample/video hashes and geometry input hashes are retained.
+
+All12 assets now have nominal successful lift baselines from the unchanged low home. Of these, only box_white and bin_round_lidded have complete reruns from the latest narrow standby and simplified20s preparation. The other11 archived baselines are preserved. No randomized success-rate claim, data collection or training. Existing ideal torso drive and pinned root remain; hardware torso torque feasibility is unverified.
+
+Overlay20261120_directprep runtime dependencies then source/fixtures. Run ISAAC_PY roundretry_trial.py --asset bin_round_lidded --plan-dir roundretry_diagonal_validation_plans --candidate 0 --repeat 1 --gpu GPU. Replay uses recorded plans with no asset edits.
