@@ -1,3 +1,7 @@
+<!-- restpose -->
+Preferred startup now uses a [custom arms-down standby](standby_preparation_config.json), then the unchanged low work home. [Preparation and example validation](iterations/20261120_restpose/README.md). Old11 lift baselines retain their archived startup; new-start complete examples are separately indexed. Simulation only, no collection.
+<!-- /restpose -->
+
 <!-- symhome -->
 Latest symmetric home: 11/12 full simulations verified, continuous preparation from shipped default. [Results and scope](iterations/20261120_symhome/README.md). Ideal torso only; no hardware or collection.
 <!-- /symhome -->
