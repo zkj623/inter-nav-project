@@ -1,3 +1,7 @@
+<!-- symhome -->
+Latest symmetric home: 11/12 full simulations verified, continuous preparation from shipped default. [Results and scope](iterations/20261120_symhome/README.md). Ideal torso only; no hardware or collection.
+<!-- /symhome -->
+
 <!-- caseyaw -->
 Latest hard-case iteration: 12/12 common-start baselines verified. [Contact-layout and leveling tests](iterations/20261119_caseyaw/README.md). Data collection awaits review.
 <!-- /caseyaw -->
