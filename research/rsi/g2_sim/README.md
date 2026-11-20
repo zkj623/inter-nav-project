@@ -1,3 +1,7 @@
+<!-- directprep -->
+Preferred startup uses a work-compatible shoulder IK branch to remove the arm swing detour. [Verification](iterations/20261120_directprep/README.md). Low work home unchanged; one white-box full workflow verified.
+<!-- /directprep -->
+
 <!-- narrowrest -->
 Preferred standby now narrows the full arm/gripper frontal envelope inside the chassis. [Configuration](standby_preparation_config.json) · [Width and transition verification](iterations/20261120_narrowrest/README.md). Work home unchanged; one new-start full grasp example verified.
 <!-- /narrowrest -->
