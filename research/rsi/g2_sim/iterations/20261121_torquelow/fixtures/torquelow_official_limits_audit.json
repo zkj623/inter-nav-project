@@ -1,0 +1,76 @@
+{
+  "audited_date": "2026-11-21",
+  "robot_model": "G2 body / crs arms / Omnipicker",
+  "urdf_source": {
+    "repo": "https://github.com/AgibotTech/genie_sim_robot_model",
+    "commit": "6d5b2159806ae0e64b432b638e9ee288d8bddc8f",
+    "file": "robots/genie/g2/xacro/G2.body.urdf.xacro",
+    "sha256": "179347437397cbaac2b25c19b0cfe5a61a53355b20bf02a6d8be2d8e9715fcdc",
+    "joint_limits": {
+      "idx01_body_joint1": {
+        "lower": "-1.0822",
+        "upper": "0.0001",
+        "effort": "50",
+        "velocity": "1.21"
+      },
+      "idx02_body_joint2": {
+        "lower": "-0.0001",
+        "upper": "2.653",
+        "effort": "50",
+        "velocity": "1.21"
+      },
+      "idx03_body_joint3": {
+        "lower": "-1.907",
+        "upper": "1.039",
+        "effort": "50",
+        "velocity": "1.21"
+      },
+      "idx04_body_joint4": {
+        "lower": "-0.4364",
+        "upper": "0.4364",
+        "effort": "50",
+        "velocity": "1.21"
+      },
+      "idx05_body_joint5": {
+        "lower": "-3.0456",
+        "upper": "3.0456",
+        "effort": "50",
+        "velocity": "1.21"
+      }
+    }
+  },
+  "runtime_source": {
+    "repo": "https://github.com/AgibotTech/genie_sim",
+    "commit": "795b3fc77e4dd9f3ef972302ab90420c35450f62",
+    "fallback_file": "source/geniesim_ros/src/ros_ws/src/genie_sim_engine_core/genie_sim_engine_core/common/params.py",
+    "fallback_sha256": "ff527e48967e015457c97d0a76f2ea8af2189187864e079d8a63cdadf10b90d3",
+    "fallback_body_max_effort_nm": 1200.0,
+    "profile_file": "source/geniesim_ros/src/ros_ws/src/genie_sim_engine_core/config/physics_params.yaml",
+    "profile_sha256": "21dd6573058ba2800071f979c6c2dc4c3b2b926e80cd2bc48253dbec5c75fe52",
+    "profile_body": {
+      "kp": "1.0e5",
+      "kd": "5.0e3",
+      "max_effort": "1.0e7"
+    }
+  },
+  "hardware_output_torque_ratings_confirmed": false,
+  "hardware_caveat": "URDF declaration and runtime simulation clamps are different fields. Public sources inspected do not confirm physical G2 leg/waist rated/peak output torque or passive compensation. Do not infer hardware ratings from either1200Nm or1e7Nm simulation settings.",
+  "manual_url": "https://www.agibot.com.cn/support/manuals/genie/g2/user-manual",
+  "manual_context": "5DOF torso =2DOF folding lifting leg plus3DOF waist; vertical workspace0~2.3m with O10. No ankle/knee/waist torque rating listed in inspected public manual.",
+  "joint_role_mapping": {
+    "basis": "Model chain location and joint angular ranges matched to official manual; ID aliases inferred rather than vendor-labelled",
+    "idx01_body_joint1": "lower folding/lifting chain (ankle-like)",
+    "idx02_body_joint2": "lower folding/lifting chain (knee-like)",
+    "idx03_body_joint3": "upper waist pitch",
+    "idx04_body_joint4": "upper waist roll",
+    "idx05_body_joint5": "upper waist yaw"
+  },
+  "unchanged_low_home_empty_static_torques_nm": {
+    "idx01_body_joint1": -81.58295592020214,
+    "idx02_body_joint2": -225.2426370720109,
+    "idx03_body_joint3": -35.422469173143725,
+    "idx04_body_joint4": 0.3838388871613574,
+    "idx05_body_joint5": 0.10284931983854606
+  },
+  "passive_compensation_model": "No spring/counterweight/transmission compensation is represented in the inspected body xacro; this does not prove physical hardware lacks one. Gravity feedforward remains part of the actuator torque budget."
+}

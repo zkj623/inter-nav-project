@@ -1,3 +1,7 @@
+<!-- torquelow -->
+[Leg/waist torque-source audit and strict50Nm low-work experiments](iterations/20261121_torquelow/README.md). URDF50 is not a confirmed hardware rating. Research results do not replace the accepted default/work configs.
+<!-- /torquelow -->
+
 <!-- effortpose -->
 [Experimental original50Nm posture investigation](iterations/20261120_effortpose/README.md): upright raised-work candidate only; accepted standby/low-home and12 lift baselines remain unchanged.
 <!-- /effortpose -->
