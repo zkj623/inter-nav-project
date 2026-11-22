@@ -1,6 +1,6 @@
 # G2 物体初态扰动与 ACT 数据采集
 
-快照时间 UTC：2026-11-22T16:10:42.664575+00:00。本快照完整目标是否完成：**False**。目标为12类各20条成功轨迹；当前独立验收计数为 `{'basket_rectangular': 3, 'basket_woven': 4, 'bin_lidded': 2, 'bin_pedal': 3, 'bin_round_pedal': 4, 'box_reinforced': 4, 'box_white': 3, 'case_handheld': 3, 'stool_rectangular': 3, 'stool_wood_four_leg': 3, 'table_side': 2, 'bin_round_lidded': 2}`。数据文件保存在服务器，不在Git中。`collection_status.json` 是本提交时快照，运行中最新状态请读服务器 `collection_progress.json`。
+快照时间 UTC：2026-11-22T16:21:18.168646+00:00。本快照完整目标是否完成：**False**。目标为12类各20条成功轨迹；当前独立验收计数为 `{'basket_rectangular': 4, 'basket_woven': 4, 'bin_lidded': 4, 'bin_pedal': 5, 'bin_round_pedal': 5, 'box_reinforced': 4, 'box_white': 4, 'case_handheld': 4, 'stool_rectangular': 5, 'stool_wood_four_leg': 4, 'table_side': 3, 'bin_round_lidded': 3}`。数据文件保存在服务器，不在Git中。`collection_status.json` 是本提交时快照，运行中最新状态请读服务器 `collection_progress.json`。
 
 ## 任务与物理范围
 
