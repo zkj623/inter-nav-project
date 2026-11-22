@@ -1,3 +1,7 @@
+<!-- act-handoff -->
+[中文交接：12类物体各20条成功数据与ACT训练](HANDOFF_ACT_COLLECTION.md)。当前自然低位初姿与仿真设置不变；包括最新expert入口、同步录制合约、采集验收、数据划分和需实现的训练/评估适配。
+<!-- /act-handoff -->
+
 <!-- torquelow -->
 [Leg/waist torque-source audit and strict50Nm low-work experiments](iterations/20261121_torquelow/README.md). URDF50 is not a confirmed hardware rating. Research results do not replace the accepted default/work configs.
 <!-- /torquelow -->
