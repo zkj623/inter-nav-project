@@ -1,4 +1,4 @@
-﻿# G2 交互数据采集与 ACT 训练交接
+# G2 交互数据采集与 ACT 训练交接
 
 更新时间：2026-11-22。交接对象：负责继续采集仿真演示并训练策略的同事。代码基线为 `genie2-rsi` 的 `73c70e184ab32a0564a7f031bbb47a6d93768418`；本交接文件之后的文档提交不改变该实验基线。
 
@@ -25,7 +25,7 @@
 
 现有 12 类各有同一低位初姿下的成功基线；**最新站姿 → 简化过渡 → 完整抓取流程只重新验证了 `box_white`、`bin_round_lidded`**。其他 10 类的新入口已有代码和准备路径几何筛查，但需先完整物理复测，再开始扩量。
 
-现有脚本输出 `result.json`、`protocol.json`、`samples.json`、接触记录、视频和 prepared USD，主要用于验收。`collect_strategy15.py` 是历史结果汇总，不是 ACT 演示录制器。当前 G2 目录没有接好可直接使用的 ACT 图像数据采集、训练及 Isaac 策略评估流水线；下文“需实现”的部分是交接工作，不是声称已经存在的工具。
+原始 expert 输出 `result.json`、`protocol.json`、`samples.json`、接触记录、视频和 prepared USD，主要用于验收。`collect_strategy15.py` 是历史结果汇总。后续已实现[初态扰动、同步HDF5录制、批量验收与物理动作回放](iterations/20261122_collection/README.md)，当前完成度见该目录 `collection_status.json`，服务器实时状态见 `g2-act-collect-20261122/collection_progress.json`。下文保留采集与训练合约；采集器已有对应实现，ACT的16维适配、训练和Isaac策略评估仍需完成。运行中的manifest不是冻结训练集，等本批采集结束并冻结分组后再训练。
 
 ## 物体清单与最新 expert 入口
 
@@ -169,7 +169,7 @@ Expert 目前使用真实模拟物体姿态、接触力等 privileged feedback�
 
 ### 每条 episode 的保存格式
 
-**需实现的 HDF5 合约**如下；该合约不是目前脚本已有输出。模型训练可采用作者实现的 HDF5 loader，但需适配 G2 维数、数据划分及时间语义。
+**HDF5 合约**如下；新录制器已实现核心观测/动作/图像/时间序列，具体输出与验收以20261122_collection为准。模型训练可采用作者实现的 HDF5 loader，但需适配 G2 维数、数据划分及时间语义。
 
 ```text
 accepted/<asset>/episode_<id>.hdf5

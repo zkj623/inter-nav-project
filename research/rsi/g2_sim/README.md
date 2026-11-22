@@ -1,3 +1,7 @@
+<!-- collection-20261122 -->
+[物体初态扰动、ACT格式数据采集与物理回放](iterations/20261122_collection/README.md)。目标12类各20条；当前快照状态以该目录collection_status.json为准。自然低位初姿和原基线配置保持不变。
+<!-- /collection-20261122 -->
+
 <!-- act-handoff -->
 [中文交接：12类物体各20条成功数据与ACT训练](HANDOFF_ACT_COLLECTION.md)。当前自然低位初姿与仿真设置不变；包括最新expert入口、同步录制合约、采集验收、数据划分和需实现的训练/评估适配。
 <!-- /act-handoff -->
