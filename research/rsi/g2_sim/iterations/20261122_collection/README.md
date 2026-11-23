@@ -1,6 +1,8 @@
+[**本轮采集已完成：240条正式数据与实际覆盖范围**](FINAL_DATASET.md)。训练入口为冻结清单 `dataset/frozen_manifest.jsonl`。
+
 # G2 物体初态扰动与 ACT 数据采集
 
-快照时间 UTC：2026-11-22T16:21:18.168646+00:00。本快照完整目标是否完成：**False**。目标为12类各20条成功轨迹；当前独立验收计数为 `{'basket_rectangular': 4, 'basket_woven': 4, 'bin_lidded': 4, 'bin_pedal': 5, 'bin_round_pedal': 5, 'box_reinforced': 4, 'box_white': 4, 'case_handheld': 4, 'stool_rectangular': 5, 'stool_wood_four_leg': 4, 'table_side': 3, 'bin_round_lidded': 3}`。数据文件保存在服务器，不在Git中。`collection_status.json` 是本提交时快照，运行中最新状态请读服务器 `collection_progress.json`。
+快照时间 UTC：2026-11-23T06:35:39.740426+00:00。本快照完整目标是否完成：**True**。目标为12类各20条成功轨迹；当前独立验收计数为 `{'basket_rectangular': 20, 'basket_woven': 20, 'bin_lidded': 20, 'bin_pedal': 20, 'bin_round_pedal': 21, 'box_reinforced': 20, 'box_white': 21, 'case_handheld': 20, 'stool_rectangular': 21, 'stool_wood_four_leg': 21, 'table_side': 21, 'bin_round_lidded': 20}`。数据文件保存在服务器，不在Git中。`collection_status.json` 是本提交时快照，运行中最新状态请读服务器 `collection_progress.json`。
 
 ## 任务与物理范围
 
