@@ -6,6 +6,27 @@ import numpy as np
 from .localization import quaternion, multiply, rotation
 
 
+def ceiling_masks(points, ceiling):
+    """Respect an inclusive metre limit at the precision of ROS float32 XYZ."""
+    z = np.asarray(points[:, 2], dtype=np.float64)
+    # Transforming XYZ can widen a float32 representation of exactly 28 cm.
+    # Snap only that boundary value. A higher return must never turn into a hit.
+    edge = (z == float(np.float32(ceiling))) & (z != ceiling)
+    return (z > ceiling) & ~edge, edge
+
+
+def lidar_below_ceiling(points, ceiling):
+    if not points.size:
+        return points
+    if points.ndim != 2 or points.shape[1] != 3:
+        raise ValueError('LiDAR requires N x 3 points')
+    above, edge = ceiling_masks(points, ceiling)
+    if edge.any():
+        points = points.astype(np.float64, copy=True)
+        points[edge, 2] = ceiling
+    return points[~above] if above.any() else points
+
+
 @dataclass
 class Snapshot:
     observation: dict
@@ -18,6 +39,30 @@ class Snapshot:
     geometry_calibrated: bool = True
     planning_frame: str = "unknown"
     coordinate_transform: dict | None = None
+
+    def below_ceiling(self, ceiling):
+        if ceiling is None or not self.geometry_calibrated:
+            return self
+        sensors = self.observation['sensors']
+        lidar = sensors['lidar']
+        points = np.asarray(lidar['pointcloud'])
+        filtered = lidar_below_ceiling(points, ceiling)
+        sensors = dict(sensors)
+        if filtered is not points:
+            sensors['lidar'] = {**lidar, 'pointcloud': filtered}
+        camera = sensors.get('camera')
+        if camera is not None:
+            xyz = np.asarray(camera['pointcloud'])
+            above, edge = ceiling_masks(xyz, ceiling)
+            if above.any() or edge.any():
+                # Dense XYZ and depth must continue to address the same pixels.
+                xyz = xyz.astype(np.float64, copy=True)
+                depth = np.asarray(camera['depth']).copy()
+                xyz[edge, 2] = ceiling
+                xyz[above] = np.nan
+                depth[above.reshape(depth.shape)] = np.nan
+                sensors['camera'] = {**camera, 'pointcloud': xyz, 'depth': depth}
+        return replace(self, observation={**self.observation, 'sensors': sensors})
 
     def require_fresh(self, now, max_age, camera=False):
         times = [('odom', self.pose_at), ('lidar', self.lidar_at)]

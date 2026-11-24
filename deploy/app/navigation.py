@@ -16,6 +16,7 @@ from deploy.interaction.collision import ContactCollisionChecker
 from deploy.interaction.profile import ContactProfile
 from deploy.interaction.motion import SdkNavigationMotion
 from deploy.interaction.skill_backend import create_push_skill
+from deploy.robot.observation import lidar_below_ceiling
 from grutopia_extension.interactive_navigation.box_push_navigation import BoxState
 
 from grutopia_extension.interactive_navigation.mapping import MappingConfig, OccupancyGridMap
@@ -329,6 +330,7 @@ class NavigationEngine:
             if points.size:
                 if points.ndim != 2 or points.shape[1] != 3 or not np.isfinite(points).all():
                     raise ValueError('LiDAR requires finite measured N x 3 points')
+                points = lidar_below_ceiling(points, self.layers.config.point_height[1])
                 origin = np.asarray(lidar.get('position', self.position), float)
                 valid = np.linalg.norm(points-origin, axis=1) < .99*float(lidar.get('max_range', 5.))
                 sensors['lidar'] = {**lidar, 'pointcloud': points[valid]}

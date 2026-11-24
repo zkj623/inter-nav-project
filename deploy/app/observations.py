@@ -18,10 +18,12 @@ import time
 
 
 class LiveObservations:
-    def __init__(self, sensors, reference, session, *, hz, max_age, perception=None):
+    def __init__(self, sensors, reference, session, *, hz, max_age, perception=None, window_observer=None,
+                 point_ceiling=None):
         self.sensors, self.reference, self.session = sensors, reference, session
         self.period, self.max_age = 1. / hz, max_age
         self.perception = perception
+        self.point_ceiling = point_ceiling
         self.lock = threading.Lock()
         self.changed = threading.Condition(self.lock)
         self.closed = threading.Event()
@@ -29,6 +31,11 @@ class LiveObservations:
         self.packet = self.delivered = None
         self.last_error = None
         self.failure = None
+        self.window_worker = None
+        if window_observer is not None:
+            from deploy.perception.window_stream import WindowWorker
+            event = 'box_window_result' if perception is not None else 'perception_result'
+            self.window_worker = WindowWorker(window_observer, session, event=event)
         self.thread = threading.Thread(target=self._work, name='go2-observations', daemon=True)
         self.thread.start()
 
@@ -109,11 +116,14 @@ class LiveObservations:
                             print('实验坐标系已固定：起点 XY=(0,0)，X=初始前方，Y=初始左侧，Z=距地面高度。', flush=True)
                             print('点导航输入本轮 experiment 坐标；暂停、换任务不重设原点。', flush=True)
                             print(json.dumps(self.reference.metadata, ensure_ascii=False), flush=True)
-                        # Record before fitting/planning at an average ``hz``:
-                        # frames arrive faster, the raw record keeps its rate.
+                        # The raw record keeps its average cadence even when
+                        # the diagnostic window receives scans more frequently.
                         if snapshot.captured_at >= record_due:
                             record_due = max(record_due, snapshot.captured_at - .5*self.period) + self.period
                             self.session.record_observation(snapshot)
+                        snapshot = snapshot.below_ceiling(self.point_ceiling)
+                        if self.window_worker is not None:
+                            self.window_worker.submit(snapshot)
                         if self.perception is not None:
                             boxes, evidence = self.perception.update(snapshot, time.monotonic())
                             frozen = evidence.freeze() if hasattr(evidence, 'freeze') else deepcopy(evidence)
@@ -126,6 +136,8 @@ class LiveObservations:
                         if hasattr(self.perception, 'invalidate'):
                             self.perception.invalidate(str(exc))
                         snapshot, error = None, str(exc)
+                if snapshot is None and self.window_worker is not None:
+                    self.window_worker.submit(None, error)
                 with self.lock:
                     if generation == self.generation:
                         fit_error = getattr(self.perception, 'last_error', None)
@@ -135,7 +147,7 @@ class LiveObservations:
                 if wait_frame is None:
                     self.closed.wait(max(0., self.period - (time.monotonic() - started)))
         except Exception as exc:
-            with self.lock:
+            with self.changed:
                 self.packet = None
                 self.last_error = f'Observation worker failed: {type(exc).__name__}: {exc}'
                 self.failure = self.last_error
@@ -146,8 +158,12 @@ class LiveObservations:
                 self.perception.close()
 
     def close(self):
-        self.closed.set()
+        with self.changed:
+            self.closed.set()
+            self.changed.notify_all()
         self.thread.join(timeout=2.)
+        if self.window_worker is not None:
+            self.window_worker.close()
         if self.thread.is_alive():
             raise RuntimeError('Observation worker did not finish')
         if self.failure:

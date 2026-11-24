@@ -26,6 +26,7 @@ class Source:
         self.count += 1
         now = time.monotonic()
         self.previous = replace(packet(self.count, now - .08, self.points), captured_at=now)
+        self.previous.observation['orientation'] = [1., 0., 0., 0.]
         return self.previous
 
 
@@ -87,6 +88,72 @@ def test_slow_planner_keeps_identity_and_full_rate_recording(live):
     assert frozen.snapshot(first.captured_at)['B1']['latest_at'] == stamp
     assert frozen.permission('B1', time.monotonic()) is None  # no renewal of old evidence
     assert evidence.snapshot(time.monotonic())['B1']['invalid_reason'] is None
+
+
+def test_window_can_lag_and_remains_across_goal_changes(monkeypatch):
+    from deploy.perception.window_observer import WindowBoxObserver
+    source, sink = Source(), Sink()
+    window = WindowBoxObserver(config(), live=True)
+    generation = window.generation
+    entered, release = threading.Event(), threading.Event()
+    batches = []
+    evaluate = window.evaluate
+
+    def slow_fit(batch, now):
+        batches.append(batch)
+        entered.set()
+        assert release.wait(3)
+        evaluate(batch, now)
+
+    monkeypatch.setattr(window, 'evaluate', slow_fit)
+    feed = LiveObservations(source, SimpleNamespace(metadata={}, apply=lambda s, *_: s), sink,
+                            hz=20, max_age=.4, perception=RegisteredBoxPerception(config(), synchronous=True),
+                            window_observer=window)
+    try:
+        assert entered.wait(1)
+        first, _, _ = wait_for(lambda: read(feed))
+        feed.reset()  # what entering a new goal does
+        newer, _, evidence = wait_for(lambda: read(feed))
+        assert newer.sequence > first.sequence and evidence.permission('B1', time.monotonic())
+        wait_for(lambda: len(sink.observations) >= 8)
+        release.set()
+        wait_for(lambda: len(batches) >= 2)
+        ids = [frame.frame_id for frame, _ in batches[1].frames]
+        assert len(ids) >= 7 and ids == list(range(ids[0], ids[-1]+1))
+        assert batches[1].epoch == batches[0].epoch and window.generation == generation
+        wait_for(lambda: any(kind == 'box_window_result' for kind, _ in sink.events))
+    finally:
+        release.set()
+        feed.close()
+    assert window.closed
+
+
+def test_source_invalidation_during_fit_suppresses_the_old_result(monkeypatch):
+    from deploy.perception.window_observer import WindowBoxObserver
+    from deploy.perception.window_stream import WindowWorker
+    window, source, sink = WindowBoxObserver(config(), live=True), Source(), Sink()
+    entered, release = threading.Event(), threading.Event()
+    evaluate = window.evaluate
+
+    def hold(batch, now):
+        entered.set()
+        assert release.wait(2)
+        evaluate(batch, now)
+
+    monkeypatch.setattr(window, 'evaluate', hold)
+    worker = WindowWorker(window, sink)
+    try:
+        worker.submit(source.latest())
+        assert entered.wait(1)
+        worker.submit(None, 'source unavailable')
+        worker.submit(source.latest())
+    finally:
+        release.set()
+        worker.close(drain=True)
+    assert len(sink.events) == 1
+    result = sink.events[0][1]
+    assert result['scan_id'] == 2 and result['window_scan_count'] == 1
+    assert not result['detections'][0]['valid']
 
 
 def test_real_sensor_gap_still_loses_identity_and_needs_reset(live):

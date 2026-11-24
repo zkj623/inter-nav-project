@@ -16,6 +16,8 @@ class FrameRenderer:
     def __init__(self, config, separate_cloud):
         self.separate_cloud = separate_cloud
         self.voxels = VoxelPointCloudMap(MappingConfig(**config)) if separate_cloud else None
+        self.cloud_style = {**CLOUD_STYLE, 'height_range': config.get('obstacle_height', CLOUD_STYLE['height_range']),
+                            'point_ceiling': config.get('point_height', (None, None))[1]}
         self.cloud_step = None
         self.cloud_at = None
 
@@ -56,7 +58,7 @@ class FrameRenderer:
                  'accumulated': bool(scene['ready']), 'stamp': cloud_at, 'source_age': None,
                  'role': 'display_history_only',
                  'ground_relative_z': snapshot.geometry_calibrated,
-                 'style': CLOUD_STYLE,
+                 'style': self.cloud_style,
                  'kind': '累计建图点云' if scene['ready'] else '当前原始点云（未建图）'}
         w, x, y, z = snapshot.observation['orientation']
         pose = {'position': snapshot.observation['position'].tolist(),

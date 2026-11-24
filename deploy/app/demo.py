@@ -10,9 +10,9 @@ class DemoSensors:
         self.session, self.last_error = session, None
         self.step = 0
         angles = np.linspace(-np.pi, np.pi, 720, endpoint=False)
-        self.points = np.column_stack((4*np.cos(angles), 4*np.sin(angles), np.full(720, .5))).astype(np.float32)
+        self.points = np.column_stack((4*np.cos(angles), 4*np.sin(angles), np.full(720, .25))).astype(np.float32)
         # Add a short obstacle face nearer than the outer walls.
-        self.points = np.concatenate((self.points, np.column_stack((np.full(60, 1.5), np.linspace(.5, 1.3, 60), np.full(60, .5)))))
+        self.points = np.concatenate((self.points, np.column_stack((np.full(60, 1.5), np.linspace(.5, 1.3, 60), np.full(60, .25)))))
         # Ground samples make the calibrated ground/obstacle colors visible.
         x, y = np.meshgrid(np.arange(-3.75, 3.76, .25), np.arange(-3.75, 3.76, .25))
         floor = np.column_stack((x.ravel(), y.ravel(), np.zeros(x.size)))

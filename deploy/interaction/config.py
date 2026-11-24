@@ -9,10 +9,10 @@ from deploy.interaction.profile import ContactProfile
 
 DEFAULTS = dict(source='rgbd', tracking_enabled=False, geometry_verified=False,
                 boxes=[], tracking={}, contact_profile=None, max_skill_seconds=180.,
-                registry_reference='')
+                registry_reference='', window_max_age_s=None)
 
 
-def configure(config, payload, directory):
+def configure(config, payload, directory, *, registry_path=None):
     """Keep measurement/acceptance separate from choosing an observation source."""
     if payload is None:
         payload = {}
@@ -24,6 +24,9 @@ def configure(config, payload, directory):
     for name in ('tracking_enabled', 'geometry_verified'):
         if type(result[name]) is not bool:
             raise ValueError(f'interaction.{name} must be boolean')
+    window_age = result['window_max_age_s']
+    if window_age is not None and (type(window_age) not in (int, float) or not .02 <= window_age <= .75):
+        raise ValueError('interaction.window_max_age_s must be between .02 and .75 seconds')
     duration = result['max_skill_seconds']
     if type(duration) not in (int, float) or not math.isfinite(duration) or not 1 <= duration <= 300:
         raise ValueError('interaction.max_skill_seconds must be in [1, 300]')
@@ -32,7 +35,8 @@ def configure(config, payload, directory):
     if not isinstance(result['registry_reference'], str):
         raise ValueError('interaction.registry_reference must be a string')
     if not result['registry_reference']:
-        result['registry_reference'] = str((Path(directory)/'interaction.yaml').resolve())+'#boxes'
+        path = registry_path if registry_path is not None else Path(directory)/'interaction.yaml'
+        result['registry_reference'] = str(path.resolve())+'#boxes'
     nav, robot, control = config['navigation'], config['robot'], config['runtime']['control']
     requested = nav['interaction_enabled']
     if result['source'] == 'registered_box_lidar':
@@ -99,7 +103,10 @@ def create_perception(config, *, synchronous=False, box_window=False, live=False
         if settings['source'] != 'registered_box_lidar' or not settings['tracking_enabled']:
             raise ValueError('Window observation requires registered_box_lidar and tracking_enabled')
         from deploy.perception.window_observer import WindowBoxObserver
-        return WindowBoxObserver(tracking_config(settings), live=live)
+        tracking = tracking_config(settings)
+        if settings.get('window_max_age_s') is not None:
+            tracking['max_age_s'] = settings['window_max_age_s']
+        return WindowBoxObserver(tracking, live=live)
     if settings['source'] == 'registered_box_lidar':
         if not (settings['tracking_enabled'] or config['navigation']['interaction_enabled']):
             return None

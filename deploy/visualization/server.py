@@ -21,11 +21,12 @@ def make_server(frames, port, metadata=None):
             path = urlsplit(self.path).path
             if path == '/':
                 body, mime = page, 'text/html; charset=utf-8'
-            elif path in tag_scripts:
+            elif path == '/box_map.js' or path in tag_scripts:
                 body, mime = (directory / path[1:]).read_bytes(), 'text/javascript; charset=utf-8'
-            elif path == '/api/frame':
+            elif path == '/api/frame' or (path == '/api/box' and hasattr(frames, 'box_snapshot')):
                 try:
-                    body = json.dumps(dict(frames.snapshot(), **(metadata or {})), allow_nan=False).encode()
+                    payload = frames.box_snapshot() if path == '/api/box' else dict(frames.snapshot(), **(metadata or {}))
+                    body = json.dumps(payload, allow_nan=False).encode()
                 except (requests.RequestException, ValueError):
                     self.send_error(503, 'run.py unavailable; start run.py then reconnect')
                     return

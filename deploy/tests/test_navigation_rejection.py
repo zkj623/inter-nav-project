@@ -90,7 +90,7 @@ def test_new_obstacle_at_goal_stops_before_next_command(navigation):
     controller.step(snapshot, snapshot.captured_at)
     sent = len(controller.motion.commands)
     # Actual new measured hits remain local obstacles even before slow global refresh.
-    points = np.array([[x, y, .35] for x in (1.01, 1.11, 1.21) for y in (.01, .11, .21)])
+    points = np.array([[x, y, .28] for x in (1.01, 1.11, 1.21) for y in (.01, .11, .21)])
     lidar = dict(snapshot.observation['sensors']['lidar'], pointcloud=points, physics_step=1)
     current = replace(snapshot, observation={**snapshot.observation, 'sensors': {'lidar': lidar}},
                       captured_at=snapshot.captured_at+.2, pose_at=snapshot.pose_at+.2,

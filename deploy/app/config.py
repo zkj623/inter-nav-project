@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REPO = ROOT.parent
 
 
-def load(directory=None):
+def load(directory=None, *, interaction_path=None):
     directory = Path(directory) if directory else ROOT / 'configs'
     result = {}
     for name in ('robot', 'navigation', 'runtime'):
@@ -97,11 +97,11 @@ def load(directory=None):
     if nav['success_distance'] > .25 or nav['push_start_speed'] > nav['push_max_speed']:
         raise ValueError('Invalid goal tolerance or push speed range')
     from deploy.interaction.config import configure
-    path = directory/'interaction.yaml'
-    payload = yaml.safe_load(path.read_text()) if path.exists() else None
+    path = Path(interaction_path) if interaction_path is not None else directory/'interaction.yaml'
+    payload = yaml.safe_load(path.read_text()) if interaction_path is not None or path.exists() else None
     control.pop('contact_limits', None)
     control.pop('contact_max_duration_s', None)
-    result['interaction'] = configure(result, payload, directory)
+    result['interaction'] = configure(result, payload, path.parent, registry_path=path)
     return result
 
 

@@ -68,6 +68,7 @@ class Recorder:
         self.frames = self.directory / 'observations'
         self.frames.mkdir()
         self.events = (self.directory / 'events.jsonl').open('w')
+        self.event_lock = threading.Lock()
         self.index = (self.directory / 'observations.jsonl').open('w')
         self.count = 0
         self.mode = mode
@@ -83,8 +84,10 @@ class Recorder:
             {'config': config, **source, 'mode': mode}, indent=2))
 
     def event(self, kind, **details):
-        self.events.write(json.dumps({'event': kind, **details}, default=json_value, allow_nan=False)+'\n')
-        self.events.flush()
+        line = json.dumps({'event': kind, **details}, default=json_value, allow_nan=False)+'\n'
+        with self.event_lock:
+            self.events.write(line)
+            self.events.flush()
 
     def observation(self, snapshot):
         if self.write_error:

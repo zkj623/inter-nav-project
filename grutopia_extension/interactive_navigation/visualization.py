@@ -376,7 +376,7 @@ class InteractionVideoRecorder:
         self.frame_count += 1
 
     def _render_pointcloud(
-        self, step, state, interaction_observation, mapping_runtime, robot_observation,
+        self, step, state, interaction_observation, mapping_runtime, robot_observation, *, height_range=(0.1, 0.8),
     ):
         """Render a perspective point cloud with a camera following the robot."""
         fused_map = mapping_runtime.map
@@ -390,7 +390,7 @@ class InteractionVideoRecorder:
         )
 
         points = fused_map.voxels.points()
-        z_min, z_max = 0.1, 0.8
+        z_min, z_max = height_range
         point_count = 0
         robot = np.asarray(interaction_observation.robot_position, dtype=np.float64)
         yaw = getattr(interaction_observation, 'robot_yaw', None)
@@ -461,7 +461,8 @@ class InteractionVideoRecorder:
                 ((point_heights - z_min) / (z_max - z_min) * 255).astype(np.uint8),
                 0, 255,
             ).reshape(-1, 1)
-            colors = cv2.applyColorMap(height_values, cv2.COLORMAP_VIRIDIS).reshape(-1, 3)
+            colors = (cv2.applyColorMap(height_values, cv2.COLORMAP_VIRIDIS).reshape(-1, 3)
+                      if height_values.size else np.empty((0, 3), dtype=np.uint8))
             # Far points are painted first so nearer returns remain visible.
             order = np.argsort(depth[visible])[::-1]
             sorted_rows = rows[order]

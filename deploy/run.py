@@ -12,6 +12,7 @@ def main(argv=None):
     from deploy.app.config import load
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config-dir', type=Path)
+    parser.add_argument('--interaction-config', type=Path, help='box settings for this run, e.g. configs/box_30x80x30.yaml')
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--check', action='store_true', help='offline dependency/config check; no network or motion')
     mode.add_argument('--diagnose', action='store_true', help='read-only ROS receipt/interface diagnostic; no SDK')
@@ -21,7 +22,9 @@ def main(argv=None):
                       help='observe and map without enabling motion through task keys')
     mode.add_argument('--replay', type=Path, help='recorded run directory; hardware is never initialized')
     parser.add_argument('--box-window', action='store_true',
-                        help='observe registered boxes with a 1 s sliding LiDAR window')
+                        help='show and record 1 s LiDAR box fits during navigation or observation')
+    parser.add_argument('--realtime', action='store_true',
+                        help='pace a box-window replay at the recorded arrival times and count fitting time')
     mode.add_argument('--motion-test', action='store_true', help='bounded SDK acceptance trials; no ROS, map or autonomous tasks')
     parser.add_argument('--task', choices=('observe', 'navigate'), default='observe', help='replay task only')
     parser.add_argument('--goal', nargs=2, type=float, metavar=('X', 'Y'))
@@ -33,8 +36,10 @@ def main(argv=None):
     parser.add_argument('--demo-seconds', type=float, default=0., help='optional demo time limit; 0 runs until Ctrl+C')
     parser.set_defaults(allow_motion=True)
     args = parser.parse_args(argv)
-    if args.box_window and not (args.allow_motion is False or (args.replay is not None and args.task == 'observe')):
-        parser.error('--box-window requires --observe-only or --replay with --task observe')
+    if args.box_window and (args.check or args.diagnose or args.demo or args.motion_test):
+        parser.error('--box-window requires a live navigation/observation session or replay')
+    if args.realtime and (args.replay is None or not args.box_window):
+        parser.error('--realtime requires --replay and --box-window')
     args.allow_motion = args.allow_motion and not (
         args.check or args.diagnose or args.demo or args.replay is not None or args.motion_test)
     if not 1 <= args.session_port <= 65535 or not 0 <= args.demo_seconds <= 86400:
@@ -50,7 +55,7 @@ def main(argv=None):
     if args.demo_seconds and not args.demo:
         parser.error('--demo-seconds requires --demo')
     try:
-        config = load(args.config_dir)
+        config = load(args.config_dir, interaction_path=args.interaction_config)
         if args.motion_test:
             from deploy.app.motion_test import run
             return run(args, config)

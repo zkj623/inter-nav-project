@@ -140,7 +140,7 @@ def test_live_entrypoint_rebases_before_map_boundary_check(monkeypatch):
         # Produce fresh messages at that same boundary in this fixture.
         source._pose(message)
         source._lidar(cloud(1_000_000_000))
-        source.lidar[1]['pointcloud'] = np.array([[30., 42., .7], [29., 42., .7]])
+        source.lidar[1]['pointcloud'] = np.array([[30., 42., -.05], [29., 42., .7]])
         return source
     monkeypatch.setattr(sensors, 'RosSensors', start_sensors)
     polls = [0]
@@ -175,4 +175,7 @@ def test_live_entrypoint_rebases_before_map_boundary_check(monkeypatch):
     assert len([e for e in batch['events'] if e['event'] == 'coordinate_frame_initialized']) == 1
     snap, scene = decode_packet(batch['frames'][0]['packet'])
     assert scene['ready'] and snap.planning_frame == 'experiment'
+    assert len(snap.observation['sensors']['lidar']['pointcloud']) == 1
+    raw, _ = decode_packet(batch['observations'][0]['packet'])
+    assert len(raw.observation['sensors']['lidar']['pointcloud']) == 2
     np.testing.assert_allclose(snap.observation['position'], [0, 0, .3], atol=1e-7)

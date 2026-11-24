@@ -50,12 +50,12 @@ def _recorder(args, config, mode):
 
 
 def run_replay(args, config):
-    from deploy.recording.replay import snapshots
+    from deploy.recording.replay import ReplayClock, snapshots
     from deploy.interaction.replay import RecordedInteractionHandoff
-    box_window = getattr(args, 'box_window', False)
-    if box_window and args.task != 'observe':
-        raise ValueError('Window tracking requires an observe replay')
-    perception = create_perception(config, synchronous=True, box_window=box_window)
+    paced = getattr(args, 'realtime', False)
+    window = create_perception(config, box_window=True, live=paced) if getattr(args, 'box_window', False) else None
+    perception = (window if window is not None and args.task == 'observe' and not paced
+                  else create_perception(config, synchronous=True))
     tasks = Tasks(config['navigation'], perception, interaction=config.get('interaction'))
     handoff = RecordedInteractionHandoff(config['runtime']['control'], config['robot']['max_data_age_s'])
     recorder = _recorder(args, config, 'offline_replay_no_motion')
@@ -63,8 +63,16 @@ def run_replay(args, config):
     reason, error = 'recording_exhausted', None
     count = 0
     previous_delivery = None
+    clock = ReplayClock() if paced else None
+    worker = None
+    ceiling = config['navigation']['mapping'].get('point_height', (None, None))[1]
+    packets = (packet.below_ceiling(ceiling) for packet in snapshots(args.replay))
     try:
-        for snapshot in snapshots(args.replay):
+        if paced:
+            from deploy.perception.window_process import WindowProcess
+            worker = WindowProcess.replay(window.config, recorder, args.replay, ceiling)
+            packets = clock.play(packets, on_start=worker.begin)
+        for snapshot in packets:
             now = snapshot.captured_at
             if snapshot.geometry_calibrated:
                 check_observation(snapshot, now, config['robot'], config['runtime']['control'],
@@ -75,12 +83,14 @@ def run_replay(args, config):
                 check_task_inputs(config['robot'], snapshot)
                 tasks.start('navigate', (*args.goal, float(snapshot.observation['position'][2])), now)
                 started = True
+            if window is not None and window is not perception and worker is None:
+                window.publish(snapshot, now, recorder)
             velocity, handoff_event = handoff.update(tasks, snapshot, now)
             if handoff_event is not None:
                 recorder.event(handoff_event.pop('event'), **handoff_event)
             if perception is not None:
                 delivery = perception.last_delivery
-                if delivery is not None and (not box_window or delivery is not previous_delivery):
+                if delivery is not None and (perception is not window or delivery is not previous_delivery):
                     recorder.event('perception_result', **delivery)
                 previous_delivery = delivery
             while tasks.engine.events:
@@ -101,8 +111,17 @@ def run_replay(args, config):
     except Exception as exc:
         error, reason = str(exc), 'replay_error'
     finally:
+        if paced:
+            packets.close()
         if perception is not None:
             perception.close()
+        if worker is not None:
+            try:
+                worker.close(drain=error is None and reason == 'recording_exhausted')
+            except RuntimeError as exc:
+                error, reason = str(exc), 'box_window_replay_error'
+        elif window is not None and window is not perception:
+            window.close()
         try:
             if tasks.map_ready:
                 tasks.engine.layers.save(str(recorder.directory / 'final_map'))
@@ -115,6 +134,9 @@ def run_replay(args, config):
                    'mapping': tasks.engine.layers.statistics(), 'sent_to_robot': False, 'hardware_validated': False,
                    'recorded_stop_handoff': handoff.diagnostic(),
                    'completed': error is None and not handoff.pending}
+        if clock is not None:
+            summary['realtime'] = dict(first_arrival=clock.first, last_arrival=clock.last,
+                                       input_packets=clock.packets, max_arrival_lateness_s=clock.max_lateness)
         recorder.close(summary)
         print(json.dumps(summary, ensure_ascii=False), flush=True)
     return 0 if error is None and not handoff.pending else 2
@@ -129,9 +151,8 @@ def run_live(args, config):
     from deploy.robot.sensors import RosSensors
     from deploy.robot.motion import MotionProcess
     if args.allow_motion:
-        if getattr(args, 'box_window', False):
-            raise ValueError('Window tracking requires --observe-only')
         check_motion_configuration(config)
+    window = create_perception(config, box_window=True, live=True) if getattr(args, 'box_window', False) else None
     robot, nav, runtime = config['robot'], config['navigation'], config['runtime']
     control = runtime['control']
     reference = ExperimentFrame(0. if args.demo else robot['ground_z'])
@@ -141,6 +162,8 @@ def run_live(args, config):
     print(f'本轮会话：{session.info["session_id"]}；数据服务：{session.url}', flush=True)
     print('另开终端运行 python view.py 查看三幅图；python record.py 保存实验。', flush=True)
     sensors = motion = keyboard = perception = observations = tasks = video = controller = None
+    window_process = None
+    ceiling = nav['mapping'].get('point_height', (None, None))[1]
     snapshot = None
     started_at = time.monotonic()
     quitting = False
@@ -174,12 +197,18 @@ def run_live(args, config):
         for signum in handlers:
             signal.signal(signum, on_signal)
         if not args.demo:
-            # The acquisition worker owns registered tracking synchronously;
-            # replay uses the very same source-timed tracker without a worker.
-            perception = create_perception(config, synchronous=config['interaction']['source'] == 'registered_box_lidar',
-                                           box_window=getattr(args, 'box_window', False), live=True)
+            # Contact tracking stays paired to its single scan. The diagnostic
+            # window has an independent worker in both live modes.
+            if window is None or args.allow_motion:
+                perception = create_perception(config, synchronous=config['interaction']['source'] == 'registered_box_lidar')
+            if window is not None:
+                from deploy.perception.window_process import WindowProcess
+                event = 'box_window_result' if perception is not None else 'perception_result'
+                window_process = WindowProcess.live(window.config, session, event, robot, sensors.timebase, ceiling)
+                session.event(event, geometry_source='window_two_faces', detections=[], error='等待导航坐标系')
         observations = LiveObservations(sensors, reference, session, hz=nav['tick_hz'],
-                                        max_age=robot['max_data_age_s'], perception=perception)
+                                        max_age=robot['max_data_age_s'], perception=perception,
+                                        point_ceiling=ceiling)
         tasks = Tasks(nav, observations if perception is not None else None, interaction=config.get('interaction'))
         if args.allow_motion:
             motion = MotionProcess(robot, control)
@@ -193,6 +222,13 @@ def run_live(args, config):
         decision_due = float('-inf')
         consumed = None
         print(('合成演示：未连接机器人。' if args.demo else 'MCF 保持运行。默认观察；') + ('运动需按任务键启动。' if motion else '本次会话禁止运动。'), flush=True)
+        if window is not None:
+            for row in window.config['boxes']:
+                size = ' × '.join(f'{d * 100:g}' for d in row['dimensions_m'])
+                print(f"1 秒 LiDAR 认箱已开启。{row['id']} 长 × 宽 × 高为 {size} 厘米。", flush=True)
+            push_enabled = (args.allow_motion and nav['interaction_enabled']
+                            and any(row['push_allowed'] for row in window.config['boxes']))
+            print('自主推箱已启用，接触前用当前扫描确认箱体。' if push_enabled else '本轮自主推箱已关闭。', flush=True)
         print(f"来源坐标系={'demo_odom' if args.demo else robot['map_frame']}；等待有效观测初始化 experiment；相机={robot['camera_mode']}", flush=True)
         if not args.demo and (robot['ground_z'] is None or robot['lidar_origin_offset_base_m'] is None):
             print('地面/雷达原点未标定：本次可记录观测，导航地图暂不生成。', flush=True)
@@ -207,6 +243,8 @@ def run_live(args, config):
                 controller.motion_events(motion.events())
             sensor_read_started = time.monotonic()
             snapshot = observations.latest()
+            if window_process is not None and not window_process.started and reference.metadata is not None:
+                window_process.begin(reference)
             sensor_read_duration = time.monotonic()-sensor_read_started
             if observations.failure is not None:
                 raise RuntimeError(observations.failure)
@@ -239,7 +277,7 @@ def run_live(args, config):
             current_error = observations.last_error or observation_error
             publish_started = time.monotonic()
             session.update(snapshot, tasks, motion.state if motion else 'disabled', current_error,
-                           decision_duration_s=controller.decision_duration_s)
+                           decision_duration_s=controller.decision_duration_s, record_observation=False)
             if tasks.state == 'active' or controller.planning_hold is not None:
                 session.event('control_cycle', sequence=None if snapshot is None else snapshot.sequence,
                               cycle_started_at=cycle_started, sensor_read_duration_s=sensor_read_duration,
@@ -270,6 +308,7 @@ def run_live(args, config):
                 session.event('cleanup_error', reason=error)
         for name, resource in (('keyboard', keyboard), ('observations', observations),
                                ('perception', perception if observations is None else None),
+                               ('box_window', window_process),
                                ('video', video), ('sensors', sensors)):
             if resource is not None:
                 try:

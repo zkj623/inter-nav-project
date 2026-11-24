@@ -69,6 +69,22 @@ def test_profile_path_is_resolved_relative_to_config_directory(tmp_path):
     assert loaded['interaction']['contact_profile']['backend'] == 'sdk'
 
 
+def test_selected_box_file_uses_its_own_contact_profile_and_reference(tmp_path):
+    device = tmp_path/'device'
+    device.mkdir()
+    data = configured(device, active=True)
+    selection = tmp_path/'course.yaml'
+    with pytest.raises(FileNotFoundError):
+        load(device, interaction_path=selection)
+    settings = dict(data['interaction'], registry_reference='', contact_profile='measured.yaml')
+    selection.write_text(yaml.safe_dump(settings))
+    (tmp_path/'measured.yaml').write_text(yaml.safe_dump(data['interaction']['contact_profile']))
+    loaded = load(device, interaction_path=selection)
+    assert loaded['interaction']['registry_reference'] == str(selection)+'#boxes'
+    assert loaded['interaction']['contact_profile']['backend'] == 'sdk'
+    assert loaded['navigation']['interaction_enabled']
+
+
 def test_partial_profile_cannot_inherit_simulation_calibration(tmp_path):
     data = configured(tmp_path, active=True)
     del data['interaction']['contact_profile']['nose_offset_m']
@@ -103,7 +119,9 @@ def test_no_opaque_control_caps_can_override_the_measured_profile(tmp_path):
     assert loaded['runtime']['control']['contact_limits']['max_vx'] == .25
 
 
-def test_actual_cli_replays_registered_clouds_and_records_pose_without_sdk(tmp_path):
+@pytest.mark.parametrize('task_args', [[], ['--task', 'navigate', '--goal', '0', '2', '--box-window'],
+                                       ['--box-window', '--realtime']])
+def test_actual_cli_replays_registered_clouds_and_records_pose_without_sdk(tmp_path, task_args):
     import json
     import subprocess
     import sys
@@ -115,6 +133,8 @@ def test_actual_cli_replays_registered_clouds_and_records_pose_without_sdk(tmp_p
     data = configured(directory)
     _, _, tracking = settings()
     data['interaction']['boxes'] = tracking['boxes']
+    # This test uses a 50 cm tall box with scanned top edges.
+    data['navigation']['mapping'].update(point_height=[-.1, .55], obstacle_height=[.1, .55])
     loaded = write(directory, data)
     recorder = Recorder(tmp_path/'input', loaded, 'synthetic_registered_clouds_not_physics', REPO)
     for index in range(1, 5):
@@ -122,11 +142,18 @@ def test_actual_cli_replays_registered_clouds_and_records_pose_without_sdk(tmp_p
     recorder.close({'hardware_validated': False})
     output = tmp_path/'output'
     process = subprocess.run([sys.executable, str(REPO/'deploy/run.py'), '--config-dir', str(directory),
-        '--replay', str(recorder.directory), '--output', str(output)], cwd='/tmp',
+        '--replay', str(recorder.directory), '--output', str(output), *task_args], cwd='/tmp',
         capture_output=True, text=True, timeout=30)
     assert process.returncode == 0, process.stdout+process.stderr
     summary = next(output.glob('*/run_summary.json'))
-    assert json.loads(summary.read_text())['sent_to_robot'] is False
+    result = json.loads(summary.read_text())
+    assert result['sent_to_robot'] is False
     records = [json.loads(line) for line in (summary.parent/'events.jsonl').read_text().splitlines()]
     deliveries = [event for event in records if event['event'] == 'perception_result']
     assert any(row['valid'] and row['object_id'] == 'B1' for event in deliveries for row in event['detections'])
+    if '--box-window' in task_args:
+        assert any(event['event'] == 'box_window_result' for event in records)
+    if '--realtime' in task_args:
+        assert result['realtime']['input_packets'] == result['decisions'] == 4
+        assert result['realtime']['last_arrival']-result['realtime']['first_arrival'] == pytest.approx(.3)
+        assert all(e['published_at'] >= e['captured_at'] for e in records if e['event'] == 'box_window_result')

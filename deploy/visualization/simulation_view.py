@@ -9,8 +9,8 @@ from grutopia_extension.interactive_navigation.task_video_recording import TaskV
 from grutopia_extension.interactive_navigation.visualization import InteractionVideoRecorder
 
 
-# Simulation cloud conventions. This is a display slice, never a mapping filter.
-CLOUD_HEIGHT = (.1, .8)
+# Default field display. Each run publishes its configured height band.
+CLOUD_HEIGHT = (.10, .28)
 CLOUD_PALETTE = cv2.applyColorMap(np.arange(256, dtype=np.uint8)[:, None], cv2.COLORMAP_VIRIDIS).reshape(-1, 3)
 CLOUD_STYLE = {'height_range': list(CLOUD_HEIGHT),
                'palette': ['#%02x%02x%02x' % tuple(c[::-1]) for c in CLOUD_PALETTE],
@@ -73,23 +73,31 @@ def map_renderer(scene):
     return renderer, runtime, SimpleNamespace(robot_position=position, robot_yaw=yaw)
 
 
-def render_navigation_map(scene, size=720):
+def projected_navigation_map(scene):
     renderer, runtime, observation = map_renderer(scene)
     frame = renderer._render_map(0, scene.get('phase', scene.get('state', 'observe')), observation, runtime)
     # Monotonic sensor times are not experiment elapsed times.
     renderer._header(frame, 'Global guidance + live local map | ' + scene.get('state', 'observe') + ' | ' + scene['frame'])
+    projection = dict(image_size=[frame.shape[1], frame.shape[0]], viewport=list(renderer._map_viewport),
+                      x_limits=scene['config']['x_limits'], y_limits=scene['config']['y_limits'])
+    return frame, projection
+
+
+def render_navigation_map(scene, size=720):
+    frame, _ = projected_navigation_map(scene)
     if size != 720:
         frame = cv2.resize(frame, (round(size*1280/720), size), interpolation=cv2.INTER_AREA)
     return frame
 
 
-def render_follow_cloud(points, position, orientation, size=720):
+def render_follow_cloud(points, position, orientation, size=720, height_range=CLOUD_HEIGHT):
     renderer = InteractionVideoRecorder.__new__(InteractionVideoRecorder)
     renderer.map_size, renderer.map_plot_width = (1280, 720), 1000
     renderer._map_viewport = (0, 36, 1000, 684)
     runtime = SimpleNamespace(map=SimpleNamespace(voxels=SimpleNamespace(points=lambda: np.asarray(points))))
     observation = SimpleNamespace(robot_position=np.asarray(position))
-    frame = renderer._render_pointcloud(0, 'display history', observation, runtime, {'orientation': orientation})
+    frame = renderer._render_pointcloud(0, 'display history', observation, runtime, {'orientation': orientation},
+                                        height_range=height_range)
     if size != 720:
         frame = cv2.resize(frame, (round(size*1280/720), size), interpolation=cv2.INTER_AREA)
     return frame

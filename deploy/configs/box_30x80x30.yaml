@@ -1,0 +1,14 @@
+# Field box. Units are metres, with the 0.80 m side on the floor.
+source: registered_box_lidar
+tracking_enabled: true
+window_max_age_s: 0.35  # Observation only. Contact uses tracking.max_age_s (0.25 s).
+geometry_verified: false
+registry_reference: "Field box: measured 0.30 x 0.80 m footprint, 0.30 m height"
+boxes:
+  - id: box-1
+    dimensions_m: [0.30, 0.80, 0.30]
+    # Initial placement area relative to run's origin (forward, left).
+    # Covers the original A and B marks. Adjust if the box starts elsewhere.
+    search_region: [0.5, 2.2, -1.1, 0.8]
+    push_allowed: false
+contact_profile: null

@@ -1,6 +1,7 @@
 """Locate two bounded perpendicular faces in a window of experiment-frame returns."""
 from dataclasses import dataclass
 import math
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -15,6 +16,12 @@ class WindowFit:
     face_angle: float  # radians modulo pi/2; no tag-to-face identity is inferred
     support_index: int  # earlier of the most recent supporting scan on each face
     residual: float
+    long_axis_rad: Optional[float] = None  # radians modulo pi for distinguishable sides
+
+    def angle_to(self, other):
+        if self.long_axis_rad is None or other.long_axis_rad is None:
+            return face_angle_difference(self.face_angle, other.face_angle)
+        return abs((self.long_axis_rad-other.long_axis_rad+math.pi/2) % math.pi-math.pi/2)
 
 
 def inward_axes(angle, corner, origin):
@@ -54,7 +61,10 @@ def proposals(points, origin, lengths, region):
     for angle in np.deg2rad(np.arange(0., 90., 3.)):
         c, s = math.cos(angle), math.sin(angle)
         u, v = np.array([c, s]), np.array([-s, c])
-        pu, pv = delta @ u, delta @ v
+        # Two components per point. Avoid dispatching these tiny projections
+        # to a threaded BLAS for every orientation on the onboard computer.
+        pu = delta[:, 0]*c + delta[:, 1]*s
+        pv = delta[:, 1]*c - delta[:, 0]*s
         su, sv = np.where(pu >= 0, 1, -1), np.where(pv >= 0, 1, -1)
         centers = xy + .5 * (lengths[0]*su[:, None]*u + lengths[1]*sv[:, None]*v)
         ix_ok = np.flatnonzero((centers[:, 0] >= x0) & (centers[:, 0] <= x1) &
@@ -140,8 +150,11 @@ def verify(points, sources, origin, lengths, height, guess, theta, config):
     if np.any((origin[:2]-corner) @ axes >= -tol):
         return None
     residual = np.min(np.abs(uv[wall & middle]), axis=1)
+    long_axis = None
+    if lengths[0] != lengths[1]:
+        long_axis = (best_angle + (math.pi/2 if lengths[1] > lengths[0] else 0.)) % math.pi
     return WindowFit(corner + axes @ lengths/2, best_angle % (math.pi/2),
-                     int(min(support)), float(np.sqrt(np.mean(residual**2))))
+                     int(min(support)), float(np.sqrt(np.mean(residual**2))), long_axis)
 
 
 def find_window_boxes(points, sources, origin, dimensions, region, config):
@@ -170,3 +183,29 @@ def find_window_boxes(points, sources, origin, dimensions, region, config):
             if x0 <= x <= x1 and y0 <= y <= y1 and not any(np.linalg.norm(fit.center-v.center) < .075 for v in found):
                 found.append(fit)
     return found
+
+
+def refit_window_box(points, sources, origin, dimensions, config, previous, reach, turn, *, search_region=True):
+    """Measure fresh faces around a previous pose within the association gate."""
+    sides = np.array(sorted(dimensions[:2], reverse=True))
+    angle = previous.long_axis_rad
+    if angle is None:
+        sides[:] = sides.mean()
+        angle = previous.face_angle
+    # A box contains a circle of diameter min(sides). Test whether a second
+    # disjoint footprint could fit in the gate beside the measured center.
+    separation = min(sides)-2*config['residual_threshold_m']
+    if reach < separation:
+        axes = inward_axes(angle, previous.center, origin)
+        corner = previous.center - axes @ sides/2
+        fit = verify(points, sources, origin, sides, dimensions[2], corner, angle, config)
+        if fit is not None:
+            offset = np.linalg.norm(fit.center-previous.center)
+            if offset <= reach and offset+reach < separation and fit.angle_to(previous) <= turn:
+                return [fit]
+    if not search_region:
+        return []
+    x, y = previous.center
+    region = (x-reach, x+reach, y-reach, y+reach)
+    return [fit for fit in find_window_boxes(points, sources, origin, dimensions, region, config)
+            if np.linalg.norm(fit.center-previous.center) <= reach and fit.angle_to(previous) <= turn]

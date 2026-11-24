@@ -16,10 +16,10 @@ from deploy.robot.localization import PoseContinuity, PoseHistory
 from deploy.robot.sensors import RosSensors, decode_cloud
 
 
-def cloud(stamp=1_010_000_000, bigendian=False):
+def cloud(stamp=1_010_000_000, bigendian=False, z=.7):
     # Two organized rows, padding in both points and rows; field order != XYZ.
     order = '>' if bigendian else '<'
-    raw = b''.join(struct.pack(order+'ffff', 99, x, .2, .7) + b'PAD!'
+    raw = b''.join(struct.pack(order+'ffff', 99, x, .2, z) + b'PAD!'
                    for x in (2., 3.))
     return Message(width=1, height=2, point_step=16, row_step=20,
                    data=raw, is_bigendian=bigendian,
@@ -78,7 +78,7 @@ def test_observe_deduplicates_scans_without_advancing_task_timeout():
     source = sensor()
     source._pose(odometry(1_000_000_000, 1.))
     source._pose(odometry(1_020_000_000, 1.02))
-    source._lidar(cloud())
+    source._lidar(cloud(z=-.05))  # 25 cm above the fixture floor
     snapshot = source.latest()
     tasks = Tasks(load()['navigation'])
     for now in (10., 10.1, 10.3, 10.9, 11.2, 11.3):
@@ -87,6 +87,23 @@ def test_observe_deduplicates_scans_without_advancing_task_timeout():
     assert tasks.elapsed == 0 and tasks.last_step == -1
     np.testing.assert_allclose(snapshot.observation['body_linear_velocity'], [.1, 0, .02])
     np.testing.assert_allclose(snapshot.observation['body_angular_velocity'], [.03, .04, 0])
+
+
+def test_ground_height_cap_preserves_dense_pixel_alignment_and_the_source_recording():
+    from deploy.robot.observation import Snapshot
+    xyz = np.array([[1., 0., .279], [1., 0., .28], [1., 0., .28001]], dtype=np.float32)
+    depths = np.full((1, 3), 1., dtype=np.float32)
+    sensors = {'lidar': {'pointcloud': xyz}, 'camera': {'pointcloud': xyz, 'depth': depths}}
+    raw = Snapshot({'sensors': sensors}, 4., 3.9, 3.9, 3.9, (), 12)
+    cut = raw.below_ceiling(.28)
+    filtered = cut.observation['sensors']
+    assert cut.sequence == 12 and cut.lidar_at == 3.9
+    assert len(filtered['lidar']['pointcloud']) == 2
+    assert filtered['lidar']['pointcloud'][-1, 2] == .28
+    assert filtered['camera']['pointcloud'].shape == (3, 3)
+    assert np.isnan(filtered['camera']['pointcloud'][2]).all()
+    np.testing.assert_equal(filtered['camera']['depth'], [[1., 1., np.nan]])
+    assert np.isfinite(xyz).all() and np.isfinite(depths).all() and xyz[-1, 2] > .28
 
 
 def test_observation_freshness_error_identifies_stream_and_direction():

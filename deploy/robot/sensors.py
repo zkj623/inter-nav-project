@@ -61,7 +61,7 @@ def decode_cloud(message, *, strip_utlidar_padding=False):
 
 
 class RosSensors:
-    def __init__(self, config, preview_rgb=None, preview_topic=None):
+    def __init__(self, config, preview_rgb=None, preview_topic=None, *, timebase=None, node_name='inter_nav_deploy'):
         import rclpy
         from rclpy.qos import qos_profile_sensor_data
         from rclpy.time import Time
@@ -70,11 +70,12 @@ class RosSensors:
         from tf2_ros import Buffer, TransformListener
         self.config, self.rclpy, self.Time = config, rclpy, Time
         rclpy.init()
-        self.node = rclpy.create_node('inter_nav_deploy')
+        self.node = rclpy.create_node(node_name)
         try:
             if self.node.get_parameter('use_sim_time').value:
                 raise ValueError('Real-robot sensor input does not support use_sim_time')
-            self.timebase = self._bootstrap_timebase(Odometry, PointCloud2, qos_profile_sensor_data)
+            self.timebase = timebase if timebase is not None else self._bootstrap_timebase(
+                Odometry, PointCloud2, qos_profile_sensor_data)
         except BaseException:
             try:
                 self.node.destroy_node()

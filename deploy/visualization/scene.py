@@ -121,10 +121,12 @@ def render_map(scene, size=720):
 def map_payload(scene):
     if not scene['ready']:
         return {'ready': False, 'reason': scene['reason']}
-    ok, image = cv2.imencode('.png', render_map(scene))
+    from .simulation_view import projected_navigation_map
+    frame, projection = projected_navigation_map(scene)
+    ok, image = cv2.imencode('.png', frame)
     if not ok:
         raise ValueError('Map PNG encoding failed')
-    return {'ready': True, 'png': base64.b64encode(image).decode(), 'revision': scene['revision'],
+    return {'ready': True, 'png': base64.b64encode(image).decode(), 'projection': projection, 'revision': scene['revision'],
             'updated_at': scene.get('updated_at'),
             'frame': scene['frame'], 'voxel_count': scene['voxel_count'],
             'resolution': scene['config']['grid_resolution'], 'path_points': len(scene['path']),

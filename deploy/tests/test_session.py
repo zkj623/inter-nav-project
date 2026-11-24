@@ -82,6 +82,34 @@ def test_unverified_geometry_does_not_invent_map(session):
                                   snapshot.observation['sensors']['lidar']['pointcloud'])
 
 
+def test_window_result_reaches_view_and_record_without_waiting_for_the_map(session):
+    stamp = time.monotonic()-.5
+    session.event('box_window_result', scan_id=8, captured_at=stamp,
+                  detections=[dict(valid=True, captured_at=stamp, expires_at=stamp+.25)])
+    live = requests.get(session.url+'/api/frame', timeout=2).json()['box_window']
+    light = requests.get(session.url+'/api/box', timeout=2).json()
+    assert light['session_id'] == session.info['session_id'] and 'map' not in light and 'cloud' not in light
+    assert light['box_window']['detections'] == live['detections'] and light['box_window']['as_of'] >= live['as_of']
+    assert live['as_of'] > live['detections'][0]['expires_at']  # a delayed result is visibly expired
+    assert live['scan_id'] == 8 and session.frame_id == 0
+    events = session.batch(0, 0)['events']
+    assert events[-1]['event'] == 'box_window_result' and events[-1]['captured_at'] == stamp
+    session.event('box_window_result', detections=[], error='scan unavailable')
+    assert session.display()['box_window']['detections'] == []
+
+
+def test_map_remembers_only_confirmed_poses_and_resets_on_a_new_generation(session):
+    stamp = time.monotonic()
+    row = dict(object_id='box-1', track_id='1:box-1:1', valid=True, center=[1., .5, .15],
+               dimensions_m=[.3, .8, .3], long_axis_rad=1.1, captured_at=stamp, expires_at=stamp+.25)
+    session.event('box_window_result', session_id=1, frame='experiment', detections=[row])
+    session.event('box_window_result', session_id=1, detections=[dict(object_id='box-1', valid=False)])
+    window = session.display()['box_window']
+    assert window['last_seen']['box-1'] == row and 'center' not in window['detections'][0]
+    session.event('box_window_result', session_id=2, detections=[])
+    assert session.display()['box_window']['last_seen'] == {}
+
+
 def test_packets_keep_raw_observations_and_count_evicted_frames(session):
     tasks = Tasks(load()['navigation'])
     source = DemoSensors(session)
@@ -313,9 +341,9 @@ def test_display_sampling_does_not_replace_history_when_count_crosses_budget():
 def test_session_cloud_keeps_display_history_independent_of_live_occupancy(session):
     tasks = Tasks(load()['navigation'])
     source = DemoSensors(session)
-    old = [1.05, .05, .55]
-    unseen = [1.05, 1.05, .55]
-    farther = [3.05, .05, .55]
+    old = [1.05, .05, .25]
+    unseen = [1.05, 1.05, .25]
+    farther = [3.05, .05, .25]
     for i, points in enumerate(([old, unseen], [farther], [farther], [farther])):
         snapshot = source.latest()
         snapshot.observation['sensors']['lidar'].update(
@@ -448,8 +476,8 @@ def test_demo_refuses_motion_before_initializing_hardware():
 def test_moving_scans_keep_history_in_world_frame_and_session(session):
     tasks = Tasks(load()['navigation'])
     source = DemoSensors(session)
-    regions = [np.array([[1., 0., .5], [1., .2, .5]]),
-               np.array([[5., 0., .5], [5., .2, .5]])]
+    regions = [np.array([[1., 0., .25], [1., .2, .25]]),
+               np.array([[5., 0., .25], [5., .2, .25]])]
     for i, points in enumerate(regions):
         snapshot = source.latest()
         snapshot.observation['position'] = np.array([i*4., 0., .3])

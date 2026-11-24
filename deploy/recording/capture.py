@@ -9,6 +9,7 @@ import time
 import requests
 import cv2
 from deploy.visualization.cloud_image import render_cloud
+from deploy.visualization.simulation_view import CLOUD_HEIGHT
 
 from deploy.app.config import REPO
 from deploy.app.session import SessionClient, decode_packet
@@ -34,6 +35,7 @@ def save_visual(directory, frame, snapshot, scene):
     if not cv2.imwrite(str(stem.with_suffix('.cloud.png')), render_cloud(points, snapshot.observation['position'],
                       ground_relative_z=snapshot.geometry_calibrated,
                       orientation=snapshot.observation['orientation'],
+                      height_range=scene.get('config', {}).get('obstacle_height', CLOUD_HEIGHT),
                       mode='follow' if snapshot.geometry_calibrated else 'overview')):
         raise OSError('Failed to save cloud image')
     stem.with_suffix('.json').write_text(json.dumps(metadata, ensure_ascii=False, allow_nan=False))

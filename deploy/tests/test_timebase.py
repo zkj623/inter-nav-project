@@ -152,6 +152,17 @@ def test_sensor_delayed_message_after_bootstrap_is_rejected(monkeypatch):
         sensors.close()
 
 
+def test_independent_lidar_reader_uses_the_navigation_clock_without_bootstrapping(monkeypatch):
+    state = fake_ros(monkeypatch)
+    shared = SourceTimeBridge(EPOCH_NS, MONO_NS, uncertainty_ns=200_000)
+    sensors = RosSensors(load()['robot'], timebase=shared, node_name='inter_nav_box_window')
+    try:
+        assert sensors.timebase is shared and not state.removed
+        assert sensors._stamp(message(EPOCH_NS))[1] == shared.captured_at(EPOCH_NS, state.mono_ns, .4)
+    finally:
+        sensors.close()
+
+
 @pytest.mark.parametrize('sim_time,silent', [(True, False), (False, True)])
 def test_invalid_bootstrap_releases_ros_resources(monkeypatch, sim_time, silent):
     state = fake_ros(monkeypatch, sim_time=sim_time, silent=silent)

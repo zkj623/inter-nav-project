@@ -118,6 +118,9 @@ class Session:
         self.timings = {}
         self.map = {'ready': False, 'reason': '等待 run.py 的有效观测和标定'}
         self.map_at = None
+        self.box_window = None
+        self.last_box_poses = {}
+        self.box_generation = None
         self.status = {'state': 'starting', 'motion': 'disabled', 'mode': 'observe'}
         self.heartbeat = time.monotonic()
         self.summary = None
@@ -154,6 +157,15 @@ class Session:
         with self.lock:
             if self.summary is None:
                 self._append_event(item)
+                if kind == 'box_window_result' or (kind == 'perception_result' and details.get('geometry_source') == 'window_two_faces'):
+                    self.box_window = item
+                    generation = item.get('session_id')
+                    if generation is not None and generation != self.box_generation:
+                        self.last_box_poses.clear()
+                        self.box_generation = generation
+                    for row in item.get('detections', ()):
+                        if row.get('valid') and row.get('track_id') and item['at'] < row.get('expires_at', 0):
+                            self.last_box_poses[row['object_id']] = row
 
     def _append_event(self, item):
         # Caller holds Session.lock, including the atomic final event/summary.
@@ -170,7 +182,7 @@ class Session:
                            'map_ready': map_ready, 'result': result}
         return True
 
-    def update(self, snapshot, tasks, motion, error=None, *, decision_duration_s=None):
+    def update(self, snapshot, tasks, motion, error=None, *, decision_duration_s=None, record_observation=True):
         if not self.set_status(tasks.state, tasks.mode, motion, error=error,
                                map_ready=tasks.map_ready, result=tasks.result):
             return
@@ -182,7 +194,8 @@ class Session:
             return
         # Live acquisition already published this packet. Keep standalone
         # session producers supported without recording duplicates/older reads.
-        self.record_observation(snapshot)
+        if record_observation:
+            self.record_observation(snapshot)
         lidar = snapshot.observation['sensors']['lidar']
         scan = None
         if (self.separate_cloud and snapshot.geometry_calibrated
@@ -309,11 +322,23 @@ class Session:
             with self.frames.lock:
                 self.frames.errors.pop('session', None)
 
+    def _box_at(self, now):
+        # Caller holds the session lock so the latest row and the last known pose agree.
+        return (dict(self.box_window, as_of=now, last_seen=dict(self.last_box_poses))
+                if self.box_window is not None else None)
+
+    def box_snapshot(self):
+        with self.lock:
+            now = time.monotonic()
+            return dict(session_id=self.info['session_id'], box_window=self._box_at(now),
+                        finished=self.summary is not None, session_age=now-self.heartbeat)
+
     def display(self, *, encoded=False):
         now = time.monotonic()
         with self.lock:
             mapping = dict(self.map, age=None if self.map_at is None else max(0., now-self.map_at),
                            stale=self.map_at is None or now-self.map_at > 1.)
+            window = self._box_at(now)
             state = dict(self.status)
             age = now-self.heartbeat
             finished = self.summary is not None
@@ -330,7 +355,8 @@ class Session:
                                display_age_s=None if self.published_at is None else now-self.published_at)
         payload = dict(frames, session_id=self.info['session_id'], sequence=sequence,
                        map=mapping, status=state, session_age=age, finished=finished, fps=5., performance=performance,
-                       cloud_topic=self.info['config']['robot']['lidar_topic'])
+                       cloud_topic=self.info['config']['robot']['lidar_topic'], box_window=window,
+                       box_feed=window is not None)
         return encode_display(payload, cloud_json) if encoded else payload
 
     def batch(self, after_frame, after_event, after_observation=0):
@@ -360,6 +386,8 @@ class Session:
                 try:
                     if parsed.path == '/api/frame':
                         body = session.display(encoded=True)
+                    elif parsed.path == '/api/box':
+                        body = json.dumps(session.box_snapshot(), allow_nan=False).encode()
                     elif parsed.path == '/api/record':
                         params = parse_qs(parsed.query)
                         frame, event = int(params.get('frame', ['0'])[0]), int(params.get('event', ['0'])[0])
@@ -458,6 +486,9 @@ class SessionClient:
 
     def snapshot(self):
         return self.get('/api/frame')
+
+    def box_snapshot(self):
+        return self.get('/api/box')
 
     def close(self):
         self.http.close()

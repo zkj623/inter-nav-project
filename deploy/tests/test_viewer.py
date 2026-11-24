@@ -113,6 +113,9 @@ def test_actual_http_has_only_read_routes_and_explicit_demo():
             html = response.read().decode()
             assert '累计点云图' in html and '前置 RGB' in html
             assert 'id="tagToggle" aria-pressed="false"' in html
+            assert 'id="boxMap"' in html
+        with urlopen(url + '/box_map.js') as response:
+            assert response.headers.get_content_type() == 'text/javascript' and response.read()
         for script in ('overlay.js', 'worker.js', 'js-aruco2/cv.js', 'js-aruco2/aruco.js',
                        'js-aruco2/apriltag_36h11.js'):
             with urlopen(url + '/tags/' + script) as response:

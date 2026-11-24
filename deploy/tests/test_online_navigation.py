@@ -79,6 +79,37 @@ def test_real_range_boundary_return_cannot_reveal_space():
     np.testing.assert_array_equal(packet['sensors']['lidar']['pointcloud'], [(5., 0., .4)])
 
 
+def test_field_ceiling_rejects_high_rays_before_they_mark_free_cells_or_change_a_route():
+    cfg = load()['navigation']
+    assert cfg['mapping']['point_height'][1] == cfg['mapping']['obstacle_height'][1] == .28
+    high = np.array([[2., 0., .28001], [1., 1., .5], [.7, 0., 1.5]])
+    def packet(points):
+        result = observation(points=points)
+        result['sensors']['lidar']['position'][2] = .18
+        return result
+
+    engine = NavigationEngine(cfg)
+    engine.observe(packet(high), 0.)
+    assert engine.layers.scan_count == 0
+    assert not engine.layers.observed[engine.planner.cell((1., 0.))]
+    engine.observe(packet([[2., 0., float(np.float32(.28))]]), .2)
+    assert engine.layers.evidence.log_odds[engine.planner.cell((2., 0.))] > 0
+
+    ring = observation()['sensors']['lidar']['pointcloud']
+    ring[:, 2] = .23
+    clean, mixed = NavigationEngine(cfg), NavigationEngine(cfg)
+    for nav, points in ((clean, ring), (mixed, np.vstack((ring, high)))):
+        sample = packet(points)
+        nav.observe(sample, 0.)
+        nav.set_goal((1., 0., .4), .1)
+        nav.update(sample, .1)
+    for layer in ('observed', 'global_observed', 'global_occupied', 'local_occupied'):
+        np.testing.assert_array_equal(getattr(clean.layers, layer), getattr(mixed.layers, layer))
+    np.testing.assert_array_equal(clean.layers.evidence.log_odds, mixed.layers.evidence.log_odds)
+    assert clean.path and clean.decision['kind'] == mixed.decision['kind']
+    np.testing.assert_allclose(clean.path, mixed.path)
+
+
 def test_duplicate_scan_does_not_accumulate_evidence_or_create_new_visibility():
     engine = NavigationEngine(config())
     packet = observation(points=BOX_POINTS)
@@ -132,7 +163,7 @@ def corridor_scan(step, x, doorway):
     wall_distance_x = np.where(dx > 0, end_wall - x, x + 1.5)
     ranges = np.minimum(wall_distance_x / np.maximum(abs(dx), 1e-9),
                         1.05 / np.maximum(abs(dy), 1e-9))
-    points = np.column_stack((x + ranges * dx, ranges * dy, np.full_like(dx, .35)))
+    points = np.column_stack((x + ranges * dx, ranges * dy, np.full_like(dx, .25)))
     if doorway == 'slit':
         # The floor is visible beyond the gap, but its edges are too close for the body.
         slit = (points[:, 0] > 2.49) & (abs(points[:, 1]) < .21)
@@ -140,7 +171,7 @@ def corridor_scan(step, x, doorway):
         points[slit, 1] = (4.05 - x) * dy[slit] / dx[slit]
         points[slit, 2] = 0.
     packet = observation(step, position=(x, 0., .4), points=points)
-    packet['sensors']['lidar']['position'] = packet['position']
+    packet['sensors']['lidar']['position'] = np.array([x, 0., .25])
     return packet
 
 

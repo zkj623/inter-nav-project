@@ -18,9 +18,9 @@ def make_fixture(root):
     for index in range(26):
         x = min(index*.05, .85)
         now = 1000.+index*.1
-        points = np.stack((4*np.cos(angles)+x, 4*np.sin(angles), np.full(720, .5)), axis=1).astype(np.float32)
+        points = np.stack((4*np.cos(angles)+x, 4*np.sin(angles), np.full(720, .25)), axis=1).astype(np.float32)
         observation = {'position': np.array([x, 0, .3]), 'orientation': np.array([1., 0, 0, 0]),
-                       'sensors': {'lidar': {'pointcloud': points, 'position': np.array([x, 0, .4]),
+                       'sensors': {'lidar': {'pointcloud': points, 'position': np.array([x, 0, .25]),
                                              'physics_step': index, 'max_range': 8.}}}
         recorder.observation(Snapshot(observation, now, now, now, None, (.05, 0, 0), index))
     recorder.close({'synthetic': True, 'physical_acceptance': False})
