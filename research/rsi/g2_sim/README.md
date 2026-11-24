@@ -1,3 +1,7 @@
+<!-- natural-four-20261124 -->
+[四类全程姿态优化与新增验收](iterations/20261124_natural_four/README.md)：重建使用natural_workspace.py，四类必须同时通过物理与姿态验收。以下为历史记录。
+<!-- /natural-four-20261124 -->
+
 <!-- basket-mirror-20261124 -->
 [长方篮镜像夹持更新](iterations/20261124_basket_mirror/README.md)：使用basket_mirror_workspace.py重建；其余11类保留上一轮入口。
 <!-- /basket-mirror-20261124 -->
