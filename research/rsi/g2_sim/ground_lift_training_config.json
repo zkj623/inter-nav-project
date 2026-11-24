@@ -1,5 +1,5 @@
 {
-  "name": "g2_ground_lift_realpose_v4",
+  "name": "g2_ground_lift_realpose_symmetric_wrist",
   "task": "in_place_lift_only",
   "fixed_joint_positions_rad": {
     "idx01_body_joint1": -1.0297442586766545,
@@ -83,7 +83,7 @@
     "idx04_body_joint4": 25.003878179509126,
     "idx05_body_joint5": 174.50002608504352
   },
-  "status": "active real-machine-reference low default;12/12 geometry/path and initial head27 visibility checks;3/12 independently verified physical lifts with synchronized head RGB",
+  "status": "8/12 nominal lifts independently verified; not randomized robustness or new collection",
   "geometry_screen_pass_assets": [
     "basket_rectangular",
     "basket_woven",
@@ -102,7 +102,12 @@
   "validated_assets": [
     "case_handheld",
     "basket_woven",
-    "bin_pedal"
+    "bin_lidded",
+    "bin_pedal",
+    "bin_round_pedal",
+    "stool_rectangular",
+    "stool_wood_four_leg",
+    "bin_round_lidded"
   ],
   "pending_adaptation_assets": [
     "basket_rectangular",
@@ -116,22 +121,32 @@
     "bin_round_lidded"
   ],
   "validated_simulation_baselines": {
-    "case_handheld": "/data20t/embodied/zkj/inter-nav-results/g2-realpose-20261124/realpose_trials/realpose_plans/case_handheld/candidate0_repeat2",
-    "basket_woven": "/data20t/embodied/zkj/inter-nav-results/g2-realpose-20261124/realpose_trials/realpose_plans/basket_woven/candidate0_repeat2",
-    "bin_pedal": "/data20t/embodied/zkj/inter-nav-results/g2-realpose-20261124/realpose_trials/realpose_plans/bin_pedal/candidate0_repeat2"
+    "case_handheld": "/data20t/embodied/zkj/inter-nav-results/g2-wrist-symmetric-20261124/realpose_trials/symmetric_preparation_plans/case_handheld/candidate0_repeat2",
+    "basket_woven": "/data20t/embodied/zkj/inter-nav-results/g2-wrist-symmetric-20261124/realpose_trials/realpose_plans/basket_woven/candidate0_repeat1",
+    "bin_lidded": "/data20t/embodied/zkj/inter-nav-results/g2-wrist-symmetric-20261124/realpose_trials/realpose_plans/bin_lidded/candidate0_repeat1",
+    "bin_pedal": "/data20t/embodied/zkj/inter-nav-results/g2-wrist-symmetric-20261124/realpose_trials/realpose_plans/bin_pedal/candidate0_repeat1",
+    "bin_round_pedal": "/data20t/embodied/zkj/inter-nav-results/g2-wrist-symmetric-20261124/realpose_trials/realpose_plans/bin_round_pedal/candidate0_repeat1",
+    "stool_rectangular": "/data20t/embodied/zkj/inter-nav-results/g2-wrist-symmetric-20261124/realpose_trials/realpose_plans/stool_rectangular/candidate0_repeat1",
+    "stool_wood_four_leg": "/data20t/embodied/zkj/inter-nav-results/g2-wrist-symmetric-20261124/realpose_trials/realpose_plans/stool_wood_four_leg/candidate0_repeat1",
+    "bin_round_lidded": "/data20t/embodied/zkj/inter-nav-results/g2-wrist-symmetric-20261124/realpose_trials/realpose_plans/bin_round_lidded/candidate0_repeat1"
   },
-  "validation_scope": "Real-machine feedback covers body posture feasibility only. Exact head27 profile has3 physical lift passes;remaining9 only geometric/path checks. No real-machine torque or camera calibration verified.",
+  "validation_scope": "Symmetric wrist nominal lifts: 8/12 verified. Full standby preparation physically verified for case_handheld only; all12 geometry checked. No randomized robustness or hardware claim.",
   "previous_config_archive": "baseline_configs/ground_lift_training_config.json",
-  "source_iteration": "iterations/20261120_roundretry",
+  "source_iteration": "iterations/20261124_symmetric_wrist",
   "planning_excluded_assets": [],
   "per_asset_plan_directory_overrides": {},
   "additional_acceptance": "Non-hand contact impulse <=0.001 Ns; sampled non-hand penetration <=1 mm; held visual mesh floor clearance >5 mm. Four loaded contacts: distal fingers for spread, inner/outer branches for pinch and under-support.",
-  "plan_resolution": "Archived validated_simulation_baselines reproduce the previous startup; current preferred arms-down startup uses execution entries in standby_preparation_config.json.",
+  "plan_resolution": "Use symmetric_workspace.py and realpose_<asset>_trial.py. Only case_handheld symmetric_preparation_plans includes standby preparation; realpose_plans starts at low home.",
   "controller_scope": "Per-asset archived baseline including controller gains and solver iterations; physical geometry/material/actuator caps recorded in protocol; all start from identical full q_start.",
   "latest_baseline_verified_repeat_counts": {
     "case_handheld": 1,
     "basket_woven": 1,
-    "bin_pedal": 1
+    "bin_lidded": 1,
+    "bin_pedal": 1,
+    "bin_round_pedal": 1,
+    "stool_rectangular": 1,
+    "stool_wood_four_leg": 1,
+    "bin_round_lidded": 1
   },
   "common_initial_joint_positions_rad": {
     "idx01_body_joint1": -1.0297442586766545,
@@ -151,7 +166,7 @@
     "idx61_arm_r_joint1": 1.3912381207056912,
     "idx63_arm_r_joint3": -1.1646263866725126,
     "idx65_arm_r_joint5": 0.7499008700727761,
-    "idx66_arm_r_joint6": 0.8922999999999999,
+    "idx66_arm_r_joint6": -0.8922999999999999,
     "idx67_arm_r_joint7": 1.4159,
     "idx04_body_joint4": 0.0,
     "idx05_body_joint5": 0.0,
@@ -305,7 +320,7 @@
     "nonadjacent_arm_body_visual_gap_m": 0.021233840370302275,
     "scope": "settled standby visual projection only"
   },
-  "profile_id": "realpose_user_reported_20261124",
+  "profile_id": "realpose_symmetric_wrist_20261124",
   "head_joint_positions_deg": {
     "idx11_head_joint1": 0.0,
     "idx12_head_joint2": 0.0,
@@ -357,5 +372,6 @@
     "stool_rectangular": -0.04,
     "stool_wood_four_leg": -0.02,
     "bin_pedal": 0.0
-  }
+  },
+  "validation_report": "iterations/20261124_symmetric_wrist/results/validation.json"
 }
