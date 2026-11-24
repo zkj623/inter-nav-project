@@ -66,9 +66,13 @@ class FrontVideoTests(unittest.TestCase):
                 node.create_subscription.side_effect = subscribe
                 node.count_publishers.return_value = 1
                 node.get_clock.return_value.now.return_value.nanoseconds = 1000000000
-                node.get_topic_names_and_types.return_value = [
-                    (topic, [kind]) for topic, kind in diagnostics.AUDITED_TOPICS.items()]
+                node.get_topic_names_and_types.return_value = []
+                delivered = False
                 def spin(node, timeout_sec):
+                    nonlocal delivered
+                    if delivered:
+                        return
+                    delivered = True
                     for topic, callback, raw in subscriptions:
                         callback(payload if raw else SimpleNamespace())
                 ros = SimpleNamespace(init=lambda: None, shutdown=lambda: None,
@@ -81,8 +85,9 @@ class FrontVideoTests(unittest.TestCase):
                     'ament_index_python.packages': SimpleNamespace(get_package_share_directory=lambda name: directory),
                 }
                 ticks = iter(i*.1 for i in range(1000))
-                config = {'robot': {'odom_topic': '/utlidar/robot_odom',
-                                   'lidar_topic': '/utlidar/cloud_deskewed',
+                config = {'robot': {'odom_topic': '/bot1/lidar_slam/odom',
+                                   'lidar_topic': '/bot1/cloud_registered_sparse',
+                                   'raw_lidar_topic': '/livox/lidar', 'imu_topic': '/livox/imu',
                                    'front_video_topic': '/frontvideostream',
                                    'camera_mode': 'unavailable', 'max_data_age_s': .4}}
                 output = Path(directory) / 'report.json'

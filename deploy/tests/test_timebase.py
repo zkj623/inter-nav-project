@@ -103,7 +103,7 @@ def fake_ros(monkeypatch, *, sim_time=False, silent=False):
                       spin_once=spin_once, shutdown=lambda: setattr(state, 'shutdown', True)),
         'rclpy.qos': dict(qos_profile_sensor_data=None),
         'rclpy.time': dict(Time=object),
-        'sensor_msgs.msg': dict(PointCloud2=object, Image=object, CameraInfo=object),
+        'sensor_msgs.msg': dict(PointCloud2=object, Image=object, CameraInfo=object, Imu=object),
         'nav_msgs.msg': dict(Odometry=object),
         'tf2_ros': dict(Buffer=lambda: None, TransformListener=lambda *args: None),
     }
@@ -118,7 +118,7 @@ def fake_ros(monkeypatch, *, sim_time=False, silent=False):
 
 def message(stamp_ns):
     sec, nanosec = divmod(stamp_ns, 1_000_000_000)
-    return SimpleNamespace(header=SimpleNamespace(stamp=SimpleNamespace(sec=sec, nanosec=nanosec)))
+    return SimpleNamespace(header=SimpleNamespace(frame_id='test_clock', stamp=SimpleNamespace(sec=sec, nanosec=nanosec)))
 
 
 def test_sensor_bootstraps_with_wrong_wall_date_and_keeps_fixed_reference(monkeypatch):

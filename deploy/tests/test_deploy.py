@@ -22,6 +22,7 @@ from deploy.tests.make_fixture import make_fixture
 
 def test_unverified_geometry_cannot_enable_motion():
     config = load()
+    config['robot']['calibration_verified'] = True
     config['robot']['deskew_and_self_filter_verified'] = False
     with pytest.raises(ValueError, match='deskew_and_self_filter_verified'):
         check_motion_configuration(config)

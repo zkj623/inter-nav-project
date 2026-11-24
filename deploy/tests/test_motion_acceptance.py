@@ -83,6 +83,7 @@ def test_old_config_can_observe_but_missing_state_codes_prevent_motion(tmp_path)
     path = tmp_path/'robot.yaml'
     robot = yaml.safe_load(path.read_text())
     robot.pop('sport_state_motion_codes')
+    robot['ground_z'] = 0.
     for key in ('calibration_verified', 'deskew_and_self_filter_verified', 'communication_verified', 'remote_arbitration_verified'):
         robot[key] = True
     robot['takeover_button_mask'] = 2

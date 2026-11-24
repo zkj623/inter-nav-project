@@ -22,7 +22,7 @@
 下面的 `tmux new` 只在首次创建会话时执行；已有会话请按“断线重连”接回。
 **tmux 中的 run 不会因 SSH 断开而自动暂停。** 主动离开前先按 `p` 暂停；意外断线时由现场遥控器接管。
 
-### 终端 1：运行点导航
+### 终端 1：启动 MID-360S 并观察建图
 
 在开发机登录：
 
@@ -39,13 +39,16 @@ tmux new -s go2-run
 进入 tmux 后执行：
 
 ```bash
+bash ~/fishbot_multirobot_sim/deploy/go2_real/scripts/run_mid360s_lio.sh start
 source ~/unitree_ros2/setup.sh
 cd ~/inter-nav-project/deploy
 source ../.venv-deploy/bin/activate
-python run.py
+python run.py --observe-only
 ```
 
-启动后先观察，不会立即行走。等待出现“实验坐标系已固定”，且状态为
+MID-360S 原始点云和 IMU 为 `/livox/lidar`、`/livox/imu`。建图读取同一套 Swarm-LIO 的世界系点云和里程计，雷达 IMU 原点是当前地图上显示的位姿参考点。启动时保持静止，程序用附近配准点云估计本轮地面高度，固定后沿用。雷达到 Go2 机身的安装外参待测，当前配置用于只观察和手动遥控测试。
+
+完成机身外参和运动验证后，以下点导航流程适用于启用运动的配置。等待出现“实验坐标系已固定”，且状态为
 `观测=ready 建图=True 最近错误=None`，再在地图中确认目标附近和行进通道。
 按 `n`，输入 `1,0`，按回车，开始前方 1 米的点导航。
 
@@ -63,13 +66,6 @@ python run.py
 `record` 保留规划交接、命令入队与运动进程接收确认，以及控制周期各阶段耗时。
 运行中的命令超时仍会停车并锁定，查明原因后需按 `r` 显式继续。
 
-仅查看传感器和地图时，将最后一条命令换为：
-
-```bash
-python run.py --observe-only
-```
-
-仅观察模式不能通过按键启用运动，需退出并用 `python run.py` 重新启动。
 默认启用前置相机视频预览，不参与语义识别；不需要画面时加 `--camera none`。
 
 ### 终端 2：打开地图
@@ -290,7 +286,7 @@ python run.py --interaction-config configs/box_30x80x30.yaml --box-window --repl
 
 | 配置文件 | 当前点导航设置 |
 |---|---|
-| `robot.yaml` | 网卡 `eth0`；定位 `/utlidar/robot_odom`；雷达 `/utlidar/cloud_deskewed` |
+| `robot.yaml` | 网卡 `eth0`；定位 `/bot1/lidar_slam/odom`；建图点云 `/bot1/cloud_registered_sparse` |
 | `navigation.yaml` | `interaction_enabled: false`；到达距离 `0.25 m`；地图分辨率 `0.1 m` |
 | `navigation.yaml` | 速度上限：前向 `0.8 m/s`、侧向 `0.3 m/s`、转向 `0.9 rad/s` |
 | `navigation.yaml` | 导航障碍距地面 `0.10–0.28 m`，参与导航的点最高 `0.28 m`，障碍膨胀半径 `0.4 m` |
@@ -363,5 +359,5 @@ bash scripts/sync.sh go2 /home/unitree/inter-nav-project --apply
 
 `--goal` 仅用于离线回放；真机目标通过 `n` 输入。回放使用保存的观测，不模拟机器人对命令的响应，不能代替闭环验收。
 
-原始观测由独立线程在每帧点云到达时处理（Go2 实测约 15.4 Hz），耗时规划期间也继续工作；record 保存观测线程按平均 `tick_hz`（默认 10 Hz）选出的帧，以及每次导航决策实际使用的帧，实测合计约 13 Hz。导航决策同样平均按 `tick_hz` 进行，但每次都从到期后新到的一帧开始，不使用排队等待过的点云。view 的显示最多约 5 Hz，不决定观测记录频率。记录中的 `observations.jsonl` 与 `frames/` 分别用于原始回放和显示对照；完整性检查包含 `missing_observations`，不为缺失的数据补帧或更新时间戳。
+原始观测由独立线程在每帧点云到达时处理（MID-360S 配准点云约 10 Hz），耗时规划期间也继续工作；record 保存观测线程按平均 `tick_hz`（默认 10 Hz）选出的帧，以及每次导航决策实际使用的帧。导航决策同样平均按 `tick_hz` 进行，但每次都从到期后新到的一帧开始，不使用排队等待过的点云。view 的显示最多约 5 Hz，不决定观测记录频率。记录中的 `observations.jsonl` 与 `frames/` 分别用于原始回放和显示对照；完整性检查包含 `missing_observations`，不为缺失的数据补帧或更新时间戳。
 `--motion-test` 与正常 run 分开运行，不启用地图或避障；按 `a` 准备，再按 `f` 前行、`j` 左转或 `t` 测试命令超时停车，空格停止、`q` 退出。

@@ -220,6 +220,7 @@ def test_mapping_failure_does_not_report_ready(control, monkeypatch):
 
 def test_sdk_configuration_and_full_navigation_acceptance_are_distinct():
     config = load()
+    config['robot']['calibration_verified'] = True
     config['robot']['deskew_and_self_filter_verified'] = False
     config['robot']['takeover_button_mask'] = 0
     check_control_configuration(config, require_takeover=False)
@@ -278,14 +279,15 @@ def test_live_cleanup_restores_other_resources_even_if_motion_close_raises(monke
     fake_motion.close = fail_close
     monkeypatch.setattr(session, 'Session', lambda *a, **k: events)
     monkeypatch.setattr(motion, 'MotionProcess', lambda *a: fake_motion)
-    monkeypatch.setattr(sensors, 'RosSensors', lambda *a: SimpleNamespace(
-        latest=lambda: None, close=lambda: closed.append('sensors')))
+    monkeypatch.setattr(sensors, 'RosSensors', lambda robot, *a: SimpleNamespace(
+        config=robot, latest=lambda: None, close=lambda: closed.append('sensors')))
     monkeypatch.setattr(keyboard, 'Keyboard', lambda: SimpleNamespace(
         poll=lambda: ('q', None), close=lambda: closed.append('keyboard')))
     config = load()
     for key in ('calibration_verified', 'deskew_and_self_filter_verified',
                 'communication_verified', 'remote_arbitration_verified'):
         config['robot'][key] = True  # Only this in-memory fake-SDK test.
+    config['robot']['ground_z'] = 0.
     config['robot']['takeover_button_mask'] = 2
     args = SimpleNamespace(allow_motion=True, demo=False, session_port=0, camera='none', rgb_topic=None)
     handler = signal.getsignal(signal.SIGINT)
@@ -341,6 +343,7 @@ def test_live_start_reacquires_sensors_after_slow_arm(tmp_path, monkeypatch, fre
     for key in ('calibration_verified', 'deskew_and_self_filter_verified',
                 'communication_verified', 'remote_arbitration_verified'):
         config['robot'][key] = True  # In-memory fake motion only.
+    config['robot']['ground_z'] = 0.
     config['robot']['takeover_button_mask'] = 2
     events = Events()
     events.info, events.url = {'session_id': 'fake'}, 'fake-session'
@@ -363,7 +366,7 @@ def test_live_start_reacquires_sensors_after_slow_arm(tmp_path, monkeypatch, fre
         reads.append(stamp)
         return replace(snapshot, captured_at=clock[0], pose_at=stamp, lidar_at=stamp,
                        planning_frame='odom')
-    fake_sensors = SimpleNamespace(latest=latest, close=lambda: None, last_error=None)
+    fake_sensors = SimpleNamespace(config=config['robot'], latest=latest, close=lambda: None, last_error=None)
     class ObservationReads:
         # This test controls the consumer's clock. The independent acquisition
         # worker and reset races are exercised in test_live_observations.py.

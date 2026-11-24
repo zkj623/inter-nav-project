@@ -1,8 +1,10 @@
 """ROS 2 input adapter. Existing drivers/SLAM own acquisition and TF."""
+from collections import deque
 import threading
 import time
 import numpy as np
-from .localization import PoseContinuity, PoseHistory, camera_cloud, multiply, transform, quaternion
+from .localization import (PoseContinuity, PoseHistory, camera_cloud, multiply, transform,
+                           quaternion, rotation, registered_floor_height)
 from .observation import Snapshot, normalize
 from .timebase import SourceTimeBridge
 
@@ -68,7 +70,9 @@ class RosSensors:
         from sensor_msgs.msg import PointCloud2, Image, CameraInfo
         from nav_msgs.msg import Odometry
         from tf2_ros import Buffer, TransformListener
-        self.config, self.rclpy, self.Time = config, rclpy, Time
+        self.config, self.rclpy, self.Time = dict(config), rclpy, Time
+        self.mid360s = config.get('sensor_profile') == 'mid360s_lio'
+        self.imu_samples = deque(maxlen=256)
         rclpy.init()
         self.node = rclpy.create_node(node_name)
         try:
@@ -89,6 +93,7 @@ class RosSensors:
         # instead of aliasing a fixed poll against the driver's cadence.
         self.frame_ready = threading.Condition(self.lock)
         self.lidar_frames = 0
+        self.matched_scan = None
         self.pose = self.lidar = self.camera = None
         self.images = {}
         self.last_error = None
@@ -97,6 +102,10 @@ class RosSensors:
         self.last_stamps = {}
         self._errors = {}
         self.continuity = PoseContinuity(config['max_position_jump_m'], config['max_orientation_jump_rad'])
+        if self.mid360s:
+            from sensor_msgs.msg import Imu
+            self.node.create_subscription(Imu, config['imu_topic'], self._guard(self._imu, 'imu_topic'),
+                                          qos_profile_sensor_data)
         for topic, cls, callback in (
             ('odom_topic', Odometry, self._pose), ('lidar_topic', PointCloud2, self._lidar),
             ('rgb_topic', Image, lambda msg: self._image('rgb', msg)),
@@ -130,6 +139,8 @@ class RosSensors:
         Never repeat this estimate while a run is active.
         """
         samples = {'odom': [], 'lidar': []}
+        floor_scans, positions = [], []
+        measure_floor = self.mid360s and self.config['ground_z'] is None
         subscriptions = []
         def receive(kind):
             def callback(message):
@@ -138,6 +149,12 @@ class RosSensors:
                 if not 0 <= stamp.nanosec < 1_000_000_000:
                     raise ValueError('ROS timestamp invalid during startup')
                 samples[kind].append((receipt, stamp.sec*1_000_000_000 + stamp.nanosec))
+                if measure_floor and message.header.frame_id == self.config['map_frame']:
+                    if kind == 'odom':
+                        p = message.pose.pose.position
+                        positions.append((p.x, p.y, p.z))
+                    elif len(floor_scans) < 20:
+                        floor_scans.append(decode_cloud(message))
             return callback
         try:
             for kind, cls in (('odom', odometry_type), ('lidar', cloud_type)):
@@ -155,7 +172,11 @@ class RosSensors:
                     raise ValueError(f'{kind}: startup requires exactly one publisher')
                 if not values or (now_ns-values[-1][0])*1e-9 > self.config['max_data_age_s']:
                     raise ValueError(f'{kind}: no recent data during time-reference initialization')
-            return SourceTimeBridge.from_samples(samples, max_age_s=self.config['max_data_age_s'])
+            bridge = SourceTimeBridge.from_samples(samples, max_age_s=self.config['max_data_age_s'])
+            if floor_scans and positions:
+                self.config['ground_z'] = registered_floor_height(
+                    np.concatenate(floor_scans), np.median(positions, axis=0))
+            return bridge
         finally:
             for subscription in subscriptions:
                 self.node.destroy_subscription(subscription)
@@ -201,6 +222,8 @@ class RosSensors:
         seq, received = self._stamp(message)
         if message.child_frame_id != self.config['base_frame']:
             raise ValueError('Odometry child_frame_id must equal base_frame')
+        if self.mid360s and message.header.frame_id != self.config['map_frame']:
+            raise ValueError('Unexpected Swarm-LIO odometry parent frame')
         if seq <= self.last_stamps.get('pose', -1):
             raise ValueError('Non-increasing odometry timestamp')
         # Odometry already contains parent->child pose; TF publication is optional.
@@ -214,6 +237,10 @@ class RosSensors:
         v = message.twist.twist
         linear = (v.linear.x, v.linear.y, v.linear.z)
         angular = (v.angular.x, v.angular.y, v.angular.z)
+        if self.mid360s:
+            # Swarm-LIO set_twist() publishes world linear velocity. Its
+            # angular fields are unused; latest() pairs the actual IMU gyro.
+            linear = rotation(q).T @ linear
         velocity = (linear[0], linear[1], angular[2])
         if not np.isfinite((*linear, *angular)).all():
             raise ValueError('Invalid odometry velocity')
@@ -223,9 +250,28 @@ class RosSensors:
             self.last_stamps['pose'] = seq
             self.pose = (seq, received, p, q, velocity)
             self.body_twist = (linear, angular)
+            if self.mid360s:
+                self._match_scan()
+
+    def _imu(self, message):
+        seq, _ = self._stamp(message)
+        if message.header.frame_id != self.config['imu_frame']:
+            raise ValueError('Unexpected MID-360S IMU frame')
+        gyro, acc = message.angular_velocity, message.linear_acceleration
+        angular = (gyro.x, gyro.y, gyro.z)
+        # This Livox driver publishes acceleration in g.
+        accel = np.array([acc.x, acc.y, acc.z]) * 9.80665
+        if not np.isfinite((*angular, *accel)).all():
+            raise ValueError('Invalid MID-360S IMU sample')
+        with self.lock:
+            if self.imu_samples and seq <= self.imu_samples[-1][0]:
+                raise ValueError('Non-increasing MID-360S IMU timestamp')
+            self.imu_samples.append((seq, angular, accel))
 
     def _lidar(self, message):
         seq, received = self._stamp(message)
+        if self.mid360s and message.header.frame_id != self.config['map_frame']:
+            raise ValueError('Expected registered MID-360S points in the LIO world frame')
         p, q = self._tf(message.header.frame_id, message.header.stamp)
         if seq <= self.last_stamps.get('lidar', -1):
             raise ValueError('Non-increasing point-cloud timestamp')
@@ -238,13 +284,27 @@ class RosSensors:
             self.lidar = (received, {'pointcloud': points, 'physics_step': seq,
                                      'max_range': self.config['lidar_max_range']})
             self.lidar_frames += 1
+            if self.mid360s:
+                self._match_scan()
+            else:
+                self.frame_ready.notify_all()
+
+    def _match_scan(self):
+        # Called under the lock from either callback. Keep the last complete
+        # scan available while the next two DDS messages arrive separately.
+        if self.pose and self.lidar and self.pose[0] == self.lidar[1]['physics_step']:
+            self.matched_scan = (self.pose, self.lidar, self.body_twist)
             self.frame_ready.notify_all()
 
     def wait_frame(self, seen, timeout):
         """Block until a LiDAR frame other than count ``seen`` is stored; return the count."""
         with self.frame_ready:
-            self.frame_ready.wait_for(lambda: self.lidar_frames != seen, timeout=max(0., timeout))
-            return self.lidar_frames
+            def frame_id():
+                if self.mid360s:
+                    return self.matched_scan[0][0] if self.matched_scan else None
+                return self.lidar_frames
+            self.frame_ready.wait_for(lambda: frame_id() != seen, timeout=max(0., timeout))
+            return frame_id()
 
     def _image(self, kind, message):
         if kind != 'info':
@@ -281,25 +341,43 @@ class RosSensors:
         with self.lock:
             if self.pose is None or self.lidar is None:
                 return None
-            seq, pose_at, p, q, velocity = self.pose
-            lidar_at, lidar = self.lidar
+            if self.mid360s:
+                if self.matched_scan is None:
+                    self.last_error = 'Waiting for matching Swarm-LIO odometry and registered scan'
+                    return None
+                pose, scan, twist = self.matched_scan
+                cloud_p, cloud_q = pose[2:4]
+            else:
+                pose, scan, twist = self.pose, self.lidar, getattr(self, 'body_twist', None)
+                try:
+                    cloud_p, cloud_q = self.pose_history.at(scan[1]['physics_step'])
+                except ValueError as error:
+                    self.last_error = str(error)
+                    return None
+            seq, pose_at, p, q, velocity = pose
+            lidar_at, lidar = scan
             lidar = dict(lidar)
-            try:
-                cloud_p, cloud_q = self.pose_history.at(lidar['physics_step'])
-            except ValueError as error:
-                self.last_error = str(error)
-                return None
             self._pair_error = None
             offset = self.config['lidar_origin_offset_base_m']
             calibrated = offset is not None and self.config['ground_z'] is not None
             # Missing calibration permits recording only; runtime must not build a map.
             lidar['position'] = transform(offset if offset is not None else [0, 0, 0], cloud_p, cloud_q)
             sensors = {'lidar': lidar}
+            if self.mid360s:
+                imu = min(self.imu_samples, key=lambda v: abs(v[0]-seq), default=None)
+                if imu is None or abs(imu[0]-seq) > self.pose_history.tolerance_ns:
+                    self.last_error = 'Waiting for MID-360S IMU at odometry time'
+                    return None
+                stamp, angular, accel = imu
+                linear = twist[0]
+                twist = (linear, angular)
+                velocity = (linear[0], linear[1], angular[2])
+                sensors['imu'] = dict(source_stamp_ns=stamp, frame_id=self.config['imu_frame'],
+                                      angular_velocity_rad_s=angular, linear_acceleration_m_s2=accel)
             camera_at = None
             if self.camera is not None:
                 camera_at, sensors['camera'] = self.camera
             raw = {'position': p, 'orientation': q, 'sensors': sensors}
-            twist = getattr(self, 'body_twist', None)
             if twist is not None:
                 raw.update(body_linear_velocity=twist[0], body_angular_velocity=twist[1])
             observation = normalize(raw, self.config['ground_z'] if calibrated else 0.)

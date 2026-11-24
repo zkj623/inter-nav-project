@@ -12,7 +12,7 @@ import pytest
 from deploy.app.config import check_task_inputs, check_motion_configuration, load
 from deploy.app.tasks import Tasks
 from deploy.robot.diagnostics import describe
-from deploy.robot.localization import PoseContinuity, PoseHistory
+from deploy.robot.localization import PoseContinuity, PoseHistory, registered_floor_height
 from deploy.robot.sensors import RosSensors, decode_cloud
 
 
@@ -37,7 +37,10 @@ def odometry(stamp, x, frame='odom'):
 
 def sensor(calibrated=True):
     source = RosSensors.__new__(RosSensors)
-    source.config = load()['robot']
+    source.config = dict(load()['robot'], map_frame='odom', base_frame='base_link',
+                         lidar_topic='/utlidar/cloud_deskewed')
+    source.mid360s = False
+    source.imu_samples = deque(maxlen=256)
     if calibrated:
         source.config.update(ground_z=-.3, lidar_origin_offset_base_m=[.1, 0., .1])
     else:
@@ -185,6 +188,54 @@ def test_cloud_waits_for_time_aligned_odometry():
     assert source.latest() is None
     source._pose(odometry(1_200_000_000, 1.02))
     assert source.latest() is not None
+
+
+def test_mid360_pairs_registered_points_world_velocity_and_raw_imu():
+    source = sensor()
+    source.config = dict(load()['robot'], ground_z=0.)
+    source.mid360s, source.matched_scan = True, None
+    stamp = 1_000_000_000
+    pose = odometry(stamp, 1., frame=source.config['map_frame'])
+    pose.child_frame_id = source.config['base_frame']
+    pose.pose.pose.orientation.w = pose.pose.pose.orientation.z = np.sqrt(.5)
+    scan = cloud(stamp)
+    with pytest.raises(ValueError, match='registered'):
+        source._lidar(scan)
+    scan.header.frame_id = source.config['map_frame']
+    source._lidar(scan)
+    source._pose(pose)
+    assert source.latest() is None
+    imu = Message(header=Message(stamp=stamp-100_000_000, frame_id=source.config['imu_frame']),
+                  angular_velocity=Message(x=0., y=.15, z=-.2), linear_acceleration=Message(x=0., y=0., z=1.))
+    source._imu(imu)
+    assert source.latest() is None
+    imu.header.stamp = stamp+2_000_000
+    source._imu(imu)
+    packet = source.latest()
+    np.testing.assert_allclose(packet.velocity, [0., -.1, -.2], atol=1e-9)
+    np.testing.assert_allclose(packet.observation['body_linear_velocity'], [0., -.1, .02], atol=1e-9)
+    np.testing.assert_allclose(packet.observation['sensors']['imu']['linear_acceleration_m_s2'], [0, 0, 9.80665])
+    lidar = packet.observation['sensors']['lidar']
+    np.testing.assert_allclose(lidar['pointcloud'], [[2., .2, .7], [3., .2, .7]])
+    np.testing.assert_allclose(lidar['position'], [1.02329, -.011, .04412])
+    # The next pose may arrive before its cloud. Keep the old *source* age.
+    pose.header.stamp += 100_000_000
+    source._pose(pose)
+    assert source.wait_frame(stamp, 0) == stamp
+    assert source.latest().pose_at == packet.pose_at
+    scan.header.stamp = pose.header.stamp
+    source._lidar(scan)
+    assert source.wait_frame(stamp, 0) == pose.header.stamp
+    assert source.latest() is None  # previous gyro is too old for the new scan
+
+
+def test_mid360_floor_estimate_uses_world_height_and_rejects_a_single_wall():
+    coords = np.arange(-1.9, 2., .09)
+    x, y = np.meshgrid(coords, coords)
+    floor = np.column_stack([x.ravel(), y.ravel(), np.full(x.size, 1.25)])
+    assert registered_floor_height(floor, [0., 0., 1.7]) == pytest.approx(1.25)
+    wall = np.column_stack([np.ones(x.size), y.ravel(), x.ravel()+1.25])
+    assert registered_floor_height(wall, [0., 0., 1.7]) is None
 
 
 def test_uncalibrated_data_recordable_but_cannot_build_or_drive_map():

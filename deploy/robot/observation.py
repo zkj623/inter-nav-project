@@ -104,6 +104,8 @@ def normalize(observation, ground_z=0.0):
         raise ValueError('Invalid LiDAR origin')
     origin[2] -= ground_z
     result['sensors']['lidar'] = {**lidar, 'pointcloud': points, 'position': origin}
+    if 'imu' in observation['sensors']:
+        result['sensors']['imu'] = dict(observation['sensors']['imu'])
     camera = observation['sensors'].get('camera')
     if camera is not None:
         camera = dict(camera)

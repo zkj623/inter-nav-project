@@ -1,39 +1,34 @@
-# Go2 EDU / Orin NX: topics confirmed received during the user hardware audit.
-# map_frame is the upstream frame used for sensor alignment.
-# run.py converts calibrated observations to a fixed per-run experiment frame.
+# Go2 EDU / Orin NX, Livox MID-360S with onboard Swarm-LIO.
 network_interface: eth0
-map_frame: odom
-base_frame: base_link
-odom_topic: /utlidar/robot_odom
-lidar_topic: /utlidar/cloud_deskewed
+sensor_profile: mid360s_lio
+map_frame: bot1/world
+base_frame: bot1/aft_mapped
+odom_topic: /bot1/lidar_slam/odom
+lidar_topic: /bot1/cloud_registered_sparse
+raw_lidar_topic: /livox/lidar
+imu_topic: /livox/imu
+imu_frame: livox_frame
 # No standard RGB-D source was found. Custom compressed video is not depth.
 camera_mode: unavailable  # unavailable | rgbd
 front_video_topic: /frontvideostream
 rgb_topic: ""
 depth_topic: ""
 camera_info_topic: ""
-# This Go2, 2026-10-25: standing on level ground; height in upstream odom, metres.
-# Recheck ground_z after odom resets or the floor/reference changes.
-ground_z: -0.012
-# /utlidar/cloud origin expressed in base_link, recovered from 464 paired
-# cloud/cloud_base frames in static-three-clouds-20261110-220303 (592334 returns).
-# This is the topic transform, not an independent physical mounting survey.
-# cloud_deskewed already includes the upstream rotation/translation into odom;
-# this offset locates the ray origin only. Do not transform those endpoints again.
-lidar_origin_offset_base_m: [0.28216003, 0.0, 0.0]
+# bot1/world is reinitialized by Swarm-LIO. With null, estimate its floor
+# once at startup from the registered cloud while the robot is stationary.
+ground_z: null
+# Factory LiDAR origin in the MID-360S IMU frame used by this LIO deployment.
+# Registered endpoints already include this transform.
+lidar_origin_offset_base_m: [-0.011, -0.02329, 0.04412]
 lidar_max_range: 8.0
 pose_cloud_tolerance_s: 0.05
 image_sync_tolerance_s: 0.04
 max_data_age_s: 0.4
 max_position_jump_m: 0.5
 max_orientation_jump_rad: 0.7
-# Receipt alone does not establish calibration, filtering, DDS or motion readiness.
-# Acceptance basis: measured ground + user-accepted cloud/base topic correspondence.
-# This is not an independent physical survey or motion acceptance.
-calibration_verified: true
-# 2026-10-28: operator explicitly requested true for supervised point-nav trials.
-# Test override only: dynamic deskew/self-filter acceptance remains incomplete.
-deskew_and_self_filter_verified: true
+# Observe in the IMU frame until its mount on the Go2 is measured.
+calibration_verified: false
+deskew_and_self_filter_verified: false
 # 2026-10-28: sensor recordings + motion-test 20261028T142816_831350Z;
 # operator accepted physical response; includes command_timeout -> stopped.
 # This does not certify physical network-loss or computer-failure protection.

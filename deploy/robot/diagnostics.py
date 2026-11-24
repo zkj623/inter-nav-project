@@ -9,20 +9,6 @@ import time
 from .front_video import describe_front_video
 
 
-AUDITED_TOPICS = {
-    '/utlidar/cloud': 'sensor_msgs/msg/PointCloud2',
-    '/utlidar/cloud_base': 'sensor_msgs/msg/PointCloud2',
-    '/utlidar/cloud_deskewed': 'sensor_msgs/msg/PointCloud2',
-    '/utlidar/imu': 'sensor_msgs/msg/Imu',
-    '/utlidar/robot_odom': 'nav_msgs/msg/Odometry',
-    '/utlidar/robot_pose': 'geometry_msgs/msg/PoseStamped',
-    '/frontvideostream': 'unitree_go/msg/Go2FrontVideoData',
-    '/uslam/frontend/odom': 'nav_msgs/msg/Odometry',
-    '/uslam/localization/odom': 'nav_msgs/msg/Odometry',
-    '/lio_sam_ros2/mapping/odometry': 'nav_msgs/msg/Odometry',
-}
-
-
 def describe(message, ros_now):
     """Keep metadata only: never serialize an entire video or point-cloud payload."""
     result = {}
@@ -34,6 +20,9 @@ def describe(message, ros_now):
         result['child_frame_id'] = message.child_frame_id
         p = message.pose.pose.position
         result['position'] = [p.x, p.y, p.z]
+    if hasattr(message, 'linear_acceleration') and hasattr(message, 'angular_velocity'):
+        a, w = message.linear_acceleration, message.angular_velocity
+        result.update(linear_acceleration_native=[a.x, a.y, a.z], angular_velocity_rad_s=[w.x, w.y, w.z])
     if hasattr(message, 'point_step'):
         result.update(width=message.width, height=message.height,
                       point_step=message.point_step, row_step=message.row_step,
@@ -56,10 +45,12 @@ def run(config, duration, output):
     from ament_index_python.packages import get_package_share_directory
 
     robot = config['robot']
-    topics = dict(AUDITED_TOPICS)
-    topics.update({robot['odom_topic']: 'nav_msgs/msg/Odometry',
-                   robot['lidar_topic']: 'sensor_msgs/msg/PointCloud2',
-                   robot['front_video_topic']: 'unitree_go/msg/Go2FrontVideoData'})
+    topics = {robot['odom_topic']: 'nav_msgs/msg/Odometry',
+              robot['lidar_topic']: 'sensor_msgs/msg/PointCloud2',
+              robot['front_video_topic']: 'unitree_go/msg/Go2FrontVideoData'}
+    for key, kind in (('raw_lidar_topic', 'sensor_msgs/msg/PointCloud2'), ('imu_topic', 'sensor_msgs/msg/Imu')):
+        if robot.get(key):
+            topics[robot[key]] = kind
     if robot['camera_mode'] == 'rgbd':
         topics.update({robot['rgb_topic']: 'sensor_msgs/msg/Image',
                        robot['depth_topic']: 'sensor_msgs/msg/Image',
@@ -166,6 +157,6 @@ def run(config, duration, output):
         print(f'诊断记录：{destination.resolve()}', flush=True)
     # Receipt and envelope checks are not complete DDS/hardware acceptance.
     geometry_received = all(report['topics'][robot[key]]['received'] > 0
-                            for key in ('odom_topic', 'lidar_topic'))
+                            for key in ('odom_topic', 'lidar_topic', 'raw_lidar_topic', 'imu_topic') if robot.get(key))
     samples_valid = not any(s.get('sample_error_count', 0) for s in report['topics'].values())
     return 0 if geometry_received and samples_valid else 2

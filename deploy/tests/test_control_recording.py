@@ -69,7 +69,7 @@ def test_topic_profile_uses_configured_inputs_and_both_remote_streams():
     assert topics['/api/obstacles_avoid/request'][1] == 0.
 
 
-@pytest.mark.parametrize('interrupt,missing', [(False, None), (True, None), (False, '/utlidar/robot_odom'),
+@pytest.mark.parametrize('interrupt,missing', [(False, None), (True, None), (False, '/bot1/lidar_slam/odom'),
                                               (False, '/wirelesscontroller_unprocessed')])
 def test_standalone_capture_only_subscribes_and_closes_with_honest_summary(tmp_path, monkeypatch, interrupt, missing):
     from deploy.recording import control
@@ -107,7 +107,7 @@ def test_standalone_capture_only_subscribes_and_closes_with_honest_summary(tmp_p
     code = record_control(load(), tmp_path, duration=3.)
     directory = next(tmp_path.iterdir())
     summary = json.loads((directory/'control_summary.json').read_text())
-    required_missing = missing == '/utlidar/robot_odom'
+    required_missing = missing == '/bot1/lidar_slam/odom'
     assert code == (2 if required_missing else 0)
     assert summary['finished_cleanly'] and summary['error'] is None
     assert summary['transport_completeness_verified'] is False

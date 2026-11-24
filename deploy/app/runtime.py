@@ -184,6 +184,12 @@ def run_live(args, config):
             print('正在采样传感器时间参照（约 3 秒）；不修改 Orin 系统时间。', flush=True)
             sensors = RosSensors(robot, session.rgb if args.camera == 'ros' else None,
                                  topic if args.camera == 'ros' else None)
+            if robot.get('sensor_profile') == 'mid360s_lio':
+                robot = sensors.config
+                reference = ExperimentFrame(robot['ground_z'])
+                session.event('lio_observation_reference', pose_frame=robot['base_frame'],
+                              ground_z=robot['ground_z'], lidar_origin_offset=robot['lidar_origin_offset_base_m'])
+                print(f"MID-360S 位姿参考点 {robot['base_frame']}，本次地面 Z={robot['ground_z']} m", flush=True)
             timebase = getattr(sensors, 'timebase', None)
             if timebase is not None:
                 session.event('time_reference_initialized', **timebase.metadata)
