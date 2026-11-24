@@ -116,7 +116,7 @@
   "pending_adaptation_assets": [],
   "validated_simulation_baselines": {
     "case_handheld": "/data20t/embodied/zkj/inter-nav-results/g2-wrist-symmetric-20261124/realpose_trials/symmetric_preparation_plans/case_handheld/candidate0_repeat2",
-    "basket_rectangular": "/data20t/embodied/zkj/inter-nav-results/g2-symmetric-repair-20261124/realpose_trials/repair_v13/basket_rectangular/candidate0_repeat1",
+    "basket_rectangular": "/data20t/embodied/zkj/inter-nav-results/g2-basket-posture-20261124/realpose_trials/mirror_right/basket_rectangular/candidate0_repeat1",
     "basket_woven": "/data20t/embodied/zkj/inter-nav-results/g2-wrist-symmetric-20261124/realpose_trials/realpose_plans/basket_woven/candidate0_repeat1",
     "bin_lidded": "/data20t/embodied/zkj/inter-nav-results/g2-wrist-symmetric-20261124/realpose_trials/realpose_plans/bin_lidded/candidate0_repeat1",
     "bin_pedal": "/data20t/embodied/zkj/inter-nav-results/g2-wrist-symmetric-20261124/realpose_trials/realpose_plans/bin_pedal/candidate0_repeat1",
@@ -130,20 +130,20 @@
   },
   "validation_scope": "12 nominal low-home lifts verified with symmetric wrist; only case_handheld includes full standby preparation physics. Same fixed body/head and object centers; basket yaw90 changed to0. No new240 collection or randomized robustness claim.",
   "previous_config_archive": "baseline_configs/ground_lift_training_config.json",
-  "source_iteration": "iterations/20261124_symmetric_repair",
+  "source_iteration": "iterations/20261124_basket_mirror",
   "planning_excluded_assets": [],
   "per_asset_plan_directory_overrides": {
-    "basket_rectangular": "repair_final_plans",
+    "basket_rectangular": "basket_mirror_plans",
     "box_white": "repair_final_plans",
     "box_reinforced": "repair_final_plans",
     "table_side": "repair_final_plans"
   },
   "additional_acceptance": "Non-hand contact impulse <=0.001 Ns; sampled non-hand penetration <=1 mm; held visual mesh floor clearance >5 mm. Four loaded contacts: distal fingers for spread, inner/outer branches for pinch and under-support.",
-  "plan_resolution": "Bootstrap repair_workspace.py. Four repaired assets use repair_final_plans and archived per-asset realpose harnesses; other entries retain symmetric-wrist baseline.",
+  "plan_resolution": "Bootstrap basket_mirror_workspace.py; basket uses basket_mirror_plans; other11 entries preserve previous validated controllers and plans.",
   "controller_scope": "Per-asset archived baseline including controller gains and solver iterations; physical geometry/material/actuator caps recorded in protocol; all start from identical full q_start.",
   "latest_baseline_verified_repeat_counts": {
     "case_handheld": 1,
-    "basket_rectangular": 2,
+    "basket_rectangular": 1,
     "basket_woven": 1,
     "bin_lidded": 1,
     "bin_pedal": 1,
@@ -380,5 +380,5 @@
     "stool_wood_four_leg": -0.02,
     "bin_pedal": 0.0
   },
-  "validation_report": "iterations/20261124_symmetric_repair/results/current_twelve.json"
+  "validation_report": "iterations/20261124_basket_mirror/results/current_twelve.json"
 }

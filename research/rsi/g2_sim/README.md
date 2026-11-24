@@ -1,3 +1,7 @@
+<!-- basket-mirror-20261124 -->
+[长方篮镜像夹持更新](iterations/20261124_basket_mirror/README.md)：使用basket_mirror_workspace.py重建；其余11类保留上一轮入口。
+<!-- /basket-mirror-20261124 -->
+
 <!-- symmetric-repair-20261124 -->
 [剩余4类修复与当前12/12名义初态结果](iterations/20261124_symmetric_repair/README.md)。对称初姿保持不变；使用该目录repair_workspace.py重建。旧240条冻结，尚未进行新初姿下随机扰动扩量。以下均为历史记录。
 <!-- /symmetric-repair-20261124 -->
