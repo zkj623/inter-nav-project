@@ -1,0 +1,85 @@
+diff --git a/detr/models/detr_vae.py b/detr/models/detr_vae.py
+index bccfca7..94a1afc 100644
+--- a/detr/models/detr_vae.py
++++ b/detr/models/detr_vae.py
+@@ -49,16 +49,17 @@ class DETRVAE(nn.Module):
+         self.transformer = transformer
+         self.encoder = encoder
+         hidden_dim = transformer.d_model
++        self.task_embedding = nn.Embedding(12, hidden_dim)
+         self.action_head = nn.Linear(hidden_dim, state_dim)
+         self.is_pad_head = nn.Linear(hidden_dim, 1)
+         self.query_embed = nn.Embedding(num_queries, hidden_dim)
+         if backbones is not None:
+             self.input_proj = nn.Conv2d(backbones[0].num_channels, hidden_dim, kernel_size=1)
+             self.backbones = nn.ModuleList(backbones)
+-            self.input_proj_robot_state = nn.Linear(14, hidden_dim)
++            self.input_proj_robot_state = nn.Linear(state_dim, hidden_dim)
+         else:
+             # input_dim = 14 + 7 # robot_state + env_state
+-            self.input_proj_robot_state = nn.Linear(14, hidden_dim)
++            self.input_proj_robot_state = nn.Linear(state_dim, hidden_dim)
+             self.input_proj_env_state = nn.Linear(7, hidden_dim)
+             self.pos = torch.nn.Embedding(2, hidden_dim)
+             self.backbones = None
+@@ -66,8 +67,8 @@ class DETRVAE(nn.Module):
+         # encoder extra parameters
+         self.latent_dim = 32 # final size of latent z # TODO tune
+         self.cls_embed = nn.Embedding(1, hidden_dim) # extra cls token embedding
+-        self.encoder_action_proj = nn.Linear(14, hidden_dim) # project action to embedding
+-        self.encoder_joint_proj = nn.Linear(14, hidden_dim)  # project qpos to embedding
++        self.encoder_action_proj = nn.Linear(state_dim, hidden_dim) # project action to embedding
++        self.encoder_joint_proj = nn.Linear(state_dim, hidden_dim)  # project qpos to embedding
+         self.latent_proj = nn.Linear(hidden_dim, self.latent_dim*2) # project hidden state to latent std, var
+         self.register_buffer('pos_table', get_sinusoid_encoding_table(1+1+num_queries, hidden_dim)) # [CLS], qpos, a_seq
+ 
+@@ -75,7 +76,7 @@ class DETRVAE(nn.Module):
+         self.latent_out_proj = nn.Linear(self.latent_dim, hidden_dim) # project latent sample to embedding
+         self.additional_pos_embed = nn.Embedding(2, hidden_dim) # learned position embedding for proprio and latent
+ 
+-    def forward(self, qpos, image, env_state, actions=None, is_pad=None):
++    def forward(self, qpos, image, env_state, actions=None, is_pad=None, task_ids=None):
+         """
+         qpos: batch, qpos_dim
+         image: batch, num_cam, channel, height, width
+@@ -84,11 +85,12 @@ class DETRVAE(nn.Module):
+         """
+         is_training = actions is not None # train or val
+         bs, _ = qpos.shape
++        task = self.task_embedding(task_ids)
+         ### Obtain latent z from action sequence
+         if is_training:
+             # project action sequence to embedding dim, and concat with a CLS token
+             action_embed = self.encoder_action_proj(actions) # (bs, seq, hidden_dim)
+-            qpos_embed = self.encoder_joint_proj(qpos)  # (bs, hidden_dim)
++            qpos_embed = self.encoder_joint_proj(qpos) + task  # (bs, hidden_dim)
+             qpos_embed = torch.unsqueeze(qpos_embed, axis=1)  # (bs, 1, hidden_dim)
+             cls_embed = self.cls_embed.weight # (1, hidden_dim)
+             cls_embed = torch.unsqueeze(cls_embed, axis=0).repeat(bs, 1, 1) # (bs, 1, hidden_dim)
+@@ -124,7 +126,7 @@ class DETRVAE(nn.Module):
+                 all_cam_features.append(self.input_proj(features))
+                 all_cam_pos.append(pos)
+             # proprioception features
+-            proprio_input = self.input_proj_robot_state(qpos)
++            proprio_input = self.input_proj_robot_state(qpos) + task
+             # fold camera dimension into width dimension
+             src = torch.cat(all_cam_features, axis=3)
+             pos = torch.cat(all_cam_pos, axis=3)
+@@ -227,7 +229,7 @@ def build_encoder(args):
+ 
+ 
+ def build(args):
+-    state_dim = 14 # TODO hardcode
++    state_dim = 16 # G2: 7+7 arms and 2 grippers
+ 
+     # From state
+     # backbone = None # from state for now, no need for conv nets
+@@ -255,7 +257,7 @@ def build(args):
+     return model
+ 
+ def build_cnnmlp(args):
+-    state_dim = 14 # TODO hardcode
++    state_dim = 16 # G2: 7+7 arms and 2 grippers
+ 
+     # From state
+     # backbone = None # from state for now, no need for conv nets

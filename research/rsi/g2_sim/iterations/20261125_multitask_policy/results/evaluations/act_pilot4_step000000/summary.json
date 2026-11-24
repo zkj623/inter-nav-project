@@ -1,0 +1,71 @@
+{
+  "checkpoint": "/data20t/embodied/zkj/inter-nav-results/g2-policy-overnight-20261124/runs/act_pilot4/step_000000.pt",
+  "run": "act_pilot4_step000000",
+  "split": "training positions, closed-loop policy; no expert feedback",
+  "successes": 0,
+  "total": 2,
+  "results": [
+    {
+      "asset": "box_white",
+      "success": false,
+      "harness_success": false,
+      "failure": "JOINT_TRACKING_ERROR",
+      "rejections": null,
+      "lift_m": -3.725290298461914e-08,
+      "hold_contact_fraction": null,
+      "policy": {
+        "checkpoint": "/data20t/embodied/zkj/inter-nav-results/g2-policy-overnight-20261124/runs/act_pilot4/step_000000.pt",
+        "sha256": "93ba32af87f373a618a08976b67c4ab53d5022ff0343e0e3314a0f2dbfa473cc",
+        "step": 0,
+        "model": "ACT",
+        "chunk": 50,
+        "inputs": "head RGB,left wrist RGB,right wrist RGB,qpos16,task_id",
+        "expert_feedback": false,
+        "execute_steps": 10,
+        "clipped_values": 22,
+        "requested_values": 32,
+        "inference_calls": [
+          {
+            "frame": 0,
+            "wall_s": 0.5668823728337884
+          }
+        ],
+        "adapter_sha256": "b6bda120a0031fe4c43487dd898eb652e44ec21410cf27b5ad3116d964f8532f",
+        "control_scope": "Policy image/qpos/task inputs only; URDF position and velocity clipping; no expert targets, phase input, object-pose feedback or force balancing"
+      },
+      "trial": "/data20t/embodied/zkj/inter-nav-results/g2-act-threecam-20261124/policy_trials/act_pilot4_step000000/placements/p0001/box_white/candidate0_repeat1",
+      "video": "/data20t/embodied/zkj/inter-nav-results/g2-act-threecam-20261124/policy_trials/act_pilot4_step000000/placements/p0001/box_white/candidate0_repeat1/review.mp4"
+    },
+    {
+      "asset": "bin_lidded",
+      "success": false,
+      "harness_success": false,
+      "failure": "JOINT_TRACKING_ERROR",
+      "rejections": null,
+      "lift_m": 2.9802322387695312e-08,
+      "hold_contact_fraction": null,
+      "policy": {
+        "checkpoint": "/data20t/embodied/zkj/inter-nav-results/g2-policy-overnight-20261124/runs/act_pilot4/step_000000.pt",
+        "sha256": "93ba32af87f373a618a08976b67c4ab53d5022ff0343e0e3314a0f2dbfa473cc",
+        "step": 0,
+        "model": "ACT",
+        "chunk": 50,
+        "inputs": "head RGB,left wrist RGB,right wrist RGB,qpos16,task_id",
+        "expert_feedback": false,
+        "execute_steps": 10,
+        "clipped_values": 22,
+        "requested_values": 32,
+        "inference_calls": [
+          {
+            "frame": 0,
+            "wall_s": 0.030504442751407623
+          }
+        ],
+        "adapter_sha256": "b6bda120a0031fe4c43487dd898eb652e44ec21410cf27b5ad3116d964f8532f",
+        "control_scope": "Policy image/qpos/task inputs only; URDF position and velocity clipping; no expert targets, phase input, object-pose feedback or force balancing"
+      },
+      "trial": "/data20t/embodied/zkj/inter-nav-results/g2-act-threecam-20261124/policy_trials/act_pilot4_step000000/placements/p0001/bin_lidded/candidate0_repeat1",
+      "video": "/data20t/embodied/zkj/inter-nav-results/g2-act-threecam-20261124/policy_trials/act_pilot4_step000000/placements/p0001/bin_lidded/candidate0_repeat1/review.mp4"
+    }
+  ]
+}

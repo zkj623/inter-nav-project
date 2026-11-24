@@ -1,0 +1,239 @@
+{
+  "time": "2026-11-25T01:26:15.987070",
+  "data": {
+    "collection_state": {
+      "total": 49,
+      "per_asset": {
+        "box_reinforced": 1,
+        "box_white": 4,
+        "bin_round_pedal": 5,
+        "stool_wood_four_leg": 4,
+        "stool_rectangular": 5,
+        "bin_pedal": 5,
+        "table_side": 4,
+        "basket_woven": 5,
+        "basket_rectangular": 4,
+        "bin_lidded": 4,
+        "bin_round_lidded": 5,
+        "case_handheld": 3
+      }
+    },
+    "wide_collection_state": {
+      "total": 8,
+      "per_asset": {
+        "box_reinforced": 0,
+        "box_white": 0,
+        "bin_round_pedal": 1,
+        "stool_wood_four_leg": 0,
+        "stool_rectangular": 1,
+        "bin_pedal": 1,
+        "table_side": 1,
+        "basket_woven": 0,
+        "basket_rectangular": 1,
+        "bin_lidded": 2,
+        "bin_round_lidded": 0,
+        "case_handheld": 1
+      }
+    }
+  },
+  "training": {
+    "act_pilot4": {
+      "step": 15000,
+      "error": {
+        "step": 15000,
+        "split": "train_zero_latent",
+        "action_mae_rad": 0.01983003224727612
+      }
+    },
+    "act_pilot4_refine": {
+      "step": 10000,
+      "error": {
+        "step": 9500,
+        "split": "train_zero_latent",
+        "action_mae_rad": 0.0054402650842344125
+      }
+    },
+    "act_pilot4_robust": {
+      "step": 6125,
+      "error": {
+        "step": 6000,
+        "split": "train_zero_latent",
+        "action_mae_rad": 0.004979454333029532
+      }
+    },
+    "pi05_train.log": {
+      "last_checkpoint_step": 2750,
+      "last_lines": [
+        "",
+        ""
+      ]
+    }
+  },
+  "evaluations": [
+    {
+      "run": "act_pilot4_step015000_execute50",
+      "successes": 0,
+      "total": 1,
+      "results": [
+        {
+          "asset": "box_white",
+          "success": false,
+          "failure": "LIFT_HOLD_CRITERIA_NOT_MET",
+          "lift_m": 1.043081283569336e-07
+        }
+      ]
+    },
+    {
+      "run": "diagnostic_expert_command_replay",
+      "successes": 1,
+      "total": 1,
+      "results": [
+        {
+          "asset": "box_white",
+          "success": true,
+          "failure": null,
+          "lift_m": 0.16743437200784683
+        }
+      ]
+    },
+    {
+      "run": "act_pilot4_step008000",
+      "successes": 0,
+      "total": 2,
+      "results": [
+        {
+          "asset": "box_white",
+          "success": false,
+          "failure": "LIFT_HOLD_CRITERIA_NOT_MET",
+          "lift_m": 1.043081283569336e-07
+        },
+        {
+          "asset": "bin_lidded",
+          "success": false,
+          "failure": "JOINT_TRACKING_ERROR",
+          "lift_m": 8.940696716308594e-08
+        }
+      ]
+    },
+    {
+      "run": "act_pilot4_refine_step003000_execute50",
+      "successes": 0,
+      "total": 2,
+      "results": [
+        {
+          "asset": "box_white",
+          "success": false,
+          "failure": "NONHAND_OBJECT_CONTACT",
+          "lift_m": 0.004255287349224091
+        },
+        {
+          "asset": "bin_lidded",
+          "success": false,
+          "failure": "NONHAND_OBJECT_CONTACT",
+          "lift_m": 0.09832854568958282
+        }
+      ]
+    },
+    {
+      "run": "act_pilot4_step003000",
+      "successes": 0,
+      "total": 4,
+      "results": [
+        {
+          "asset": "box_white",
+          "success": false,
+          "failure": "JOINT_TRACKING_ERROR",
+          "lift_m": 1.4901161193847656e-08
+        },
+        {
+          "asset": "bin_lidded",
+          "success": false,
+          "failure": "JOINT_TRACKING_ERROR",
+          "lift_m": 8.940696716308594e-08
+        },
+        {
+          "asset": "bin_pedal",
+          "success": false,
+          "failure": "JOINT_TRACKING_ERROR",
+          "lift_m": 2.8014183044433594e-06
+        },
+        {
+          "asset": "basket_rectangular",
+          "success": false,
+          "failure": "JOINT_TRACKING_ERROR",
+          "lift_m": 0.0
+        }
+      ]
+    },
+    {
+      "run": "act_pilot4_step000000",
+      "successes": 0,
+      "total": 2,
+      "results": [
+        {
+          "asset": "box_white",
+          "success": false,
+          "failure": "JOINT_TRACKING_ERROR",
+          "lift_m": -3.725290298461914e-08
+        },
+        {
+          "asset": "bin_lidded",
+          "success": false,
+          "failure": "JOINT_TRACKING_ERROR",
+          "lift_m": 2.9802322387695312e-08
+        }
+      ]
+    },
+    {
+      "run": "act_pilot4_step001000",
+      "successes": 0,
+      "total": 4,
+      "results": [
+        {
+          "asset": "box_white",
+          "success": false,
+          "failure": "JOINT_TRACKING_ERROR",
+          "lift_m": -3.725290298461914e-08
+        },
+        {
+          "asset": "bin_lidded",
+          "success": false,
+          "failure": "JOINT_TRACKING_ERROR",
+          "lift_m": 2.9802322387695312e-08
+        },
+        {
+          "asset": "bin_pedal",
+          "success": false,
+          "failure": "JOINT_TRACKING_ERROR",
+          "lift_m": 2.7418136596679688e-06
+        },
+        {
+          "asset": "basket_rectangular",
+          "success": false,
+          "failure": "JOINT_TRACKING_ERROR",
+          "lift_m": -3.725290298461914e-08
+        }
+      ]
+    }
+  ],
+  "live": [
+    {
+      "pid": 747534,
+      "run": "act_pilot4_refine_step003000",
+      "asset": "box_white",
+      "t": 55.00833333333333,
+      "phase": "policy",
+      "max_tracking_error_rad": 0.020317997800217924,
+      "lift_m": 0.0002302303910255432
+    },
+    {
+      "pid": 750993,
+      "run": "act_pilot4_robust_step004000",
+      "asset": "box_white",
+      "t": 31.008333333333333,
+      "phase": "policy",
+      "max_tracking_error_rad": 0.01072560623917318,
+      "lift_m": 0.008108824491500854
+    }
+  ]
+}

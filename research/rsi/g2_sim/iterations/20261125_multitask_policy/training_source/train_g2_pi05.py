@@ -1,0 +1,41 @@
+"""Fine-tune official pi05 with LoRA on accepted G2 observations and actions."""
+from pathlib import Path
+import argparse,sys,json,time,dataclasses
+import h5py,numpy as np
+W=Path(__file__).resolve().parent;P=W/'vendor/openpi';sys.path[:0]=[str(P),str(P/'src')]
+import jax
+import flax.nnx as nnx
+from openpi.models import pi0_config,model,tokenizer
+from openpi.training import config,optimizer,weight_loaders
+from openpi.shared import nnx_utils,normalize
+from scripts import train
+p=argparse.ArgumentParser();p.add_argument('--dataset',default='pilot4');p.add_argument('--steps',type=int,default=5000);p.add_argument('--batch',type=int,default=1);p.add_argument('--chunk',type=int,default=50);p.add_argument('--run',default='pilot4');a=p.parse_args()
+D=W/'datasets'/a.dataset
+while not (D/'manifest.json').exists() or not (W/'weights/pi05_base/DOWNLOAD_COMPLETE').exists():time.sleep(15)
+rows=[r for r in json.loads((D/'manifest.json').read_text()) if r['split']=='train'];stats=json.loads((D/'stats.json').read_text());tok=tokenizer.PaligemmaTokenizer(200)
+def bounds(key):
+ low=np.array(stats[key+'_q01'],np.float32);high=np.maximum(np.array(stats[key+'_q99'],np.float32),low+.02);return low,high
+ql,qh=bounds('qpos');al,ah=bounds('action')
+norm_stats={key:normalize.NormStats(mean=np.pad(np.array(stats[src+'_mean']), (0,16)),std=np.pad(np.array(stats[src+'_std']),(0,16),constant_values=1),q01=np.pad(lo,(0,16),constant_values=-1),q99=np.pad(hi,(0,16),constant_values=1)) for key,src,lo,hi in [('state','qpos',ql,qh),('actions','action',al,ah)]}
+class Loader:
+ def __init__(self,sharding):self.sharding=sharding;self.rng=np.random.default_rng(42);self.handles={}
+ def data_config(self):return config.DataConfig(asset_id='g2',norm_stats=norm_stats,use_quantile_norm=True)
+ def __iter__(self):
+  while True:
+   images={k:[] for k in model.IMAGE_KEYS};states=[];tokens=[];masks=[];actions=[]
+   for _ in range(a.batch):
+    row=rows[int(self.rng.integers(len(rows)))];path=row['cache']
+    if path not in self.handles:self.handles[path]=h5py.File(path,'r')
+    f=self.handles[path];n=len(f['action']);t=int(self.rng.integers(n));q=np.pad((f['qpos'][t]-ql)/(qh-ql)*2-1,(0,16)).astype(np.float32)
+    text='Lift the '+row['asset'].replace('_',' ')+' with both arms and hold it above the floor.'
+    token,mask=tok.tokenize(text,np.clip(q,-1,1));tokens.append(token.astype(np.int32));masks.append(mask);states.append(q)
+    action=f['action'][t:min(n,t+a.chunk)];action=np.pad(action,((0,a.chunk-len(action)),(0,0)),mode='edge');action=(action-al)/(ah-al)*2-1;actions.append(np.pad(action,((0,0),(0,16))).astype(np.float32))
+    for key,name in zip(model.IMAGE_KEYS,stats['camera_names']):images[key].append(f[name][t].astype(np.float32)/127.5-1.)
+   obs=model.Observation(images={k:np.stack(v) for k,v in images.items()},image_masks={k:np.ones(a.batch,bool) for k in images},state=np.stack(states),tokenized_prompt=np.stack(tokens),tokenized_prompt_mask=np.stack(masks))
+   yield jax.tree.map(lambda x:jax.device_put(x,self.sharding),(obs,np.stack(actions)))
+mc=pi0_config.Pi0Config(pi05=True,action_horizon=a.chunk,paligemma_variant='gemma_2b_lora',action_expert_variant='gemma_300m_lora')
+cfg=config.TrainConfig(name='g2_pi05_lora',exp_name=a.run,model=mc,weight_loader=weight_loaders.CheckpointWeightLoader(str(W/'weights/pi05_base/params')),freeze_filter=nnx.Any(mc.get_freeze_filter(),nnx_utils.PathRegex('.*img.*')),batch_size=a.batch,num_train_steps=a.steps,ema_decay=None,lr_schedule=optimizer.CosineDecaySchedule(warmup_steps=100,peak_lr=1e-4,decay_steps=a.steps,decay_lr=1e-5),optimizer=optimizer.AdamW(clip_gradient_norm=1.),checkpoint_base_dir=str(W/'checkpoints'),assets_base_dir=str(W/'pi05_assets'),save_interval=1000,keep_period=1000,log_interval=10,wandb_enabled=False,resume=True)
+train._data_loader.create_data_loader=lambda configuration,sharding,shuffle:Loader(sharding)
+scope=dict(model='pi05 official pretrained base with LoRA on language and action expert; frozen visual backbone',dataset=str(D),assets=sorted(set(r['asset'] for r in rows)),episodes=len(rows),state_dim=16,padded_model_dim=32,action_semantics='absolute joint radians,20Hz',action_horizon=a.chunk,image_processing=stats['image_processing'],quantile_low_state=ql.tolist(),quantile_high_state=qh.tolist(),quantile_low_action=al.tolist(),quantile_high_action=ah.tolist(),training=dict(steps=a.steps,batch=a.batch,lr=1e-4),task_prompt='Lift the <asset name> with both arms and hold it above the floor.')
+(W/('pi05_'+a.run+'_scope.json')).write_text(json.dumps(scope,indent=2));print('PI05_TRAINING_START',json.dumps(scope),flush=True)
+train.main(cfg)
