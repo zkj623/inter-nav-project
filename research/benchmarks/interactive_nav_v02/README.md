@@ -8,6 +8,8 @@ This revision sets a **5 m minimum reference-route length for every task**, incl
 
 ## Genie2 pure-navigation adapter
 
+The current adapter restores the original `rsi-nav-v1` clearance-weighted Voronoi route engine and realizes its waypoints with checked Genie2 full-body SE(2) motion. S01-T10, S03-T09 and S07-T10 completed original-start retests. See the adapter README, latest validation summary and clearance comparison for scope and measurement definitions.
+
 [`g2_navigation/`](g2_navigation/) contains the current physical wheel-steering navigation adapter, exact RSI standby configuration and provenance, online mapping, startup recovery, optional review recording, and diagnostic tools. Follow its [README](g2_navigation/README.md) for runtime inputs and commands. Use the same authorized GRScenes, Genie2 model/object assets and an accessible rsi-nav-v1 source checkout; asset binaries are not included here.
 
 The 2026-11-22 original-start retests completed S03-T09 and S07-T10 with unchanged task poses and layouts. Actual paths were 6.791837 m and 4.872446 m, with final errors 0.474185 m and 0.477260 m. Success means goal arrival and stopped confirmation; contact diagnostics are reported separately. These two results do not establish a full-suite navigation or interaction success rate. S04 turn/translation switching remains unresolved. See [validation summary](g2_navigation/validation-summary.json) and the [test report](https://ocnprlp82ms4.feishu.cn/docx/ZZOEdcoxPoznxvxbjLHcILd1nde#doxcnhmIp9i1NAdoPzqqHw28Xub).

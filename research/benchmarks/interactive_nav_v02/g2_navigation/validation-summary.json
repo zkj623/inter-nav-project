@@ -1,140 +1,179 @@
 {
-  "historical_posture_hold_check": {
-    "posture_source": {
-      "field": "standby_joint_positions_rad",
-      "configured_joints": 32,
-      "config_sha256": "4e83522a4669ba7822251a4c57ed90d9d463365729250fc88a2bca7b110411f0",
-      "joint_values_modified": false,
-      "branch": "genie2-rsi",
-      "commit": "f6104fa832c3fcdcde2571c8a28317dafe590d20",
-      "path": "research/rsi/g2_sim/standby_preparation_config.json"
-    },
-    "standby_hold_passed": true,
-    "standby_hold_seconds": 5.0,
-    "configured_joints": 32,
-    "exact_initial_targets": true,
-    "maximum_joint_error_rad": 0.002321551976637304,
-    "self_contact_events": 0,
-    "non_support_force_points": 0,
-    "behavior_checks_passed": true,
-    "recorded_source_hashes_match_packaged_code": {
-      "run_g2_holonomic.py": true,
-      "g2_holonomic_navigation.py": true,
-      "g2_pose_planning.py": true,
-      "g2_online_map.py": true,
-      "g2_standby_pose.py": true,
-      "standby_preparation_config.json": true,
-      "restore_g2_visuals.py": true,
-      "g2_preview_materials.py": true
-    },
-    "navigation_episode_retested_with_new_posture": false,
-    "scope": "Exact default posture initialization and five-second free-base holding check; not a completed navigation episode."
+  "method": "Original RSI ConnectedVoronoiPathPlanner with .30m clearance-cost weight, .30m reference spacing, observed body-feasible-center roadmap and ordered full-body SE2 realization; measured-yaw initial attachment; unchanged physical controller and safety margins",
+  "original_rsi_commit": "aad62d7476583abeb75ea9404bcc4ca9d85a0806",
+  "original_rsi_modules_sha256": {
+    "go2_voronoi_navigation.py": "ae960b205812a5d429191af5db31e9f8e907571865eaef8168470f36c0ab47d8",
+    "semantic_voronoi.py": "38146096c7d1be4e9e8797712715dc50bfa909322b446a84fbebace2ec3213f5",
+    "route_progress.py": "c8cfb45b00964cf9237696830ef130552532f858b318fbbe06a145a6e5ab8d7e"
   },
-  "latest_pure_navigation_retest": {
-    "success_metric": "goal reached and stopped; contact audit retained separately as diagnostic",
-    "method_change": "Short straight observed-only startup recovery using union of actual robot collision-part projections. Normal SE2 navigation unchanged after recovery.",
-    "tasks_finished": 2,
-    "goals_reached_and_stopped": 2,
-    "tasks": [
-      {
-        "task": "S03-T09",
-        "goal_reached_and_stopped": true,
-        "reason": "goal_reached_and_stopped",
-        "goal_error_m": 0.4741846622453503,
-        "actual_path_m": 6.791837448401716,
-        "final_speed_m_s": 0.000718351686373353,
-        "final_angular_speed_rad_s": 0.0009627421386539936,
-        "contact_diagnostic_non_support_samples": 0,
-        "self_contact_diagnostic": true,
-        "stable_body": true,
-        "all_original_diagnostic_checks_passed": true,
-        "startup_recovery_events": [
-          {
-            "event": "started",
-            "time_s": 2.0,
-            "start_xy": [
-              2.275256395339966,
-              0.649740993976593
-            ],
-            "target_xy": [
-              2.186867360261005,
-              0.7381286541889224
-            ],
-            "heading_rad": 2.3562022676124927,
-            "distance_m": 0.12500000000000003,
-            "environment_input": "current same-tick range returns and observed map only"
-          },
-          {
-            "event": "finished",
-            "time_s": 4.5,
-            "position_xy": [
-              2.191829204559326,
-              0.7331258058547974
-            ],
-            "net_displacement_m": 0.11795390397310257
-          }
-        ],
-        "original_inputs_unchanged": {
-          "task.json": true,
-          "robot.usdc": true,
-          "scene.usda": true,
-          "pose.json": true,
-          "standby_preparation_config.json": true
-        },
-        "source_hashes_match": true,
-        "simulation_seconds": 84.6,
-        "error": null
+  "tasks_finished": 3,
+  "tasks_reached_and_stopped": 3,
+  "tasks": [
+    {
+      "task": "S01-T10",
+      "success": true,
+      "reason": "goal_reached_and_stopped",
+      "goal_error_m": 0.47276414429839075,
+      "actual_path_m": 5.663886680748591,
+      "non_support_contact_samples": 0,
+      "all_physical_diagnostic_checks_passed": true,
+      "source_hashes_match_frozen_code": true,
+      "original_task_scene_robot_pose_bytes_unchanged": true,
+      "actual_route_engines": {
+        "rsi_connected_clearance_weighted_voronoi": 3
       },
-      {
-        "task": "S07-T10",
-        "goal_reached_and_stopped": true,
-        "reason": "goal_reached_and_stopped",
-        "goal_error_m": 0.4772601494421423,
-        "actual_path_m": 4.8724456841284685,
-        "final_speed_m_s": 0.0006805018056184053,
-        "final_angular_speed_rad_s": 0.0036130105145275593,
-        "contact_diagnostic_non_support_samples": 0,
-        "self_contact_diagnostic": true,
-        "stable_body": true,
-        "all_original_diagnostic_checks_passed": true,
-        "startup_recovery_events": [
-          {
-            "event": "started",
-            "time_s": 2.0,
-            "start_xy": [
-              3.1502580642700195,
-              -1.3997433185577393
-            ],
-            "target_xy": [
-              3.0795479003890374,
-              -1.4704545109103269
-            ],
-            "heading_rad": -2.356187217799882,
-            "distance_m": 0.10000000000000002,
-            "environment_input": "current same-tick range returns and observed map only"
-          },
-          {
-            "event": "finished",
-            "time_s": 4.1,
-            "position_xy": [
-              3.0842132568359375,
-              -1.4657647609710693
-            ],
-            "net_displacement_m": 0.09338494390249252
-          }
-        ],
-        "original_inputs_unchanged": {
-          "task.json": true,
-          "robot.usdc": true,
-          "scene.usda": true,
-          "pose.json": true,
-          "standby_preparation_config.json": true
+      "ordered_voronoi_pose_plans": 3,
+      "source_hashes": {
+        "run_g2_holonomic.py": "53ce5b76999f1e7e60852cd95922fcc3608052cdcb3c50ec48dfe11983cf1d95",
+        "g2_holonomic_navigation.py": "3af5caf7d39c47b25cf82f4de2962a90ea6cd669cd9fc7e92b6bbf9b7384e799",
+        "g2_pose_planning.py": "c1b7617fd85aae6467bbc13d0c13b7bee1cd54221913c20056f3a8eafcb470cc",
+        "g2_online_map.py": "78064f4fd33008f91c6c7f00b5a985be9dd4f62f2a53d857330c413684c089ad",
+        "g2_standby_pose.py": "466ca2ac82811bca5a2246b89770d0a4659b352012354f8c1a862f5de2636448",
+        "standby_preparation_config.json": "4e83522a4669ba7822251a4c57ed90d9d463365729250fc88a2bca7b110411f0",
+        "restore_g2_visuals.py": "91d9754c7849375ff0a09cdc33374a19fa169d6cd1e4110795e082b9d4153aca",
+        "g2_preview_materials.py": "b93d307bdb6233e58c8de8baa95626bc6638e54815c73119aa383bd6d56aa622",
+        "g2_start_recovery.py": "b30262e1b13a584a7f9e21c5255c7fbb27c69407fc5668c0b7649d47de26d47f",
+        "g2_voronoi_guidance.py": "1353eee5dbfe1d5f661a28321528c20ef978b58a4cc46cc3c00cabdf6ef4b34a"
+      },
+      "motion_audit": {
+        "total_sampled_path_length_m": 5.663886680748591,
+        "low_speed_distance_m": 0.03531951746171355,
+        "moving_distance_m": 5.6285671632868794,
+        "actual_moving_distance_by_direction_m": {
+          "forward": 5.626627029609049,
+          "lateral": 0.0,
+          "reverse": 0.0,
+          "other": 0.0019401336778311266
         },
-        "source_hashes_match": true,
-        "simulation_seconds": 52.1,
-        "error": null
-      }
-    ]
-  },
-  "scope": "Two original-start tasks after observed-only startup recovery; not a full-suite retest. Original seven frozen results remain separate."
+        "forward_fraction_of_total_path": 0.9934215401473009,
+        "lateral_fraction_of_total_path": 0.0,
+        "forward_distance_fraction": 0.9996553059381639,
+        "lateral_distance_fraction": 0.0,
+        "total_absolute_yaw_change_deg": 270.40868301845455,
+        "stationary_yaw_change_deg": 253.5179320517048,
+        "motion_mode_samples": {
+          "wait": 20,
+          "lateral_escape": 1,
+          "reverse_escape": 10,
+          "forward": 450,
+          "turn_in_place": 290,
+          "goal_braking": 10
+        },
+        "definition": "Classify measured displacement against midpoint measured body yaw when either endpoint linear speed exceeds 0.015 m/s. Forward is within 30 degrees; lateral is 60-120 degrees; reverse is more than 120 degrees. Fractions of total path keep low-speed displacement in the denominator. Stationary turns have both endpoint speeds below 0.03 m/s."
+      },
+      "error": null
+    },
+    {
+      "task": "S03-T09",
+      "success": true,
+      "reason": "goal_reached_and_stopped",
+      "goal_error_m": 0.4754741470879962,
+      "actual_path_m": 6.811978705044298,
+      "non_support_contact_samples": 0,
+      "all_physical_diagnostic_checks_passed": true,
+      "source_hashes_match_frozen_code": true,
+      "original_task_scene_robot_pose_bytes_unchanged": true,
+      "actual_route_engines": {
+        "rsi_connected_clearance_weighted_voronoi": 5
+      },
+      "ordered_voronoi_pose_plans": 5,
+      "source_hashes": {
+        "run_g2_holonomic.py": "53ce5b76999f1e7e60852cd95922fcc3608052cdcb3c50ec48dfe11983cf1d95",
+        "g2_holonomic_navigation.py": "3af5caf7d39c47b25cf82f4de2962a90ea6cd669cd9fc7e92b6bbf9b7384e799",
+        "g2_pose_planning.py": "c1b7617fd85aae6467bbc13d0c13b7bee1cd54221913c20056f3a8eafcb470cc",
+        "g2_online_map.py": "78064f4fd33008f91c6c7f00b5a985be9dd4f62f2a53d857330c413684c089ad",
+        "g2_standby_pose.py": "466ca2ac82811bca5a2246b89770d0a4659b352012354f8c1a862f5de2636448",
+        "standby_preparation_config.json": "4e83522a4669ba7822251a4c57ed90d9d463365729250fc88a2bca7b110411f0",
+        "restore_g2_visuals.py": "91d9754c7849375ff0a09cdc33374a19fa169d6cd1e4110795e082b9d4153aca",
+        "g2_preview_materials.py": "b93d307bdb6233e58c8de8baa95626bc6638e54815c73119aa383bd6d56aa622",
+        "g2_start_recovery.py": "b30262e1b13a584a7f9e21c5255c7fbb27c69407fc5668c0b7649d47de26d47f",
+        "g2_voronoi_guidance.py": "1353eee5dbfe1d5f661a28321528c20ef978b58a4cc46cc3c00cabdf6ef4b34a"
+      },
+      "motion_audit": {
+        "total_sampled_path_length_m": 6.811978705044298,
+        "low_speed_distance_m": 0.05084677959132314,
+        "moving_distance_m": 6.761131925452981,
+        "actual_moving_distance_by_direction_m": {
+          "forward": 6.760460469968047,
+          "lateral": 0.0,
+          "reverse": 0.0006714554849339091,
+          "other": 0.0
+        },
+        "forward_fraction_of_total_path": 0.992437111549086,
+        "lateral_fraction_of_total_path": 0.0,
+        "forward_distance_fraction": 0.99990068889465,
+        "lateral_distance_fraction": 0.0,
+        "total_absolute_yaw_change_deg": 360.1283218988668,
+        "stationary_yaw_change_deg": 335.6359316961331,
+        "motion_mode_samples": {
+          "wait": 20,
+          "startup_recovery_forward": 25,
+          "startup_recovery_brake": 1,
+          "forward": 549,
+          "turn_in_place": 392,
+          "align_rotation_center": 9,
+          "reverse_escape": 5,
+          "goal_braking": 10
+        },
+        "definition": "Classify measured displacement against midpoint measured body yaw when either endpoint linear speed exceeds 0.015 m/s. Forward is within 30 degrees; lateral is 60-120 degrees; reverse is more than 120 degrees. Fractions of total path keep low-speed displacement in the denominator. Stationary turns have both endpoint speeds below 0.03 m/s."
+      },
+      "error": null
+    },
+    {
+      "task": "S07-T10",
+      "success": true,
+      "reason": "goal_reached_and_stopped",
+      "goal_error_m": 0.4757482253460796,
+      "actual_path_m": 6.559983529148394,
+      "non_support_contact_samples": 0,
+      "all_physical_diagnostic_checks_passed": true,
+      "source_hashes_match_frozen_code": true,
+      "original_task_scene_robot_pose_bytes_unchanged": true,
+      "actual_route_engines": {
+        "rsi_connected_clearance_weighted_voronoi": 4
+      },
+      "ordered_voronoi_pose_plans": 4,
+      "source_hashes": {
+        "run_g2_holonomic.py": "53ce5b76999f1e7e60852cd95922fcc3608052cdcb3c50ec48dfe11983cf1d95",
+        "g2_holonomic_navigation.py": "3af5caf7d39c47b25cf82f4de2962a90ea6cd669cd9fc7e92b6bbf9b7384e799",
+        "g2_pose_planning.py": "c1b7617fd85aae6467bbc13d0c13b7bee1cd54221913c20056f3a8eafcb470cc",
+        "g2_online_map.py": "78064f4fd33008f91c6c7f00b5a985be9dd4f62f2a53d857330c413684c089ad",
+        "g2_standby_pose.py": "466ca2ac82811bca5a2246b89770d0a4659b352012354f8c1a862f5de2636448",
+        "standby_preparation_config.json": "4e83522a4669ba7822251a4c57ed90d9d463365729250fc88a2bca7b110411f0",
+        "restore_g2_visuals.py": "91d9754c7849375ff0a09cdc33374a19fa169d6cd1e4110795e082b9d4153aca",
+        "g2_preview_materials.py": "b93d307bdb6233e58c8de8baa95626bc6638e54815c73119aa383bd6d56aa622",
+        "g2_start_recovery.py": "b30262e1b13a584a7f9e21c5255c7fbb27c69407fc5668c0b7649d47de26d47f",
+        "g2_voronoi_guidance.py": "1353eee5dbfe1d5f661a28321528c20ef978b58a4cc46cc3c00cabdf6ef4b34a"
+      },
+      "motion_audit": {
+        "total_sampled_path_length_m": 6.559983529148394,
+        "low_speed_distance_m": 0.09467622458181814,
+        "moving_distance_m": 6.465307304566563,
+        "actual_moving_distance_by_direction_m": {
+          "forward": 6.418168876566827,
+          "lateral": 0.0,
+          "reverse": 0.0,
+          "other": 0.047138427999736776
+        },
+        "forward_fraction_of_total_path": 0.9783818584373828,
+        "lateral_fraction_of_total_path": 0.0,
+        "forward_distance_fraction": 0.9927090197295894,
+        "lateral_distance_fraction": 0.0,
+        "total_absolute_yaw_change_deg": 803.0968522852285,
+        "stationary_yaw_change_deg": 766.9449920784714,
+        "motion_mode_samples": {
+          "wait": 21,
+          "startup_recovery_forward": 21,
+          "startup_recovery_brake": 1,
+          "reverse_escape": 8,
+          "align_rotation_center": 3,
+          "forward": 579,
+          "turn_in_place": 860,
+          "goal_braking": 10
+        },
+        "definition": "Classify measured displacement against midpoint measured body yaw when either endpoint linear speed exceeds 0.015 m/s. Forward is within 30 degrees; lateral is 60-120 degrees; reverse is more than 120 degrees. Fractions of total path keep low-speed displacement in the denominator. Stationary turns have both endpoint speeds below 0.03 m/s."
+      },
+      "error": null
+    }
+  ]
 }

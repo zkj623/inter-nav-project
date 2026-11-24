@@ -1,6 +1,25 @@
-# Genie2 forward-preferred navigation
+# Genie2 navigation with RSI Voronoi guidance
 
-This directory implements observed-only, noninteractive navigation for Genie2 CRS/Omnipicker. Its default posture is the exact `standby_joint_positions_rad` field in `genie2-rsi:research/rsi/g2_sim/standby_preparation_config.json`, bundled here with source commit and SHA-256 provenance. The adapter targets the minimum-5m GRScenes benchmark. Latest complete original-start retests cover **S03-T09** and **S07-T10**. See the current validation summary for the checks actually completed with this posture.
+This directory implements observed-only, noninteractive navigation for Genie2 CRS/Omnipicker. Its default posture is the exact `standby_joint_positions_rad` field in `genie2-rsi:research/rsi/g2_sim/standby_preparation_config.json`, bundled here with source commit and SHA-256 provenance. The adapter targets the minimum-5m GRScenes benchmark. Latest Voronoi-guided original-start retests cover **S01-T10**, **S03-T09**, and **S07-T10**. See the current validation summary for the checks actually completed with this posture.
+
+## Current route architecture
+
+The runtime directly reuses `ConnectedVoronoiPathPlanner` (including its clearance-weighted skeleton search), `SemanticVoronoiGraph`, initial attachment trimming and the same-mask grid fallback from the `rsi-nav-v1` source checkout. Exact upstream commit/module hashes are in `voronoi-source-provenance.json`. `G2_ACCEPT_ROOT` must point to that checkout, not an arbitrary main-branch checkout.
+
+The roadmap comes only from online observed cells admitting at least one safe Genie2 heading. It already accounts for the full robot footprint, so the RSI occupancy adapter does not add a second circular robot-radius inflation. The original planner uses 0.30 m reference spacing and a 0.30 m clearance-cost weight. That weight is a cost coefficient, not a guaranteed 30 cm obstacle gap.
+
+Local weighted SE(2) search realizes the original reference waypoints in order (7.5 cm waypoint tolerance), retaining forward preference and all full-body translation/rotation checks. Its heuristic weight is 2; it does not claim shortest-path optimality. A temporary measured-yaw state and checked heading attachments avoid forcing a rounded heading at a tight replanning pose. Translations retain the 2.5 cm model margin, turns the 5 cm swept-body margin, and startup recovery its existing measured-point guard. Unknown cells remain blocked. `voronoi-guidance.json` records the actual route engine, any original grid fallback, reference waypoints and local realization; unused `OnlineGoalSelector` construction has been removed.
+
+Run the simulator-independent checks after setting `G2_ACCEPT_ROOT`:
+
+```bash
+PYTHONPATH="$G2_ACCEPT_ROOT" python check_forward_planning.py
+PYTHONPATH="$G2_ACCEPT_ROOT" python check_voronoi_guidance.py
+```
+
+The three complete task retests use unchanged task/scene/robot/posture inputs. Navigation success is goal arrival plus stopped confirmation; contact checks remain diagnostics. `clearance-comparison.json` compares both trajectories on their common observed occupied-grid union, using the actual robot collision-part XY projection. These 5 cm grid proxy statistics are not a true 3D clearance guarantee; interior distance-weighted statistics exclude the first 0.35 m traveled and approach within 0.75 m of the goal. Fixed tight start/end poses are retained. This is a three-task pure-navigation check, not a full 100-task or manipulation validation.
+
+Runtime clearance logging requires Shapely 2.x (`python -m pip install 'shapely>=2,<3'` in the Isaac Python environment). Original external assets and reproduction inputs remain as documented below.
 
 ## Method
 
@@ -19,7 +38,8 @@ This directory implements observed-only, noninteractive navigation for Genie2 CR
 |---|---|
 | `prepare_g2_runtime.py` | Prepare the configured RSI standby robot and task stage from existing model/scene assets. |
 | `run_g2_holonomic.py` | Physical execution, synchronous range simulation, logging and optional video. |
-| `g2_pose_planning.py` | Pose-lattice planning, swept rotations and observation poses. |
+| `g2_pose_planning.py` | Observed target selection and Voronoi-to-full-body pose planning. |
+| `g2_voronoi_guidance.py` | Original RSI Voronoi engine adapter, clearance costs, ordered SE(2) realization and measured-yaw attachment. |
 | `g2_holonomic_navigation.py` | Legacy fixed-heading navigator; this runner uses its telemetry container initialization only and never calls its control update. |
 | `g2_online_map.py` | G2-specific online evidence fusion. |
 | `g2_collision_footprint.json` | Measured native-collision projection. |

@@ -20,7 +20,7 @@ class PoseGoalPlanner:
  def cell(self,p):return tuple(np.clip(np.floor((np.asarray(p)-[self.limits[0][0],self.limits[1][0]])/self.res).astype(int)[::-1],0,599))
  def xy(self,r,c):return np.array([self.limits[0][0]+(c+.5)*self.res,self.limits[1][0]+(r+.5)*self.res])
  def footprint(self,a):return collision_mask(float(a),self.res)
- def plan(self,layers,p,yaw,goal,now):
+ def _choose_observed_target(self,layers,p,yaw,goal,now):
   free=(layers.observed | layers.robot_footprint)&~layers.local_occupied&~layers.global_occupied
   safe=[binary_erosion(free,structure=self.footprint(h*np.pi/8)) for h in range(16)]
   swept=[binary_erosion(free,structure=collision_mask(h*np.pi/8,self.res,.05)|collision_mask((h+.5)*np.pi/8,self.res,.05)|collision_mask((h+1)*np.pi/8,self.res,.05)) for h in range(16)]
@@ -65,6 +65,23 @@ class PoseGoalPlanner:
   if best_frontier is not None:
    self.status='observed_pose_frontier';self.route_kind='explore';return unpack(best_frontier)
   self.status='no_observed_pose_route';return []
+ def plan(self,layers,p,yaw,goal,now):
+  from g2_voronoi_guidance import RSIVoronoiGuidance,ordered_pose_route
+  from grutopia_extension.interactive_navigation.mapping import PlanningError
+  if not hasattr(self,'voronoi_guidance'):self.voronoi_guidance=RSIVoronoiGuidance(self.limits,self.res)
+  direct=self._choose_observed_target(layers,p,yaw,goal,now)
+  if not direct:return []
+  kind=self.route_kind;free=(layers.observed|layers.robot_footprint)&~layers.local_occupied&~layers.global_occupied
+  safe=np.asarray([binary_erosion(free,structure=self.footprint(h*np.pi/8)) for h in range(16)])
+  swept=np.asarray([binary_erosion(free,structure=collision_mask(h*np.pi/8,self.res,.05)|collision_mask((h+.5)*np.pi/8,self.res,.05)|collision_mask((h+1)*np.pi/8,self.res,.05)) for h in range(16)])
+  center_free=safe.any(axis=0);known=layers.observed|layers.robot_footprint;target=direct[-1][0];gr,gc=self.cell(goal)
+  if kind=='navigate' and center_free[gr,gc]:target=np.asarray(goal)
+  self._observed_count=int(layers.observed.sum())
+  try:reference,record=self.voronoi_guidance.reference(center_free,known,np.asarray(p),target)
+  except PlanningError as error:
+   self.status='voronoi_and_same_mask_grid_unavailable';self.guidance_records=getattr(self,'guidance_records',[])+[{'time_s':now,'engine':'unavailable','reason':str(error)}];return []
+  route,details=ordered_pose_route(self,safe,swept,center_free,p,yaw,reference,free);record.update(details);record.update(time_s=now,kind=kind,target_xy_m=target.tolist(),local_pose_route_xy_m=[xy.tolist() for xy,a in route]);self.guidance_records=getattr(self,'guidance_records',[])+[record];self.route_kind=kind;self.status=('observed_voronoi_pose_route' if kind=='navigate' else 'observed_voronoi_pose_frontier') if route else 'voronoi_reference_not_pose_feasible'
+  return route
  def command(self,layers,p,yaw,goal,now):
   if np.linalg.norm(p-goal)<.48:self.motion_mode='goal_braking';return np.zeros(3)
   if self.route and now-self.checked>.3:

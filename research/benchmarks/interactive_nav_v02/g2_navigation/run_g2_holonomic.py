@@ -8,7 +8,7 @@ os.environ['G2_FOOTPRINT_PATH']=str(OUT/'g2_collision_footprint.json')
 task=json.loads((OUT/'task.json').read_text());result={'task':task['id'],'success':False,'reference_path_supplied':False,'offline_grid_supplied':False,'base_pose_teleport_after_reset':False,'actuation':'physical steering and wheel joint drives','scope':'Genie2 observed-only holonomic SE2 navigation with synchronous simulated range sensing and acceptance-style recording'}
 from isaacsim import SimulationApp
 app=SimulationApp({'headless':True,'active_gpu':int(os.environ.get('G2_GPU','6')),'physics_gpu':int(os.environ.get('G2_GPU','6')),'multi_gpu':False})
-samples=[];events=[];writer=None;video_frames=0;streams={};pts=np.empty((0,3));visible_returns=np.empty((0,3))
+samples=[];events=[];clearance_samples=[];writer=None;video_frames=0;streams={};pts=np.empty((0,3));visible_returns=np.empty((0,3))
 try:
  import omni.usd,cv2
  from omni.isaac.sensor import Camera
@@ -25,7 +25,6 @@ try:
  from g2_holonomic_navigation import G2Navigator
  from g2_pose_planning import PoseGoalPlanner
  from g2_start_recovery import StartupRecovery
- from grutopia_extension.interactive_navigation.online_navigation_decision import OnlineGoalSelector
  from g2_kinematics import Kinematics
  from pxr import UsdGeom
  omni.usd.get_context().open_stage(str(OUT/'scene.usda'))
@@ -103,7 +102,7 @@ try:
  robot.get_articulation_controller().set_gains(kps=kp,kds=kd);robot._articulation_view.set_max_efforts(np.array([[0 if k.by_name[n]['mimic'] else k.by_name[n]['effort'] for n in names]]))
  # Bounds are a generic empty workspace, not a ground-truth occupancy prior.
  limits=task['map_limits'];res=.05;planner=BoxPushPlanner(np.ones((600,600),bool),limits,resolution=res,robot_radius=.36);config=MappingConfig(x_limits=tuple(limits[0]),y_limits=tuple(limits[1]),grid_resolution=res,robot_radius=.36,obstacle_height=(.035,1.8))
- layers=OnlineNavigationMap(planner,config,local_hz=10,global_hz=1);selector=OnlineGoalSelector();navigator=G2Navigator(limits,res,yaw);pose_planner=PoseGoalPlanner(limits,res);startup_recovery=StartupRecovery(OUT);goal=np.array(task['goal_position_m'][:2]);path=[];endpoint=None;kind='wait';settled=0;last_progress=0;best=float('inf');reason='watchdog';t0=time.time();physics_start=world.current_time
+ layers=OnlineNavigationMap(planner,config,local_hz=10,global_hz=1);navigator=G2Navigator(limits,res,yaw);pose_planner=PoseGoalPlanner(limits,res);startup_recovery=StartupRecovery(OUT);goal=np.array(task['goal_position_m'][:2]);path=[];endpoint=None;kind='wait';settled=0;last_progress=0;best=float('inf');reason='watchdog';t0=time.time();physics_start=world.current_time
  result['acceptance_reference_hashes']={n:hashlib.sha256((ACCEPT/'grutopia_extension/interactive_navigation'/n).read_bytes()).hexdigest() for n in ('online_navigation_map.py','online_navigation_decision.py','box_push_navigation.py','mapping.py')}
  result['sensor']='Synchronous PhysX scene-query range sensor; upper 180x7 plus four low sensors 90x5; range 5 m; each beam carries same-tick origin and hit; no scene geometry prior';result['g2_adaptations']=['forward-preferred SE2 action costs and turn-before-translate control','four wheel holonomic steering','tucked arms','full body footprint SE2 planning','upper plus low range sensing','observed goal region and stopped confirmation'];result['initial_map_observed_cells']=int(layers.observed.sum())
  def actuate(v,side,omega):
@@ -148,6 +147,17 @@ try:
    navigator.path=[xy for xy,a in pose_planner.route];navigator.kind=pose_planner.route_kind if pose_planner.route else 'wait';navigator.reason=pose_planner.status;navigator.target=pose_planner.route[-1][0] if pose_planner.route else None
    if pose_command is not None:
     command=pose_command;navigator.path=[xy for xy,a in pose_planner.route];navigator.kind=pose_planner.route_kind;navigator.reason=pose_planner.status;navigator.target=pose_planner.route[-1][0] if pose_planner.route else None
+   if step%120==0:(OUT/'voronoi-guidance.json').write_text(json.dumps(getattr(pose_planner,'guidance_records',[]),indent=2))
+   if step%120==0:
+    from shapely import wkb,points as geometry_points,distance as geometry_distance
+    if 'measured_body_projection' not in locals():measured_body_projection=wkb.loads((OUT/'recovery-footprint.wkb').read_bytes())
+    near=visible_returns[(visible_returns[:,2]>=.035)&(visible_returns[:,2]<=1.8)] if len(visible_returns) else np.empty((0,3))
+    near=near[np.linalg.norm(near[:,:2]-pos[:2],axis=1)<1.5]
+    if len(near):
+     delta=near[:,:2]-pos[:2];c,s=np.cos(yaw),np.sin(yaw);local=delta@np.array([[c,-s],[s,c]]);gap=float(np.min(geometry_distance(measured_body_projection,geometry_points(local))))
+    else:gap=None
+    clearance_samples.append({'t':now,'visible_obstacle_projection_gap_m':gap,'goal_error_m':distance,'motion_mode':pose_planner.motion_mode,'measurement':'nearest current visible in-band range return within 1.5m to actual collision-part XY union; not a full 3D physical-clearance guarantee'})
+    (OUT/'clearance-samples.json').write_text(json.dumps(clearance_samples,indent=2))
    path=[x.tolist() for x in navigator.path];kind=navigator.kind
    if step%120==0:
     events.append({'t':now,'kind':kind,'reason':navigator.reason,'path':path,'observed':int(layers.observed.sum())});print('NAV',round(now,1),kind,navigator.reason,'distance',round(distance,3),'pose',pos[:2].round(3).tolist(),'observed',int(layers.observed.sum()),'yaw',round(yaw,3),'target',None if navigator.target is None else navigator.target.round(3).tolist(),'command',np.asarray(command).round(3).tolist(),'motion',pose_planner.motion_mode,flush=True)
@@ -191,7 +201,8 @@ try:
  result.update(physics_elapsed_seconds=world.current_time-physics_start,reason=reason,final_distance_m=distance,simulation_seconds=step/120,wall_seconds=time.time()-t0,final_speed_m_s=speed,final_angular_speed_rad_s=angular,maximum_tilt_deg=max([tilt]+[x['tilt_deg'] for x in samples]),scan_count=layers.scan_count,observed_cells=int(layers.observed.sum()),actual_path_length_m=sum(np.linalg.norm(np.array(b['position'][:2])-a['position'][:2]) for a,b in zip(samples,samples[1:])))
  result['robot_environment_contact_events']=len(contacts)
  result['protocol']={'goal_tolerance_m':.5,'capture_radius_m':.48,'stopped_linear_m_s':.03,'stopped_angular_rad_s':.05,'hold_seconds':1.,'new_sensor_configuration':True,'ground_truth_scene_prior':False,'maximum_steer_effort_nm':15.,'maximum_wheel_effort_nm':8.}
- (OUT/'source-hashes.json').write_text(json.dumps({n:hashlib.sha256(Path(__file__).with_name(n).read_bytes()).hexdigest() for n in ('run_g2_holonomic.py','g2_holonomic_navigation.py','g2_pose_planning.py','g2_online_map.py','g2_standby_pose.py','standby_preparation_config.json','restore_g2_visuals.py','g2_preview_materials.py','g2_start_recovery.py')},indent=2))
+ (OUT/'source-hashes.json').write_text(json.dumps({n:hashlib.sha256(Path(__file__).with_name(n).read_bytes()).hexdigest() for n in ('run_g2_holonomic.py','g2_holonomic_navigation.py','g2_pose_planning.py','g2_online_map.py','g2_standby_pose.py','standby_preparation_config.json','restore_g2_visuals.py','g2_preview_materials.py','g2_start_recovery.py','g2_voronoi_guidance.py')},indent=2))
+ (OUT/'voronoi-guidance.json').write_text(json.dumps(getattr(pose_planner,'guidance_records',[]),indent=2))
  (OUT/'self-contacts.json').write_text(json.dumps(self_contacts,indent=2))
  (OUT/'contacts.json').write_text(json.dumps(contacts,indent=2))
  layers.save(OUT/'maps')

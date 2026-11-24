@@ -3,7 +3,7 @@ import json,math
 from types import SimpleNamespace
 from pathlib import Path
 import numpy as np
-from g2_pose_planning import PoseGoalPlanner
+from g2_pose_planning import PoseGoalPlanner,collision_mask
 
 def check(half_width):
  limits=[[-15,15],[-15,15]];yy,xx=np.indices((600,600));x=-15+(xx+.5)*.05;y=-15+(yy+.5)*.05
@@ -14,7 +14,11 @@ def check(half_width):
  forward=lateral=reverse=turn=0.
  for (p,a),(q,b) in zip(route,route[1:]):
   d=q-p;n=np.linalg.norm(d)
-  if n<1e-9:turn+=abs((b-a+math.pi)%(2*math.pi)-math.pi);continue
+  if n<1e-9:
+   angle=(b-a+math.pi)%(2*math.pi)-math.pi;turn+=abs(angle);r,c=planner.cell(p);offset=p-planner.xy(r,c);patch=(~occupied)[r-13:r+14,c-13:c+14]
+   for heading in np.linspace(a,a+angle,max(2,int(abs(angle)/(math.pi/64))+2)):
+    assert np.all(patch[collision_mask(float(heading),.05,.05,float(offset[0]),float(offset[1]))]),'Turn violated measured-center full-body sweep'
+   continue
   cosine=float(np.dot(d/n,[math.cos(a),math.sin(a)]))
   if cosine>math.cos(math.pi/6):forward+=n
   elif cosine<0:reverse+=n
@@ -22,7 +26,7 @@ def check(half_width):
  return dict(forward_m=forward,lateral_m=lateral,reverse_m=reverse,turn_rad=turn)
 open_room=check(2.5);corridor=check(.45)
 assert open_room['forward_m']>1.0 and open_room['lateral_m']<.1 and open_room['turn_rad']>1.,open_room
-assert corridor['lateral_m']+corridor['reverse_m']>1.0 and corridor['turn_rad']<.1,corridor
+assert corridor['lateral_m']+corridor['reverse_m']>1.0 and corridor['turn_rad']<math.pi/4,corridor
 layers=SimpleNamespace(observed=np.ones((600,600),bool),robot_footprint=np.zeros((600,600),bool),local_occupied=np.zeros((600,600),bool),global_occupied=np.zeros((600,600),bool))
 planner=PoseGoalPlanner([[-15,15],[-15,15]]);planner.route_kind='navigate';planner.route=[(np.array([x,0.]),0.) for x in (0.,.05,.10,.15,.20)]
 command=planner.command(layers,np.zeros(2),.033,np.array([2.,0.]),0.)
