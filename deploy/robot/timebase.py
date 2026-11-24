@@ -42,8 +42,26 @@ class SourceTimeBridge:
         return cls(source, after, uncertainty_ns=span)
 
     @classmethod
+    def from_mixed_samples(cls, samples, *, max_age_s):
+        # Use low-latency pose/IMU publishers to compare epochs. A deskewed
+        # cloud or SLAM output can arrive one scan later than its source time.
+        def receipt_offset(key):
+            offsets = [receipt - stamp for receipt, stamp in samples[key]]
+            if len(offsets) < 20 or max(offsets)-min(offsets) > 50_000_000:
+                raise ValueError(f'{key}: insufficient or unstable cross-clock startup samples')
+            return min(offsets)
+        offset = receipt_offset('cloud_odom') - receipt_offset('imu')
+        aligned = dict(samples)
+        for key in ('cloud_odom', 'lidar'):
+            aligned[key] = [(receipt, stamp + offset) for receipt, stamp in samples[key]]
+        bridge = cls.from_samples(aligned, max_age_s=max_age_s, clock_reference='imu')
+        bridge.unitree_to_lio_ns = offset
+        bridge._sample_metadata.update(unitree_to_lio_ns=offset, cross_clock_hardware_sync_verified=False)
+        return bridge
+
+    @classmethod
     def from_samples(cls, samples, *, max_age_s=.4, future_tolerance_s=.05,
-                     reserve_s=.05, min_duration_s=3., max_offset_spread_s=.05):
+                     reserve_s=.05, min_duration_s=3., max_offset_spread_s=.05, clock_reference='odom'):
         """Freeze one relative offset from {stream: [(receipt_ns, source_ns)]}.
 
         A fixed stream-wide delay is indistinguishable from a clock offset.
@@ -79,7 +97,7 @@ class SourceTimeBridge:
         duration_ns = odom[-1][0] - odom[0][0]
         if duration_ns < min_duration_s*1e9:
             raise ValueError('Clock bootstrap observation window is too short')
-        offsets = [received-source for received, source in odom]
+        offsets = [received-source for received, source in samples[clock_reference]]
         minimum = min(offsets)
         spread_ns = max(offsets)-minimum
         if spread_ns > max_offset_spread_s*1e9:

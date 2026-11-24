@@ -123,7 +123,12 @@ def test_packets_keep_raw_observations_and_count_evicted_frames(session):
     batch = session.batch(0, 0)
     assert batch['frame_gap'] == 2 and batch['event_gap'] == 2
     restored, scene = decode_packet(batch['frames'][-1]['packet'])
-    np.testing.assert_array_equal(restored.observation['sensors']['lidar']['pointcloud'], snapshot.observation['sensors']['lidar']['pointcloud'])
+    raw, _ = decode_packet(batch['observations'][-1]['packet'])
+    input_points = snapshot.observation['sensors']['lidar']['pointcloud']
+    np.testing.assert_array_equal(raw.observation['sensors']['lidar']['pointcloud'], input_points)
+    inside = tasks.engine.world_boundary.point_mask(input_points)
+    assert inside.any() and not inside.all()
+    np.testing.assert_array_equal(restored.observation['sensors']['lidar']['pointcloud'], input_points[inside])
     assert restored.geometry_calibrated and scene['ready']
     # Record clients get the exact numeric cloud once; browser clients still
     # receive the display points. Removing duplicate JSON must lose no data.
@@ -342,9 +347,10 @@ def test_session_cloud_keeps_display_history_independent_of_live_occupancy(sessi
     tasks = Tasks(load()['navigation'])
     source = DemoSensors(session)
     old = [1.05, .05, .25]
-    unseen = [1.05, 1.05, .25]
+    unseen = [1.05, -.95, .25]
+    outside = [1.05, 1.05, .25]
     farther = [3.05, .05, .25]
-    for i, points in enumerate(([old, unseen], [farther], [farther], [farther])):
+    for i, points in enumerate(([old, unseen, outside], [farther], [farther], [farther])):
         snapshot = source.latest()
         snapshot.observation['sensors']['lidar'].update(
             position=np.array([.05, .05, .55]), pointcloud=np.asarray(points), physics_step=i)
@@ -358,6 +364,7 @@ def test_session_cloud_keeps_display_history_independent_of_live_occupancy(sessi
     assert session.display()['cloud']['role'] == 'display_history_only'
     for kept in (unseen, farther):
         assert np.any(np.linalg.norm(displayed-kept, axis=1) < .01)
+    assert not np.any(np.linalg.norm(displayed-outside, axis=1) < .01)
     # Re-reading from another viewer does not mutate or reset the shared map.
     np.testing.assert_array_equal(session.display()['cloud']['points'], displayed)
 
@@ -492,7 +499,7 @@ def test_moving_scans_keep_history_in_world_frame_and_session(session):
         assert np.min(np.linalg.norm(displayed-point, axis=1)) < .01
     assert session.display()['cloud']['count'] == 4
     # A new view capture and switching tasks both keep the same accumulated map.
-    tasks.start('navigate', (6., 0., .3), snapshot.captured_at)
+    tasks.start('navigate', (3.5, 0., .3), snapshot.captured_at)
     assert 'points' not in SceneCapture().capture(snapshot, tasks)
     np.testing.assert_allclose(session.display()['cloud']['points'], displayed)
 

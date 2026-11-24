@@ -243,7 +243,8 @@ class RegisteredBoxEvidence:
 class RegisteredBoxPerception:
     source = 'registered_box_lidar'
 
-    def __init__(self, config, clock=time.monotonic, synchronous=False):
+    def __init__(self, config, clock=time.monotonic, synchronous=False, world_boundary=None):
+        self.world_boundary = world_boundary
         self.config = validate_tracking_config(config)
         self.clock = clock
         self.synchronous = bool(synchronous)
@@ -334,7 +335,10 @@ class RegisteredBoxPerception:
                     if not any(len(set(fit.indices).intersection(other.indices)) > .25*min(len(fit.indices), len(other.indices))
                                for other in candidates):
                         candidates.append(fit)
-            result[object_id] = tuple(candidates)
+            # A crop at the field edge cannot supply evidence of a real box edge.
+            result[object_id] = tuple(f for f in candidates if self.world_boundary is None
+                                      or self.world_boundary.contains_box(f.center, key, f.yaw_rad,
+                                                                          self.config['isolation_margin_m']))
         return result
 
     def _work(self):

@@ -1,11 +1,16 @@
 # Read-only sensor capture. Best-effort subscriptions accept both reliable and
 # best-effort publishers; recorded message counts do not prove lossless delivery.
-/livox/lidar:
+/utlidar/cloud:
   reliability: best_effort
   durability: volatile
   history: keep_last
   depth: 100
-/bot1/cloud_registered_sparse:
+/utlidar/cloud_deskewed:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 100
+/utlidar/robot_odom:
   reliability: best_effort
   durability: volatile
   history: keep_last

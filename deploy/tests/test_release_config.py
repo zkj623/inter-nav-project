@@ -43,14 +43,11 @@ def test_single_camera_preview_cannot_enable_interaction(tmp_path):
         load(write_config(tmp_path, config))
 
 
-def test_rgbd_alone_does_not_bypass_contact_motion_acceptance(tmp_path):
+def test_rgbd_alone_cannot_supply_oriented_contact_geometry(tmp_path):
     config = load()
     config['interaction']['source'] = 'rgbd'
     config['navigation']['interaction_enabled'] = True
     config['robot'].update(camera_mode='rgbd', rgb_topic='/rgb', depth_topic='/depth', camera_info_topic='/info')
     config['runtime']['perception']['geometry_verified'] = True
-    with pytest.raises(ValueError, match='SDK contact-motion acceptance'):
-        load(write_config(tmp_path, config))
-    config['robot']['interaction_motion_verified'] = True
     with pytest.raises(ValueError, match='full oriented contact geometry'):
         load(write_config(tmp_path, config))

@@ -19,11 +19,12 @@ import time
 
 class LiveObservations:
     def __init__(self, sensors, reference, session, *, hz, max_age, perception=None, window_observer=None,
-                 point_ceiling=None):
+                 point_ceiling=None, world_boundary=None):
         self.sensors, self.reference, self.session = sensors, reference, session
         self.period, self.max_age = 1. / hz, max_age
         self.perception = perception
         self.point_ceiling = point_ceiling
+        self.world_boundary = world_boundary
         self.lock = threading.Lock()
         self.changed = threading.Condition(self.lock)
         self.closed = threading.Event()
@@ -121,7 +122,7 @@ class LiveObservations:
                         if snapshot.captured_at >= record_due:
                             record_due = max(record_due, snapshot.captured_at - .5*self.period) + self.period
                             self.session.record_observation(snapshot)
-                        snapshot = snapshot.below_ceiling(self.point_ceiling)
+                        snapshot = snapshot.navigation_view(self.point_ceiling, self.world_boundary)
                         if self.window_worker is not None:
                             self.window_worker.submit(snapshot)
                         if self.perception is not None:

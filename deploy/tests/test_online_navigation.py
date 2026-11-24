@@ -19,6 +19,13 @@ def config(**overrides):
             'success_distance': .25, **overrides}
 
 
+def room_navigation():
+    # The synthetic ring and corridor span both sides of the robot.
+    nav = load()['navigation']
+    nav['mapping'].update(x_limits=[-5., 5.], y_limits=[-5., 5.])
+    return nav
+
+
 def observation(step=0, position=(0., 0., .4), velocity=(0., 0., 0.), points=None, full=True):
     if points is None:
         angle = np.linspace(-np.pi, np.pi, 1440, endpoint=False)
@@ -79,8 +86,65 @@ def test_real_range_boundary_return_cannot_reveal_space():
     np.testing.assert_array_equal(packet['sensors']['lidar']['pointcloud'], [(5., 0., .4)])
 
 
+def test_field_wall_and_unknown_exterior_survive_scans_and_map_refresh():
+    nav = load()['navigation']
+    clean, mixed = NavigationEngine(nav), NavigationEngine(nav)
+    outside = [[-1.21, 0., .15], [1., .91, 0.], [0., -2.61, .2], [5.01, 0., .18]]
+    inside = [[1.1, -.4, .2], [1.5, .1, 0.]]
+    ahead = mixed.planner.cell((1., 0.))
+    assert ahead == mixed.planner.cell((1.01, .01))
+    layers = mixed.layers
+    rim = layers.observed.copy()
+    assert rim.any() and not rim[layers.interior].any()
+    for step in range(4):
+        stamp = step*.4
+        for engine, pts in ((clean, inside), (mixed, inside+outside)):
+            packet = observation(step, points=pts)
+            packet['sensors']['lidar'].update(position=np.array([0., 0., .18]), max_range=8.)
+            engine.observe(packet, stamp)
+    for name in ('observed', 'global_observed', 'local_occupied', 'global_occupied'):
+        np.testing.assert_array_equal(getattr(clean.layers, name), getattr(layers, name))
+    np.testing.assert_array_equal(clean.layers.evidence.log_odds, layers.evidence.log_odds)
+    layers.evidence.mark_free((1., .9), .5)
+    layers.refresh_global(reason='new_task')
+    assert layers.local_occupied[~layers.interior].all() and layers.global_occupied[~layers.interior].all()
+    np.testing.assert_array_equal(layers.observed & ~layers.interior, rim)
+    np.testing.assert_array_equal(layers.global_observed & ~layers.interior, rim)
+    with layers.global_planning():
+        assert not mixed.planner.free[~layers.interior].any()
+    mixed.set_goal((4., 0.), 2.)
+    assert mixed.update(observation(8, points=outside), 2.) is None
+    assert mixed.result['reason'] == 'no_lidar_returns_in_world_boundary'
+
+
+def test_adjusted_field_bounds_and_unaligned_edges():
+    nav = load()['navigation']
+    nav['mapping'].update(x_limits=[-1.27, 4.96], y_limits=[-2.61, .93])
+    engine = NavigationEngine(nav)
+    inside = engine.layers.interior
+    assert inside.sum() == 62*35
+    assert not inside[engine.planner.cell((4.955, 0.))]
+    for xy in ((4., 0.), (4., -1.4), (.2, .4)):
+        engine.set_goal(xy, 0.)
+        assert engine.goal == xy
+    for xy in ((-.5, .93), (4.96, 0.), (-1.27, -1.), (1., -2.61), (.2, .65)):
+        with pytest.raises(ValueError, match='实验边界'):
+            engine.set_goal(xy, 0.)
+
+
+@pytest.mark.parametrize('requested,measured', [((0., 0., .9), (0., 0., 0.)),
+                                                ((0., -.10, 0.), (0., .28, 0.))])
+def test_field_guard_checks_turning_corners_and_measured_stopping_motion(requested, measured):
+    engine = NavigationEngine(load()['navigation'])
+    engine.set_goal((2., 0.), 0.)
+    engine.observe(observation(position=(1., .53, .3), velocity=measured, points=[[2., 0., .2]]), .1)
+    assert engine._output(requested) is None
+    np.testing.assert_array_equal(engine.limiter.command, np.zeros(3))
+    assert engine.result['reason'] == 'world_boundary_stop'
+
+
 def test_field_ceiling_rejects_high_rays_before_they_mark_free_cells_or_change_a_route():
-    cfg = load()['navigation']
+    cfg = room_navigation()
     assert cfg['mapping']['point_height'][1] == cfg['mapping']['obstacle_height'][1] == .28
     high = np.array([[2., 0., .28001], [1., 1., .5], [.7, 0., 1.5]])
     def packet(points):
@@ -177,7 +241,7 @@ def corridor_scan(step, x, doorway):
 
 @pytest.mark.parametrize('doorway', ['open', 'closed'])
 def test_unseen_goal_follows_voronoi_to_an_observation_point_and_replans(doorway):
-    engine = NavigationEngine(load()['navigation'])
+    engine = NavigationEngine(room_navigation())
     first = corridor_scan(0, 0., 'slit')
     goal = (3.5, 0., .4)
     engine.observe(first, 0.)
@@ -218,7 +282,7 @@ def test_unseen_goal_follows_voronoi_to_an_observation_point_and_replans(doorway
 
 
 def test_deferred_observation_point_allows_another_view_of_the_same_opening():
-    engine = NavigationEngine(load()['navigation'])
+    engine = NavigationEngine(room_navigation())
     start, goal = (0., 0.), (3.5, 0.)
     engine.set_goal(goal, 0.)
     engine.update(corridor_scan(0, 0., 'slit'), 0.)

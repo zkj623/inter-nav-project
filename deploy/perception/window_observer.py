@@ -115,8 +115,9 @@ class WindowTrack:
 
 
 class WindowBoxObserver:
-    def __init__(self, config, *, live=False):
+    def __init__(self, config, *, live=False, world_boundary=None):
         self.config = validate_tracking_config(config)
+        self.world_boundary = world_boundary
         self.live = live
         self.generation = 0
         self.closed = False
@@ -210,7 +211,12 @@ class WindowBoxObserver:
                 support_frame = frames[fit.support_index][0]
                 support = support_frame.captured_at
                 fresh = finished < support+self.config['max_age_s']
-                if conflict:
+                long_axis = fit.long_axis_rad if fit.long_axis_rad is not None else fit.face_angle
+                sides = sorted(row['dimensions_m'][:2], reverse=True)
+                if self.world_boundary is not None and not self.world_boundary.contains_box(
+                        fit.center, sides, long_axis, self.config['isolation_margin_m']):
+                    reason = 'box_at_world_boundary'
+                elif conflict:
                     reason = 'ambiguous'
                 elif not fresh and (method != 'discovery' or stamp >= support+self.config['max_age_s']):
                     reason = 'surface_evidence_expired'

@@ -56,8 +56,8 @@ elif test -f ../.deploy-source.json; then
 fi
 ros2 topic list -t | tee "$SENSOR_TEST_DIR/topics.txt"
 ros2 node list > "$SENSOR_TEST_DIR/nodes.txt"
-for SENSOR_TOPIC in /livox/lidar /bot1/cloud_registered_sparse \
-    /bot1/lidar_slam/odom /livox/imu; do
+for SENSOR_TOPIC in /utlidar/cloud /utlidar/cloud_deskewed \
+    /utlidar/robot_odom /bot1/lidar_slam/odom /livox/imu; do
   ros2 topic info "$SENSOR_TOPIC" --verbose \
     > "$SENSOR_TEST_DIR/${SENSOR_TOPIC//\//_}-publisher.txt" 2>&1
 done
@@ -66,16 +66,14 @@ cp configs/robot.yaml configs/sensor_record_qos.yaml "$SENSOR_TEST_DIR/"
 
 把本轮实际使用的雷达、定位启动命令及已知版本写入记录目录中的 `setup.txt`，
 已有驱动或定位配置文件也一并保存。不了解版本时注明未知，不用猜测。
-Livox 驱动发布 `/livox/lidar` 和 `/livox/imu`，Swarm-LIO 用这两路输入发布
-`/bot1/lidar_slam/odom` 和 `/bot1/cloud_registered_sparse`。四个话题都要检查实收计数。
-原始点云用于量雷达到墙的距离，配准点云用于比较墙在固定 `bot1/world` 下的位置。
+用 Go2 原始点云量墙距。项目将 `/utlidar/cloud_deskewed` 从旧 `odom` 转回机身，再按同一时刻的 MID-360S 里程计转到 `bot1/world`。袋中保留两路里程计和 `/livox/imu`，用于复核位姿、时间对齐与墙的位置。程序启动时根据 Go2 里程计和 Livox IMU 的接收时间估计固定时钟偏移，硬件同步误差尚未测定。
 `/tf`、`/tf_static` 按实际发布情况记录。
 
 宇树给 Go2 配 MID-360 的标称位置以**机身内部 IMU** 为原点，向前 0.1870 m、向左 0 m、
 向上 0.0803 m，绕 +Y 轴转 13°。本机 MID-360S 保护架的圆环、拱架及前背部安装位置
 与示意图相似。静止时测得 LIO 与 Go2 的俯仰角相差约 13°，平移量仍待核实。
-目前项目以雷达 IMU 为位姿参考点。配置中的 `lidar_origin_offset_base_m` 表示
-雷达光学原点在其内部 IMU 坐标系中的位置，勿将支架尺寸填入该项。
+当前混合配置按 Go2 URDF 的 base 原点近似 `base_link`，结合上述支架参数和雷达内部偏移，用 `mid360_mount` 把 LIO 的 IMU 位姿换算成机身位姿。`lidar_origin_offset_base_m` 取原有 Go2 点云的射线起点。
+[Go2 URDF](https://github.com/unitreerobotics/unitree_ros/blob/master/robots/go2_description/urdf/go2_description.urdf) ·
 [宇树安装说明](https://support.unitree.com/home/en/developer/SLAM%20and%20Navigation_service) ·
 [宇树安装图](https://doc-cdn.unitree.com/static/2023/11/13/492e14d9686a4322ad5502b743d707e1_2933x3088.png)
 
@@ -104,8 +102,8 @@ record_sensors() {
   ros2 bag record \
     --qos-profile-overrides-path configs/sensor_record_qos.yaml \
     -o "$SENSOR_TEST_DIR/$1" \
-    /livox/lidar /bot1/cloud_registered_sparse \
-    /bot1/lidar_slam/odom /livox/imu \
+    /utlidar/cloud /utlidar/cloud_deskewed \
+    /utlidar/robot_odom /bot1/lidar_slam/odom /livox/imu \
     /tf /tf_static
 }
 ```

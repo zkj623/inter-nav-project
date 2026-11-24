@@ -9,14 +9,15 @@ from collections import deque
 from dataclasses import replace
 
 import numpy as np
-from scipy.ndimage import label
+from scipy.ndimage import binary_dilation, distance_transform_edt, label
 from deploy.robot.safety import checked_velocity
 from deploy.interaction.execution import InteractionExecution
 from deploy.interaction.collision import ContactCollisionChecker
 from deploy.interaction.profile import ContactProfile
 from deploy.interaction.motion import SdkNavigationMotion
 from deploy.interaction.skill_backend import create_push_skill
-from deploy.robot.observation import lidar_below_ceiling
+from deploy.robot.observation import navigation_points
+from deploy.robot.world_boundary import WorldBoundary
 from grutopia_extension.interactive_navigation.box_push_navigation import BoxState
 
 from grutopia_extension.interactive_navigation.mapping import MappingConfig, OccupancyGridMap
@@ -25,7 +26,7 @@ from grutopia_extension.interactive_navigation.online_navigation_decision import
 from grutopia_extension.interactive_navigation.side_push_navigation import SidePushPlanner
 from grutopia_extension.interactive_navigation.go2_voronoi_navigation import (
     ExplorationVoronoiRoutes, ForwardExplorationPathTracker, decision_recovery_required, body_motion_clear,
-    route_blocked)
+    route_blocked, navigation_footprint_samples)
 from grutopia_extension.interactive_navigation.go2_exploration_tracking import decision_buffer_recovery
 from grutopia_extension.interactive_navigation.smooth_go2_navigation import (
     SmoothExplorationTracker, VelocitySlewLimiter, smooth_recovery_action)
@@ -46,9 +47,27 @@ class PlanningRequired(RuntimeError):
 
 
 class DeploymentNavigationMap(OnlineNavigationMap):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, world_boundary=None, **kwargs):
+        self.world_boundary = world_boundary
+        self.interior = None
         super().__init__(*args, **kwargs)
         self.events = deque(maxlen=2000)
+        if world_boundary is not None:
+            self.interior = world_boundary.interior_mask(self.config, self.observed.shape)
+            wall = binary_dilation(self.interior, structure=np.ones((3, 3), bool)) & ~self.interior
+            clearance = distance_transform_edt(self.interior)*self.planner.resolution
+            self.boundary_goal_blocked = clearance <= self.planner.navigation_route_radius
+            self.evidence.static_occupied[~self.interior] = True
+            self._latest_static[~self.interior] = True
+            self.static_occupied[~self.interior] = True
+            self.observed[wall] = self.global_observed[wall] = True
+            self._bind_local()
+
+    def _mask(self, boxes):
+        mask = super()._mask(boxes)
+        if self.interior is not None:
+            mask &= self.interior
+        return mask
 
     def robot_footprint_box(self, forward):
         geometry = getattr(self.planner, 'body_geometry', None)
@@ -59,11 +78,16 @@ class DeploymentNavigationMap(OnlineNavigationMap):
                         (geometry.x_max-geometry.x_min, 2*geometry.half_width, .5), np.degrees(self.robot_yaw))
 
     def measured_scan_masks(self, hit, free):
+        if self.interior is not None:
+            hit &= self.interior
+            free &= self.interior
         if getattr(self, 'capture_contact_evidence', False):
             self.measured_hit, self.measured_free = hit.copy(), free.copy()
 
     def statistics(self):
         return {**super().statistics(),
+                'world_boundary': ({'x_limits': self.world_boundary.x, 'y_limits': self.world_boundary.y}
+                                   if self.world_boundary is not None else None),
                 'movable_pose_source': getattr(self, 'interaction_source', 'measured_rgbd_geometry_admitted_by_current_lidar_visibility'),
                 'uses_simulator_object_poses': False,
                 'free_ray_model': 'height_clipped_measured_return_rays_only_no_synthetic_misses'}
@@ -97,6 +121,9 @@ class NavigationEngine:
             raise ValueError('success_distance must be in (0, 0.25] for the release goal contract')
         # Exact measured rays are part of the release map contract.
         self.mapping_config = replace(MappingConfig(**config['mapping']), ray_traversal='exact')
+        self.world_boundary = WorldBoundary.from_navigation(config)
+        if self.world_boundary is not None:
+            self.mapping_config = self.world_boundary.grid_config(self.mapping_config)
         blank = OccupancyGridMap(self.mapping_config)
         self.planner = SidePushPlanner(
             np.zeros_like(blank.observed), [self.mapping_config.x_limits, self.mapping_config.y_limits],
@@ -110,12 +137,16 @@ class NavigationEngine:
         self.planner.interactable_ids = frozenset()
         if self.contact_profile is not None:
             SdkNavigationMotion(self.contact_profile).bind(self.planner)
+        if self.world_boundary is not None:
+            xx, yy = navigation_footprint_samples(self.planner)
+            self.body_corners = np.array([(x, y) for x in (xx.min(), xx.max()) for y in (yy.min(), yy.max())])
         self.layers = DeploymentNavigationMap(
-            self.planner, self.mapping_config, floor_height=0.,
+            self.planner, self.mapping_config, floor_height=0., world_boundary=self.world_boundary,
             local_hz=float(config.get('local_map_hz', 10.)), global_hz=float(config.get('global_map_hz', 1.)),
             local_radius=float(config.get('local_map_radius', 3.)))
         self.layers.capture_contact_evidence = self.contact_profile is not None
-        self.contact_collision = (ContactCollisionChecker(self.mapping_config, self.planner, self.contact_profile)
+        self.contact_collision = (ContactCollisionChecker(self.mapping_config, self.planner, self.contact_profile,
+                                                          world_boundary=self.world_boundary)
                                   if self.contact_profile is not None else None)
         self.routes = ExplorationVoronoiRoutes(self.planner)
         self.catalog = InteractionCatalog()
@@ -146,7 +177,17 @@ class NavigationEngine:
         return self.layers.decision
 
     def _inside_bounds(self, point):
+        if self.world_boundary is not None:
+            return self.world_boundary.contains(point)
         return all(low <= float(value) < high for value, (low, high) in zip(point[:2], self.planner.limits))
+
+    def check_boundary_goal(self, point):
+        if self.world_boundary is None:
+            return
+        if not self.world_boundary.contains(point):
+            raise ValueError('目标超出实验边界的可用范围')
+        if self.layers.boundary_goal_blocked[self.planner.cell(point[:2])]:
+            raise ValueError(f'目标太靠近实验边界，请向内移。当前路线预留 {self.planner.navigation_route_radius:g} 米净空')
 
     def _clear_object_tracks(self):
         """Retire perception-epoch IDs without interpreting their poses as free.
@@ -180,6 +221,8 @@ class NavigationEngine:
         # A new measured identity can overlap an expired identity. Its live
         # object footprint remains occupied while only unowned cells retire.
         owned &= ~retained_sensor
+        if layers.interior is not None:
+            owned &= layers.interior
         if owned.any():
             layers.evidence.log_odds[owned] = 0.
             layers.observed[owned] = False
@@ -258,6 +301,7 @@ class NavigationEngine:
         point = np.asarray(goal, float)
         if point.ndim != 1 or len(point) not in (2, 3) or not np.isfinite(point).all():
             raise ValueError('Goal must contain finite map coordinates')
+        self.check_boundary_goal(point)
         if not self._inside_bounds(point) or not self.planner.valid_cell(self.planner.cell(point)):
             raise ValueError('Goal is outside map bounds')
         self._clear_object_tracks()
@@ -317,7 +361,9 @@ class NavigationEngine:
         self.limiter.policy_command = None
         self.planner.control_time = self.now
         self.planner.robot_heading = self.heading
-        self.current_proposals = {box.id: box for box in boxes}
+        self.current_proposals = {box.id: box for box in boxes
+                                  if self.world_boundary is None or self.world_boundary.contains_box(
+                                      box.xy, box.dimensions, math.radians(box.yaw))}
         previous_scan_count = self.layers.scan_count
         previous_scan = self.layers.last_scan
         # ROS clouds contain measured returns, not PhysX no-hit range shells.
@@ -330,13 +376,14 @@ class NavigationEngine:
             if points.size:
                 if points.ndim != 2 or points.shape[1] != 3 or not np.isfinite(points).all():
                     raise ValueError('LiDAR requires finite measured N x 3 points')
-                points = lidar_below_ceiling(points, self.layers.config.point_height[1])
+                points = navigation_points(points, self.layers.config.point_height[1], self.world_boundary)
                 origin = np.asarray(lidar.get('position', self.position), float)
                 valid = np.linalg.norm(points-origin, axis=1) < .99*float(lidar.get('max_range', 5.))
                 sensors['lidar'] = {**lidar, 'pointcloud': points[valid]}
-        updated = self.layers.update(self.now, {**observation, 'sensors': sensors}, tuple(self.current_proposals.values()), force=self.layers.local_updates == 0)
+        self.observation = {**observation, 'sensors': sensors}
+        updated = self.layers.update(self.now, self.observation, tuple(self.current_proposals.values()), force=self.layers.local_updates == 0)
         if self.contact_collision is not None:
-            self.contact_collision.update({**observation, 'sensors': sensors}, self.layers)
+            self.contact_collision.update(self.observation, self.layers)
         if self.layers.scan_count != previous_scan_count:
             # Map processing time is not the source observation time. Keep
             # provenance only for the scan actually admitted by the mapper.
@@ -409,6 +456,15 @@ class NavigationEngine:
                 context = getattr(self, '_contact_context', None)
                 if context is None or not self._check_contact_motion(command, context):
                     return self._finish(False, 'push_aside:contact_motion_blocked')
+        if self.world_boundary is not None:
+            # Cover both the issued twist and feedback during reaction/braking,
+            # including turns in place and recovery commands that may allow unknown space.
+            for twist in (command, self.limiter.measured):
+                horizon = .60 + max(math.hypot(*twist[:2])/(2*self.limiter.linear_acceleration),
+                                    abs(twist[2])/(2*self.limiter.yaw_acceleration))
+                if not self.world_boundary.contains_motion(self.position[:2], self.heading, twist,
+                                                           horizon, self.body_corners):
+                    return self._finish(False, 'world_boundary_stop')
         self.limiter.accept(command, self.now)
         return command
 
@@ -804,6 +860,8 @@ class NavigationEngine:
         self.layers.recognized_objects = {} if recognition is None else recognition.snapshot(self.now)
         if self.status != 'running':
             return None
+        if self.world_boundary is not None and not len(self.observation['sensors'].get('lidar', {}).get('pointcloud', ())):
+            return self._finish(False, 'no_lidar_returns_in_world_boundary')
         if self.execution.awaiting_stop:
             # Observe while the writer/recorded-stop gate completes the old
             # interaction. A new decision must not replace its execution id.

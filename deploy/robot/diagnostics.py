@@ -48,7 +48,8 @@ def run(config, duration, output):
     topics = {robot['odom_topic']: 'nav_msgs/msg/Odometry',
               robot['lidar_topic']: 'sensor_msgs/msg/PointCloud2',
               robot['front_video_topic']: 'unitree_go/msg/Go2FrontVideoData'}
-    for key, kind in (('raw_lidar_topic', 'sensor_msgs/msg/PointCloud2'), ('imu_topic', 'sensor_msgs/msg/Imu')):
+    for key, kind in (('raw_lidar_topic', 'sensor_msgs/msg/PointCloud2'), ('imu_topic', 'sensor_msgs/msg/Imu'),
+                      ('cloud_odom_topic', 'nav_msgs/msg/Odometry')):
         if robot.get(key):
             topics[robot[key]] = kind
     if robot['camera_mode'] == 'rgbd':
@@ -157,6 +158,7 @@ def run(config, duration, output):
         print(f'诊断记录：{destination.resolve()}', flush=True)
     # Receipt and envelope checks are not complete DDS/hardware acceptance.
     geometry_received = all(report['topics'][robot[key]]['received'] > 0
-                            for key in ('odom_topic', 'lidar_topic', 'raw_lidar_topic', 'imu_topic') if robot.get(key))
+                            for key in ('odom_topic', 'lidar_topic', 'raw_lidar_topic', 'imu_topic',
+                                        'cloud_odom_topic') if robot.get(key))
     samples_valid = not any(s.get('sample_error_count', 0) for s in report['topics'].values())
     return 0 if geometry_received and samples_valid else 2

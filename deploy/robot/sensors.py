@@ -4,9 +4,10 @@ import threading
 import time
 import numpy as np
 from .localization import (PoseContinuity, PoseHistory, camera_cloud, multiply, transform,
-                           quaternion, rotation, registered_floor_height)
+                           rotation, registered_floor_height)
 from .observation import Snapshot, normalize
 from .timebase import SourceTimeBridge
+from .mixed_cloud import MixedCloud, odometry_pose
 
 
 def decode_image(message):
@@ -71,7 +72,9 @@ class RosSensors:
         from nav_msgs.msg import Odometry
         from tf2_ros import Buffer, TransformListener
         self.config, self.rclpy, self.Time = dict(config), rclpy, Time
-        self.mid360s = config.get('sensor_profile') == 'mid360s_lio'
+        profile = config.get('sensor_profile')
+        self.mid360s = profile in ('mid360s_lio', 'mid360s_lio_utlidar')
+        self.mixed = MixedCloud(config) if profile == 'mid360s_lio_utlidar' else None
         self.imu_samples = deque(maxlen=256)
         rclpy.init()
         self.node = rclpy.create_node(node_name)
@@ -106,6 +109,9 @@ class RosSensors:
             from sensor_msgs.msg import Imu
             self.node.create_subscription(Imu, config['imu_topic'], self._guard(self._imu, 'imu_topic'),
                                           qos_profile_sensor_data)
+        if self.mixed:
+            self.node.create_subscription(Odometry, config['cloud_odom_topic'],
+                                          self._guard(self._cloud_odom, 'cloud_odom_topic'), qos_profile_sensor_data)
         for topic, cls, callback in (
             ('odom_topic', Odometry, self._pose), ('lidar_topic', PointCloud2, self._lidar),
             ('rgb_topic', Image, lambda msg: self._image('rgb', msg)),
@@ -138,7 +144,11 @@ class RosSensors:
         CLOCK_REALTIME. A steady common transport delay remains unobservable.
         Never repeat this estimate while a run is active.
         """
-        samples = {'odom': [], 'lidar': []}
+        types = {'odom': odometry_type, 'lidar': cloud_type}
+        if self.mixed:
+            from sensor_msgs.msg import Imu
+            types.update(cloud_odom=odometry_type, imu=Imu)
+        samples = {kind: [] for kind in types}
         floor_scans, positions = [], []
         measure_floor = self.mid360s and self.config['ground_z'] is None
         subscriptions = []
@@ -148,8 +158,24 @@ class RosSensors:
                 stamp = message.header.stamp
                 if not 0 <= stamp.nanosec < 1_000_000_000:
                     raise ValueError('ROS timestamp invalid during startup')
-                samples[kind].append((receipt, stamp.sec*1_000_000_000 + stamp.nanosec))
-                if measure_floor and message.header.frame_id == self.config['map_frame']:
+                seq = stamp.sec*1_000_000_000 + stamp.nanosec
+                samples[kind].append((receipt, seq))
+                if measure_floor and self.mixed:
+                    if kind == 'cloud_odom':
+                        self._check_cloud_odom(message)
+                        self.mixed.unitree.add(seq, *odometry_pose(message))
+                    elif kind == 'odom':
+                        if (message.header.frame_id != self.config['map_frame']
+                                or message.child_frame_id != self.config['lio_imu_frame']):
+                            raise ValueError('Unexpected MID-360S odometry frames')
+                        p, q = odometry_pose(message)
+                        self.mixed.lio.add(seq, np.r_[p, np.zeros(3)], q)
+                        positions.append(p)
+                    elif kind == 'lidar' and len(floor_scans) < 20:
+                        if message.header.frame_id != self.config['cloud_odom_frame']:
+                            raise ValueError('Unexpected Unitree deskewed cloud frame')
+                        floor_scans.append((seq, decode_cloud(message, strip_utlidar_padding=True)))
+                elif measure_floor and message.header.frame_id == self.config['map_frame']:
                     if kind == 'odom':
                         p = message.pose.pose.position
                         positions.append((p.x, p.y, p.z))
@@ -157,7 +183,7 @@ class RosSensors:
                         floor_scans.append(decode_cloud(message))
             return callback
         try:
-            for kind, cls in (('odom', odometry_type), ('lidar', cloud_type)):
+            for kind, cls in types.items():
                 subscriptions.append(self.node.create_subscription(
                     cls, self.config[kind+'_topic'], receive(kind), qos))
             deadline = time.monotonic()+5.
@@ -172,7 +198,19 @@ class RosSensors:
                     raise ValueError(f'{kind}: startup requires exactly one publisher')
                 if not values or (now_ns-values[-1][0])*1e-9 > self.config['max_data_age_s']:
                     raise ValueError(f'{kind}: no recent data during time-reference initialization')
-            bridge = SourceTimeBridge.from_samples(samples, max_age_s=self.config['max_data_age_s'])
+            if self.mixed:
+                bridge = SourceTimeBridge.from_mixed_samples(samples, max_age_s=self.config['max_data_age_s'])
+                aligned = []
+                for stamp, points in floor_scans:
+                    try:
+                        aligned.append(self.mixed.project(stamp, stamp+bridge.unitree_to_lio_ns, points)[3])
+                    except ValueError:
+                        continue  # startup scans outside either pose history
+                floor_scans = aligned
+                self.mixed.unitree.samples.clear()
+                self.mixed.lio.samples.clear()
+            else:
+                bridge = SourceTimeBridge.from_samples(samples, max_age_s=self.config['max_data_age_s'])
             if floor_scans and positions:
                 self.config['ground_z'] = registered_floor_height(
                     np.concatenate(floor_scans), np.median(positions, axis=0))
@@ -202,11 +240,14 @@ class RosSensors:
                 self._errors.pop(key, None)
         return invoke
 
-    def _stamp(self, message):
+    def _stamp(self, message, offset_ns=0):
         stamp = message.header.stamp
         if not 0 <= stamp.nanosec < 1_000_000_000:
             raise ValueError('ROS timestamp invalid')
         seq = stamp.sec*1_000_000_000 + stamp.nanosec
+        if seq <= 0:
+            raise ValueError('ROS timestamp invalid')
+        seq += offset_ns
         return seq, self.timebase.captured_at(seq, time.monotonic_ns(), self.config['max_data_age_s'])
 
     def _tf(self, frame, stamp):
@@ -220,18 +261,15 @@ class RosSensors:
 
     def _pose(self, message):
         seq, received = self._stamp(message)
-        if message.child_frame_id != self.config['base_frame']:
-            raise ValueError('Odometry child_frame_id must equal base_frame')
+        child = self.config['lio_imu_frame'] if self.mixed else self.config['base_frame']
+        if message.child_frame_id != child:
+            raise ValueError(f'Unexpected odometry child frame, expected {child}')
         if self.mid360s and message.header.frame_id != self.config['map_frame']:
             raise ValueError('Unexpected Swarm-LIO odometry parent frame')
         if seq <= self.last_stamps.get('pose', -1):
             raise ValueError('Non-increasing odometry timestamp')
         # Odometry already contains parent->child pose; TF publication is optional.
-        pose = message.pose.pose
-        p = np.array([pose.position.x, pose.position.y, pose.position.z])
-        q = quaternion([pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z])
-        if not np.isfinite(p).all():
-            raise ValueError('Invalid odometry position')
+        p, q = odometry_pose(message)
         parent_p, parent_q = self._tf(message.header.frame_id, message.header.stamp)
         p, q = transform(p, parent_p, parent_q), multiply(parent_q, q)
         v = message.twist.twist
@@ -246,12 +284,32 @@ class RosSensors:
             raise ValueError('Invalid odometry velocity')
         self.continuity.check(p, q)
         with self.lock:
-            self.pose_history.add(seq, p, q)
+            if self.mixed:
+                self.mixed.lio.add(seq, np.r_[p, v.linear.x, v.linear.y, v.linear.z], q)
+            else:
+                self.pose_history.add(seq, p, q)
             self.last_stamps['pose'] = seq
             self.pose = (seq, received, p, q, velocity)
             self.body_twist = (linear, angular)
-            if self.mid360s:
+            if self.mixed:
+                self.frame_ready.notify_all()
+            elif self.mid360s:
                 self._match_scan()
+
+    def _check_cloud_odom(self, message):
+        if (message.header.frame_id != self.config['cloud_odom_frame']
+                or message.child_frame_id != self.config['base_frame']):
+            raise ValueError('Unexpected Unitree scan registration odometry frames')
+
+    def _cloud_odom(self, message):
+        self._check_cloud_odom(message)
+        offset = self.timebase.unitree_to_lio_ns
+        stamp, _ = self._stamp(message, offset)
+        p, q = odometry_pose(message)
+        with self.frame_ready:
+            self.mixed.unitree.add(stamp-offset, p, q)
+            if self.mixed.pending:
+                self.frame_ready.notify_all()
 
     def _imu(self, message):
         seq, _ = self._stamp(message)
@@ -269,6 +327,19 @@ class RosSensors:
             self.imu_samples.append((seq, angular, accel))
 
     def _lidar(self, message):
+        if self.mixed:
+            offset = self.timebase.unitree_to_lio_ns
+            stamp, captured_at = self._stamp(message, offset)
+            if message.header.frame_id != self.config['cloud_odom_frame']:
+                raise ValueError('Unexpected Unitree deskewed cloud frame')
+            if stamp <= self.last_stamps.get('lidar', -1):
+                raise ValueError('Non-increasing point-cloud timestamp')
+            points = decode_cloud(message, strip_utlidar_padding=True)
+            with self.frame_ready:
+                self.last_stamps['lidar'] = stamp
+                self.mixed.pending.append((stamp-offset, stamp, captured_at, points))
+                self.frame_ready.notify_all()
+            return
         seq, received = self._stamp(message)
         if self.mid360s and message.header.frame_id != self.config['map_frame']:
             raise ValueError('Expected registered MID-360S points in the LIO world frame')
@@ -300,6 +371,10 @@ class RosSensors:
         """Block until a LiDAR frame other than count ``seen`` is stored; return the count."""
         with self.frame_ready:
             def frame_id():
+                if self.mixed:
+                    pair = self.mixed.peek()
+                    if pair is not None:
+                        return pair[0][0]
                 if self.mid360s:
                     return self.matched_scan[0][0] if self.matched_scan else None
                 return self.lidar_frames
@@ -339,11 +414,13 @@ class RosSensors:
         if self.continuity.fault:
             raise ValueError(self.continuity.fault)
         with self.lock:
-            if self.pose is None or self.lidar is None:
+            if self.pose is None or (not self.mixed and self.lidar is None):
                 return None
             if self.mid360s:
+                if self.mixed:
+                    self.matched_scan = self.mixed.take() or self.matched_scan
                 if self.matched_scan is None:
-                    self.last_error = 'Waiting for matching Swarm-LIO odometry and registered scan'
+                    self.last_error = 'Waiting for time-aligned odometry and scan'
                     return None
                 pose, scan, twist = self.matched_scan
                 cloud_p, cloud_q = pose[2:4]
@@ -370,10 +447,13 @@ class RosSensors:
                     return None
                 stamp, angular, accel = imu
                 linear = twist[0]
-                twist = (linear, angular)
-                velocity = (linear[0], linear[1], angular[2])
                 sensors['imu'] = dict(source_stamp_ns=stamp, frame_id=self.config['imu_frame'],
                                       angular_velocity_rad_s=angular, linear_acceleration_m_s2=accel)
+                if self.mixed:
+                    angular = self.mixed.body_from_imu @ angular
+                    linear = linear - np.cross(angular, self.mixed.imu_in_body)
+                twist = (linear, angular)
+                velocity = (linear[0], linear[1], angular[2])
             camera_at = None
             if self.camera is not None:
                 camera_at, sensors['camera'] = self.camera

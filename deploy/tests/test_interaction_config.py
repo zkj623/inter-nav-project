@@ -13,7 +13,6 @@ def configured(tmp_path, *, active=False):
     data = load()
     tracking = tracking_config()
     data['navigation']['interaction_enabled'] = active
-    data['robot']['interaction_motion_verified'] = active
     data['interaction'].update(source='registered_box_lidar', tracking_enabled=True,
         geometry_verified=True, boxes=tracking['boxes'], contact_profile=profile().to_dict())
     for name, value in data.items():
@@ -133,8 +132,8 @@ def test_actual_cli_replays_registered_clouds_and_records_pose_without_sdk(tmp_p
     data = configured(directory)
     _, _, tracking = settings()
     data['interaction']['boxes'] = tracking['boxes']
-    # This test uses a 50 cm tall box with scanned top edges.
-    data['navigation']['mapping'].update(point_height=[-.1, .55], obstacle_height=[.1, .55])
+    # This synthetic room has a goal at y=2 and a 50 cm tall box.
+    data['navigation']['mapping'].update(y_limits=[-3., 3.], point_height=[-.1, .55], obstacle_height=[.1, .55])
     loaded = write(directory, data)
     recorder = Recorder(tmp_path/'input', loaded, 'synthetic_registered_clouds_not_physics', REPO)
     for index in range(1, 5):

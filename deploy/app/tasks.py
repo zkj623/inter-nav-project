@@ -104,6 +104,7 @@ class Tasks:
             raise ValueError('导航地图尚未就绪，请先观察建图')
         planner, layers = self.engine.planner, self.engine.layers
         cell = planner.cell(goal[:2])
+        self.engine.check_boundary_goal(goal)
         limits = self.config['mapping']
         inside = limits['x_limits'][0] <= goal[0] < limits['x_limits'][1] and limits['y_limits'][0] <= goal[1] < limits['y_limits'][1]
         if not inside or not planner.valid_cell(cell):

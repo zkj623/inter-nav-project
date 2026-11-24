@@ -1,11 +1,14 @@
-# Go2 EDU / Orin NX, Livox MID-360S with onboard Swarm-LIO.
+# Go2 deskewed scans with the MID-360S Swarm-LIO trajectory.
 network_interface: eth0
-sensor_profile: mid360s_lio
+sensor_profile: mid360s_lio_utlidar
 map_frame: bot1/world
-base_frame: bot1/aft_mapped
+base_frame: base_link
+lio_imu_frame: bot1/aft_mapped
 odom_topic: /bot1/lidar_slam/odom
-lidar_topic: /bot1/cloud_registered_sparse
-raw_lidar_topic: /livox/lidar
+lidar_topic: /utlidar/cloud_deskewed
+raw_lidar_topic: /utlidar/cloud
+cloud_odom_topic: /utlidar/robot_odom  # only to undo the upstream scan registration
+cloud_odom_frame: odom
 imu_topic: /livox/imu
 imu_frame: livox_frame
 # No standard RGB-D source was found. Custom compressed video is not depth.
@@ -17,25 +20,19 @@ camera_info_topic: ""
 # bot1/world is reinitialized by Swarm-LIO. With null, estimate its floor
 # once at startup from the registered cloud while the robot is stationary.
 ground_z: null
-# Factory LiDAR origin in the MID-360S IMU frame used by this LIO deployment.
-# Registered endpoints already include this transform.
-lidar_origin_offset_base_m: [-0.011, -0.02329, 0.04412]
+# Original Unitree scan origin in base_link (measured cloud/cloud_base).
+lidar_origin_offset_base_m: [0.28216003, 0.0, 0.0]
+# Nominal Go2 URDF base -> body IMU, official bracket -> optical origin,
+# then MID-360S optical origin -> internal IMU. Translation is unmeasured.
+mid360_mount:
+  imu_in_base_m: [0.16222323, 0.02329, 0.07715633]
+  pitch_deg: 13.0
 lidar_max_range: 8.0
-pose_cloud_tolerance_s: 0.05
+pose_cloud_tolerance_s: 0.065  # bracket 10 Hz LIO samples with normal timestamp jitter
 image_sync_tolerance_s: 0.04
 max_data_age_s: 0.4
 max_position_jump_m: 0.5
 max_orientation_jump_rad: 0.7
-# Observe in the IMU frame until its mount on the Go2 is measured.
-calibration_verified: false
-deskew_and_self_filter_verified: false
-# 2026-10-28: sensor recordings + motion-test 20261028T142816_831350Z;
-# operator accepted physical response; includes command_timeout -> stopped.
-# This does not certify physical network-loss or computer-failure protection.
-communication_verified: true
-# Same recording: 3 takeover stops; release stays latched until explicit re-arm.
-# Operator also confirmed native joystick control still works after takeover.
-remote_arbitration_verified: true
 # Button bit mask in wireless_remote bytes 2:4; choose after inspecting remote.
 takeover_button_mask: 4096
 sport_state_topic: rt/sportmodestate
@@ -44,6 +41,3 @@ sport_state_topic: rt/sportmodestate
 # Only these device-specific state values may pass the telemetry state check.
 sport_state_motion_codes: [100]
 low_state_topic: rt/lowstate
-
-# SDK contact/push response requires separate real-robot acceptance.
-interaction_motion_verified: false

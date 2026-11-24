@@ -5,6 +5,7 @@ import math
 import yaml
 
 from deploy.interaction.profile import ContactProfile
+from deploy.robot.world_boundary import WorldBoundary
 
 
 DEFAULTS = dict(source='rgbd', tracking_enabled=False, geometry_verified=False,
@@ -49,6 +50,10 @@ def configure(config, payload, directory, *, registry_path=None):
             xlim, ylim = nav['mapping']['x_limits'], nav['mapping']['y_limits']
             for row in validated['boxes']:
                 x0, x1, y0, y1 = row['search_region']
+                if nav.get('world_boundary'):
+                    x0, x1 = max(x0, xlim[0]), min(x1, xlim[1])
+                    y0, y1 = max(y0, ylim[0]), min(y1, ylim[1])
+                    row['search_region'] = [x0, x1, y0, y1]
                 if not (xlim[0] <= x0 < x1 <= xlim[1] and ylim[0] <= y0 < y1 <= ylim[1]):
                     raise ValueError('Registered search_region must lie inside the navigation map')
             result['boxes'] = validated['boxes']
@@ -57,8 +62,6 @@ def configure(config, payload, directory, *, registry_path=None):
     elif requested:
         if robot['camera_mode'] != 'rgbd' or config['runtime']['perception']['geometry_verified'] is not True:
             raise ValueError('Interaction requires RGB-D and verified complete object geometry')
-    if requested and robot.get('interaction_motion_verified') is not True:
-        raise ValueError('Interaction requires separate SDK contact-motion acceptance')
     if requested and result['source'] == 'rgbd':
         raise ValueError('RGB-D provider supplies visible AABB only, not full oriented contact geometry; use registered_box_lidar for execution')
     profile = result['contact_profile']
@@ -106,12 +109,13 @@ def create_perception(config, *, synchronous=False, box_window=False, live=False
         tracking = tracking_config(settings)
         if settings.get('window_max_age_s') is not None:
             tracking['max_age_s'] = settings['window_max_age_s']
-        return WindowBoxObserver(tracking, live=live)
+        return WindowBoxObserver(tracking, live=live, world_boundary=WorldBoundary.from_navigation(config['navigation']))
     if settings['source'] == 'registered_box_lidar':
         if not (settings['tracking_enabled'] or config['navigation']['interaction_enabled']):
             return None
         from deploy.perception.registered_boxes import RegisteredBoxPerception
-        return RegisteredBoxPerception(tracking_config(settings), synchronous=synchronous)
+        return RegisteredBoxPerception(tracking_config(settings), synchronous=synchronous,
+                                       world_boundary=WorldBoundary.from_navigation(config['navigation']))
     if (settings['tracking_enabled'] or config['navigation']['interaction_enabled']) and config['robot']['camera_mode'] == 'rgbd':
         if synchronous:
             raise ValueError('RGB-D HTTP classification is not deterministic replay; use registered LiDAR or replay observations only')

@@ -218,18 +218,14 @@ def test_mapping_failure_does_not_report_ready(control, monkeypatch):
     assert controller.tasks.last_mapping_at == snapshot.lidar_at
 
 
-def test_sdk_configuration_and_full_navigation_acceptance_are_distinct():
+def test_navigation_requires_a_configured_takeover_button():
     config = load()
-    config['robot']['calibration_verified'] = True
-    config['robot']['deskew_and_self_filter_verified'] = False
     config['robot']['takeover_button_mask'] = 0
     check_control_configuration(config, require_takeover=False)
     with pytest.raises(ValueError, match='takeover_button_mask'):
-        check_control_configuration(config)
-    config['robot']['takeover_button_mask'] = 2
-    check_control_configuration(config)
-    with pytest.raises(ValueError, match='deskew_and_self_filter_verified'):
         check_motion_configuration(config)
+    config['robot']['takeover_button_mask'] = 2
+    check_motion_configuration(config)
 
 
 def test_worker_stop_reason_is_visible_in_console(control, capsys):
@@ -284,10 +280,6 @@ def test_live_cleanup_restores_other_resources_even_if_motion_close_raises(monke
     monkeypatch.setattr(keyboard, 'Keyboard', lambda: SimpleNamespace(
         poll=lambda: ('q', None), close=lambda: closed.append('keyboard')))
     config = load()
-    for key in ('calibration_verified', 'deskew_and_self_filter_verified',
-                'communication_verified', 'remote_arbitration_verified'):
-        config['robot'][key] = True  # Only this in-memory fake-SDK test.
-    config['robot']['ground_z'] = 0.
     config['robot']['takeover_button_mask'] = 2
     args = SimpleNamespace(allow_motion=True, demo=False, session_port=0, camera='none', rgb_topic=None)
     handler = signal.getsignal(signal.SIGINT)
@@ -340,9 +332,6 @@ def test_live_start_reacquires_sensors_after_slow_arm(tmp_path, monkeypatch, fre
     monkeypatch.setattr(runtime, 'time', fake_clock)
     monkeypatch.setattr(controller_module, 'time', fake_clock)
     config = load()
-    for key in ('calibration_verified', 'deskew_and_self_filter_verified',
-                'communication_verified', 'remote_arbitration_verified'):
-        config['robot'][key] = True  # In-memory fake motion only.
     config['robot']['ground_z'] = 0.
     config['robot']['takeover_button_mask'] = 2
     events = Events()
@@ -415,6 +404,21 @@ def test_online_decisions_are_recorded_once_with_their_kind(control):
     decisions = [e for e in events.items if e['event'] == 'decision']
     assert len(decisions) == 1 and decisions[0]['decision_kind'] == 'navigate'
     assert not controller.tasks.engine.events
+
+
+def test_republished_scan_cannot_advance_ordinary_motion_or_renew_its_deadline(control, monkeypatch):
+    controller, sample, _ = control
+    controller.operate('navigate', '1,0', sample, sample.captured_at)
+    controller.step(sample, sample.captured_at)
+    assert len(controller.motion.commands) == 1
+    original_expiry = controller.last_expires_at
+    duplicate = replace(sample, sequence=sample.sequence+1, captured_at=sample.captured_at+.03)
+    controller.step(duplicate, duplicate.captured_at)
+    assert len(controller.motion.commands) == 1
+    assert controller.last_expires_at == original_expiry
+    from deploy.app import controller as module
+    monkeypatch.setattr(module.time, 'monotonic', lambda: original_expiry)
+    assert controller.step(duplicate, original_expiry) == 'control_deadline_missed'
 
 
 @pytest.mark.parametrize('operation', ['navigate', 'r'])

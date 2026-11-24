@@ -85,29 +85,39 @@ def fit_upright_box(points, dimensions, origin, config):
         return None
     xy = sides[:, :2]
     half = dims[:2]/2
+    # The XY bounding diagonal bounds every projected span, at any yaw.
+    if np.linalg.norm(np.ptp(xy, axis=0)) < dims[:2].max()-config['extent_tolerance_m']:
+        return None
 
-    def evaluate(yaw, detailed=False):
-        rotation = _rotation(yaw)
+    def evaluate_rotation(rotation, detailed=False):
         local = xy @ rotation
-        lower, upper = np.quantile(local, [.005, .995], axis=0)
+        lower, upper = np.quantile(local, [.005, .995], axis=-2)
         center = (lower+upper)/2
-        centered = local-center
+        centered = local-center[..., None, :]
         extent_error = np.abs((upper-lower)-dims[:2])
         distances = np.abs(np.abs(centered)-half)
-        residual = np.min(distances, axis=1)
-        score = float(np.mean(np.minimum(residual, .10)**2) + np.sum(extent_error**2))
+        residual = np.min(distances, axis=-1)
         if detailed:
             return rotation, center, centered, extent_error, residual
-        return score
+        return np.mean(np.minimum(residual, .10)**2, axis=-1) + np.sum(extent_error**2, axis=-1)
 
+    def evaluate(yaw):
+        return float(evaluate_rotation(_rotation(yaw)))
+
+    # Score the same trial angles together; bound temporary memory on large clouds.
     angles = np.arange(0., math.pi, math.radians(config['angle_step_deg']))
-    scores = np.array([evaluate(a) for a in angles])
+    scores = np.empty(len(angles))
+    batch_size = max(1, 32768//len(xy))
+    for start in range(0, len(angles), batch_size):
+        batch = slice(start, start+batch_size)
+        rotations = np.stack([_rotation(angle) for angle in angles[batch]])
+        scores[batch] = evaluate_rotation(rotations)
     index = int(np.argmin(scores))
     step = math.radians(config['angle_step_deg'])
     optimum = minimize_scalar(evaluate, bounds=(angles[index]-step, angles[index]+step),
                               method='bounded', options={'xatol': 1e-5, 'maxiter': 25})
     yaw = float((optimum.x+math.pi/2) % math.pi-math.pi/2)
-    rotation, center, local, extent_error, residual = evaluate(yaw, True)
+    rotation, center, local, extent_error, residual = evaluate_rotation(_rotation(yaw), detailed=True)
     if np.any(extent_error > config['extent_tolerance_m']):
         return None
     threshold = config['residual_threshold_m']

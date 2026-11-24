@@ -22,9 +22,11 @@ class TrackedMotion(Motion):
 
 
 @pytest.fixture
-def navigation(tmp_path, monkeypatch):
+def navigation(tmp_path, monkeypatch, request):
     from deploy.app import controller as module
     config = load()
+    if hasattr(request, 'param'):
+        config['navigation']['mapping'].update(request.param)
     snapshot = next(snapshots(make_fixture(tmp_path)))
     tasks, motion, events = Tasks(config['navigation']), TrackedMotion(), Events()
     controller = NavigationController(config, tasks, motion, events)
@@ -60,14 +62,23 @@ def test_invalid_endpoint_rejected_before_arm(navigation, capsys, case, reason):
     assert any(e['event'] == 'task_rejected' for e in events.items)
 
 
+@pytest.mark.parametrize('goal', ['0.2,0.6', '0,0.9', '5.01,0', '-1.21,0', '0,-2.61'])
+def test_field_boundary_rejects_goals_before_motion(navigation, goal):
+    controller, snapshot, _ = navigation
+    controller.operate('navigate', goal, snapshot, snapshot.captured_at)
+    assert '实验边界' in controller.task_error
+    assert not controller.motion.arm_calls and not controller.motion.commands
+
+
 @pytest.mark.parametrize('connected_frontier', [False, True])
+@pytest.mark.parametrize('navigation', [dict(x_limits=[-10., 10.], y_limits=[-10., 10.])], indirect=True)
 def test_unknown_goal_is_accepted_without_revealing_unknown_map(navigation, connected_frontier):
     controller, snapshot, events = navigation
     if connected_frontier:
         # Floor returns reveal a free prefix with an unobserved continuation,
         # unlike the fixture's enclosing obstacle ring.
         snapshot.observation['sensors']['lidar']['pointcloud'][:, 2] = 0.
-        controller.tasks = Tasks(load()['navigation'])
+        controller.tasks = Tasks(controller.navigation)
         controller.step(snapshot, snapshot.captured_at)
     engine = controller.tasks.engine
     goal = (8., 0.)

@@ -109,6 +109,9 @@ class SceneCapture:
                       cloud_role='display_history_only')
         # Display voxels belong exclusively to the rendering process. Capturing
         # a map never extracts or changes a navigation-side point cloud.
+        boundary = getattr(layers, 'world_boundary', None)
+        if boundary is not None:
+            result['world_boundary'] = {'x_limits': boundary.x, 'y_limits': boundary.y}
         return result
 
 
@@ -127,6 +130,7 @@ def map_payload(scene):
     if not ok:
         raise ValueError('Map PNG encoding failed')
     return {'ready': True, 'png': base64.b64encode(image).decode(), 'projection': projection, 'revision': scene['revision'],
+            'world_boundary': scene.get('world_boundary'),
             'updated_at': scene.get('updated_at'),
             'frame': scene['frame'], 'voxel_count': scene['voxel_count'],
             'resolution': scene['config']['grid_resolution'], 'path_points': len(scene['path']),

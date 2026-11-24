@@ -43,6 +43,16 @@ def test_actual_rectangular_box_requires_two_disjoint_windows_and_never_grants_m
     assert observer.last_delivery is previous
 
 
+def test_box_crossing_field_wall_cannot_acquire_a_track(monkeypatch):
+    from deploy.robot.world_boundary import WorldBoundary
+    fixed_fit(monkeypatch)
+    observer = WindowBoxObserver(settings()[2], world_boundary=WorldBoundary((-2., 2.), (-3., .1)))
+    for i in range(24):
+        row = sample(observer, i)
+        assert not row['valid'] and row['track_id'] is None
+    assert row['invalid_reason'] == 'box_at_world_boundary'
+
+
 @pytest.mark.parametrize('swap_xy,expected_axis', [(False, np.pi/2), (True, 0.)])
 def test_long_low_box_reports_the_long_side_in_both_orientations(swap_xy, expected_axis):
     from deploy.app.config import ROOT

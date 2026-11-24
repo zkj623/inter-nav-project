@@ -27,8 +27,9 @@ def wait_until(predicate, timeout=8.):
 @pytest.fixture
 def detached_scene():
     config = load()
-    # This fusion fixture observes returns at 55 cm.
-    config['navigation']['mapping'].update(point_height=[-.1, .63], obstacle_height=[.1, .63])
+    # This fixture sees a 55 cm wall and checks rejected scans as far as x=5.05.
+    config['navigation']['mapping'].update(x_limits=[-2., 6.], y_limits=[-2., 2.],
+                                          point_height=[-.1, .63], obstacle_height=[.1, .63])
     tasks = Tasks(config['navigation'])
     session = Session(config, REPO, port=0, demo=True, separate_cloud=True)
     try:

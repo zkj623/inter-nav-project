@@ -10,9 +10,9 @@ from deploy.tests.test_registered_boxes import cloud
 from grutopia_extension.interactive_navigation.box_push_navigation import BoxState
 
 
-def fixture():
+def fixture(navigation=None):
     p = profile()
-    engine = NavigationEngine(config(), interaction={'contact_profile': p.to_dict()})
+    engine = NavigationEngine(navigation or config(), interaction={'contact_profile': p.to_dict()})
     checker = engine.contact_collision
     # Synthetic independently observed empty room, then measured target returns.
     checker.evidence.observed[:] = True
@@ -67,6 +67,15 @@ def test_box_corners_must_remain_inside_map_even_if_center_is_inside():
     checker.points = cloud(center=ctx.box.xy, yaw=0., noise=0.)
     assert not checker([.05, 0., 0.], ctx)
     assert checker.diagnostic['reason'] == 'box_sweep_outside_map'
+
+
+def test_box_cannot_be_pushed_over_field_wall_even_with_measured_free_cells():
+    nav = config(world_boundary=True)
+    nav['mapping']['x_limits'] = [-3., 1.24]
+    _, checker, ctx = fixture(nav)
+    assert checker.world_boundary.contains(ctx.box.xy)
+    assert not checker([.15, 0., 0.], ctx)
+    assert checker.diagnostic['reason'] == 'box_sweep_outside_world_boundary'
 
 
 def test_retreat_uses_translation_stopping_response(monkeypatch):

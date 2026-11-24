@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import cv2
 import numpy as np
 
+from deploy.robot.world_boundary import WorldBoundary
 from grutopia_extension.interactive_navigation.box_push_navigation import BoxPushPlanner, BoxState
 from grutopia_extension.interactive_navigation.task_video_recording import TaskVideoRecorder
 from grutopia_extension.interactive_navigation.visualization import InteractionVideoRecorder
@@ -37,8 +38,14 @@ def map_renderer(scene):
     yaw = float(np.arctan2(2*(w*z+x*y), 1-2*(y*y+z*z)))
     blank = np.zeros_like(scene['observed'], bool)
     now = scene.get('map_time_s', 0.)
+    config = SimpleNamespace(**scene['config'])
+    observed = scene['observed']
+    area = scene.get('world_boundary')
+    if area:
+        boundary = WorldBoundary(area['x_limits'], area['y_limits'])
+        observed = observed & boundary.interior_mask(config, observed.shape)
     layers = SimpleNamespace(
-        planner=SnapshotGeometry(scene), observed=scene['observed'],
+        planner=SnapshotGeometry(scene), observed=observed,
         static_occupied=scene.get('static', scene['occupied']),
         stable_obstacles=scene.get('stable', blank),
         local_dynamic=scene.get('local_dynamic', scene['occupied'] & ~scene.get('static', blank)),
@@ -58,7 +65,7 @@ def map_renderer(scene):
     if 'explanation' in layers.decision:
         layers.decision = {**(layers.decision['explanation'] or {}),
                            **{k: v for k, v in layers.decision.items() if k != 'explanation'}}
-    runtime = SimpleNamespace(map=SimpleNamespace(config=SimpleNamespace(**scene['config'])),
+    runtime = SimpleNamespace(map=SimpleNamespace(config=config),
                               navigation_layers=layers, _planned_path=scene.get('path', ()))
     renderer = TaskVideoRecorder.__new__(TaskVideoRecorder)
     renderer.task = None
@@ -76,6 +83,18 @@ def map_renderer(scene):
 def projected_navigation_map(scene):
     renderer, runtime, observation = map_renderer(scene)
     frame = renderer._render_map(0, scene.get('phase', scene.get('state', 'observe')), observation, runtime)
+    if scene.get('world_boundary'):
+        area = scene['world_boundary']
+        xmin, xmax = area['x_limits']
+        ymin, ymax = area['y_limits']
+        x0, y0 = renderer._world_to_pixel((xmin, ymax), runtime.map)
+        x1, y1 = renderer._world_to_pixel((xmax, ymin), runtime.map)
+        left, top, w, h = renderer._map_viewport
+        # Keep the exterior unknown even under trajectory and local-range overlays.
+        unknown = (164, 168, 175)
+        frame[top:y0, left:left+w] = frame[y1+1:top+h, left:left+w] = unknown
+        frame[y0:y1+1, left:x0] = frame[y0:y1+1, x1+1:left+w] = unknown
+        cv2.rectangle(frame, (x0, y0), (x1, y1), (165, 96, 32), 2, cv2.LINE_AA)
     # Monotonic sensor times are not experiment elapsed times.
     renderer._header(frame, 'Global guidance + live local map | ' + scene.get('state', 'observe') + ' | ' + scene['frame'])
     projection = dict(image_size=[frame.shape[1], frame.shape[0]], viewport=list(renderer._map_viewport),

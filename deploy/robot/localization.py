@@ -106,10 +106,12 @@ class PoseHistory:
             raise ValueError('Non-increasing odometry timestamp')
         self.samples.append((stamp, np.asarray(position).copy(), quaternion(orientation)))
 
-    def at(self, stamp):
+    def at(self, stamp, *, bracketed=False):
         if not self.samples:
             raise ValueError('Waiting for odometry at point-cloud time')
         nearest = min(self.samples, key=lambda sample: abs(sample[0]-stamp))
+        if nearest[0] == stamp:
+            return nearest[1].copy(), nearest[2].copy()
         if abs(nearest[0]-stamp) > self.tolerance_ns:
             raise ValueError('Point-cloud / odometry timestamp mismatch')
         for left, right in zip(self.samples, list(self.samples)[1:]):
@@ -123,4 +125,6 @@ class PoseHistory:
                 q = ((1-alpha)*q0+alpha*q1 if theta < 1e-5 else
                      (np.sin((1-alpha)*theta)*q0+np.sin(alpha*theta)*q1)/np.sin(theta))
                 return (1-alpha)*left[1]+alpha*right[1], quaternion(q)
+        if bracketed:
+            raise ValueError('Waiting for bracketing odometry samples at point-cloud time')
         return nearest[1].copy(), nearest[2].copy()

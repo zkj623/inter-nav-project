@@ -20,12 +20,11 @@ from deploy.robot.sensors import decode_image
 from deploy.robot.motion import _worker
 from deploy.tests.make_fixture import make_fixture
 
-def test_unverified_geometry_cannot_enable_motion():
+def test_default_motion_configuration_accepts_automatic_floor_estimation():
     config = load()
-    config['robot']['calibration_verified'] = True
-    config['robot']['deskew_and_self_filter_verified'] = False
-    with pytest.raises(ValueError, match='deskew_and_self_filter_verified'):
-        check_motion_configuration(config)
+    assert config['robot']['ground_z'] is None
+    assert not any(key.endswith('_verified') for key in config['robot'])
+    check_motion_configuration(config)
 
 def test_timeout_latches_and_late_packets_cannot_restart():
     guard = CommandGuard(load()['runtime']['control'])

@@ -23,6 +23,7 @@ class NavigationController:
         self.planning_hold = None
         self.hold_sequence = 0
         self.last_expires_at = None
+        self.last_command_lidar_at = None
         self.last_decision_cost = 0.
         self.pending_operation = None
         self.fresh_cycle_required = False
@@ -306,6 +307,10 @@ class NavigationController:
                 if remaining <= 0:
                     self.pause('control_deadline_missed')
                     return self.task_error
+                if not self.tasks.engine.execution.active and snapshot.lidar_at == self.last_command_lidar_at:
+                    # Delayed delivery can repackage one scan twice. An ordinary
+                    # navigation command based on it would have the same expiry.
+                    return self.task_error
                 if self.tasks.engine.execution.active:
                     # Retain the existing contact-skill admission contract.
                     # This change targets ordinary coordinate navigation.
@@ -371,6 +376,7 @@ class NavigationController:
                 command_id = (self.motion.submit(velocity, now, expires, interaction=interaction)
                               if interaction is not None else self.motion.submit(velocity, now, expires))
                 self.last_expires_at = expires
+                self.last_command_lidar_at = snapshot.lidar_at
                 submitted_at = time.monotonic()
                 self.session.event('command_requested', generated_at=now, expires_at=expires,
                                    velocity=velocity, decision_duration_s=decision_duration,

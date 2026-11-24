@@ -104,3 +104,26 @@ def test_without_new_frames_the_worker_still_publishes_staleness(arriving):
     last = source.frames
     assert feed.wait_next(feed.latest(), .5)
     assert feed.latest().sequence == last  # republished, not renewed or invented
+
+
+def test_sensor_process_delivers_newest_capture_and_reports_outages():
+    from multiprocessing import Pipe
+    from deploy.robot.sensor_process import RosSensorProcess
+    source = RosSensorProcess.__new__(RosSensorProcess)
+    source.channel, sender = Pipe(duplex=False)
+    source.revision, source.last_error = 0, None
+    try:
+        for index, stamp in ((1, 5.), (2, 5.06)):
+            sample = SimpleNamespace(sequence=index, lidar_at=stamp, pose_at=stamp)
+            sender.send(('scan', (sample, None)))
+        source.wait_frame(None, 0.)
+        assert (source.latest().sequence, source.latest().lidar_at, source.latest().pose_at) == (2, 5.06, 5.06)
+        sender.send(('scan', (None, 'waiting for aligned odometry')))
+        source.wait_frame(2, 0.)
+        assert source.latest() is None and source.last_error == 'waiting for aligned odometry'
+        sender.close()
+        with pytest.raises(RuntimeError, match='disconnected'):
+            source.wait_frame(3, .1)
+    finally:
+        source.channel.close()
+        sender.close()

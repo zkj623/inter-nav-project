@@ -18,6 +18,7 @@ import requests
 
 from deploy.recording.recorder import pack, unpack, json_value, provenance
 from deploy.robot.observation import Snapshot
+from deploy.robot.world_boundary import WorldBoundary
 from deploy.visualization.scene import SceneCapture
 from deploy.visualization.worker import process_frames
 from deploy.visualization.sources import LatestFrames, jpeg_from_bgr
@@ -94,6 +95,8 @@ class Session:
         self.frames = LatestFrames(stale_after=1., demo=demo)
         self.cloud_json = None
         self.separate_cloud = separate_cloud
+        self.world_boundary = WorldBoundary.from_navigation(config['navigation'])
+        self.point_ceiling = config['navigation']['mapping'].get('point_height', (None, None))[1]
         self.capture = SceneCapture()
         context = mp.get_context('spawn')
         self.pending = context.Queue(maxsize=4)
@@ -196,6 +199,8 @@ class Session:
         # session producers supported without recording duplicates/older reads.
         if record_observation:
             self.record_observation(snapshot)
+            # Live acquisition already cropped its copy in experiment coordinates.
+            snapshot = snapshot.navigation_view(self.point_ceiling, self.world_boundary)
         lidar = snapshot.observation['sensors']['lidar']
         scan = None
         if (self.separate_cloud and snapshot.geometry_calibrated

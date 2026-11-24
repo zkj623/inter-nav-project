@@ -31,6 +31,22 @@ class OnlineRayEvidenceTests(unittest.TestCase):
         hit,free,_=self.masks([[1.1,0,.3]])
         self.assertTrue(hit.any());self.assertFalse(free[self.grid.world_to_cell((1.2,0))])
         self.assertFalse(free[self.grid.world_to_cell((.5,.2))])
+    def test_free_and_hit_masks_match_exact_cells_at_corners_and_map_edges(self):
+        from grutopia_extension.interactive_navigation.mapping import world_ray_cells
+        origin = (.125, .125, .3)
+        for end in ((1.125, 1.125, .3), (1.0, .2, .3), (-1., -.2, .3),
+                    (.125, -1.5, .3), (2., .125, .3), (-1.75, .125, .3)):
+            for a, b in ((origin, end), (end, origin)):
+                with self.subTest(start=a, end=b):
+                    hit, free, stats = self.masks([b, b], origin=a)
+                    ray = world_ray_cells(a, b, self.cfg)
+                    expected_hit, expected_free = np.zeros_like(hit), np.zeros_like(free)
+                    for (r, c), mask in zip(ray, [expected_free] * (len(ray)-1) + [expected_hit]):
+                        if 0 <= r < hit.shape[0] and 0 <= c < hit.shape[1]:
+                            mask[r, c] = True
+                    np.testing.assert_array_equal(hit, expected_hit)
+                    np.testing.assert_array_equal(free, expected_free)
+                    self.assertEqual(stats['free_segments'], 1)
     def test_invalid_no_hit_sentinel_cannot_reveal_the_map(self):
         hit,free,_=self.masks([[1e10,0,.3],[float('nan'),0,.3],[0,0,.3]])
         self.assertFalse(hit.any());self.assertFalse(free.any())

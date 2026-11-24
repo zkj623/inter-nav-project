@@ -27,6 +27,16 @@ def lidar_below_ceiling(points, ceiling):
     return points[~above] if above.any() else points
 
 
+def navigation_points(points, ceiling, boundary):
+    if ceiling is not None:
+        points = lidar_below_ceiling(points, ceiling)
+    if boundary is not None and len(points):
+        inside = boundary.point_mask(points)
+        if not inside.all():
+            points = points[inside]
+    return points
+
+
 @dataclass
 class Snapshot:
     observation: dict
@@ -41,26 +51,33 @@ class Snapshot:
     coordinate_transform: dict | None = None
 
     def below_ceiling(self, ceiling):
-        if ceiling is None or not self.geometry_calibrated:
+        return self.navigation_view(ceiling)
+
+    def navigation_view(self, ceiling, boundary=None):
+        if (ceiling is None and boundary is None) or not self.geometry_calibrated:
             return self
         sensors = self.observation['sensors']
         lidar = sensors['lidar']
         points = np.asarray(lidar['pointcloud'])
-        filtered = lidar_below_ceiling(points, ceiling)
+        filtered = navigation_points(points, ceiling, boundary)
         sensors = dict(sensors)
         if filtered is not points:
             sensors['lidar'] = {**lidar, 'pointcloud': filtered}
         camera = sensors.get('camera')
         if camera is not None:
             xyz = np.asarray(camera['pointcloud'])
-            above, edge = ceiling_masks(xyz, ceiling)
-            if above.any() or edge.any():
+            invalid, edge = (ceiling_masks(xyz, ceiling) if ceiling is not None else
+                             (np.zeros(len(xyz), bool), np.zeros(len(xyz), bool)))
+            if boundary is not None:
+                invalid |= ~boundary.point_mask(xyz)
+            if invalid.any() or edge.any():
                 # Dense XYZ and depth must continue to address the same pixels.
                 xyz = xyz.astype(np.float64, copy=True)
                 depth = np.asarray(camera['depth']).copy()
-                xyz[edge, 2] = ceiling
-                xyz[above] = np.nan
-                depth[above.reshape(depth.shape)] = np.nan
+                if edge.any():
+                    xyz[edge, 2] = ceiling
+                xyz[invalid] = np.nan
+                depth[invalid.reshape(depth.shape)] = np.nan
                 sensors['camera'] = {**camera, 'pointcloud': xyz, 'depth': depth}
         return replace(self, observation={**self.observation, 'sensors': sensors})
 

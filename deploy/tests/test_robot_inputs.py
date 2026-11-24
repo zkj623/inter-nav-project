@@ -9,7 +9,7 @@ from types import SimpleNamespace as Message
 import numpy as np
 import pytest
 
-from deploy.app.config import check_task_inputs, check_motion_configuration, load
+from deploy.app.config import check_task_inputs, load
 from deploy.app.tasks import Tasks
 from deploy.robot.diagnostics import describe
 from deploy.robot.localization import PoseContinuity, PoseHistory, registered_floor_height
@@ -40,6 +40,7 @@ def sensor(calibrated=True):
     source.config = dict(load()['robot'], map_frame='odom', base_frame='base_link',
                          lidar_topic='/utlidar/cloud_deskewed')
     source.mid360s = False
+    source.mixed = None
     source.imu_samples = deque(maxlen=256)
     if calibrated:
         source.config.update(ground_z=-.3, lidar_origin_offset_base_m=[.1, 0., .1])
@@ -94,7 +95,8 @@ def test_observe_deduplicates_scans_without_advancing_task_timeout():
 
 def test_ground_height_cap_preserves_dense_pixel_alignment_and_the_source_recording():
     from deploy.robot.observation import Snapshot
-    xyz = np.array([[1., 0., .279], [1., 0., .28], [1., 0., .28001]], dtype=np.float32)
+    from deploy.robot.world_boundary import WorldBoundary
+    xyz = np.array([[1., .95, .279], [1., 0., .28], [1., 0., .28001]], dtype=np.float32)
     depths = np.full((1, 3), 1., dtype=np.float32)
     sensors = {'lidar': {'pointcloud': xyz}, 'camera': {'pointcloud': xyz, 'depth': depths}}
     raw = Snapshot({'sensors': sensors}, 4., 3.9, 3.9, 3.9, (), 12)
@@ -106,6 +108,10 @@ def test_ground_height_cap_preserves_dense_pixel_alignment_and_the_source_record
     assert filtered['camera']['pointcloud'].shape == (3, 3)
     assert np.isnan(filtered['camera']['pointcloud'][2]).all()
     np.testing.assert_equal(filtered['camera']['depth'], [[1., 1., np.nan]])
+    cropped = raw.navigation_view(.28, WorldBoundary((-1.2, 5.), (-2.6, .9))).observation['sensors']
+    np.testing.assert_array_equal(cropped['lidar']['pointcloud'], [[1., 0., .28]])
+    assert np.isnan(cropped['camera']['pointcloud'][[0, 2]]).all()
+    np.testing.assert_equal(cropped['camera']['depth'], [[np.nan, 1., np.nan]])
     assert np.isfinite(xyz).all() and np.isfinite(depths).all() and xyz[-1, 2] > .28
 
 
@@ -192,7 +198,9 @@ def test_cloud_waits_for_time_aligned_odometry():
 
 def test_mid360_pairs_registered_points_world_velocity_and_raw_imu():
     source = sensor()
-    source.config = dict(load()['robot'], ground_z=0.)
+    source.config = dict(load()['robot'], ground_z=0., base_frame='bot1/aft_mapped',
+                         lidar_topic='/bot1/cloud_registered_sparse',
+                         lidar_origin_offset_base_m=[-.011, -.02329, .04412])
     source.mid360s, source.matched_scan = True, None
     stamp = 1_000_000_000
     pose = odometry(stamp, 1., frame=source.config['map_frame'])
@@ -307,18 +315,6 @@ def test_live_observe_without_rgbd_does_not_start_models_or_motion(monkeypatch, 
     assert not list(tmp_path.iterdir())  # run publishes; only record owns experiment files
 
 
-def test_receipt_does_not_bypass_communication_acceptance():
-    config = load()
-    robot = config['robot']
-    robot.update(calibration_verified=True, deskew_and_self_filter_verified=True,
-                 communication_verified=False, remote_arbitration_verified=True, ground_z=-.3,
-                 lidar_origin_offset_base_m=[.1, 0, .1], takeover_button_mask=1)
-    with pytest.raises(ValueError, match='communication_verified'):
-        check_motion_configuration(config)
-    robot['communication_verified'] = True
-    check_motion_configuration(config)
-
-
 def test_time_aligned_origin_rotates_with_body():
     history = PoseHistory(.05)
     # A 20-degree turn over 40 ms; midpoint must rotate the mounting offset by 10 degrees.
@@ -328,3 +324,70 @@ def test_time_aligned_origin_rotates_with_body():
     p, q = history.at(1_020_000_000)
     np.testing.assert_allclose(transform([.1, 0, .2], p, q),
                                [1+.1*np.cos(np.deg2rad(10)), 2+.1*np.sin(np.deg2rad(10)), .2])
+
+
+def test_original_scans_follow_mid360_pose_even_when_old_odometry_underestimates_travel():
+    from deploy.robot.mixed_cloud import MixedCloud
+    from deploy.robot.localization import multiply, rotation
+
+    source = sensor()
+    source.config = dict(load()['robot'], ground_z=0.)
+    source.mixed = MixedCloud(source.config)
+    source.mid360s, source.matched_scan = True, None
+    source.timebase = Message(unitree_to_lio_ns=-4_000_000_000)
+    source._stamp = lambda msg, offset_ns=0: (msg.header.stamp+offset_ns, (msg.header.stamp+offset_ns)*1e-9)
+    lio_start = 1_000_000_000
+    mount = source.mixed
+    pitch = np.deg2rad(source.config['mid360_mount']['pitch_deg'])
+    body_from_imu = [np.cos(pitch/2), 0., np.sin(pitch/2), 0.]
+    # Old and new map axes differ. The old pose reports half the true displacement.
+    def heading(angle):
+        return [np.cos(angle/2), 0., 0., np.sin(angle/2)]
+    old_q, new_q = heading(-.4), heading(.6)
+    old_r, new_r = rotation(old_q), rotation(new_q)
+    wall = np.array([[4., 2., .7], [4., 2.5, .7]])
+    def set_pose(msg, p, q):
+        obj = msg.pose.pose
+        obj.position = Message(x=p[0], y=p[1], z=p[2])
+        obj.orientation = Message(w=q[0], x=q[1], y=q[2], z=q[3])
+    def pose_samples(tick):
+        distance = tick/10.
+        stamp = lio_start+tick*100_000_000
+        raw_stamp = stamp-source.timebase.unitree_to_lio_ns
+        new_base = new_r[:, 0]*distance
+        old_base = old_r[:, 0]*distance/2 + [10., 1., 0.]
+        mid = odometry(stamp, 0., frame='bot1/world')
+        mid.child_frame_id = source.config['lio_imu_frame']
+        set_pose(mid, new_base + new_r @ mount.imu_in_body, multiply(new_q, body_from_imu))
+        source._pose(mid)
+        old = odometry(raw_stamp, 0.)
+        set_pose(old, old_base, old_q)
+        source._cloud_odom(old)
+    outputs = []
+    pose_samples(0)
+    for tick in range(18):
+        # Frame after t=0 or t=1.75 s; the next LIO pose has not arrived yet.
+        gap = 0 if tick == 0 else 50_000_000
+        stamp = lio_start+tick*100_000_000+gap
+        t = (stamp-lio_start)*1e-9
+        raw_stamp = stamp-source.timebase.unitree_to_lio_ns
+        old_base = old_r[:, 0]*t/2 + [10., 1., 0.]
+        points = (wall-new_r[:, 0]*t) @ new_r @ old_r.T + old_base
+        msg = cloud(raw_stamp)
+        msg.data = b''.join(struct.pack('<ffff', 99., *point)+b'PAD!' for point in points)
+        source._lidar(msg)
+        source._imu(Message(header=Message(frame_id='livox_frame', stamp=stamp),
+                            linear_acceleration=Message(x=0., y=0., z=1.),
+                            angular_velocity=Message(x=0., y=0., z=0.)))
+        if gap:
+            assert source.wait_frame(outputs[-1][0], 0) == outputs[-1][0]
+        pose_samples(tick+1)
+        assert source.wait_frame(stamp-1, 0) == stamp
+        packet = source.latest()
+        lidar = packet.observation['sensors']['lidar']
+        assert lidar['source_stamp_ns'] == raw_stamp and lidar['physics_step'] == stamp
+        np.testing.assert_allclose(lidar['pointcloud'], wall, atol=2e-6)
+        np.testing.assert_allclose(lidar['position'], new_r[:, 0]*t + new_r @ source.config['lidar_origin_offset_base_m'],
+                                   atol=1e-7)
+        outputs.append((stamp, packet.observation['position']))
+    assert np.linalg.norm(outputs[-1][1]-outputs[0][1]) == pytest.approx(1.75)

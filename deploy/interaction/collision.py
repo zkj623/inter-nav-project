@@ -15,9 +15,12 @@ from grutopia_extension.interactive_navigation.go2_voronoi_navigation import bod
 
 
 class ContactCollisionChecker:
-    def __init__(self, config, planner, profile):
+    def __init__(self, config, planner, profile, world_boundary=None):
         self.config, self.planner, self.profile = config, planner, profile
+        self.world_boundary = world_boundary
         self.evidence = OccupancyGridMap(replace(config, sticky_free_scale=1.))
+        self.interior = (world_boundary.interior_mask(config, self.evidence.observed.shape)
+                         if world_boundary is not None else None)
         self.last_scan = None
         self.points = np.empty((0, 3))
         self.diagnostic = {'clear': False, 'reason': 'no_contact_scan'}
@@ -114,6 +117,8 @@ class ContactCollisionChecker:
             body_here = ((body[..., 0] >= p.foot_x_min_m) & (body[..., 0] <= p.foot_x_max_m)
                          & (np.abs(body[..., 1]) <= p.foot_half_width_m))
             free |= body_here
+            if self.interior is not None:
+                free &= self.interior
             free[self._point_mask(non_target)] = False
             shadow = copy(self.planner)
             shadow.free = shadow.box_free = free
@@ -136,6 +141,15 @@ class ContactCollisionChecker:
             # measured stopping envelope; target-only cells are allowed at t=0.
             if pushing and requested > 1e-8:
                 direction = world_velocity/requested
+                if self.world_boundary is not None:
+                    # A fixed-orientation box translated along a straight line
+                    # stays within a rectangle if its start and end fit.
+                    yaw = math.atan2(rot[1, 0], rot[0, 0])
+                    size = dims[:2] + 2*p.release_margin_m
+                    destination = np.asarray(target.xy) + direction*distance
+                    if not all(self.world_boundary.contains_box(xy, size, yaw)
+                               for xy in (target.xy, destination)):
+                        return finish(False, 'box_sweep_outside_world_boundary')
                 blocked = ~free
                 for box in others:
                     mask = shadow.box_mask(box)

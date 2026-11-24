@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import json
 
 import numpy as np
+import pytest
 
 from deploy.robot.observation import Snapshot
 from deploy.app.session import encode_packet, decode_packet
@@ -63,13 +64,14 @@ def test_online_layers_and_push_state_are_detached_from_display():
     assert restored_snapshot.planning_frame == 'experiment'
 
 
-def test_detached_map_geometry_matches_direct_simulation_renderer():
+@pytest.mark.parametrize('bounded', [False, True])
+def test_detached_map_geometry_matches_direct_simulation_renderer(bounded):
     from deploy.app.config import load
     from deploy.app.demo import DemoSensors
     from deploy.app.tasks import Tasks
     from grutopia_extension.interactive_navigation.task_video_recording import TaskVideoRecorder
 
-    tasks = Tasks(load()['navigation'])
+    tasks = Tasks({**load()['navigation'], 'world_boundary': bounded})
     snapshot = DemoSensors(SimpleNamespace(rgb=lambda *args: None)).latest()
     tasks.update(snapshot, snapshot.captured_at)
     tasks.start('navigate', (1., 0., .3), snapshot.captured_at)
@@ -83,8 +85,19 @@ def test_detached_map_geometry_matches_direct_simulation_renderer():
     expected = renderer._render_map(0, tasks.engine.phase,
                                    SimpleNamespace(robot_position=scene['position']), runtime)
     actual = render_map(scene)
-    # Titles and real-device permissions differ; every geometry/route pixel agrees.
-    np.testing.assert_array_equal(actual[35:, :785], expected[35:, :785])
+    if bounded:
+        xmin, xmax = scene['world_boundary']['x_limits']
+        ymin, ymax = scene['world_boundary']['y_limits']
+        x0, y0 = renderer._world_to_pixel((xmin, ymax), runtime.map)
+        x1, y1 = renderer._world_to_pixel((xmax, ymin), runtime.map)
+        lx, ly, width, height = renderer._map_viewport
+        for sample in (actual[ly:y0-3, lx:lx+width], actual[y1+4:ly+height, lx:lx+width],
+                       actual[y0:y1, lx:x0-3], actual[y0:y1, x1+4:lx+width]):
+            assert sample.size and np.all(sample == [164, 168, 175])
+        assert actual[(y0+y1)//2, x0].tolist() == [165, 96, 32]
+        np.testing.assert_array_equal(actual[y0+3:y1-2, x0+3:x1-2], expected[y0+3:y1-2, x0+3:x1-2])
+    else:
+        np.testing.assert_array_equal(actual[35:, :785], expected[35:, :785])
     for field, source in [('stable', 'stable_obstacles'), ('local_dynamic', 'local_dynamic'),
                           ('global_tracked', 'global_tracked')]:
         np.testing.assert_array_equal(scene[field], getattr(tasks.engine.layers, source))

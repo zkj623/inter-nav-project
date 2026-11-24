@@ -126,26 +126,24 @@ contact_profile: contact_profile.yaml
 
 箱体停稳使用多个独立源扫描的连续窗口，检查完整箱体角点的偏移和速度，包含原地旋转；不要求带噪测量逐帧完全相同。三个 `box_*` 参数必须由静止抖动与缓慢移动实验确定，不能把分辨率以下的变化当成已测得静止。通道确认同时检查地图实际融合扫描的采集时间，不用计算完成时间冒充移动后的新扫描。
 
-空载响应与接触标定的方法、最终完整验收口径见 [interaction_plan.md](interaction_plan.md)。这些标定不是另一套推箱交付功能，也不会自动把现场验收开关设为通过。
+空载响应与接触标定的方法、最终完整验收口径见 [interaction_plan.md](interaction_plan.md)。
 
 ## 4. 启用完整交互导航
 
-完成实际尺寸/位姿跟踪与 SDK 接触响应验收后，设置：
+推箱实验使用以下配置。
 
 | 文件 | 设置 |
 |---|---|
 | `configs/interaction.yaml` | `source: registered_box_lidar`、`tracking_enabled: true`、`geometry_verified: true`，登记箱体及完整 `contact_profile` |
-| `configs/robot.yaml` | `interaction_motion_verified: true`；原点导航标定、通信和遥控接管条件仍需满足 |
 | `configs/navigation.yaml` | `interaction_enabled: true` |
 
-在 deploy 目录检查配置，然后运行：
+在 deploy 目录运行：
 
 ```bash
-python run.py --check
 python run.py
 ```
 
-`--check` 不连接机器人，不证明硬件已通过验收。run 启动后仍先观察；等地图与跟踪稳定，按 `n` 输入导航坐标。沿用 `p` 暂停、`r` 继续、空格取消、`q` 退出；view 和 record 仍是只读客户端。
+地图与跟踪就绪后，按 `n` 输入导航坐标。按 `p` 暂停、`r` 继续、空格取消、`q` 退出。
 
 规划器自动决定绕行或推移，并自行计算待推位置、方向和侧停目标。推移结束后要求箱体实测位移、箱体最终移动后的新扫描和整机通道证书；独立 writer 确认停稳后才恢复普通导航。运动中丢失目标、观测过期、接触无进展、预算到期或遥控接管均停止，不能靠重新发送旧命令自动恢复。
 

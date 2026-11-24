@@ -24,7 +24,7 @@ def _start_message(channel, stop):
     return None
 
 
-def _ros(config, channel, stop, robot, timebase, ceiling):
+def _ros(config, channel, stop, robot, timebase, ceiling, boundary=None):
     from deploy.robot.sensors import RosSensors
     sensors = RosSensors(dict(robot, camera_mode='unavailable'), timebase=timebase, node_name='inter_nav_box_window')
     worker = None
@@ -35,7 +35,7 @@ def _ros(config, channel, stop, robot, timebase, ceiling):
             return
         if reference.metadata is None:
             raise ValueError('Box tracking requires the initialized navigation frame')
-        worker = WindowWorker(WindowBoxObserver(config, live=True), _ResultPipe(channel))
+        worker = WindowWorker(WindowBoxObserver(config, live=True, world_boundary=boundary), _ResultPipe(channel))
         seen = None
         while not stop.is_set():
             seen = sensors.wait_frame(seen, .1)
@@ -47,7 +47,7 @@ def _ros(config, channel, stop, robot, timebase, ceiling):
                 continue
             try:
                 snapshot = reference.apply(snapshot, time.monotonic(), robot['max_data_age_s'])
-                worker.submit(snapshot.below_ceiling(ceiling))
+                worker.submit(snapshot.navigation_view(ceiling, boundary))
             except ValueError as exc:
                 worker.submit(None, str(exc))
     finally:
@@ -58,21 +58,21 @@ def _ros(config, channel, stop, robot, timebase, ceiling):
             sensors.close()
 
 
-def _recording(config, channel, stop, directory, ceiling):
+def _recording(config, channel, stop, directory, ceiling, boundary=None):
     from deploy.recording.replay import ReplayClock, snapshots
     clock = ReplayClock()
     anchor = _start_message(channel, stop)
     if anchor is None:
         return
     clock.first, clock.wall_start = anchor
-    worker = WindowWorker(WindowBoxObserver(config, live=True), _ResultPipe(channel), clock=clock.now)
+    worker = WindowWorker(WindowBoxObserver(config, live=True, world_boundary=boundary), _ResultPipe(channel), clock=clock.now)
     try:
         for packet in snapshots(directory):
             if not clock.wait(packet.captured_at, stop):
                 break
             if worker.failure:
                 raise RuntimeError(worker.failure)
-            worker.submit(packet.below_ceiling(ceiling))
+            worker.submit(packet.navigation_view(ceiling, boundary))
     finally:
         worker.close(drain=not stop.is_set())
 
@@ -91,14 +91,14 @@ def _run(source, config, channel, stop, args):
 class WindowProcess:
     """Only small measured results cross the pipe. The child owns its input stream."""
     @classmethod
-    def live(cls, config, sink, event, robot, timebase, ceiling):
+    def live(cls, config, sink, event, robot, timebase, ceiling, boundary=None):
         if timebase is None:
             raise ValueError('Box tracking requires the navigation time reference')
-        return cls(_ros, (robot, timebase, ceiling), config, sink, event)
+        return cls(_ros, (robot, timebase, ceiling, boundary), config, sink, event)
 
     @classmethod
-    def replay(cls, config, sink, directory, ceiling):
-        return cls(_recording, (directory, ceiling), config, sink, 'box_window_result')
+    def replay(cls, config, sink, directory, ceiling, boundary=None):
+        return cls(_recording, (directory, ceiling, boundary), config, sink, 'box_window_result')
 
     def __init__(self, source, args, config, sink, event):
         self.sink, self.event = sink, event

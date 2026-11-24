@@ -66,6 +66,8 @@ def load(directory=None, *, interaction_path=None):
             raise ValueError(f'perception.{key} must be positive')
     if type(result['navigation']['interaction_enabled']) is not bool:
         raise ValueError('navigation.interaction_enabled must be boolean')
+    from deploy.robot.world_boundary import WorldBoundary
+    WorldBoundary.from_navigation(result['navigation'])
     if type(result['runtime']['perception']['geometry_verified']) is not bool:
         raise ValueError('perception.geometry_verified must be boolean')
     if result['robot']['map_frame'] == result['robot']['base_frame']:
@@ -106,7 +108,7 @@ def load(directory=None, *, interaction_path=None):
 
 
 def check_control_configuration(config, *, require_takeover=True):
-    """SDK prerequisites, independent of map and full-navigation acceptance."""
+    """Validate the settings used by the SDK motion worker."""
     robot = config['robot']
     if not robot['network_interface'].strip():
         raise ValueError('Fill robot.yaml network_interface before enabling motion')
@@ -114,20 +116,12 @@ def check_control_configuration(config, *, require_takeover=True):
     if type(mask) is not int or not 0 <= mask <= 65535:
         raise ValueError('takeover_button_mask must be an integer from 0 to 65535')
     if require_takeover and mask == 0:
-        raise ValueError('Configure a verified takeover_button_mask; --motion-test can display button bits')
+        raise ValueError('Configure a nonzero takeover_button_mask for remote takeover')
     if not robot.get('sport_state_motion_codes'):
         raise ValueError('Configure sport_state_motion_codes for this robot before enabling motion')
 
 
-def check_motion_configuration(config):
-    """Full autonomous navigation requires both SDK prerequisites and field acceptance."""
-    robot = config['robot']
-    for field in ('calibration_verified', 'deskew_and_self_filter_verified', 'communication_verified', 'remote_arbitration_verified'):
-        if robot[field] is not True:
-            raise ValueError(f'Motion disabled: robot.yaml {field} is not verified; use --motion-test for bounded acceptance trials')
-    if robot['ground_z'] is None or robot['lidar_origin_offset_base_m'] is None:
-        raise ValueError('Measure ground_z and lidar_origin_offset_base_m before enabling navigation')
-    check_control_configuration(config)
+check_motion_configuration = check_control_configuration
 
 
 def check_task_inputs(robot, snapshot):

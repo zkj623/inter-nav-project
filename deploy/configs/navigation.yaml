@@ -1,7 +1,9 @@
 # Shared algorithms come from stage1-go2-simulation-release; time is seconds.
+world_boundary: true
 mapping:
-  x_limits: [-10.0, 10.0]
-  y_limits: [-10.0, 10.0]
+  # Experiment metres from the startup pose: X forward, Y left.
+  x_limits: [-1.2, 5.0]
+  y_limits: [-2.6, 0.9]
   grid_resolution: 0.1
   voxel_size: 0.1
   robot_radius: 0.30
@@ -9,7 +11,6 @@ mapping:
   # Ground-relative metres. Discard higher endpoints before tracing free rays.
   obstacle_height: [0.10, 0.28]
   point_height: [-0.10, 0.28]
-  safe_recovery_y_limits: [-9.5, 9.5]
   sticky_free_scale: 0.25
 max_forward_speed: 0.80
 max_lateral_speed: 0.30
