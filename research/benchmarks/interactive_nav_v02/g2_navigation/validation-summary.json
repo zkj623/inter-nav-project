@@ -1,0 +1,140 @@
+{
+  "historical_posture_hold_check": {
+    "posture_source": {
+      "field": "standby_joint_positions_rad",
+      "configured_joints": 32,
+      "config_sha256": "4e83522a4669ba7822251a4c57ed90d9d463365729250fc88a2bca7b110411f0",
+      "joint_values_modified": false,
+      "branch": "genie2-rsi",
+      "commit": "f6104fa832c3fcdcde2571c8a28317dafe590d20",
+      "path": "research/rsi/g2_sim/standby_preparation_config.json"
+    },
+    "standby_hold_passed": true,
+    "standby_hold_seconds": 5.0,
+    "configured_joints": 32,
+    "exact_initial_targets": true,
+    "maximum_joint_error_rad": 0.002321551976637304,
+    "self_contact_events": 0,
+    "non_support_force_points": 0,
+    "behavior_checks_passed": true,
+    "recorded_source_hashes_match_packaged_code": {
+      "run_g2_holonomic.py": true,
+      "g2_holonomic_navigation.py": true,
+      "g2_pose_planning.py": true,
+      "g2_online_map.py": true,
+      "g2_standby_pose.py": true,
+      "standby_preparation_config.json": true,
+      "restore_g2_visuals.py": true,
+      "g2_preview_materials.py": true
+    },
+    "navigation_episode_retested_with_new_posture": false,
+    "scope": "Exact default posture initialization and five-second free-base holding check; not a completed navigation episode."
+  },
+  "latest_pure_navigation_retest": {
+    "success_metric": "goal reached and stopped; contact audit retained separately as diagnostic",
+    "method_change": "Short straight observed-only startup recovery using union of actual robot collision-part projections. Normal SE2 navigation unchanged after recovery.",
+    "tasks_finished": 2,
+    "goals_reached_and_stopped": 2,
+    "tasks": [
+      {
+        "task": "S03-T09",
+        "goal_reached_and_stopped": true,
+        "reason": "goal_reached_and_stopped",
+        "goal_error_m": 0.4741846622453503,
+        "actual_path_m": 6.791837448401716,
+        "final_speed_m_s": 0.000718351686373353,
+        "final_angular_speed_rad_s": 0.0009627421386539936,
+        "contact_diagnostic_non_support_samples": 0,
+        "self_contact_diagnostic": true,
+        "stable_body": true,
+        "all_original_diagnostic_checks_passed": true,
+        "startup_recovery_events": [
+          {
+            "event": "started",
+            "time_s": 2.0,
+            "start_xy": [
+              2.275256395339966,
+              0.649740993976593
+            ],
+            "target_xy": [
+              2.186867360261005,
+              0.7381286541889224
+            ],
+            "heading_rad": 2.3562022676124927,
+            "distance_m": 0.12500000000000003,
+            "environment_input": "current same-tick range returns and observed map only"
+          },
+          {
+            "event": "finished",
+            "time_s": 4.5,
+            "position_xy": [
+              2.191829204559326,
+              0.7331258058547974
+            ],
+            "net_displacement_m": 0.11795390397310257
+          }
+        ],
+        "original_inputs_unchanged": {
+          "task.json": true,
+          "robot.usdc": true,
+          "scene.usda": true,
+          "pose.json": true,
+          "standby_preparation_config.json": true
+        },
+        "source_hashes_match": true,
+        "simulation_seconds": 84.6,
+        "error": null
+      },
+      {
+        "task": "S07-T10",
+        "goal_reached_and_stopped": true,
+        "reason": "goal_reached_and_stopped",
+        "goal_error_m": 0.4772601494421423,
+        "actual_path_m": 4.8724456841284685,
+        "final_speed_m_s": 0.0006805018056184053,
+        "final_angular_speed_rad_s": 0.0036130105145275593,
+        "contact_diagnostic_non_support_samples": 0,
+        "self_contact_diagnostic": true,
+        "stable_body": true,
+        "all_original_diagnostic_checks_passed": true,
+        "startup_recovery_events": [
+          {
+            "event": "started",
+            "time_s": 2.0,
+            "start_xy": [
+              3.1502580642700195,
+              -1.3997433185577393
+            ],
+            "target_xy": [
+              3.0795479003890374,
+              -1.4704545109103269
+            ],
+            "heading_rad": -2.356187217799882,
+            "distance_m": 0.10000000000000002,
+            "environment_input": "current same-tick range returns and observed map only"
+          },
+          {
+            "event": "finished",
+            "time_s": 4.1,
+            "position_xy": [
+              3.0842132568359375,
+              -1.4657647609710693
+            ],
+            "net_displacement_m": 0.09338494390249252
+          }
+        ],
+        "original_inputs_unchanged": {
+          "task.json": true,
+          "robot.usdc": true,
+          "scene.usda": true,
+          "pose.json": true,
+          "standby_preparation_config.json": true
+        },
+        "source_hashes_match": true,
+        "simulation_seconds": 52.1,
+        "error": null
+      }
+    ]
+  },
+  "scope": "Two original-start tasks after observed-only startup recovery; not a full-suite retest. Original seven frozen results remain separate."
+}
