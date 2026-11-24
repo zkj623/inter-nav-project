@@ -1,3 +1,7 @@
+<!-- symmetric-repair-20261124 -->
+[剩余4类修复与当前12/12名义初态结果](iterations/20261124_symmetric_repair/README.md)。对称初姿保持不变；使用该目录repair_workspace.py重建。旧240条冻结，尚未进行新初姿下随机扰动扩量。以下均为历史记录。
+<!-- /symmetric-repair-20261124 -->
+
 <!-- symmetric-wrist-20261124 -->
 当前默认已修正右腕J6为−0.8923 rad，身体−59°/149°/−75°、头部27°。本轮12类物理复验8类通过；[对称初姿、过渡与逐物体结果](iterations/20261124_symmetric_wrist/README.md)为当前入口。以下条目为历史状态，旧240条保持冻结。
 <!-- /symmetric-wrist-20261124 -->

@@ -752,7 +752,7 @@
   ],
   "preparation_seconds_per_segment": 20,
   "work_pose_changed": true,
-  "validation_scope": "Symmetric wrist nominal lifts: 8/12 verified. Full standby preparation physically verified for case_handheld only; all12 geometry checked. No randomized robustness or hardware claim.",
+  "validation_scope": "12 nominal low-home lifts verified with symmetric wrist; only case_handheld includes full standby preparation physics. Same fixed body/head and object centers; basket yaw90 changed to0. No new240 collection or randomized robustness claim.",
   "previous_work_config": "baseline_configs/ground_lift_training_config.json",
   "source_iteration": "20261124_realpose",
   "preferred_standby": true,
@@ -792,13 +792,13 @@
   "physics_scope": "pinned root, existing ideal torso drive; not hardware verification; work home and original angular limits/arm effort/contact acceptance retained",
   "execution": {
     "basket_rectangular": {
-      "iteration": "20261124_symmetric_wrist",
+      "iteration": "20261124_symmetric_repair",
       "harness": "realpose_basket_rectangular_trial.py",
-      "plan_dir": "realpose_plans",
+      "plan_dir": "repair_final_plans",
       "candidate": 0,
       "verified_end_to_end": false,
       "previous_plan_dir": "directprep_plans",
-      "verified_low_home_lift": false
+      "verified_low_home_lift": true
     },
     "basket_woven": {
       "iteration": "20261124_symmetric_wrist",
@@ -837,22 +837,22 @@
       "verified_low_home_lift": true
     },
     "box_reinforced": {
-      "iteration": "20261124_symmetric_wrist",
+      "iteration": "20261124_symmetric_repair",
       "harness": "realpose_box_reinforced_trial.py",
-      "plan_dir": "realpose_plans",
+      "plan_dir": "repair_final_plans",
       "candidate": 0,
       "verified_end_to_end": false,
       "previous_plan_dir": "directprep_plans",
-      "verified_low_home_lift": false
+      "verified_low_home_lift": true
     },
     "box_white": {
-      "iteration": "20261124_symmetric_wrist",
+      "iteration": "20261124_symmetric_repair",
       "harness": "realpose_box_white_trial.py",
-      "plan_dir": "realpose_plans",
+      "plan_dir": "repair_final_plans",
       "candidate": 0,
       "verified_end_to_end": false,
       "previous_plan_dir": "directprep_white_validation_plans",
-      "verified_low_home_lift": false
+      "verified_low_home_lift": true
     },
     "case_handheld": {
       "iteration": "20261124_symmetric_wrist",
@@ -882,13 +882,13 @@
       "verified_low_home_lift": true
     },
     "table_side": {
-      "iteration": "20261124_symmetric_wrist",
+      "iteration": "20261124_symmetric_repair",
       "harness": "realpose_table_side_trial.py",
-      "plan_dir": "realpose_plans",
+      "plan_dir": "repair_final_plans",
       "candidate": 0,
       "verified_end_to_end": false,
       "previous_plan_dir": "directprep_plans",
-      "verified_low_home_lift": false
+      "verified_low_home_lift": true
     },
     "bin_round_lidded": {
       "iteration": "20261124_symmetric_wrist",
