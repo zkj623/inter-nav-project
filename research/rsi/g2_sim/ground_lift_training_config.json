@@ -1,16 +1,15 @@
 {
-  "name": "g2_ground_lift_symmetric_home_v3",
+  "name": "g2_ground_lift_realpose_v4",
   "task": "in_place_lift_only",
-  "candidate_profile_id": 7,
   "fixed_joint_positions_rad": {
-    "idx01_body_joint1": -0.6981317007977318,
-    "idx02_body_joint2": 2.478367537831948,
-    "idx03_body_joint3": -1.5184364492350666,
+    "idx01_body_joint1": -1.0297442586766545,
+    "idx02_body_joint2": 2.600540585471551,
+    "idx03_body_joint3": -1.3089969389957472,
     "idx04_body_joint4": 0.0,
     "idx05_body_joint5": 0.0,
     "idx11_head_joint1": 0.0,
     "idx12_head_joint2": 0.0,
-    "idx13_head_joint3": 0.0,
+    "idx13_head_joint3": 0.47123889803846897,
     "idx111_chassis_lwheel_front_joint1": 0.0,
     "idx112_chassis_lwheel_front_joint2": 0.0,
     "idx131_chassis_rwheel_front_joint1": 0.0,
@@ -21,9 +20,9 @@
     "idx122_chassis_lwheel_rear_joint2": 0.0
   },
   "body_joint_positions_deg": {
-    "idx01_body_joint1": -40.0,
-    "idx02_body_joint2": 142.0,
-    "idx03_body_joint3": -87.0,
+    "idx01_body_joint1": -59.00000000000001,
+    "idx02_body_joint2": 149.0,
+    "idx03_body_joint3": -75.0,
     "idx04_body_joint4": 0.0,
     "idx05_body_joint5": 0.0
   },
@@ -60,8 +59,8 @@
   ],
   "policy_action_dimension": 16,
   "policy_action_type": "absolute_joint_position_targets_rad",
-  "shoulder_height_m": 0.8226806225393324,
-  "torso_tilt_deg": 15.000000000000043,
+  "shoulder_height_m": 0.8113247724948683,
+  "torso_tilt_deg": 15.0,
   "joint_lock_method": "root pinned throughout; original torso angular limits during preparation; torso angular limits fixed at new home only after settling; arms/grippers actuated",
   "initialization_scope": "Custom narrow arms-down standby in work-compatible shoulder IK branch ->20s preparation -> unchanged archived low work home;torso locked for arm/gripper policy",
   "excluded_from_initial_lift_set": {
@@ -76,179 +75,68 @@
     "geometry_screen_not_physics_success": true,
     "original_torso_effort_transition_verified": false
   },
-  "plan_directory": "directprep_plans",
+  "plan_directory": "realpose_plans",
   "body_joint_margin_deg": {
-    "idx01_body_joint1": 22.005492589057695,
-    "idx02_body_joint2": 10.005703048207408,
-    "idx03_body_joint3": 22.263051531447996,
+    "idx01_body_joint1": 3.005492589057686,
+    "idx02_body_joint2": 3.00570304820741,
+    "idx03_body_joint3": 34.263051531447985,
     "idx04_body_joint4": 25.003878179509126,
     "idx05_body_joint5": 174.50002608504352
   },
-  "status": "12/12 unchanged-low-home simulation lift baselines;current preferred startup full verification for white box and round-lidded bin only; no data collection",
+  "status": "active real-machine-reference low default;12/12 geometry/path and initial head27 visibility checks;3/12 independently verified physical lifts with synchronized head RGB",
   "geometry_screen_pass_assets": [
     "basket_rectangular",
     "basket_woven",
     "bin_lidded",
     "bin_pedal",
-    "bin_round_lidded",
     "bin_round_pedal",
     "box_reinforced",
     "box_white",
     "case_handheld",
     "stool_rectangular",
     "stool_wood_four_leg",
-    "table_side"
+    "table_side",
+    "bin_round_lidded"
   ],
   "geometry_screen_fail_assets": [],
   "validated_assets": [
-    "basket_rectangular",
+    "case_handheld",
     "basket_woven",
+    "bin_pedal"
+  ],
+  "pending_adaptation_assets": [
+    "basket_rectangular",
     "bin_lidded",
-    "bin_pedal",
-    "bin_round_lidded",
     "bin_round_pedal",
     "box_reinforced",
     "box_white",
-    "case_handheld",
     "stool_rectangular",
     "stool_wood_four_leg",
-    "table_side"
+    "table_side",
+    "bin_round_lidded"
   ],
-  "pending_adaptation_assets": [],
   "validated_simulation_baselines": {
-    "basket_rectangular": {
-      "iteration": "20261120_symhome",
-      "harness": "symhome_v4force_basket_rectangular_trial.py",
-      "plan_dir": "symhome_plans",
-      "candidate": 0,
-      "repeat": 2,
-      "pinch_force_feedback": "basket top pinch: total20N/hand target with3N deadband; maxbranch>30N opens; joint offset[-0.12,0]rad, max0.04rad/s opening and0.02rad/s closure; original effort/material/geometry/contact acceptance retained"
-    },
-    "basket_woven": {
-      "iteration": "20261120_symhome",
-      "harness": "symhome_v4_basket_woven_trial.py",
-      "plan_dir": "symhome_plans",
-      "candidate": 0,
-      "repeat": 1
-    },
-    "bin_lidded": {
-      "iteration": "20261120_symhome",
-      "harness": "symhome_v4_bin_lidded_trial.py",
-      "plan_dir": "symhome_plans",
-      "candidate": 0,
-      "repeat": 1
-    },
-    "bin_pedal": {
-      "iteration": "20261120_symhome",
-      "harness": "symhome_v4_bin_pedal_trial.py",
-      "plan_dir": "symhome_plans",
-      "candidate": 0,
-      "repeat": 1
-    },
-    "bin_round_pedal": {
-      "iteration": "20261120_symhome",
-      "harness": "symhome_v4_bin_round_pedal_trial.py",
-      "plan_dir": "symhome_plans",
-      "candidate": 0,
-      "repeat": 1
-    },
-    "box_reinforced": {
-      "iteration": "20261120_symhome",
-      "harness": "symhome_v4_box_reinforced_trial.py",
-      "plan_dir": "symhome_plans",
-      "candidate": 0,
-      "repeat": 1
-    },
-    "box_white": {
-      "iteration": "20261120_symhome",
-      "harness": "symhome_v4_box_white_trial.py",
-      "plan_dir": "symhome_plans",
-      "candidate": 0,
-      "repeat": 1
-    },
-    "case_handheld": {
-      "iteration": "20261120_symhome",
-      "harness": "symhome_v4_case_handheld_trial.py",
-      "plan_dir": "symhome_plans",
-      "candidate": 0,
-      "repeat": 1,
-      "object_yaw_deg": 90,
-      "controller_feedback": "privileged measured object orientation; opposite tilt gain0.4 bounded8deg, rate1deg/s",
-      "capture_gate": "bilateral >12N for 3 updates, 15mm physical test lift, four actual contact manifolds within original visible tolerances; final hold still requires original four positive forces >=90%",
-      "final_acceptance": "original four positive forces >=90%; original lift/tilt/drift/contact limits",
-      "damped_feedback": "load balance0.4deg/s; load average0.5s; target28N/side; settle requires four forces>2N for8 updates; final acceptance unchanged"
-    },
-    "stool_rectangular": {
-      "iteration": "20261120_symhome",
-      "harness": "symhome_v4_stool_rectangular_trial.py",
-      "plan_dir": "symhome_plans",
-      "candidate": 0,
-      "repeat": 1
-    },
-    "stool_wood_four_leg": {
-      "iteration": "20261120_symhome",
-      "harness": "symhome_v4_stool_wood_four_leg_trial.py",
-      "plan_dir": "symhome_plans",
-      "candidate": 0,
-      "repeat": 1
-    },
-    "table_side": {
-      "iteration": "20261120_symhome",
-      "harness": "symhome_v4_table_side_trial.py",
-      "plan_dir": "symhome_plans",
-      "candidate": 0,
-      "repeat": 1
-    },
-    "bin_round_lidded": {
-      "iteration": "20261120_roundretry",
-      "harness": "roundretry_trial.py",
-      "plan_dir": "roundretry_diagonal_validation_plans",
-      "candidate": 0,
-      "repeat": 1,
-      "controller": "correct wrist contact pivot (remove duplicated TCP offset);28N/hand damped force; normalized0.4deg/s finger load balance; bounded20mm measured-object XY follow; original acceptance retained",
-      "controller_observation": "privileged measured object XY/orientation and finger contact forces; no object state writes",
-      "same_common_low_home": true
-    }
+    "case_handheld": "/data20t/embodied/zkj/inter-nav-results/g2-realpose-20261124/realpose_trials/realpose_plans/case_handheld/candidate0_repeat2",
+    "basket_woven": "/data20t/embodied/zkj/inter-nav-results/g2-realpose-20261124/realpose_trials/realpose_plans/basket_woven/candidate0_repeat2",
+    "bin_pedal": "/data20t/embodied/zkj/inter-nav-results/g2-realpose-20261124/realpose_trials/realpose_plans/bin_pedal/candidate0_repeat2"
   },
-  "validation_scope": "Same low work home:12/12 assets have verified simulation lifts. Latest standby-to-lift complete workflows verified for box_white and bin_round_lidded only. Fixed root, ideal torso drive,1kg screening mass; original hardware torso torque feasibility unresolved.",
-  "previous_config_archive": "iterations/20261120_directprep/fixtures/directprep_ground_lift_config.json",
+  "validation_scope": "Real-machine feedback covers body posture feasibility only. Exact head27 profile has3 physical lift passes;remaining9 only geometric/path checks. No real-machine torque or camera calibration verified.",
+  "previous_config_archive": "baseline_configs/ground_lift_training_config.json",
   "source_iteration": "iterations/20261120_roundretry",
   "planning_excluded_assets": [],
-  "per_asset_plan_directory_overrides": {
-    "basket_rectangular": "directprep_plans",
-    "basket_woven": "directprep_plans",
-    "bin_lidded": "directprep_plans",
-    "bin_pedal": "directprep_plans",
-    "bin_round_pedal": "directprep_plans",
-    "box_reinforced": "directprep_plans",
-    "box_white": "directprep_white_validation_plans",
-    "case_handheld": "directprep_plans",
-    "stool_rectangular": "directprep_plans",
-    "stool_wood_four_leg": "directprep_plans",
-    "table_side": "directprep_plans",
-    "bin_round_lidded": "roundretry_diagonal_validation_plans"
-  },
+  "per_asset_plan_directory_overrides": {},
   "additional_acceptance": "Non-hand contact impulse <=0.001 Ns; sampled non-hand penetration <=1 mm; held visual mesh floor clearance >5 mm. Four loaded contacts: distal fingers for spread, inner/outer branches for pinch and under-support.",
   "plan_resolution": "Archived validated_simulation_baselines reproduce the previous startup; current preferred arms-down startup uses execution entries in standby_preparation_config.json.",
   "controller_scope": "Per-asset archived baseline including controller gains and solver iterations; physical geometry/material/actuator caps recorded in protocol; all start from identical full q_start.",
   "latest_baseline_verified_repeat_counts": {
-    "basket_rectangular": 1,
-    "basket_woven": 1,
-    "bin_lidded": 1,
-    "bin_pedal": 1,
-    "bin_round_pedal": 1,
-    "box_reinforced": 1,
-    "box_white": 1,
     "case_handheld": 1,
-    "stool_rectangular": 1,
-    "stool_wood_four_leg": 1,
-    "table_side": 1,
-    "bin_round_lidded": 1
+    "basket_woven": 1,
+    "bin_pedal": 1
   },
   "common_initial_joint_positions_rad": {
-    "idx01_body_joint1": -0.6981317007977318,
-    "idx02_body_joint2": 2.478367537831948,
-    "idx03_body_joint3": -1.5184364492350666,
+    "idx01_body_joint1": -1.0297442586766545,
+    "idx02_body_joint2": 2.600540585471551,
+    "idx03_body_joint3": -1.3089969389957472,
     "idx22_arm_l_joint2": 1.0951674529098738,
     "idx62_arm_r_joint2": 1.0951674529098738,
     "idx24_arm_l_joint4": -2.358928599962099,
@@ -269,7 +157,7 @@
     "idx05_body_joint5": 0.0,
     "idx11_head_joint1": 0.0,
     "idx12_head_joint2": 0.0,
-    "idx13_head_joint3": 0.0,
+    "idx13_head_joint3": 0.47123889803846897,
     "idx111_chassis_lwheel_front_joint1": 0.0,
     "idx112_chassis_lwheel_front_joint2": 0.0,
     "idx131_chassis_rwheel_front_joint1": 0.0,
@@ -314,58 +202,8 @@
     "idx122_chassis_lwheel_rear_joint2": 0.0
   },
   "preparation_trajectory": {
-    "profile": "7th order 35u^4-84u^5+70u^6-20u^7; endpoint velocity/acceleration/jerk zero",
-    "minimum_duration_s": 20,
-    "maximum_command_velocity_fraction": 0.4,
-    "maximum_command_acceleration_rad_s2": 0.5,
-    "maximum_command_jerk_rad_s3": 2,
-    "waypoints": [
-      {
-        "idx01_body_joint1": -0.6981317007977318,
-        "idx02_body_joint2": 2.478367537831948,
-        "idx03_body_joint3": -1.5184364492350666,
-        "idx22_arm_l_joint2": 1.0951674529098738,
-        "idx62_arm_r_joint2": 1.0951674529098738,
-        "idx24_arm_l_joint4": -2.358928599962099,
-        "idx64_arm_r_joint4": -2.358928599962099,
-        "idx31_gripper_l_inner_joint1": -0.785,
-        "idx71_gripper_r_inner_joint1": -0.785,
-        "idx21_arm_l_joint1": -1.3912381207056912,
-        "idx23_arm_l_joint3": 1.1646263866725126,
-        "idx25_arm_l_joint5": -0.7499008700727761,
-        "idx26_arm_l_joint6": -0.8922999999999999,
-        "idx27_arm_l_joint7": -1.4159,
-        "idx61_arm_r_joint1": 1.3912381207056912,
-        "idx63_arm_r_joint3": -1.1646263866725126,
-        "idx65_arm_r_joint5": 0.7499008700727761,
-        "idx66_arm_r_joint6": 0.8922999999999999,
-        "idx67_arm_r_joint7": 1.4159,
-        "idx04_body_joint4": 0.0,
-        "idx05_body_joint5": 0.0,
-        "idx11_head_joint1": 0.0,
-        "idx12_head_joint2": 0.0,
-        "idx13_head_joint3": 0.0,
-        "idx111_chassis_lwheel_front_joint1": 0.0,
-        "idx112_chassis_lwheel_front_joint2": 0.0,
-        "idx131_chassis_rwheel_front_joint1": 0.0,
-        "idx132_chassis_rwheel_front_joint2": 0.0,
-        "idx141_chassis_rwheel_rear_joint1": 0.0,
-        "idx142_chassis_rwheel_rear_joint2": 0.0,
-        "idx121_chassis_lwheel_rear_joint1": 0.0,
-        "idx122_chassis_lwheel_rear_joint2": 0.0
-      }
-    ],
-    "source_default_yaml": null,
-    "root_pinned": true,
-    "ideal_torso_drive": true,
-    "analytical_joint_velocity_feedforward": true,
-    "outside_policy": true,
-    "policy_start_phase": "settle after preparation and torso lock",
-    "tracking_acceptance_rad": 0.25,
-    "precision_tracking_goal_rad": 0.1,
-    "precision_tracking_goal_met": false,
-    "source_standby_config": "standby_preparation_config.json",
-    "standby_is_official": false
+    "method": "joint-space quintic reference, newly generated; transition not physically revalidated",
+    "source": "standby_preparation_config.json/preparation_waypoints"
   },
   "original_torso_effort_audit": "iterations/20261120_symhome/fixtures/symhome_original_effort_audit.json",
   "previous_validation_default_joint_positions_rad": {
@@ -466,5 +304,58 @@
     "arms_within_chassis_projection": true,
     "nonadjacent_arm_body_visual_gap_m": 0.021233840370302275,
     "scope": "settled standby visual projection only"
+  },
+  "profile_id": "realpose_user_reported_20261124",
+  "head_joint_positions_deg": {
+    "idx11_head_joint1": 0.0,
+    "idx12_head_joint2": 0.0,
+    "idx13_head_joint3": 27.0
+  },
+  "minimum_body_margin_acceptance_deg": 2.9,
+  "margin_policy": "Real-machine-reported body posture has about3deg J1/J2 model margin; replaces the old10deg margin only for this explicitly selected profile. Original angular hard limits and grasp/hold gates retained.",
+  "hardware_evidence": {
+    "source": "user-reported real-machine feasible body posture",
+    "ankle_deg": -59,
+    "knee_deg": 149,
+    "waist_deg": -75,
+    "zero_reference_and_signs_assumed_equal_to_model": true,
+    "head25_and_arm_pose_not_hardware_validated": true,
+    "hardware_torque_limits_not_confirmed": true
+  },
+  "validated_old_profile_dataset": "/data20t/embodied/zkj/inter-nav-results/g2-act-collect-20261122/dataset/frozen_manifest.jsonl",
+  "camera_profile": {
+    "name": "head_front",
+    "reference_frame": "head_link3",
+    "head_pitch_deg": 27,
+    "source": "local official Genie Sim scene_flat_g2_op.yaml",
+    "resolution": [
+      640,
+      400
+    ],
+    "validation_scope": "12/12 initial complete model vertices within nominal head-camera frustum plus positive rendered semantic target pixels;3 actual head27 synchronized physical pilots. Not an all-episode occlusion guarantee.",
+    "home_floor": "wood_floor visual material only",
+    "head_selection_reason": "25deg clipped rectangular stool model by3px;27deg chosen for more image margin while retaining about2.97deg neck margin.",
+    "visibility_report": "head_visibility_head27/visibility_report.json",
+    "intrinsics": {
+      "fx": 305.6425170898,
+      "fy": 305.6007080078,
+      "cx": 318.7979431152,
+      "cy": 202.4943847656
+    },
+    "nominal_head_margin_deg": 2.97142226329336
+  },
+  "object_shift_x_m": {
+    "table_side": 0.0,
+    "basket_woven": 0.0,
+    "bin_round_pedal": 0.0,
+    "bin_round_lidded": 0.0,
+    "case_handheld": 0.0,
+    "box_reinforced": -0.03,
+    "box_white": -0.02,
+    "basket_rectangular": -0.04,
+    "bin_lidded": 0.0,
+    "stool_rectangular": -0.04,
+    "stool_wood_four_leg": -0.02,
+    "bin_pedal": 0.0
   }
 }
