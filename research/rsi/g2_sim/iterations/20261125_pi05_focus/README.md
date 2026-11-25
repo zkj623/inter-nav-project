@@ -27,6 +27,23 @@ For G2, columns 0?13 are arm joints and columns 14?15 are grippers. Training lab
 
 Start only after verifying no supervisor holds the shared lock: `python pi05_focus_relative_supervisor.py /data20t/embodied/zkj/inter-nav-results/g2-policy-overnight-20261124/weights/pi05_base`. Training begins with the eight-demo pilot; expansion remains conditional on repeated closed-loop success.
 
+## Completed relative-action evaluation: 6,000 updates
+
+The first corrected checkpoint (`pilot8_relative_focus_v1/5999`, 6,000 optimizer updates) completed all four training-placement rollouts on 2026-11-25. **0/4 achieved stable lift.** This is a completed negative result, not an evaluation-in-progress placeholder. One shared language-conditioned policy used head/left-wrist/right-wrist images and qpos, with no expert takeover. Training used 8 demonstrations / 8,595 frames, batch 2: approximately 1.40 frame-sampling equivalents, not 6,000 epochs.
+
+| Object | Maximum measured lift | Outcome |
+| --- | ---: | --- |
+| box_white | 0.00013 cm (effectively zero) | Right wrist `arm_r_link7` contact; no lift |
+| bin_lidded | 0.00463 cm (effectively zero) | Left wrist `arm_l_link7` contact; no lift |
+| bin_pedal | 0.925 cm | Right wrist `arm_r_link7` contact; no stable lift |
+| basket_rectangular | 0.0000067 cm (effectively zero) | Reached duration limit without lifting; no nonhand contact |
+
+Offline arm-only error for the first 10 predicted commands averaged approximately 0.46?0.53 degrees on 12 sampled training frames per object. Nevertheless, closed-loop postures drifted away from all recorded demonstration postures; final nearest-demonstration arm RMSE was 47?71 degrees. This establishes an offline/closed-loop mismatch, not a definitive root cause. It is not merely a strict contact criterion rejecting successful lifts. Inspecting the server and adapter confirmed that current qpos is added once per chunk, without a second delta integration in the simulator adapter.
+
+`records/relative_6000_summary.json`, `relative_6000_review.json`, `pi05_focus_relative_6000_trajectory_diagnostics.json`, and the offline probe preserve measurements and provenance. H.264 videos were decoded and hash-verified by the exporter; remote review: `pi05_focus_20261125/reviews/pi05_focus_relative_6000/index.html`. A local review copy is at `E:/G2_interaction/collection_20261122/pi05_relative_6000_review/index.html`. Video files are not committed into Git.
+
+The 6,000-update checkpoint was SHA256-verified into persistent `checkpoint_backups/pi05_focus/pilot8_relative_6000`. The supervised pipeline started the next stage toward 18,000 cumulative updates at 17:16 CST. It will repeat the same four-object evaluation before considering broader data. More training is a controlled next comparison; success is not yet established.
+
 ## User-requested acceptance change
 
 Separate `stable_policy_*_trial.py` harnesses and `verify_stable_lift.py` preserve the old experiments. Lift height >=15 cm, stable hold >=3 seconds, tilt <=20 degrees, relative drift <=2 cm, visual-surface checks, physical geometry, joint limits, and self-collision checks remain. The first measured lift >=15 cm with tilt <=20 degrees starts a 3.1-second acceptance window, during which the learned policy continues unchanged. The 80-second duration is a maximum timeout, not a required fixed endpoint. Object measurements select the evaluation window only and are not policy inputs.
