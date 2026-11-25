@@ -22,7 +22,7 @@ The physical acceptance checks are unchanged: 15 cm lift, stable hold, contact g
 
 Sources depend on the existing G2 workspace, the previously archived `g2_act_model.py`, patched official ACT implementation, and accepted demonstration caches. Setup order: `setup_progress_act.py`, `fix_progress_terminal.py`, `test_progress_act.py`, then the guarded runner. Do not rerun setup during an active run; setup regenerates source files.
 
-## Conditional input ablation
+## Prepared input ablation (inactive; superseded below)
 
 The 2000/6000-step counterfactual checks still showed large errors when conditioning on old stalled rollout observations. Explicitly masking those observations improved the requested lift progression in sampled frames, although action accuracy was not sufficient evidence of physical success.
 
@@ -34,10 +34,27 @@ The 2000/6000-step counterfactual checks still showed large errors when conditio
 
 During the run, shared CPU load rose substantially despite abundant RAM and negligible swap/disk pressure. The training tree was first lowered to nice 10. The active supervisor, inference/evaluation descendants and conditional queue were subsequently restricted to eight logical CPUs; future children inherit the restriction. The guarded launchers now apply this limit and nice 10 themselves. `limit_own_experiment_cpu.py` checks ownership and the expected supervisor command before changing the affinity of its descendants. It does not modify other users' processes. Run `persist_cpu_limits.py` after regenerating setup files when using an older baseline guard without this limit.
 
-## Updated serial queue after initial physical results
+## Feedback-cadence experiment (historical queue; active evaluation)
 
 The white-box rollout passed independent verification: minimum hold lift 0.16577 m, maximum hold tilt 2.04 degrees, four-finger contact fraction 1.0, relative drift 0.194 mm, and no non-hand or self contact impulses. The lidded bin lifted 0.15667 m but tilted and contacted the base; the pedal bin also contacted the base. These failures remain failures.
 
 The waiting `queue_timeonly_ablation.py` was stopped before it launched any training. The active replacement is `queue_receding_eval.py`: after the main four-object evaluation, if any object failed, evaluate the **same checkpoint** with `execute_steps=1` (20 Hz observation/replanning) instead of 10 (2 Hz replanning). This changes feedback frequency only, without changing model weights, physics gates or the 50-step output horizon. Test all four objects, beginning with the failed bins. It is a hypothesis test, not an assumption that faster feedback fixes the errors.
 
 Only if both execution settings fail to pass at least two objects does the queue launch the explicit task/time-only ablation. Do not run the old queue alongside the replacement. Reports must group successes by checkpoint **and execution setting**, rather than combining successes from different feedback frequencies to claim a unified policy configuration.
+
+
+## Main result and contact-input correction
+
+The completed progress-model evaluation passed **1/4** objects: white box only. The lidded bin reached 15.67 cm before a base collision, the pedal bin reached 3.55 cm before a base collision, and the rectangular basket reached 14.30 cm before `LOADED_VISIBLE_SURFACE_GAP`. The archived result summary omits per-call inference timings but preserves checkpoint, execution setting and physical verdicts. No multi-object success has been established.
+
+Failure traces show inner-finger contacts going to zero while the outer fingers carry roughly 25–36 N. This reduces the intended four-point support and precedes tipping/base contact. The expert reads contact forces and corrects wrist orientation and squeeze; the original ACT did not receive those forces. This is a hypothesis about missing feedback, not proof of the sole cause. The 20 Hz replanning lidded-bin test still failed from base contact after reaching 16.19 cm.
+
+`setup_force_act.py` prepares `pilot4_force_causal` using external links to the immutable four demonstration caches. The only new arrays are four distal finger-object contact-force norms, averaged over the latest three **past** 10 Hz samples and aligned to each pre-action image/joint observation. Observed ages are 16.7–66.7 ms. No demonstrations were added. Contact values are clipped at 100 N for input encoding and transformed with `log1p(force)/log(36)`; this does not change simulated forces or acceptance thresholds.
+
+The 21-value state is 16 normalized joint positions, four encoded forces, and elapsed time. Three RGB cameras and task ID remain inputs. The added force encoder and expanded state projection preserve the previous model's predictions at initialization. `test_force_act.py` passed causality, stale-input rejection, checkpoint equivalence, gradient, shape and input-dependence checks. These are software checks, not physical success.
+
+The new live adapter supplies exactly the same causal force features and records values and timestamps in each HDF5. `audit_force_episode.py` recomputes them from the physical sample log. An audit failure rejects the rollout even if the ordinary physical verifier passes. The trained model produces actions; there is no scripted expert force-balancing or object pose feedback. Forces are object-filtered **simulator observations**, not a claim that G2 hardware provides these sensors.
+
+The active serial scheduler is now `queue_force_correction.py`. Only the old waiting `queue_receding_eval.py` process was stopped; its already-running `run_receding_guarded.py` evaluation continues with its resource guard and lock. After all four feedback-cadence evaluations, if any still fail, the new scheduler trains `act_force_v1` for 8000 steps, then evaluates the same checkpoint on all four objects with `execute_steps=2` (10 Hz replanning, 20 Hz target application). Both old queue scripts and the prepared task/time-only ablation are **inactive**. Do not start them alongside this scheduler. A resource stop prevents automatic continuation.
+
+Setup order on the existing workspace: `setup_force_act.py`, `finalize_force_setup.py`, `test_force_act.py`, then `run_force_guarded.py` once the previous run has fully stopped. Setup intentionally refuses to overwrite an existing force cache. Do not regenerate sources during active work. `switch_to_force_queue.py` is a historical, PID-checked one-time migration script, not a general launcher. Results belong in `evaluations/act_force_v1_8000/summary.json`; until present, the force correction is unvalidated.
