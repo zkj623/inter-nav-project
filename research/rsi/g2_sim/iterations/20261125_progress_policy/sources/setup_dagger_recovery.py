@@ -52,6 +52,7 @@ block='''    result['cartesian_feedback']='Learned ACT prefix followed by expert
     for q in waypoints:
         q['idx31_gripper_l_inner_joint1']=plan.get('hold_gripper_q',0.)
         q['idx71_gripper_r_inner_joint1']=plan.get('hold_gripper_q',0.)
+    if 'q_stable_hold' in plan:waypoints[-1]=plan['q_stable_hold'].copy()
     nearest=min(range(len(waypoints)),key=lambda i:sum((waypoints[i].get(n,0.)-actual.get(n,0.))**2 for n in arm_names))
     nominal=waypoints[nearest]
     result['recovery_initial_nominal_index']=nearest

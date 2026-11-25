@@ -92,3 +92,27 @@ The retraining dataset also includes the original four expert demonstrations and
 `act_dagger_v1` is prepared for 8000 steps at learning rate 1e-5, initialized from the contact-input model. The previous observation-masking ablation is removed so training uses the actual corrective observations. The architecture and evaluation behavior are otherwise checkpoint-compatible. `test_dagger_adapter.py` and `test_dagger_model.py` passed switching/label, checkpoint-output, and deterministic unmasked-input checks. The collector has not yet been physically validated. Setup order is `setup_dagger_recovery.py`, `setup_dagger_training.py`, tests, then the guarded runner after the active evaluation exits. All heavy stages remain serial, under the shared lock and the same resource guard. The new guard explicitly handles SIGINT/SIGTERM for cleanup.
 
 This remains a four-object training-position experiment. It does not complete 12 objects x 20 varied demonstrations or establish generalization. Force observations are simulator inputs; hardware availability remains unverified.
+
+
+## Completed result: one shared checkpoint passes two objects
+
+The complete contact-input-model evaluation is **2/4**, with the same checkpoint SHA above and execute_steps=2 for every object. No expert targets or expert corrective controller were used in these four evaluations.
+
+| Object | Verdict | Hold lift | Hold tilt | Four-contact fraction |
+| --- | --- | --- | --- | --- |
+| bin_lidded | Passed | 17.669 cm | 2.393 degrees | 1.0 |
+| basket_rectangular | Passed | 19.637 cm | 1.873 degrees | 1.0 |
+| box_white | Failed: left inner contact absent | 16.272 cm | 4.280 degrees | 0.0 |
+| bin_pedal | Failed: base contact | No hold; maximum lift 3.638 cm | Not a hold result | Not a hold result |
+
+Both passing cases also passed the independent three-camera/posture/action-alignment audit. Their body/arm constraint and physical geometry checks remain unchanged. These are one rollout per object at training positions, not a success-rate estimate or a generalization result. The earlier visual/time model's white-box success is not combined with this model's results. Pi0.5 was not retrained during this correction; its earlier four-case configuration remained unsuccessful, and these different input/training configurations do not establish an algorithm ranking.
+
+The conditional recovery scheduler exited without launching collection or retraining because the minimum two-object milestone was reached. DAgger-style recovery sources and tests are prepared but remain physically unvalidated. No corrective demonstrations were collected in this experiment. White-box and pedal-bin recovery, the remaining eight objects, and 12 x 20 varied demonstrations are still outstanding.
+
+`evaluate_checkpoint_guarded.py` is an inference-only entry point for reviewing the existing contact-input checkpoint without accidentally retraining. It defaults to the verified model and current four training scenes, requires a fresh run name, and retains the same exclusive lock, resource limits and serial execution. For example, in the existing remote training workspace:
+
+```bash
+/data20t/embodied/share/inter-nav/envs/isaaclab/bin/python evaluate_checkpoint_guarded.py --run review_force_policy --assets bin_lidded basket_rectangular
+```
+
+The new entry point passed compilation and its help/argument check; the physical results above were obtained with the original guarded runner. Browser-compatible H.264 copies of all four review videos preserve original frame counts and frame rates; source and output hashes are in `force_video_audit.json`. Original evidence videos are retained. The local review page is `E:/G2_interaction/collection_20261122/policy_reviews/act_force_v1_review.html`.
