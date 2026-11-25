@@ -2,7 +2,7 @@ from pathlib import Path
 import json,hashlib,collections
 import numpy as np,h5py,cv2
 W=Path(__file__).resolve().parent;R=W.parent/'g2-act-threecam-20261124'
-D=W/'datasets/focus_expanded';D.mkdir(exist_ok=False)
+D=W/'datasets/focus_expanded';D.mkdir(exist_ok=True)
 cfg=json.loads((R/'ground_lift_training_config.json').read_text());assets=list(cfg['validated_simulation_baselines'])
 pilot=json.loads((W/'datasets/pilot4/manifest.json').read_text());pilot_sources={r['source_sha256'] for r in pilot}
 rows=[];rejected=[];seen=set();positions={}
@@ -17,11 +17,17 @@ for asset in assets:
   try:
    a=json.loads((T/'acceptance.json').read_text());assert a['accepted'];sha=a['episode_sha256']
    if sha in seen:continue
+   actual_hash=hashlib.sha256()
+   with (T/'episode.hdf5').open('rb') as stream:
+    for chunk in iter(lambda:stream.read(4*1024*1024),b''):actual_hash.update(chunk)
+   assert actual_hash.hexdigest()==sha,'SOURCE_SHA256_CHANGED'
    with h5py.File(T/'episode.hdf5') as f:
     n=len(f['action']);assert n>60 and f['action'].shape==f['observations/qpos'].shape==(n,16)
     assert all(f['observations/images/'+c].shape[0]==n for c in ['head_front','wrist_left','wrist_right'])
     assert json.loads(f.attrs['joint_names'])==cfg['policy_action_joint_names']
-    assert np.allclose(np.diff(f['timestamps'][:]),.05,atol=1e-6)
+    t=f['timestamps'][:];assert np.allclose(np.diff(t),.05,atol=1e-6)
+    for camera in ['head_front','wrist_left','wrist_right']:
+     ct=f['image_timestamps/'+camera][:];assert ct.shape==t.shape and np.max(abs(ct-t))<=1/120+.0001
     assert np.isfinite(f['action'][:]).all() and np.isfinite(f['observations/qpos'][:]).all()
    pos=tuple(round(float(r.get(k,0.)),7) for k in ['dx_m','dy_m','dyaw_deg'])
    row={**r,'source_sha256':sha,'frames':n,'position_key':pos,'task_id':assets.index(asset)}
@@ -37,20 +43,28 @@ for asset in assets:
  assert any(r['split']=='train' for r in accepted)
  rows+=accepted
 cv2.setNumThreads(1)
+converted=[]
 for row in rows:
- T=Path(row['trial']);key=hashlib.sha256(str(T).encode()).hexdigest()[:16];cache=W/'cache'/(key+'.hdf5');cache.parent.mkdir(exist_ok=True)
- if not cache.exists():
-  tmp=cache.with_suffix('.focus.tmp.hdf5')
-  with h5py.File(T/'episode.hdf5') as src,h5py.File(tmp,'w') as dst:
-   n=len(src['action']);dst['qpos']=src['observations/qpos'][:];dst['action']=src['action'][:];dst['phase']=src['phase'][:]
-   for camera in ['head_front','wrist_left','wrist_right']:
-    images=dst.create_dataset(camera,(n,224,224,3),dtype='u1',chunks=(1,224,224,3),compression='lzf')
-    for i in range(n):
-     im=src['observations/images/'+camera][i];h,w=im.shape[:2];scale=224/max(h,w);nw,nh=round(w*scale),round(h*scale);tile=np.zeros((224,224,3),np.uint8);x=(224-nw)//2;y=(224-nh)//2;tile[y:y+nh,x:x+nw]=cv2.resize(im,(nw,nh),interpolation=cv2.INTER_AREA);images[i]=tile
-   dst.attrs['source_episode_sha256']=row['source_sha256'];dst.attrs['source_trial']=str(T)
-  tmp.replace(cache)
- with h5py.File(cache) as f:assert f.attrs['source_episode_sha256']==row['source_sha256']
- row['cache']=str(cache);print('CACHED',row['asset'],row['split'],row['group_id'],flush=True)
+ try:
+  T=Path(row['trial']);key=hashlib.sha256(str(T).encode()).hexdigest()[:16];cache=W/'cache'/(key+'.hdf5');cache.parent.mkdir(exist_ok=True)
+  if not cache.exists():
+   tmp=cache.with_suffix('.focus.tmp.hdf5')
+   with h5py.File(T/'episode.hdf5') as src,h5py.File(tmp,'w') as dst:
+    n=len(src['action']);dst['qpos']=src['observations/qpos'][:];dst['action']=src['action'][:];dst['phase']=src['phase'][:]
+    for camera in ['head_front','wrist_left','wrist_right']:
+     images=dst.create_dataset(camera,(n,224,224,3),dtype='u1',chunks=(1,224,224,3),compression='lzf')
+     for i in range(n):
+      im=src['observations/images/'+camera][i];h,w=im.shape[:2];scale=224/max(h,w);nw,nh=round(w*scale),round(h*scale);tile=np.zeros((224,224,3),np.uint8);x=(224-nw)//2;y=(224-nh)//2;tile[y:y+nh,x:x+nw]=cv2.resize(im,(nw,nh),interpolation=cv2.INTER_AREA);images[i]=tile
+    dst.attrs['source_episode_sha256']=row['source_sha256'];dst.attrs['source_trial']=str(T)
+   tmp.replace(cache)
+  with h5py.File(cache) as f:assert f.attrs['source_episode_sha256']==row['source_sha256']
+  row['cache']=str(cache);print('CACHED',row['asset'],row['split'],row['group_id'],flush=True)
+  converted.append(row)
+ except Exception as ex:
+  rejected.append(dict(trial=row['trial'],reason='CACHE_CONVERSION: '+repr(ex)))
+  print('EXCLUDED',row['asset'],row['group_id'],repr(ex),flush=True)
+rows=converted
+assert all(any(r['asset']==a and r['split']=='train' for r in rows) for a in assets),'An object lost all readable training episodes'
 values={k:[] for k in ['qpos','action']}
 for row in rows:
  if row['split']!='train':continue

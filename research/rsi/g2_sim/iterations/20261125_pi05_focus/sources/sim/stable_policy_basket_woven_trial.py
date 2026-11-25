@@ -511,9 +511,16 @@ try:
     settled_z=float(obj.get_world_pose()[0][2])
     result['cartesian_feedback']='DISABLED: learned policy only'
     result['feedback_revision']='DISABLED: learned policy only'
+    # Success is a measured stable lift, not survival until an arbitrary 80-second endpoint.
+    # The measurement only selects the evaluation window; the policy receives no object state.
+    hold_start_step=None
     for control_step in range(round(args.duration*20)):
-        phase='common_approach' if control_step==0 else ('hold' if control_step>=round((args.duration-3.1)*20) else 'policy')
+        phase='common_approach' if control_step==0 else ('hold' if hold_start_step is not None else 'policy')
         for _ in range(6):tick(plan['q_start'],phase)
+        if hold_start_step is not None and control_step-hold_start_step+1>=62:break
+        if hold_start_step is None and samples and samples[-1]['lift_m']>=.15 and samples[-1]['tilt_deg']<=20:
+            hold_start_step=control_step+1
+    result['hold_window_selection']='First measured >=15cm lift and <=20deg tilt, followed by 3.1s of unchanged learned control; duration is a maximum timeout'
     result['collection_timing_profile']='shorter static settles only; original free-space/contact/lift durations and original velocity bound retained'
     result['collection_initialization']=plan.get('collection_initialization','full_standby_preparation')
     result['max_frozen_joint_error_rad']=max((s['frozen_joint_max_error_rad'] for s in samples),default=None)
