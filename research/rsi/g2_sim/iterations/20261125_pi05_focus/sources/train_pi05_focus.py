@@ -17,8 +17,11 @@ def bounds(key):
  low=np.array(stats[key+'_q01'],np.float32);high=np.maximum(np.array(stats[key+'_q99'],np.float32),low+.02);return low,high
 ql,qh=bounds('qpos');al,ah=bounds('action')
 norm_stats={key:normalize.NormStats(mean=np.pad(np.array(stats[src+'_mean']), (0,16)),std=np.pad(np.array(stats[src+'_std']),(0,16),constant_values=1),q01=np.pad(lo,(0,16),constant_values=-1),q99=np.pad(hi,(0,16),constant_values=1)) for key,src,lo,hi in [('state','qpos',ql,qh),('actions','action',al,ah)]}
+checkpoint_dir=Path(a.checkpoint_root)/'g2_pi05_lora'/a.run
+completed_steps=[int(p.name)+1 for p in checkpoint_dir.glob('*') if p.name.isdigit() and (p/'_CHECKPOINT_METADATA').exists() and (p/'params').exists()]
+data_seed=42+max(completed_steps,default=0)
 class Loader:
- def __init__(self,sharding):self.sharding=sharding;self.rng=np.random.default_rng(42);self.handles={};self.groups=[[r for r in rows if r['asset']==asset] for asset in dict.fromkeys(r['asset'] for r in rows)]
+ def __init__(self,sharding):self.sharding=sharding;self.rng=np.random.default_rng(data_seed);self.handles={};self.groups=[[r for r in rows if r['asset']==asset] for asset in dict.fromkeys(r['asset'] for r in rows)]
  def data_config(self):return config.DataConfig(asset_id='g2',norm_stats=norm_stats,use_quantile_norm=True)
  def __iter__(self):
   while True:
@@ -37,7 +40,7 @@ class Loader:
 mc=pi0_config.Pi0Config(pi05=True,action_horizon=a.chunk,paligemma_variant='gemma_2b_lora',action_expert_variant='gemma_300m_lora')
 cfg=config.TrainConfig(name='g2_pi05_lora',exp_name=a.run,model=mc,weight_loader=weight_loaders.CheckpointWeightLoader(a.init_checkpoint or str(W/'weights/pi05_base/params')),freeze_filter=nnx.Any(mc.get_freeze_filter(),nnx_utils.PathRegex('.*img.*')),batch_size=a.batch,num_train_steps=a.steps,ema_decay=None,lr_schedule=optimizer.CosineDecaySchedule(warmup_steps=100,peak_lr=a.lr,decay_steps=36000,decay_lr=a.lr*.1),optimizer=optimizer.AdamW(clip_gradient_norm=1.),checkpoint_base_dir=a.checkpoint_root,assets_base_dir=str(W/'pi05_assets'),save_interval=1000000,keep_period=None,log_interval=10,wandb_enabled=False,resume=True)
 train._data_loader.create_data_loader=lambda configuration,sharding,shuffle:Loader(sharding)
-scope=dict(model='pi05 official pretrained base with LoRA on language and action expert; frozen visual backbone',dataset=str(D),assets=sorted(set(r['asset'] for r in rows)),episodes=len(rows),state_dim=16,padded_model_dim=32,action_semantics='absolute joint radians,20Hz',action_horizon=a.chunk,image_processing=stats['image_processing'],quantile_low_state=ql.tolist(),quantile_high_state=qh.tolist(),quantile_low_action=al.tolist(),quantile_high_action=ah.tolist(),training=dict(steps=a.steps,batch=a.batch,lr=a.lr,init_checkpoint=a.init_checkpoint,sampling=('uniform episode' if a.dataset=='pilot4' else 'uniform object then episode')+' and start time; original openpi visual augmentation'),task_prompt='Lift the <asset name> with both arms and hold it above the floor.')
+scope=dict(model='pi05 official pretrained base with LoRA on language and action expert; frozen visual backbone',dataset=str(D),assets=sorted(set(r['asset'] for r in rows)),episodes=len(rows),state_dim=16,padded_model_dim=32,action_semantics='absolute joint radians,20Hz',action_horizon=a.chunk,image_processing=stats['image_processing'],quantile_low_state=ql.tolist(),quantile_high_state=qh.tolist(),quantile_low_action=al.tolist(),quantile_high_action=ah.tolist(),training=dict(steps=a.steps,batch=a.batch,lr=a.lr,data_seed=data_seed,init_checkpoint=a.init_checkpoint,sampling=('uniform episode' if a.dataset=='pilot4' else 'uniform object then episode')+' and start time; original openpi visual augmentation'),task_prompt='Lift the <asset name> with both arms and hold it above the floor.')
 (W/('pi05_'+a.run+'_scope.json')).write_text(json.dumps(scope,indent=2));print('PI05_TRAINING_START',json.dumps(scope),flush=True)
 # Avoid overlapping full-model writes to shared disks.
 original_save=train._checkpoints.save_state

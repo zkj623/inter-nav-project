@@ -4,7 +4,7 @@ src=Path(sys.argv[1]).resolve();dst=Path(sys.argv[2]).resolve()
 assert src.is_relative_to(Path('/tmp/zkj_g2_20261125_checkpoints'))
 assert dst.is_relative_to(Path('/data20t/embodied/zkj/inter-nav-results/g2-policy-overnight-20261124/checkpoint_backups/pi05_focus'))
 assert (src/'_CHECKPOINT_METADATA').exists()
-if not dst.exists():shutil.copytree(src,dst)
+shutil.copytree(src,dst,dirs_exist_ok=True) # resumable after an interrupted copy; verify every file below
 def digest(p):
  h=hashlib.sha256()
  with p.open('rb') as f:

@@ -11,7 +11,7 @@ if status['phase']=='training':
  matches=re.findall(r'Progress on: ([\d.]+)(k?)it/.*?rate:([^ ]+) remaining:([^ ]+)',s)
  if matches:
   n,k,rate,eta=matches[-1];out['approximate_current_step']=round(float(n)*(1000 if k else 1));out['rate']=rate;out['log_eta']=eta
- proc=Path('/proc')/str(status.get('pid',0))/'cmdline';out['trainer_alive']=proc.exists() and b'train_pi05_focus.py' in proc.read_bytes()
+ proc=Path('/proc')/str(status.get('pid',0))/'cmdline';out['trainer_alive']=proc.exists() and b'train_pi05_focus' in proc.read_bytes()
  out['recent_errors']=[x for x in s.splitlines() if any(k in x for k in ['Traceback','Error:','RESOURCE_EXHAUSTED'])][-4:]
 metrics=tail(O/'resources.jsonl').splitlines()
 if metrics:out['resources']=json.loads(metrics[-1])

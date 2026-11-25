@@ -5,9 +5,9 @@ The user requested prioritizing π0.5, first validating multi-object lift behavi
 ## Running experiment
 
 - Remote workspace: `/data20t/embodied/zkj/inter-nav-results/g2-policy-overnight-20261124`
-- Supervisor: `pi05_focus_supervisor.py`; state: `pi05_focus_20261125/status.json`.
+- Supervisor: `pi05_focus_relative_supervisor.py`; state: `pi05_focus_20261125/status.json`.
 - Run: `pilot8_focus_v1`, initialized from the completed π0.5 `pilot4/3000` parameter checkpoint; optimizer starts fresh.
-- Original 8 demonstrations, 4 objects, 8,595 synchronized frames; batch 2; absolute 16-dimensional joint targets at 20 Hz; 50-step chunks.
+- Original 8 demonstrations, 4 objects, 8,595 synchronized frames; batch 2; 14 relative arm targets plus 2 absolute gripper targets at 20 Hz; 50-step chunks.
 - Model-internal state/action dimension is padded to 32. Inputs and labels use the same training-set quantile normalization as the inference server.
 - LoRA on the language model/action expert; frozen visual backbone; original OpenPI image augmentation.
 - Stages: 6,000, 18,000, then 36,000 cumulative new updates, with checkpoint resume and closed-loop evaluation between stages. Inference executes 5 actions before replanning.
@@ -16,6 +16,16 @@ The user requested prioritizing π0.5, first validating multi-object lift behavi
 - A stage checkpoint is synchronously saved on local SSD, then copied and SHA256-verified to persistent storage after evaluation. Previous experiment files remain unchanged.
 
 The supervisor status is authoritative. A launched process or low offline loss is not evidence of a successful policy. At the time of this initial note, training was starting; no new closed-loop results existed.
+
+## Official action representation correction
+
+Checked official OpenPI commit `215abfb217dbac7d5f1273282331b9b1866c0479`: [`LeRobotAlohaDataConfig`](https://github.com/Physical-Intelligence/openpi/blob/215abfb217dbac7d5f1273282331b9b1866c0479/src/openpi/training/config.py#L229) defaults to `use_delta_joint_actions=True`; `pi05_aloha_pen_uncap` uses this configuration. [`DeltaActions` and `AbsoluteActions`](https://github.com/Physical-Intelligence/openpi/blob/215abfb217dbac7d5f1273282331b9b1866c0479/src/openpi/transforms.py#L204) subtract/add the same current observed joint state across the whole action chunk. This is not an increment between adjacent future timesteps. Absolute action prediction is supported by other configurations; it is not inherently invalid, but our initial G2 adapter omitted the default ALOHA conversion.
+
+For G2, columns 0?13 are arm joints and columns 14?15 are grippers. Training labels are `future_absolute_arm_target - current_measured_arm_qpos`; grippers remain absolute. Action quantiles are recalculated in this relative representation from training episodes and all chunk offsets. Inference first denormalizes and then adds the observation's arm qpos once to every chunk element; the simulator receives absolute joint targets as before. Original demonstrations need no recollection for this correction.
+
+`verify_pi05_relative_official.py` compares the adapted labels against the actual official transform and reconstructs the original targets at 24 start/middle/end samples across all 8 episodes, including terminal padding. Exact transform equality passed; maximum reconstruction error was 0 radians; grippers were unchanged. This validates representation consistency, not policy success. `records/relative_launch.json` records the new launch and source hashes. No closed-loop result exists yet for the corrected run.
+
+Start only after verifying no supervisor holds the shared lock: `python pi05_focus_relative_supervisor.py /data20t/embodied/zkj/inter-nav-results/g2-policy-overnight-20261124/weights/pi05_base`. Training begins with the eight-demo pilot; expansion remains conditional on repeated closed-loop success.
 
 ## User-requested acceptance change
 
