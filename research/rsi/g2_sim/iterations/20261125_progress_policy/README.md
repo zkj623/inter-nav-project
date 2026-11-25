@@ -33,3 +33,11 @@ The 2000/6000-step counterfactual checks still showed large errors when conditio
 ## CPU scheduling limit
 
 During the run, shared CPU load rose substantially despite abundant RAM and negligible swap/disk pressure. The training tree was first lowered to nice 10. The active supervisor, inference/evaluation descendants and conditional queue were subsequently restricted to eight logical CPUs; future children inherit the restriction. The guarded launchers now apply this limit and nice 10 themselves. `limit_own_experiment_cpu.py` checks ownership and the expected supervisor command before changing the affinity of its descendants. It does not modify other users' processes. Run `persist_cpu_limits.py` after regenerating setup files when using an older baseline guard without this limit.
+
+## Updated serial queue after initial physical results
+
+The white-box rollout passed independent verification: minimum hold lift 0.16577 m, maximum hold tilt 2.04 degrees, four-finger contact fraction 1.0, relative drift 0.194 mm, and no non-hand or self contact impulses. The lidded bin lifted 0.15667 m but tilted and contacted the base; the pedal bin also contacted the base. These failures remain failures.
+
+The waiting `queue_timeonly_ablation.py` was stopped before it launched any training. The active replacement is `queue_receding_eval.py`: after the main four-object evaluation, if any object failed, evaluate the **same checkpoint** with `execute_steps=1` (20 Hz observation/replanning) instead of 10 (2 Hz replanning). This changes feedback frequency only, without changing model weights, physics gates or the 50-step output horizon. Test all four objects, beginning with the failed bins. It is a hypothesis test, not an assumption that faster feedback fixes the errors.
+
+Only if both execution settings fail to pass at least two objects does the queue launch the explicit task/time-only ablation. Do not run the old queue alongside the replacement. Reports must group successes by checkpoint **and execution setting**, rather than combining successes from different feedback frequencies to claim a unified policy configuration.
