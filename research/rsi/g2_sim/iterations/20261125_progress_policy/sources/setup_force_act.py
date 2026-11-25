@@ -105,7 +105,10 @@ for row in rows:
  old='        target=recorder.command(target,phase,robot,world)'
  assert source.count(old)==1
  source=source.replace(old,"        if samples:recorder.set_contact_observation(samples,float(world.current_time))\n"+old)
- (R/f'policy_force_{asset}_trial.py').write_text(source)
+ trial_source=R/f'policy_force_{asset}_trial.py';trial_source.write_text(source)
+ source_data=trial_source.read_bytes();source_sha=hashlib.sha256(source_data).hexdigest();archive=R/'source_versions'/(source_sha+'.py');archive.parent.mkdir(exist_ok=True)
+ if archive.exists():assert archive.read_bytes()==source_data
+ else:archive.write_bytes(source_data)
 evaluation=(W/'evaluate_g2_policy.py').read_text(encoding='utf-8-sig').replace("f'policy_time_{asset}_trial.py'","f'policy_force_{asset}_trial.py'")
 (W/'evaluate_force_policy.py').write_text(evaluation)
 guard=(W/'run_progress_guarded.py').read_text().replace("OUT=W/'progress_act_20261125'","OUT=W/'force_act_20261125'")
