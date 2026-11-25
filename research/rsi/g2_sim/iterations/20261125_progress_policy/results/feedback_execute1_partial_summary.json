@@ -1,0 +1,92 @@
+{
+  "checkpoint": "/data20t/embodied/zkj/inter-nav-results/g2-policy-overnight-20261124/runs/act_progress_v1/step_008000.pt",
+  "run": "act_progress_v1_execute1",
+  "split": "Four demonstrations, elapsed-time conditioned ACT overfit; no generalization claim",
+  "dataset_split": "train",
+  "successes": 0,
+  "total": 2,
+  "results": [
+    {
+      "asset": "bin_lidded",
+      "success": false,
+      "harness_success": false,
+      "failure": "NONHAND_OBJECT_CONTACT",
+      "rejections": null,
+      "lift_m": 0.16186800599098206,
+      "hold_contact_fraction": null,
+      "policy": {
+        "checkpoint": "/data20t/embodied/zkj/inter-nav-results/g2-policy-overnight-20261124/runs/act_progress_v1/step_008000.pt",
+        "sha256": "3fe093fa7e341e76d40df0f35bd4169970ce8f2216a8b64d6e23afc3a0fe7894",
+        "step": 8000,
+        "model": "ACT_progress_conditioned",
+        "chunk": 50,
+        "inputs": "head RGB,left wrist RGB,right wrist RGB,qpos16,task_id",
+        "expert_feedback": false,
+        "terminal_progress_limits": {
+          "box_white": 5.465,
+          "bin_lidded": 5.32,
+          "bin_pedal": 4.335,
+          "basket_rectangular": 5.46
+        },
+        "terminal_progress_scope": "Clamp elapsed progress to trained final hold; no reference actions or object feedback",
+        "base_adapter_sha256": "b6bda120a0031fe4c43487dd898eb652e44ec21410cf27b5ad3116d964f8532f",
+        "extra_input": "elapsed task time in seconds; no expert phase, targets or trajectory retrieval",
+        "execute_steps": 1,
+        "clipped_values": 0,
+        "requested_values": 16288,
+        "adapter_sha256": "e83c325baada7a31b9679142748ad32050c25a8e2f895e0d699efd0e82e2dc0b",
+        "control_scope": "Policy image/qpos/task inputs only; URDF position and velocity clipping; no expert targets, phase input, object-pose feedback or force balancing",
+        "inference_call_count": 1018
+      },
+      "trial": "/data20t/embodied/zkj/inter-nav-results/g2-act-threecam-20261124/policy_trials/act_progress_v1_execute1/placements/p0001/bin_lidded/candidate0_repeat1",
+      "video": "/data20t/embodied/zkj/inter-nav-results/g2-act-threecam-20261124/policy_trials/act_progress_v1_execute1/placements/p0001/bin_lidded/candidate0_repeat1/review.mp4"
+    },
+    {
+      "asset": "bin_pedal",
+      "success": false,
+      "harness_success": false,
+      "failure": "NONHAND_OBJECT_CONTACT",
+      "rejections": null,
+      "lift_m": 0.038401782512664795,
+      "hold_contact_fraction": null,
+      "policy": {
+        "checkpoint": "/data20t/embodied/zkj/inter-nav-results/g2-policy-overnight-20261124/runs/act_progress_v1/step_008000.pt",
+        "sha256": "3fe093fa7e341e76d40df0f35bd4169970ce8f2216a8b64d6e23afc3a0fe7894",
+        "step": 8000,
+        "model": "ACT_progress_conditioned",
+        "chunk": 50,
+        "inputs": "head RGB,left wrist RGB,right wrist RGB,qpos16,task_id",
+        "expert_feedback": false,
+        "terminal_progress_limits": {
+          "box_white": 5.465,
+          "bin_lidded": 5.32,
+          "bin_pedal": 4.335,
+          "basket_rectangular": 5.46
+        },
+        "terminal_progress_scope": "Clamp elapsed progress to trained final hold; no reference actions or object feedback",
+        "base_adapter_sha256": "b6bda120a0031fe4c43487dd898eb652e44ec21410cf27b5ad3116d964f8532f",
+        "extra_input": "elapsed task time in seconds; no expert phase, targets or trajectory retrieval",
+        "execute_steps": 1,
+        "clipped_values": 0,
+        "requested_values": 12640,
+        "adapter_sha256": "e83c325baada7a31b9679142748ad32050c25a8e2f895e0d699efd0e82e2dc0b",
+        "control_scope": "Policy image/qpos/task inputs only; URDF position and velocity clipping; no expert targets, phase input, object-pose feedback or force balancing",
+        "inference_call_count": 790
+      },
+      "trial": "/data20t/embodied/zkj/inter-nav-results/g2-act-threecam-20261124/policy_trials/act_progress_v1_execute1/placements/p0001/bin_pedal/candidate0_repeat1",
+      "video": "/data20t/embodied/zkj/inter-nav-results/g2-act-threecam-20261124/policy_trials/act_progress_v1_execute1/placements/p0001/bin_pedal/candidate0_repeat1/review.mp4"
+    }
+  ],
+  "evaluation_complete": false,
+  "planned_total": 4,
+  "early_stop": {
+    "time": "2026-11-25T13:54:03",
+    "completed_objects": 2,
+    "passed_objects": 0,
+    "remaining_objects_not_completed": [
+      "basket_rectangular",
+      "box_white"
+    ],
+    "reason": "Both targeted bin cases still failed non-hand contact; prioritize measured-contact-input model rather than complete cadence-only ablation"
+  }
+}
