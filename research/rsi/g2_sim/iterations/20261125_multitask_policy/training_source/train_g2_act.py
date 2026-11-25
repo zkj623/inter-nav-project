@@ -4,7 +4,7 @@ import h5py,numpy as np,torch
 from torch.utils.data import Dataset,DataLoader
 from g2_act_model import make_model,normalize_images
 W=Path(__file__).resolve().parent
-p=argparse.ArgumentParser();p.add_argument('--dataset',default='pilot4');p.add_argument('--run',default='act_pilot4');p.add_argument('--steps',type=int,default=15000);p.add_argument('--batch',type=int,default=4);p.add_argument('--chunk',type=int,default=50);p.add_argument('--lr',type=float,default=1e-4);p.add_argument('--kl',type=float,default=10.);p.add_argument('--resume');p.add_argument('--cosine',action='store_true');p.add_argument('--relative-arm',action='store_true');p.add_argument('--reset-action-head',action='store_true');p.add_argument('--phase-balanced',action='store_true');p.add_argument('--state-skip',action='store_true');p.add_argument('--qpos-noise',type=float,default=0.);p.add_argument('--save-optimizer',action='store_true');a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--dataset',default='pilot4');p.add_argument('--run',default='act_pilot4');p.add_argument('--steps',type=int,default=15000);p.add_argument('--batch',type=int,default=4);p.add_argument('--chunk',type=int,default=50);p.add_argument('--lr',type=float,default=1e-4);p.add_argument('--kl',type=float,default=10.);p.add_argument('--resume');p.add_argument('--cosine',action='store_true');p.add_argument('--relative-arm',action='store_true');p.add_argument('--reset-action-head',action='store_true');p.add_argument('--phase-balanced',action='store_true');p.add_argument('--time-conditioned',action='store_true');p.add_argument('--deterministic-latent',action='store_true');p.add_argument('--state-skip',action='store_true');p.add_argument('--qpos-noise',type=float,default=0.);p.add_argument('--save-optimizer',action='store_true');a=p.parse_args()
 torch.set_num_threads(4);torch.manual_seed(42);np.random.seed(42);random.seed(42)
 D=W/'datasets'/a.dataset;rows=json.loads((D/'manifest.json').read_text());stats=json.loads((D/'stats.json').read_text());O=W/'runs'/a.run;O.mkdir(parents=True,exist_ok=True)
 import hashlib,shutil,platform
@@ -36,17 +36,25 @@ class Data(Dataset):
    elif band<.5 and len(contact):t=int(np.random.choice(contact))
   raw_q=f['qpos'][t].copy()
   if a.qpos_noise and not self.validation:raw_q[:14]+=np.clip(np.random.normal(0,a.qpos_noise,14),-3*a.qpos_noise,3*a.qpos_noise)
-  q=(raw_q-stats['qpos_mean'])/stats['qpos_std'];act=f['action'][t:min(t+a.chunk,n)]
+  q=(raw_q-stats['qpos_mean'])/stats['qpos_std']
+  if a.time_conditioned:q=np.r_[q,t/200.]
+  act=f['action'][t:min(t+a.chunk,n)]
   if a.relative_arm:act=act.copy();act[:,:14]-=raw_q[:14]
   count=len(act);actions=np.zeros((a.chunk,16),np.float32);actions[:count]=(act-stats['action_mean'])/stats['action_std'];mask=np.arange(a.chunk)>=count
   images=np.stack([f[name][t] for name in stats['camera_names']]).transpose(0,3,1,2).astype(np.float32)/255
   return torch.from_numpy(images),torch.tensor(q,dtype=torch.float32),torch.from_numpy(actions),torch.from_numpy(mask),torch.tensor(row['task_id'])
 train_rows=[r for r in rows if r['split']=='train'];val_rows=[r for r in rows if r['split']=='validation']
 loader=DataLoader(Data(train_rows),batch_size=a.batch,shuffle=True,num_workers=4,pin_memory=True,persistent_workers=True);iterator=iter(loader)
-model=make_model(a.chunk,state_skip=a.state_skip).cuda();optim=torch.optim.AdamW([{'params':[p for n,p in model.named_parameters() if 'backbones' not in n and 'state_action_skip' not in n]},{'params':[p for n,p in model.named_parameters() if 'backbones' in n],'lr':a.lr*.1}],lr=a.lr,weight_decay=1e-4)
+model=make_model(a.chunk,state_skip=a.state_skip,time_conditioned=a.time_conditioned).cuda();optim=torch.optim.AdamW([{'params':[p for n,p in model.named_parameters() if 'backbones' not in n and 'state_action_skip' not in n]},{'params':[p for n,p in model.named_parameters() if 'backbones' in n],'lr':a.lr*.1}],lr=a.lr,weight_decay=1e-4)
 if a.state_skip:optim.add_param_group({'params':list(model.state_action_skip.parameters()),'lr':a.lr*50})
 if a.resume:
- incompatible=model.load_state_dict(torch.load(a.resume,map_location='cpu',weights_only=False)['model'],strict=False)
+ loaded=torch.load(a.resume,map_location='cpu',weights_only=False)['model']
+ if a.time_conditioned:
+  initialized=model.state_dict()
+  for key in ['input_proj_robot_state.weight','encoder_joint_proj.weight']:
+   if loaded[key].shape[1]==16:
+    expanded=initialized[key].cpu().clone();expanded[:,:16]=loaded[key];loaded[key]=expanded
+ incompatible=model.load_state_dict(loaded,strict=False)
  assert not incompatible.unexpected_keys and set(incompatible.missing_keys)<=({'state_action_skip.weight'} if a.state_skip else set()),incompatible
 if a.reset_action_head:
  model.action_head.reset_parameters();model.encoder_action_proj.reset_parameters()
@@ -72,7 +80,11 @@ for step in range(1,a.steps+1):
   multiplier=.1+.9*.5*(1+np.cos(np.pi*step/a.steps))
   for group,scale in zip(optim.param_groups,[1.,.1,50.]):group['lr']=a.lr*scale*multiplier
  images,q,actions,mask,task=[x.cuda(non_blocking=True) for x in next(iterator)];optim.zero_grad(set_to_none=True)
- pred,_,(mu,logvar)=model(q,normalize_images(images),None,actions,mask,task_ids=task);valid=(~mask).unsqueeze(-1);l1=((pred-actions).abs()*valid).sum()/(valid.sum()*16);kl=(-.5*(1+logvar-mu.square()-logvar.exp()).sum(1)).mean();loss=l1+a.kl*kl
+ if a.deterministic_latent:
+  pred=model(q,normalize_images(images),None,task_ids=task)[0];kl=pred.new_zeros(())
+ else:
+  pred,_,(mu,logvar)=model(q,normalize_images(images),None,actions,mask,task_ids=task);kl=(-.5*(1+logvar-mu.square()-logvar.exp()).sum(1)).mean()
+ valid=(~mask).unsqueeze(-1);l1=((pred-actions).abs()*valid).sum()/(valid.sum()*16);loss=l1+a.kl*kl
  if not torch.isfinite(loss):raise RuntimeError('Nonfinite ACT loss')
  loss.backward();grad=torch.nn.utils.clip_grad_norm_(model.parameters(),1.);optim.step()
  if step%25==0:
@@ -82,6 +94,8 @@ for step in range(1,a.steps+1):
   save(step);evaluate(step,train_rows,'train_zero_latent')
   if val_rows:evaluate(step,val_rows,'validation_zero_latent')
 save(a.steps);print('ACT_TRAINING_COMPLETE',flush=True)
+
+
 
 
 

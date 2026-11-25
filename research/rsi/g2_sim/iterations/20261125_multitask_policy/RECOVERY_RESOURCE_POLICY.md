@@ -27,3 +27,9 @@ These conservative operational limits are not a guarantee against hardware or ne
 ## Acceptance
 
 Keep original physical checks for lift height, stable hold, contact, visible-surface geometry, collisions, tilt and drift. Report learned-policy results separately from expert replay. Multiple objects must pass using the same trained checkpoint SHA; a partially completed evaluation is not an all-object result.
+
+## First recovery results
+
+Pi05 step 3000 completed all four evaluations: 0/4 passed. White box, pedal bin and rectangular basket triggered non-hand contact; the lidded bin triggered visible-surface contact validation. Maximum observed lifts were approximately 2.74, 0.76, 1.88 and 0.48 cm respectively, below the required 15 cm stable hold. These are failures, not successful learned-policy demonstrations.
+
+The ACT server then exited during startup. Its remote file lacked the final HTTP-server startup statement. The supervisor stopped and the waiting training queue aborted as intended. The incomplete file and stop record were preserved under `recovery_20261125/`; the complete script was restored and compiled. ACT robust step 12000 subsequently loaded successfully. Evaluation resumed with `--act-only`, preserving the completed Pi05 results. The reason the remote script was incomplete is not established.

@@ -69,7 +69,7 @@ try:
   run_eval('act',W/'runs'/run/'step_015000.pt','recovery_act_time_15000','pilot4_one_each',True)
   marker='time_baseline_finished.json'
  else:
-  run_eval('pi05',W/'checkpoints/g2_pi05_lora/pilot4/3000','recovery_pi05_3000')
+  if '--act-only' not in sys.argv:run_eval('pi05',W/'checkpoints/g2_pi05_lora/pilot4/3000','recovery_pi05_3000')
   run_eval('act',W/'runs/act_pilot4_robust/step_012000.pt','recovery_act_robust_12000')
   marker='finished.json'
  (OUT/marker).write_text(json.dumps(dict(time=time.strftime('%FT%T'),status='evaluations_complete')))
