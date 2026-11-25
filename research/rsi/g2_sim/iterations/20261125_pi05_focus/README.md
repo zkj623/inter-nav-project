@@ -2,7 +2,26 @@
 
 The user requested prioritizing π0.5, first validating multi-object lift behavior and then training on a broader distribution. This iteration uses language, head/left-wrist/right-wrist RGB, and 16 joint coordinates. It does not use task IDs, elapsed-time conditioning, simulated forces, expert takeover, object attachments, or object pose feedback for policy control.
 
-## Running experiment
+## Active continuation: up to 40 sampling epochs
+
+On 2026-11-25 the user authorized continued training with periodic closed-loop evaluation. `pi05_focus_long_supervisor.py` resumes the same `pilot8_relative_focus_v1` training state (model plus optimizer) from 36,000 updates. It keeps batch 2 and the original relative-arm / absolute-gripper representation. The original cosine schedule stays at its 5e-6 floor after step 36,000; it does not restart warmup. Batch 4 and gradient accumulation have not been enabled or claimed tested.
+
+| Cumulative updates | Frame-sampling equivalents | Action |
+| --- | ---: | --- |
+| 52,000 | 12.10 | Four-object closed-loop evaluation and video export |
+| 86,000 | 20.01 | Same evaluation |
+| 129,000 | 30.02 | Same evaluation |
+| 172,000 | 40.02 | Same evaluation, then explicit outcome/diagnostic status |
+
+Each stage first backs up the checkpoint with SHA256 verification. Comparisons use inference seed 20261125; a 4/4 successful checkpoint is repeated with seed 20261126. Broader-data preparation and training proceed only if all four pilot objects pass both seeds. Otherwise training continues to the next scheduled checkpoint. At the 40-epoch boundary, unresolved failures produce `needs_failure_analysis` with saved diagnostics, not a success claim or an unbounded training loop.
+
+The supervisor chooses GPUs according to current free memory at each phase: training requires at least 18,000 MiB free; evaluation requires distinct policy/simulation GPUs with at least 12,000/10,000 MiB free. If unavailable, it waits and records capacity every 10 seconds, up to 12 hours. The initial GPU-2 capacity disappeared before launch, so the old waiting process was stopped and a capacity-aware supervisor was launched; it initially selected GPU 5 and resumed updates, but a concurrent external simulation consumed its remaining headroom. The guard stopped only this trainer. The supervisor now retries resource-pressure interruptions up to four attempts per stage, excludes the affected GPU for 30 minutes, and resumes the last completed checkpoint. The restarted run selected GPU 4. It does not stop or modify other users' jobs. Existing runtime RAM/swap/disk/temperature guards and single-supervisor lock remain enforced. Training and simulation do not overlap.
+
+`train_pi05_focus_long_relative.py` additionally saves a recovery checkpoint every 10,000 updates. `report_pi05_longitudinal.py` generates `pi05_focus_20261125/longitudinal_report.json` and `.html`, comparing losses, physical lift outcomes, time above 15 cm, tilt, contact failures, and links to stage videos. `inspect_pi05_focus.py` remains the live progress/resource entry point. Current PID and source hashes are in `records/long_launch.json`; the pressure-stop record is retained in `records/long_pressure_stop.json`; always inspect live state before launching another supervisor.
+
+The completed 36,000-update baseline was 0/4 stable successes, but white box and lidded bin reached 17.0 cm and 16.2 cm before slipping. Pedal bin and rectangular basket did not lift. The original 6k/18k/36k runs used different sampling seeds, so their one-rollout comparisons are descriptive rather than controlled success-rate estimates. [Baseline video review in Feishu](https://ocnprlp82ms4.feishu.cn/docx/UNuddtViFozOoixBT7Vc6DkAnBf).
+
+## Initial staged experiment and shared setup
 
 - Remote workspace: `/data20t/embodied/zkj/inter-nav-results/g2-policy-overnight-20261124`
 - Supervisor: `pi05_focus_relative_supervisor.py`; state: `pi05_focus_20261125/status.json`.
