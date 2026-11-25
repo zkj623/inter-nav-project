@@ -5,6 +5,9 @@ PY='/data20t/embodied/share/inter-nav/envs/isaaclab/bin/python'
 OUT=W/'progress_act_20261125'; OUT.mkdir(exist_ok=True)
 lock=(W/'recovery_20261125/supervisor.lock').open('w'); fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
 children=[]; previous=None; strikes=0
+os.sched_setaffinity(0, sorted(os.sched_getaffinity(0))[:8])
+priority=os.getpriority(os.PRIO_PROCESS,0)
+if priority<10:os.nice(10-priority)
 def snapshot():
  global previous
  mem={a:int(b.split()[0]) for a,b in (x.split(':',1) for x in Path('/proc/meminfo').read_text().splitlines())}
