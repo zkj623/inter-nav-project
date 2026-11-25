@@ -21,3 +21,11 @@ Inputs remain head/two-wrist RGB, joint state, task ID and elapsed time. This is
 The physical acceptance checks are unchanged: 15 cm lift, stable hold, contact geometry, collision, tilt and drift checks. An offline loss improvement or a short lift does not count as task success. Results must be checked in `evaluations/act_progress_v1_8000/summary.json` after the run finishes.
 
 Sources depend on the existing G2 workspace, the previously archived `g2_act_model.py`, patched official ACT implementation, and accepted demonstration caches. Setup order: `setup_progress_act.py`, `fix_progress_terminal.py`, `test_progress_act.py`, then the guarded runner. Do not rerun setup during an active run; setup regenerates source files.
+
+## Conditional input ablation
+
+The 2000/6000-step counterfactual checks still showed large errors when conditioning on old stalled rollout observations. Explicitly masking those observations improved the requested lift progression in sampled frames, although action accuracy was not sufficient evidence of physical success.
+
+`queue_timeonly_ablation.py` waits until the full progress-policy evaluation finishes. If fewer than two objects pass, it runs a further 8000-step ACT ablation with both RGB and joint-state inputs masked during training and inference; only learned task/time conditioning remains. This is a learned fixed-start trajectory model, not visual closed-loop control, corrective demonstration collection, or expert replay. It must be reported separately even if it passes. If the progress policy already passes at least two objects, the ablation is skipped. Any resource stop aborts the queue.
+
+`test_timeonly_mask.py` passed checks for masking observations, preserving elapsed time and its gradients, and avoiding input mutation. The queue runs at lower CPU priority and uses the same exclusive supervisor lock and resource guard as the first experiment.
