@@ -37,14 +37,49 @@ cosine schedule spans the full five-epoch run, peak LR 5e-5, final LR 5e-6;
 resume optimizer/model state between stages. Equivalent epoch counts are nominal
 sample-count equivalents because episodes and object groups are sampled randomly.
 
-After each stage, evaluate the first held-out placement for every object: 12
-rollouts with the existing lock10 protocol (reach 10 cm, freeze commanded arm/
-gripper targets, observe 5 seconds; base contact alone is not failure). Offline
-probes use held-out demonstration states. This protocol supports comparisons with
-prior lock10 results but does not demonstrate ten-second active holding or mobile
-transport. A second held-out episode per object is reserved in the manifest;
-the current automatic evaluator samples only the first. Initialization/progress
-timeouts allow one infrastructure retry, while physical failure is not retried.
+After each stage, evaluate the first held-out placement for every object:
+12 continuous-policy rollouts. No target freezing at 10 cm and no height-based
+early success stop. The final 10.1 seconds are labeled for auditing only; the
+policy keeps its existing action queue and receives no phase/object-state input.
+Base contact alone is not failure. Report complete mesh floor clearance separately
+from strict final-window height, relative-motion and orientation checks.
+The remaining physical/contact safety stops remain active.
+
+Time budgets come from all 240 raw HDF5 timestamp/phase arrays:
+ceil to 5 seconds of max(longest demonstration duration for the object,
+latest demonstration hold-start time + 10.1 seconds). This covers the original
+demonstrated action duration and allows a longer observation window.
+Whole-dataset duration: min 41.55, median 56.425, p95 69.6875, max 82.5 seconds.
+Most demonstrations hold for 2.95 seconds; the side table holds for 11.95 seconds.
+
+| Object | Fixed policy horizon (s) |
+| --- | ---: |
+| basket_rectangular | 65 |
+| basket_woven | 70 |
+| bin_lidded | 70 |
+| bin_pedal | 55 |
+| bin_round_lidded | 60 |
+| bin_round_pedal | 75 |
+| box_reinforced | 90 |
+| box_white | 70 |
+| case_handheld | 80 |
+| stool_rectangular | 55 |
+| stool_wood_four_leg | 60 |
+| table_side | 65 |
+
+Offline probes use held-out demonstration states. Only the first of the two
+held-out episodes per object is automatically evaluated. Different checkpoints
+share commanded placements, sampling seeds and object-specific horizons, but
+not exact simulator-state forks. This does not test chassis transport.
+Initialization/progress timeouts allow one infrastructure retry; physical
+failure is not retried.
+
+The already-running supervisors still pass their legacy lock10 argument.
+evaluate_pi05_regular240.py explicitly overrides it to full; all newly generated
+trial records and summaries use full_lift_v1. Archived previous experiments are
+unchanged. Twelve harnesses passed syntax/no-lock/202-observation-action checks.
+Metric checks cover ten-second acceptance, rejection of a five-second window,
+and a late drop. A full simulation smoke test remains pending the first checkpoint.
 
 Monitor resources every 10 seconds; stop owned children for sustained memory,
 swap-I/O, disk, GPU-memory or temperature pressure. Existing 2 GiB swap occupancy

@@ -32,26 +32,26 @@ for p in sorted((W/'evaluations').glob('pi05_regular240_*_heldout/summary.json')
      gaps.append(float((v@rot.T+np.array(s['object_position']))[:,2].min()))
     r['min_hold_lift_m']=min(s['lift_m'] for s in hold)
     r['min_mesh_floor_clearance_m']=min(gaps)
-    r['airborne_five_seconds']=bool(r['hold_span_s']>=4.9-1e-6 and r['min_hold_lift_m']>=.09 and min(gaps)>.005)
+    r['airborne_ten_seconds']=bool(r['hold_span_s']>=9.9-1e-6 and r['min_hold_lift_m']>=.09 and min(gaps)>.005)
     rel=np.array([s['object_relative_tcp'] for s in hold])
     rots=Rotation.from_quat(np.array([s['object_quaternion'] for s in hold])[:,[1,2,3,0]])
     r['hold_relative_motion_m']=float(np.linalg.norm(rel-rel[0],axis=1).max())
     r['hold_rotation_change_deg']=float(np.degrees((rots[0].inv()*rots).magnitude()).max())
   item['objects'].append(r)
- item['airborne_five_seconds_count']=sum(r.get('airborne_five_seconds',False) for r in item['objects'])
+ item['airborne_ten_seconds_count']=sum(r.get('airborne_ten_seconds',False) for r in item['objects'])
  rows.append(item)
 rows.sort(key=lambda r:r['steps'])
 report=dict(updated=datetime.datetime.now().isoformat(),stages=rows,notes=[
  '216 train and 24 heldout episodes; each stage evaluates one heldout placement per object.',
  'Same per-object policy sampling seed and commanded placement; not exact simulator state forks.',
- 'Lock10 evaluation: stop inference at 10cm lift, keep commanded targets for 5s. Base contact alone is not failure.',
+ 'Continuous policy for a fixed per-object demonstration-derived duration; assess final10s. Base contact alone is not failure.',
  'Report sustained full-mesh airborne behavior separately from strict acceptance.',
- 'This is neither ten-second active holding nor chassis transport verification.',
+ 'This evaluates active holding at the end of the rollout, not chassis transport.',
  'One rollout per object per checkpoint does not estimate a robust success rate.'])
 tmp=O/'checkpoint_comparison.tmp.json';tmp.write_text(json.dumps(report,indent=2));tmp.replace(O/'checkpoint_comparison.json')
-parts=['<!doctype html><meta charset="utf-8"><title>Regular240 checkpoint comparison</title><style>body{font:16px/1.6 sans-serif;max-width:1100px;margin:30px auto}td,th{padding:8px;border:1px solid #ddd}table{border-collapse:collapse}pre{white-space:pre-wrap}</style><h1>Regular240: checkpoint comparison</h1>','<p>'+html.escape(' '.join(report['notes']))+'</p>','<table><tr><th>Steps</th><th>Epochs</th><th>Heldout arm MAE (rad)</th><th>Fully airborne 5s</th><th>Strict pass</th></tr>']
+parts=['<!doctype html><meta charset="utf-8"><title>Regular240 checkpoint comparison</title><style>body{font:16px/1.6 sans-serif;max-width:1100px;margin:30px auto}td,th{padding:8px;border:1px solid #ddd}table{border-collapse:collapse}pre{white-space:pre-wrap}</style><h1>Regular240: checkpoint comparison</h1>','<p>'+html.escape(' '.join(report['notes']))+'</p>','<table><tr><th>Steps</th><th>Epochs</th><th>Heldout arm MAE (rad)</th><th>Fully airborne 10s</th><th>Strict pass</th></tr>']
 for r in rows:
- parts.append(f"<tr><td>{r['steps']}</td><td>{r['equivalent_epochs']:.2f}</td><td>{r.get('heldout_arm_first10_mae_rad')}</td><td>{r['airborne_five_seconds_count']}/{r['completed_objects']}</td><td>{r['strict_passes']}/{r['completed_objects']}</td></tr>")
+ parts.append(f"<tr><td>{r['steps']}</td><td>{r['equivalent_epochs']:.2f}</td><td>{r.get('heldout_arm_first10_mae_rad')}</td><td>{r['airborne_ten_seconds_count']}/{r['completed_objects']}</td><td>{r['strict_passes']}/{r['completed_objects']}</td></tr>")
 parts.append('</table>')
 for r in rows:parts.append('<h2>'+html.escape(r['run'])+'</h2><pre>'+html.escape(json.dumps(r,indent=2))+'</pre>')
 (O/'checkpoint_comparison.html').write_text('\n'.join(parts))

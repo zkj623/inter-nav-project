@@ -2,7 +2,9 @@ from pathlib import Path
 import argparse,json,subprocess,sys,time,fcntl,os,signal
 import psutil
 W=Path(__file__).resolve().parent;R=W.parent/'g2-act-threecam-20261124'
-p=argparse.ArgumentParser();p.add_argument('--checkpoint',required=True);p.add_argument('--run',required=True);p.add_argument('--dataset',default='pilot4');p.add_argument('--gpu',type=int,default=3);p.add_argument('--port',type=int,default=19024);p.add_argument('--assets',nargs='+');p.add_argument('--duration',type=float,default=80.);p.add_argument('--execute',type=int,default=10);p.add_argument('--time-conditioned',action='store_true');p.add_argument('--split',choices=['train','validation'],default='train');p.add_argument('--evaluation-label',default='training positions, closed-loop policy; no expert feedback');p.add_argument('--sampling-seed',type=int);p.add_argument('--protocol',choices=['lock10'],default='lock10');a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--checkpoint',required=True);p.add_argument('--run',required=True);p.add_argument('--dataset',default='pilot4');p.add_argument('--gpu',type=int,default=3);p.add_argument('--port',type=int,default=19024);p.add_argument('--assets',nargs='+');p.add_argument('--duration',type=float,default=80.);p.add_argument('--execute',type=int,default=10);p.add_argument('--time-conditioned',action='store_true');p.add_argument('--split',choices=['train','validation'],default='train');p.add_argument('--evaluation-label',default='training positions, closed-loop policy; no expert feedback');p.add_argument('--sampling-seed',type=int);p.add_argument('--protocol',choices=['lock10','full'],default='full');a=p.parse_args()
+# Compatibility with the running supervisor; the active evaluation now uses continuous control.
+a.protocol='full'
 if a.time_conditioned and a.protocol=='lock10':raise ValueError('lock10 requires the image/qpos policy adapter')
 probe_dir=W/'pi05_focus_20261125'; probe_dir.mkdir(exist_ok=True)
 import hashlib,urllib.request
@@ -67,6 +69,6 @@ for asset in assets:
 
 
 
-subprocess.run([sys.executable,str(W/'export_pi05_focus_review.py'),'--run',a.run],cwd=W,check=True,timeout=3600)
+subprocess.run([sys.executable,str(W/'export_pi05_regular240_review.py'),'--run',a.run],cwd=W,check=True,timeout=3600)
 
 subprocess.run([sys.executable,str(W/'report_regular240_checkpoints.py')],cwd=W,check=True,timeout=600)
