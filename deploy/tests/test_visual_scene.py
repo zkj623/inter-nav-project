@@ -107,8 +107,8 @@ def test_detached_map_geometry_matches_direct_simulation_renderer(bounded):
 def test_follow_cloud_height_slice_is_display_only_and_requires_calibration():
     import pytest
     from deploy.visualization.cloud_image import render_cloud
-    points = np.array([[1., 0., .18], [1.5, .3, .28]])
-    extra = np.vstack((points, [[1., 0., -.1], [1., 0., .2801], [1., 0., 1.2]]))
+    points = np.array([[1., 0., .05], [1.5, .3, .50]])
+    extra = np.vstack((points, [[1., 0., -.1], [1., 0., .5001], [1., 0., 1.2]]))
     before = extra.copy()
     arguments = dict(position=[0., 0., .3], orientation=[1., 0., 0., 0.],
                      ground_relative_z=True, mode='follow')

@@ -41,6 +41,10 @@ def sensor(calibrated=True):
                          lidar_topic='/utlidar/cloud_deskewed')
     source.mid360s = False
     source.mixed = None
+    source.mount = None
+    source.registered_poses = deque(maxlen=8)
+    source.registered_scans = deque(maxlen=8)
+    source.previous_scan_end_at = None
     source.imu_samples = deque(maxlen=256)
     if calibrated:
         source.config.update(ground_z=-.3, lidar_origin_offset_base_m=[.1, 0., .1])
@@ -210,6 +214,9 @@ def test_mid360_pairs_registered_points_world_velocity_and_raw_imu():
     with pytest.raises(ValueError, match='registered'):
         source._lidar(scan)
     scan.header.frame_id = source.config['map_frame']
+    previous = cloud(stamp-100_000_000)
+    previous.header.frame_id = scan.header.frame_id
+    source._lidar(previous)
     source._lidar(scan)
     source._pose(pose)
     assert source.latest() is None
@@ -244,6 +251,114 @@ def test_mid360_floor_estimate_uses_world_height_and_rejects_a_single_wall():
     assert registered_floor_height(floor, [0., 0., 1.7]) == pytest.approx(1.25)
     wall = np.column_stack([np.ones(x.size), y.ravel(), x.ravel()+1.25])
     assert registered_floor_height(wall, [0., 0., 1.7]) is None
+
+
+def test_default_startup_measures_the_floor_from_registered_xyz(monkeypatch):
+    from deploy.tests.test_timebase import fake_ros, message
+
+    cfg = load()['robot']
+    x, y = np.meshgrid(np.arange(-2., 2., .15), np.arange(-2., 2., .15))
+    xyz = np.column_stack((x.ravel(), y.ravel(), np.full(x.size, -.31))).astype('<f4')
+    payload = dict(width=len(xyz), height=1, point_step=12, row_step=xyz.nbytes, data=xyz.tobytes(),
+                   is_bigendian=False, fields=[Message(name=axis, datatype=7, count=1, offset=4*i)
+                                              for i, axis in enumerate('xyz')])
+    def sample(topic, stamp):
+        header = message(stamp).header
+        if topic == cfg['imu_topic']:
+            header.frame_id = cfg['imu_frame']
+            return Message(header=header)
+        if topic == cfg['odom_topic']:
+            pose = odometry(header.stamp, 0., frame=cfg['map_frame'])
+            pose.child_frame_id = cfg['lio_imu_frame']
+            return pose
+        assert topic == '/bot1/cloud_registered_sparse'
+        header.frame_id = cfg['map_frame']
+        return Message(header=header, **payload)
+
+    fake_ros(monkeypatch, sample=sample)
+    source = RosSensors(cfg)
+    try:
+        assert source.config['ground_z'] == pytest.approx(-.31)
+    finally:
+        source.close()
+
+
+def test_sparse_cloud_uses_world_xyz_and_matches_body_pose_when_dds_streams_overtake(monkeypatch):
+    from deploy.robot.localization import multiply, rotation
+    from deploy.robot.timebase import SourceTimeBridge
+    from deploy.tests.test_timebase import EPOCH_NS, MONO_NS, fake_ros, message
+
+    state = fake_ros(monkeypatch)
+    cfg = dict(load()['robot'], ground_z=0.)
+    assert cfg['lidar_topic'] == '/bot1/cloud_registered_sparse'
+    source = RosSensors(cfg, timebase=SourceTimeBridge(EPOCH_NS, MONO_NS))
+    period = 100_000_000
+    body_q = [np.cos(.3), 0., 0., np.sin(.3)]
+    world_from_body = rotation(body_q)
+    pitch = np.deg2rad(cfg['mid360_mount']['pitch_deg'])
+    body_from_imu = [np.cos(pitch/2), 0., np.sin(pitch/2), 0.]
+    imu_q = multiply(body_q, body_from_imu)
+    imu_offset = np.array(cfg['mid360_mount']['imu_in_base_m'])
+    def scan(index):
+        msg = cloud()
+        msg.header = message(EPOCH_NS + index*period).header
+        msg.header.frame_id = cfg['map_frame']
+        return msg
+    def pose_and_imu(index):
+        body_p = [1.+index*.05, .2, .35]
+        imu_p = body_p + world_from_body @ imu_offset
+        msg = odometry(None, 0.)
+        msg.header = scan(index).header
+        msg.child_frame_id = cfg['lio_imu_frame']
+        msg.pose.pose.position = Message(x=imu_p[0], y=imu_p[1], z=imu_p[2])
+        msg.pose.pose.orientation = Message(w=imu_q[0], x=imu_q[1], y=imu_q[2], z=imu_q[3])
+        source._pose(msg)
+        gyro = rotation(body_from_imu).T @ [0., 0., .5]
+        imu = Message(header=message(EPOCH_NS + index*period).header,
+                      angular_velocity=Message(x=gyro[0], y=gyro[1], z=gyro[2]),
+                      linear_acceleration=Message(x=0., y=0., z=1.))
+        imu.header.frame_id = cfg['imu_frame']
+        source._imu(imu)
+
+    try:
+        # Pose 2 arrives before cloud 1. Later, cloud 3 arrives before pose 3.
+        state.mono_ns += 2*period
+        source._lidar(scan(0))
+        pose_and_imu(1)
+        pose_and_imu(2)
+        assert source.latest() is None
+        source._lidar(scan(1))
+        packet = source.latest()
+        lidar = packet.observation['sensors']['lidar']
+        np.testing.assert_array_equal(lidar['pointcloud'], decode_cloud(scan(1)))
+        assert lidar['physics_step'] == lidar['source_stamp_ns'] == EPOCH_NS+period
+        assert packet.pose_at - packet.lidar_at == pytest.approx(.1)
+        np.testing.assert_allclose(packet.observation['position'], [1.05, .2, .35])
+        np.testing.assert_allclose(packet.observation['orientation'], body_q)
+        np.testing.assert_allclose(lidar['position'], [1.05, .2, .35] + world_from_body @ cfg['lidar_origin_offset_base_m'])
+        np.testing.assert_allclose(packet.observation['body_angular_velocity'], [0., 0., .5], atol=1e-12)
+        np.testing.assert_allclose(packet.observation['body_linear_velocity'],
+                                   world_from_body.T @ [.1, 0., .02] - np.cross([0., 0., .5], imu_offset))
+        source._lidar(scan(2))
+        second = source.latest()
+        state.mono_ns += period
+        source._lidar(scan(3))
+        assert source.latest().lidar_at == second.lidar_at
+        pose_and_imu(3)
+        assert source.latest().observation['sensors']['lidar']['physics_step'] == EPOCH_NS+3*period
+
+        # A gap ages the first subsequent sweep conservatively. The next recovers.
+        state.mono_ns += 5*period
+        pose_and_imu(8)
+        source._lidar(scan(8))
+        with pytest.raises(ValueError, match='lidar observation stale'):
+            source.latest().require_fresh(state.mono_ns*1e-9, cfg['max_data_age_s'])
+        state.mono_ns += period
+        pose_and_imu(9)
+        source._lidar(scan(9))
+        source.latest().require_fresh(state.mono_ns*1e-9, cfg['max_data_age_s'])
+    finally:
+        source.close()
 
 
 def test_uncalibrated_data_recordable_but_cannot_build_or_drive_map():
@@ -331,13 +446,15 @@ def test_original_scans_follow_mid360_pose_even_when_old_odometry_underestimates
     from deploy.robot.localization import multiply, rotation
 
     source = sensor()
-    source.config = dict(load()['robot'], ground_z=0.)
+    source.config = dict(load()['robot'], ground_z=0., cloud_odom_frame='odom',
+                         lidar_topic='/utlidar/cloud_deskewed', lidar_origin_offset_base_m=[.28216003, 0., 0.])
     source.mixed = MixedCloud(source.config)
+    source.mount = source.mixed.mount
     source.mid360s, source.matched_scan = True, None
     source.timebase = Message(unitree_to_lio_ns=-4_000_000_000)
     source._stamp = lambda msg, offset_ns=0: (msg.header.stamp+offset_ns, (msg.header.stamp+offset_ns)*1e-9)
     lio_start = 1_000_000_000
-    mount = source.mixed
+    mount = source.mount
     pitch = np.deg2rad(source.config['mid360_mount']['pitch_deg'])
     body_from_imu = [np.cos(pitch/2), 0., np.sin(pitch/2), 0.]
     # Old and new map axes differ. The old pose reports half the true displacement.

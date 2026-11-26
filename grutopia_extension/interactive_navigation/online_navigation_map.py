@@ -81,11 +81,14 @@ class OnlineNavigationMap(LayeredNavigationMap):
         scan=lidar.get('physics_step');points=np.asarray(lidar.get('pointcloud',[]),float)
         fresh=bool(points.size and (scan is None or scan!=self.last_scan))
         self.visible_box_ids=[]
-        if fresh:
-            origin=np.asarray(lidar.get('position',observation['position']),float)
-            distances=np.linalg.norm(points[:,:3]-origin,axis=1)
-            returns=points[distances<float(lidar.get('max_range',5.))*.99]
-            visible=self._visible_proposals(returns,boxes)
+        proposals=tuple(boxes) if fresh else ()
+        if proposals:
+            returns=points
+            if not lidar.get('measured_returns_only'):
+                origin=np.asarray(lidar.get('position',observation['position']),float)
+                distances=np.linalg.norm(points[:,:3]-origin,axis=1)
+                returns=points[distances<float(lidar.get('max_range',5.))*.99]
+            visible=self._visible_proposals(returns,proposals)
             self.visible_box_ids=[b.id for b in visible]
             self.detected_boxes.update({b.id:b for b in visible})
         self.current_boxes=list(self.detected_boxes.values())

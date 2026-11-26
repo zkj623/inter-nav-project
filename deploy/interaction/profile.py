@@ -1,12 +1,7 @@
-"""Explicit measured geometry and response for the deployed SDK backend.
-
-An SDK profile is an operator-supplied calibration, not an assertion of
-hardware acceptance. Files must explicitly provide every measured field.
-Its provenance is recorded verbatim; this module never manufactures evidence.
-"""
-from dataclasses import asdict, dataclass, fields
+"""Explicit SDK geometry and limits for a measured profile or a bounded first push."""
+from dataclasses import MISSING, asdict, dataclass, fields
 import math
-from typing import Mapping
+from typing import Mapping, Optional
 
 import numpy as np
 
@@ -14,7 +9,7 @@ import numpy as np
 @dataclass(frozen=True)
 class ContactProfile:
     backend: str
-    calibration_reference: str
+    calibration_reference: Optional[str]
     nose_offset_m: float
     foot_x_min_m: float
     foot_x_max_m: float
@@ -54,16 +49,19 @@ class ContactProfile:
     box_position_tolerance_m: float
     box_settle_seconds: float
     box_max_settled_speed_mps: float
+    mode: str = 'measured'
 
     def __post_init__(self):
         if self.backend != 'sdk':
             raise ValueError('Deploy contact backend must be sdk')
-        if not isinstance(self.calibration_reference, str):
-            raise ValueError('Contact calibration_reference must be a string')
-        if not self.calibration_reference.strip():
+        if self.mode not in ('measured', 'first_push'):
+            raise ValueError('Unknown SDK contact mode')
+        if self.mode == 'first_push' and self.calibration_reference is not None:
+            raise ValueError('First push uses nominal geometry and has no contact calibration')
+        if self.mode == 'measured' and not (isinstance(self.calibration_reference, str) and self.calibration_reference.strip()):
             raise ValueError('SDK contact profile requires calibration_reference')
         for field in fields(self):
-            if field.name in {'backend', 'calibration_reference'}:
+            if field.name in {'backend', 'calibration_reference', 'mode'}:
                 continue
             value = getattr(self, field.name)
             if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value):
@@ -95,6 +93,9 @@ class ContactProfile:
             raise ValueError('Box settling window must fit inside the contact budget')
         if self.box_position_tolerance_m >= min(self.stop_margin_m,self.release_margin_m):
             raise ValueError('Box stationary tolerance must be smaller than the contact geometry margins')
+        if self.mode == 'first_push' and (self.push_max_mps > .06 or self.max_forward_mps > .12
+                or self.max_lateral_mps > .10 or self.max_contact_seconds > 18.):
+            raise ValueError('First-push speed or duration exceeds its trial limits')
 
     @classmethod
     def from_dict(cls, payload):
@@ -108,7 +109,7 @@ class ContactProfile:
             raise ValueError('Unknown contact profile fields: ' + ', '.join(sorted(unknown)))
         # SDK calibration must not silently inherit simulation geometry or
         # stopping distances merely because a YAML key was misspelled/omitted.
-        missing = names - set(payload)
+        missing = {field.name for field in fields(cls) if field.default is MISSING} - set(payload)
         if missing:
             raise ValueError('SDK contact profile requires explicit fields: ' + ', '.join(sorted(missing)))
         return cls(**payload)

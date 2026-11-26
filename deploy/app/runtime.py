@@ -26,9 +26,11 @@ def check(config):
         motion = str(error)
     print(json.dumps({'check': 'offline_only', 'dependencies': status, 'motion': motion,
                       'planning_frame': ExperimentFrame.name, 'source_frame': config['robot']['map_frame'],
+                      'lidar_topic': config['robot']['lidar_topic'],
                       'camera_mode': config['robot']['camera_mode'],
                       'navigation_backend': 'simulation_release_online_navigation',
                       'interaction_enabled': config['navigation']['interaction_enabled'],
+                      'first_push': config.get('interaction', {}).get('first_push', False),
                       'interaction_source': config.get('interaction', {}).get('source', 'rgbd'),
                       'registered_boxes': len(config.get('interaction', {}).get('boxes', [])),
                       'contact_profile_configured': config.get('interaction', {}).get('contact_profile') is not None,
@@ -51,13 +53,15 @@ def _recorder(args, config, mode):
 
 
 def run_replay(args, config):
+    from deploy.perception.box_memory import BoxMapMemory
     from deploy.recording.replay import ReplayClock, snapshots
     from deploy.interaction.replay import RecordedInteractionHandoff
     paced = getattr(args, 'realtime', False)
+    memory = BoxMapMemory()
     window = create_perception(config, box_window=True, live=paced) if getattr(args, 'box_window', False) else None
     perception = (window if window is not None and args.task == 'observe' and not paced
-                  else create_perception(config, synchronous=True))
-    tasks = Tasks(config['navigation'], perception, interaction=config.get('interaction'))
+                  else create_perception(config, synchronous=True, box_memory=memory))
+    tasks = Tasks(config['navigation'], perception, interaction=config.get('interaction'), box_memory=memory)
     handoff = RecordedInteractionHandoff(config['runtime']['control'], config['robot']['max_data_age_s'])
     recorder = _recorder(args, config, 'offline_replay_no_motion')
     started = False
@@ -66,13 +70,13 @@ def run_replay(args, config):
     previous_delivery = None
     clock = ReplayClock() if paced else None
     worker = None
-    ceiling = config['navigation']['mapping'].get('point_height', (None, None))[1]
+    point_height = config['navigation']['mapping'].get('point_height')
     boundary = WorldBoundary.from_navigation(config['navigation'])
-    packets = (packet.navigation_view(ceiling, boundary) for packet in snapshots(args.replay))
+    packets = (packet.navigation_view(point_height, boundary) for packet in snapshots(args.replay))
     try:
         if paced:
             from deploy.perception.window_process import WindowProcess
-            worker = WindowProcess.replay(window.config, recorder, args.replay, ceiling, boundary)
+            worker = WindowProcess.replay(window.config, recorder, args.replay, point_height, boundary, box_memory=memory)
             packets = clock.play(packets, on_start=worker.begin)
         for snapshot in packets:
             now = snapshot.captured_at
@@ -87,7 +91,10 @@ def run_replay(args, config):
                 started = True
             if window is not None and window is not perception and worker is None:
                 window.publish(snapshot, now, recorder)
+                memory.observe(window.last_delivery, now)
             velocity, handoff_event = handoff.update(tasks, snapshot, now)
+            if window is not None and window is perception:
+                memory.observe(window.last_delivery, now)
             if handoff_event is not None:
                 recorder.event(handoff_event.pop('event'), **handoff_event)
             if perception is not None:
@@ -132,6 +139,8 @@ def run_replay(args, config):
         if handoff.pending and error is None:
             reason = 'interaction_stop_handoff_required'
         summary = {'reason': reason, 'error': error, 'task_result': tasks.result,
+                   'remembered_boxes': {key: loc.display for key, loc in memory.locations().items()},
+                   'first_push_result': getattr(tasks.engine, 'trial_report', None),
                    'decisions': count, 'map_created': tasks.map_ready,
                    'mapping': tasks.engine.layers.statistics(), 'sent_to_robot': False, 'hardware_validated': False,
                    'recorded_stop_handoff': handoff.diagnostic(),
@@ -156,16 +165,20 @@ def run_live(args, config):
         check_motion_configuration(config)
     window = create_perception(config, box_window=True, live=True) if getattr(args, 'box_window', False) else None
     robot, nav, runtime = config['robot'], config['navigation'], config['runtime']
+    registered_cloud = robot.get('sensor_profile') == 'mid360s_lio'
+    lio_odometry = registered_cloud or robot.get('sensor_profile') == 'mid360s_lio_utlidar'
     control = runtime['control']
     reference = ExperimentFrame(0. if args.demo else robot['ground_z'])
     separate_cloud = True
     session = Session(config, REPO, port=args.session_port, demo=args.demo, separate_cloud=separate_cloud,
                       mode='synthetic_demo' if args.demo else ('live_motion_enabled' if args.allow_motion else 'live_observe_only'))
+    box_memory = session.box_memory if config['interaction'].get('boxes') else None
     print(f'本轮会话：{session.info["session_id"]}；数据服务：{session.url}', flush=True)
     print('另开终端运行 python view.py 查看三幅图；python record.py 保存实验。', flush=True)
     sensors = motion = keyboard = perception = observations = tasks = video = controller = None
     window_process = None
-    ceiling = nav['mapping'].get('point_height', (None, None))[1]
+    window_submit = None
+    point_height = nav['mapping'].get('point_height')
     boundary = WorldBoundary.from_navigation(nav)
     snapshot = None
     started_at = time.monotonic()
@@ -185,16 +198,16 @@ def run_live(args, config):
         else:
             topic = args.rgb_topic or robot['rgb_topic']
             print('正在采样传感器时间参照（约 3 秒）；不修改 Orin 系统时间。', flush=True)
-            if (args.allow_motion and window is not None and robot.get('sensor_profile') == 'mid360s_lio_utlidar'
+            if (args.allow_motion and window is not None
+                    and lio_odometry
                     and args.camera != 'ros' and robot['camera_mode'] != 'rgbd'):
-                # The two odometry feeds and high-rate IMU callbacks otherwise
-                # contend with every local-map and collision check for the GIL.
+                # Keep ROS subscriptions and high-rate IMU callbacks off the control thread.
                 from deploy.robot.sensor_process import RosSensorProcess
                 sensors = RosSensorProcess(robot)
             else:
                 sensors = RosSensors(robot, session.rgb if args.camera == 'ros' else None,
                                      topic if args.camera == 'ros' else None)
-            if robot.get('sensor_profile') in ('mid360s_lio', 'mid360s_lio_utlidar'):
+            if lio_odometry:
                 robot = sensors.config
                 reference = ExperimentFrame(robot['ground_z'])
                 session.event('lio_observation_reference', pose_frame=robot['base_frame'],
@@ -220,16 +233,22 @@ def run_live(args, config):
                 interaction = config['interaction']
                 coupled = (interaction['source'] == 'registered_box_lidar'
                            and (window is None or interaction['geometry_verified']))
-                perception = create_perception(config, synchronous=coupled)
+                perception = create_perception(config, synchronous=coupled, box_memory=box_memory)
             if window is not None:
                 from deploy.perception.window_process import WindowProcess
                 event = 'box_window_result' if perception is not None else 'perception_result'
-                window_process = WindowProcess.live(window.config, session, event, robot, sensors.timebase, ceiling, boundary)
+                if registered_cloud:
+                    # The box worker consumes the same experiment-frame scan as navigation.
+                    window_process = WindowProcess.from_navigation_scans(window.config, session, event, boundary)
+                    window_submit = window_process.submit
+                else:
+                    window_process = WindowProcess.live(window.config, session, event, robot, sensors.timebase, point_height, boundary)
                 session.event(event, geometry_source='window_two_faces', detections=[], error='等待导航坐标系')
         observations = LiveObservations(sensors, reference, session, hz=nav['tick_hz'],
                                         max_age=robot['max_data_age_s'], perception=perception,
-                                        point_ceiling=ceiling, world_boundary=boundary)
-        tasks = Tasks(nav, observations if perception is not None else None, interaction=config.get('interaction'))
+                                        point_height=point_height, world_boundary=boundary, window_submit=window_submit)
+        tasks = Tasks(nav, observations if perception is not None else None, interaction=config.get('interaction'),
+                      box_memory=box_memory)
         if args.allow_motion:
             motion = MotionProcess(robot, control)
         keyboard = Keyboard() if not args.demo or sys.stdin.isatty() else None
@@ -238,6 +257,8 @@ def run_live(args, config):
         # Pace decisions on measured scans; leave time to replace the current
         # command before its source or the writer's watchdog expires.
         period = 1/nav['tick_hz']
+        # Swarm-LIO publishes at about 10 Hz. A separate wall-clock tick can skip a scan.
+        pace_on_lidar = registered_cloud and nav['tick_hz'] >= 10 and not args.demo
         decision_due = float('-inf')
         consumed = None
         print(('合成演示：未连接机器人。' if args.demo else 'MCF 保持运行。默认观察；') + ('运动需按任务键启动。' if motion else '本次会话禁止运动。'), flush=True)
@@ -250,7 +271,10 @@ def run_live(args, config):
                 print(f"1 秒 LiDAR 认箱已开启。{row['id']} 长 × 宽 × 高为 {size} 厘米。", flush=True)
             push_enabled = (args.allow_motion and nav['interaction_enabled']
                             and any(row['push_allowed'] for row in window.config['boxes']))
-            print('自主推箱已启用，接触前用当前扫描确认箱体。' if push_enabled else '本轮自主推箱已关闭。', flush=True)
+            if push_enabled and tasks.engine.first_push:
+                print('首次短推已启用。箱子挡路时可试推一次，测到约 4 厘米位移就请求停稳复测。', flush=True)
+            else:
+                print('自主推箱已启用，接触前用当前扫描确认箱体。' if push_enabled else '本轮自主推箱已关闭。', flush=True)
         print(f"来源坐标系={'demo_odom' if args.demo else robot['map_frame']}；等待有效观测初始化 experiment；相机={robot['camera_mode']}", flush=True)
         if not args.demo and (robot['ground_z'] is None or robot['lidar_origin_offset_base_m'] is None):
             print('地面/雷达原点未标定：本次可记录观测，导航地图暂不生成。', flush=True)
@@ -284,17 +308,16 @@ def run_live(args, config):
                     quitting = True
                     continue
                 controller.operate(key, value, snapshot, now)
-                if controller.fresh_cycle_required:
-                    # Arming waits for the motion worker. Its acknowledgement
-                    # can arrive after this snapshot has expired. Start the
-                    # decision with the newest available scan and its own timestamps.
-                    controller.fresh_cycle_required = False
-                    observations.wait_next(snapshot, period)
-                    continue
-            step_error = controller.step(snapshot, now)
+            step_error = None
+            if not controller.fresh_cycle_required:
+                step_error = controller.step(snapshot, now)
             if controller.fresh_cycle_required:
+                # Both an operator start and a restart after planning need a
+                # fresh scan. A repackaged pre-arm sweep still has its old expiry.
                 controller.fresh_cycle_required = False
-                observations.wait_next(snapshot, period)
+                if pace_on_lidar:
+                    controller.last_control_lidar_at = snapshot.lidar_at
+                observations.wait_next(snapshot, period, distinct_lidar=pace_on_lidar)
                 continue
             observation_error = observation_error or step_error
             current_error = observations.last_error or observation_error
@@ -316,7 +339,10 @@ def run_live(args, config):
             if controller.last_expires_at is not None:
                 reserve = max(period, controller.last_decision_cost) + 1/control['poll_hz']
                 next_read = min(next_read, controller.last_expires_at-reserve)
-            observations.wait_next(snapshot, period, not_before=next_read)
+            if pace_on_lidar and motion and motion.state == 'active':
+                observations.wait_next(snapshot, period, distinct_lidar=True)
+            else:
+                observations.wait_next(snapshot, period, not_before=next_read)
     except Exception as exc:
         reason, error = 'runtime_error', f'{type(exc).__name__}: {exc}'
         print(error, flush=True)

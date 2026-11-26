@@ -21,7 +21,9 @@ def wrap(value):
 
 def create_push_skill(permission, plan, start, goal, profile, *, config=None):
     settings = replace(config or PushAsideConfig(), **profile.skill_overrides())
-    return PushAsideSkill(permission, plan, start, goal, settings, backend=SdkPushBackend(profile))
+    from .first_push import FirstPushSkill
+    skill = FirstPushSkill if profile.mode == 'first_push' else PushAsideSkill
+    return skill(permission, plan, start, goal, settings, backend=SdkPushBackend(profile))
 
 
 class SdkPushBackend(PushAsideBackend):
@@ -75,6 +77,14 @@ class SdkPushBackend(PushAsideBackend):
         if any(value is None for value in geometry) or getattr(ctx, 'orientation', None) is None:
             return False
         maximum = skill.config.pushing_face_offset_max if moving else skill.config.preparation_face_offset_max
+        if self.profile.mode == 'first_push':
+            # The 30 cm box meets the leading cap of Head_lower. The upper head
+            # extends above the box. Keep the full head width in the side check.
+            face = (ctx.position, ctx.orientation, ctx.box.xy, geometry[2], geometry[0], geometry[1], skill.direction)
+            lower_cap = ((.337, .340), (-.017, .017), (-.077, -.043))
+            return (observed_contact_face_clear(*face, maximum, skill.config.contact_face_margin,
+                                                head_bounds=self.profile.head_bounds)
+                    and observed_contact_face_clear(*face, maximum, .015, head_bounds=lower_cap, require_vertical=True))
         return observed_contact_face_clear(ctx.position, ctx.orientation, ctx.box.xy, geometry[2],
             geometry[0], geometry[1], skill.direction, maximum, skill.config.contact_face_margin,
             head_bounds=self.profile.head_bounds, require_vertical=True)
@@ -99,6 +109,8 @@ class SdkPushBackend(PushAsideBackend):
         if result.status != 'running':
             return result
         bounded = self.profile.limit(result.velocity)
+        if self.profile.mode == 'first_push' and skill.contact_started is not None:
+            bounded[:2] /= max(1., np.linalg.norm(bounded[:2])/self.profile.push_max_mps)
         if np.any(np.abs(bounded) > 1e-9):
             contact = skill.state in {'engage', 'push', 'settle_push_progress', 'brake_after_push'}
             if skill.contact_started is not None:
@@ -117,6 +129,8 @@ class SdkPushBackend(PushAsideBackend):
         return result
 
     def observe_box(self, skill, ctx):
+        if self.profile.mode == 'first_push' and skill.contact_started is None and ctx.box_observation_id is None:
+            return None
         try:
             self.box_motion.observe(ctx.box, ctx.box_observed_at, ctx.box_observation_id, ctx.now)
         except (TypeError, ValueError):

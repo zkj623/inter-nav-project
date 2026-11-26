@@ -3,8 +3,8 @@
 目标：分别检查静止墙距、IMU 输出和转向时的点云对齐。先保持当前驱动和定位配置，
 用同一套配置完成全部测试；环境物体保持静止。录包只订阅传感器，不发送运动命令。
 
-本轮使用 `ros2 bag record` 保存原始 ROS 消息。`record.py` 保存的是运行程序输出，
-不能替代原始点云、配准点云、LIO 里程计与 IMU 的同步记录。
+本轮使用 `ros2 bag record` 同时保存 Swarm-LIO 配准后的稀疏点云、里程计和机载 IMU。
+`record.py` 用于保存点导航运行时的观测。
 
 ## 开测前检查与实验顺序
 
@@ -12,7 +12,7 @@
 转向时是否出现新的畸变或跨帧重影。假定环境物体静止；这不是完整的 IMU 标定或点导航验收。
 
 - [ ] Orin 已同步本说明和 `configs/sensor_record_qos.yaml`，仓库路径与下面命令一致。
-- [ ] 雷达、定位、站立服务正常；两路点云和 odom 有发布者，记录 IMU 话题是否可用。
+- [ ] 雷达、定位、站立服务正常，配准点云、里程计和 IMU 都有发布者。
 - [ ] `run.py` 已退出；需要运动时由现场操作员用原生遥控器控制，已确认能停止。
 - [ ] 同一面实体墙、地面标记和卷尺准备好；测量基准为雷达中心投影到主墙面。
 - [ ] 保存当前代码版本和话题发布者信息；记录本轮使用的驱动、定位启动方式，组间不切换配置。
@@ -27,8 +27,7 @@
 
 每组记录实际墙距或转角，不把目录名称当作实测值。前三组已包含静止 IMU 检查，
 本轮无需单独增加一个静止 IMU 实验。
-换 SLAM 的离线对比在拿到这些数据后进行；点导航的启动、暂停和接管流程见
-[deploy README](../README.md)，不包含在这四组传感器实验中。
+点导航的启动、暂停和接管流程见 [deploy README](../README.md)。
 
 ## 1. 登录与准备
 
@@ -56,8 +55,7 @@ elif test -f ../.deploy-source.json; then
 fi
 ros2 topic list -t | tee "$SENSOR_TEST_DIR/topics.txt"
 ros2 node list > "$SENSOR_TEST_DIR/nodes.txt"
-for SENSOR_TOPIC in /utlidar/cloud /utlidar/cloud_deskewed \
-    /utlidar/robot_odom /bot1/lidar_slam/odom /livox/imu; do
+for SENSOR_TOPIC in /bot1/cloud_registered_sparse /bot1/lidar_slam/odom /livox/imu; do
   ros2 topic info "$SENSOR_TOPIC" --verbose \
     > "$SENSOR_TEST_DIR/${SENSOR_TOPIC//\//_}-publisher.txt" 2>&1
 done
@@ -66,13 +64,14 @@ cp configs/robot.yaml configs/sensor_record_qos.yaml "$SENSOR_TEST_DIR/"
 
 把本轮实际使用的雷达、定位启动命令及已知版本写入记录目录中的 `setup.txt`，
 已有驱动或定位配置文件也一并保存。不了解版本时注明未知，不用猜测。
-用 Go2 原始点云量墙距。项目将 `/utlidar/cloud_deskewed` 从旧 `odom` 转回机身，再按同一时刻的 MID-360S 里程计转到 `bot1/world`。袋中保留两路里程计和 `/livox/imu`，用于复核位姿、时间对齐与墙的位置。程序启动时根据 Go2 里程计和 Livox IMU 的接收时间估计固定时钟偏移，硬件同步误差尚未测定。
+用 MID-360S 的光心量墙距。`/bot1/cloud_registered_sparse` 的点已经在 `bot1/world` 中。
+点云和 `/bot1/lidar_slam/odom` 的时间戳都是本次扫描的结束时间。
 `/tf`、`/tf_static` 按实际发布情况记录。
 
 宇树给 Go2 配 MID-360 的标称位置以**机身内部 IMU** 为原点，向前 0.1870 m、向左 0 m、
 向上 0.0803 m，绕 +Y 轴转 13°。本机 MID-360S 保护架的圆环、拱架及前背部安装位置
 与示意图相似。静止时测得 LIO 与 Go2 的俯仰角相差约 13°，平移量仍待核实。
-当前混合配置按 Go2 URDF 的 base 原点近似 `base_link`，结合上述支架参数和雷达内部偏移，用 `mid360_mount` 把 LIO 的 IMU 位姿换算成机身位姿。`lidar_origin_offset_base_m` 取原有 Go2 点云的射线起点。
+程序用 `mid360_mount` 把 LIO 的 IMU 位姿换算成机身位姿。射线起点是 `lidar_origin_offset_base_m` 指定的 MID-360S 光心。
 [Go2 URDF](https://github.com/unitreerobotics/unitree_ros/blob/master/robots/go2_description/urdf/go2_description.urdf) ·
 [宇树安装说明](https://support.unitree.com/home/en/developer/SLAM%20and%20Navigation_service) ·
 [宇树安装图](https://doc-cdn.unitree.com/static/2023/11/13/492e14d9686a4322ad5502b743d707e1_2933x3088.png)
@@ -102,8 +101,7 @@ record_sensors() {
   ros2 bag record \
     --qos-profile-overrides-path configs/sensor_record_qos.yaml \
     -o "$SENSOR_TEST_DIR/$1" \
-    /utlidar/cloud /utlidar/cloud_deskewed \
-    /utlidar/robot_odom /bot1/lidar_slam/odom /livox/imu \
+    /bot1/cloud_registered_sparse /bot1/lidar_slam/odom /livox/imu \
     /tf /tf_static
 }
 ```
@@ -114,17 +112,16 @@ record_sensors() {
 record_sensors wall_080
 ```
 
-确认出现两路点云和所需 IMU 的 `Subscribed to topic` 日志后，保持静止 30 秒，
+确认出现配准点云、里程计和 IMU 的 `Subscribed to topic` 日志后，保持静止 30 秒，
 按 `Ctrl+C`，等待录制器保存退出。接着检查：
 
 ```bash
 ros2 bag info "$SENSOR_TEST_DIR/wall_080"
 ```
 
-**先核对第一组，再移动到下一个距离：**两路点云、odom 和待检查的 IMU 应都有非零消息数。
+先核对第一组。配准点云、里程计和 IMU 应都有非零消息数。
 如果 IMU 缺失，先检查话题名称、发布者和录制日志；解决后重录第一组，再继续完整测试。
-若现场暂时无法获得 IMU，可继续完成墙距测试，但须注明“仅点云检查”，不能据此完成
-IMU 验证或与依赖 IMU 的 SLAM 做完整对比。
+若现场暂时无法获得 IMU，仍可检查墙距，并在记录里注明“仅点云检查”。
 
 后两组分别摆好、测量并站稳后，再各执行一条，按同样方式结束和检查：
 
@@ -170,7 +167,7 @@ record_sensors turn_90
 
 ## 4. 录完核对与下载
 
-每个 bag 都应有两路点云和 odom；要判断 IMU，还必须有对应 IMU 的非零、持续数据。
+每个 bag 都应有配准点云和里程计。要判断 IMU，还需要连续的 IMU 数据。
 如果点云有数据而 IMU 没有，本轮只能分析点云，不能据此判定 IMU 好坏。
 可选的 TF 缺失时注明即可。消息计数非零不代表完全没有丢帧；
 离线还需检查频率、时间间隔、时间戳回退和有效字段。
@@ -202,7 +199,7 @@ scp -r go2:~/inter-nav-project/results/deploy/sensor-check-19700120-194654 ../re
 | 单帧几何稳定，跨帧累积位置变化 | odom、姿态与时间同步；换 SLAM 可能改善这一部分 |
 
 墙距使用每帧主墙面的平面拟合，避开墙脚与边缘杂点；比较三个实测距离与点云距离，
-估计 `点云距离 ≈ a × 实测距离 + b`。两路点云来自同一雷达，互相一致不能代替卷尺真值。
+估计 `点云距离 ≈ a × 实测距离 + b`。以卷尺实测值作为距离基准。
 这一轮的转向数据用于定位问题，不能单凭一次转向完成完整 IMU 标定。
 
 IMU 检查加速度、角速度、坐标系和时间戳，不以“姿态已经融合”为不可用依据。

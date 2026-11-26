@@ -6,35 +6,66 @@ import numpy as np
 from .localization import quaternion, multiply, rotation
 
 
-def ceiling_masks(points, ceiling):
-    """Respect an inclusive metre limit at the precision of ROS float32 XYZ."""
-    z = np.asarray(points[:, 2], dtype=np.float64)
-    # Transforming XYZ can widen a float32 representation of exactly 28 cm.
-    # Snap only that boundary value. A higher return must never turn into a hit.
-    edge = (z == float(np.float32(ceiling))) & (z != ceiling)
-    return (z > ceiling) & ~edge, edge
-
-
-def lidar_below_ceiling(points, ceiling):
-    if not points.size:
-        return points
+def height_filter(points, limits):
+    """Keep inclusive limits at ROS float32 precision, preserving pixel indices."""
+    invalid = np.zeros(len(points), bool)
+    if limits is None or not len(points):
+        return points, invalid
     if points.ndim != 2 or points.shape[1] != 3:
-        raise ValueError('LiDAR requires N x 3 points')
-    above, edge = ceiling_masks(points, ceiling)
-    if edge.any():
-        points = points.astype(np.float64, copy=True)
-        points[edge, 2] = ceiling
-    return points[~above] if above.any() else points
+        raise ValueError('Expected N x 3 points')
+    # A scalar keeps the ceiling-only convention used by older callers.
+    lower, upper = (None, limits) if np.isscalar(limits) else limits
+    z = np.asarray(points[:, 2], dtype=np.float64)
+    for bound, outside in ((lower, np.less), (upper, np.greater)):
+        if bound is None:
+            continue
+        edge = (z == float(np.float32(bound))) & (z != bound)
+        invalid |= outside(z, bound) & ~edge
+        if edge.any():
+            points = points.astype(np.float64, copy=True)
+            points[edge, 2] = bound
+    return points, invalid
 
 
-def navigation_points(points, ceiling, boundary):
-    if ceiling is not None:
-        points = lidar_below_ceiling(points, ceiling)
+def navigation_points(points, limits, boundary):
+    points, invalid = height_filter(points, limits)
+    if invalid.any():
+        points = points[~invalid]
     if boundary is not None and len(points):
         inside = boundary.point_mask(points)
         if not inside.all():
             points = points[inside]
     return points
+
+
+class _CroppedLidar(dict):
+    """Share the crop and its measured returns between consumers of this scan."""
+    crop = None
+    measured_points = None
+
+    def measured_returns(self, default_origin):
+        # A legacy packet without a LiDAR origin uses the caller's current pose.
+        if self.measured_points is None or 'position' not in self:
+            points = np.asarray(self['pointcloud'], float)
+            origin = np.asarray(self.get('position', default_origin), float)
+            valid = np.linalg.norm(points-origin, axis=1) < .99*float(self.get('max_range', 5.))
+            self.measured_points = points if valid.all() else points[valid]
+        return self.measured_points
+
+    def __reduce__(self):
+        # Recording and worker processes receive ordinary sensor fields.
+        return dict, (dict(self),)
+
+
+def navigation_lidar(lidar, points, limits, boundary):
+    height = tuple(limits) if limits is not None and not np.isscalar(limits) else limits
+    crop = (height, boundary)
+    if (isinstance(lidar, _CroppedLidar) and lidar.crop == crop
+            and lidar['pointcloud'].dtype == points.dtype):
+        return lidar
+    result = _CroppedLidar(lidar, pointcloud=navigation_points(points, limits, boundary))
+    result.crop = crop
+    return result
 
 
 @dataclass
@@ -59,23 +90,19 @@ class Snapshot:
         sensors = self.observation['sensors']
         lidar = sensors['lidar']
         points = np.asarray(lidar['pointcloud'])
-        filtered = navigation_points(points, ceiling, boundary)
         sensors = dict(sensors)
-        if filtered is not points:
-            sensors['lidar'] = {**lidar, 'pointcloud': filtered}
+        sensors['lidar'] = navigation_lidar(lidar, points, ceiling, boundary)
         camera = sensors.get('camera')
         if camera is not None:
             xyz = np.asarray(camera['pointcloud'])
-            invalid, edge = (ceiling_masks(xyz, ceiling) if ceiling is not None else
-                             (np.zeros(len(xyz), bool), np.zeros(len(xyz), bool)))
+            original = xyz
+            xyz, invalid = height_filter(xyz, ceiling)
             if boundary is not None:
                 invalid |= ~boundary.point_mask(xyz)
-            if invalid.any() or edge.any():
+            if invalid.any() or xyz is not original:
                 # Dense XYZ and depth must continue to address the same pixels.
                 xyz = xyz.astype(np.float64, copy=True)
                 depth = np.asarray(camera['depth']).copy()
-                if edge.any():
-                    xyz[edge, 2] = ceiling
                 xyz[invalid] = np.nan
                 depth[invalid.reshape(depth.shape)] = np.nan
                 sensors['camera'] = {**camera, 'pointcloud': xyz, 'depth': depth}

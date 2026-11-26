@@ -23,7 +23,7 @@ class NavigationController:
         self.planning_hold = None
         self.hold_sequence = 0
         self.last_expires_at = None
-        self.last_command_lidar_at = None
+        self.last_control_lidar_at = None
         self.last_decision_cost = 0.
         self.pending_operation = None
         self.fresh_cycle_required = False
@@ -47,6 +47,7 @@ class NavigationController:
     def _clear_hold(self):
         self.planning_hold = self.pending_operation = None
         self.last_expires_at = None
+        self.last_control_lidar_at = None
 
     @property
     def motion_state(self):
@@ -61,6 +62,8 @@ class NavigationController:
                     self.pause('motion_command_rejected:'+event.get('detail', 'unknown'))
                 continue
             self.session.event('motion_state', **event)
+            if event.get('event') == 'push_speed_sent':
+                print(f"已向 Go2 发送顶箱速度，前进 {event['velocity'][0]*100:.1f} cm/s。", flush=True)
             state = event['state']
             self.motion_detail = event.get('detail', '')
             planned = self.planning_hold is not None and self.motion_detail == self.planning_hold['token']
@@ -307,10 +310,6 @@ class NavigationController:
                 if remaining <= 0:
                     self.pause('control_deadline_missed')
                     return self.task_error
-                if not self.tasks.engine.execution.active and snapshot.lidar_at == self.last_command_lidar_at:
-                    # Delayed delivery can repackage one scan twice. An ordinary
-                    # navigation command based on it would have the same expiry.
-                    return self.task_error
                 if self.tasks.engine.execution.active:
                     # Retain the existing contact-skill admission contract.
                     # This change targets ordinary coordinate navigation.
@@ -318,6 +317,11 @@ class NavigationController:
                     if remaining < budget:
                         self._hold('control_budget')
                         return self.task_error
+            if (self.tasks.state == 'active' and self.motion and snapshot.lidar_at == self.last_control_lidar_at
+                    and (self.last_expires_at is None or not self.tasks.engine.execution.active)):
+                # This sweep was used to arm or already supplied a navigation
+                # velocity. A timeout republication cannot renew its validity.
+                return self.task_error
             previous_state = self.tasks.state
             decision_started = time.monotonic()
             velocity = self.tasks.update(snapshot, now)
@@ -332,6 +336,8 @@ class NavigationController:
                         event['decision_kind'] = event.pop('kind')
                     self.session.event(kind, **event)
                     if kind == 'decision':
+                        if event.get('decision_kind') == 'push':
+                            print(f"导航选中推箱，箱号 {event['box_id']}。", flush=True)
                         reason = event.get('reason') if event.get('decision_kind') == 'wait' else None
                         if reason and reason != self.wait_reason:
                             print(f'导航等待：{reason}；当前观测地图没有满足净空的路径或可达探索点。', flush=True)
@@ -376,7 +382,7 @@ class NavigationController:
                 command_id = (self.motion.submit(velocity, now, expires, interaction=interaction)
                               if interaction is not None else self.motion.submit(velocity, now, expires))
                 self.last_expires_at = expires
-                self.last_command_lidar_at = snapshot.lidar_at
+                self.last_control_lidar_at = snapshot.lidar_at
                 submitted_at = time.monotonic()
                 self.session.event('command_requested', generated_at=now, expires_at=expires,
                                    velocity=velocity, decision_duration_s=decision_duration,

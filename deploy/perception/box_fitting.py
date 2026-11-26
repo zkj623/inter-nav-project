@@ -340,3 +340,108 @@ def scan_tracked_candidates(points, dimensions, origin, config, previous):
         if len(results) > config['max_candidates']:
             raise ValueError('Too many bounded-face candidates; identity is ambiguous')
     return tuple(results)
+
+
+def refit_registered_surfaces(points, dimensions, origin, config, previous):
+    """Measure pose from one sparse scan near an already identified box.
+
+    Two nonparallel side planes constrain both center coordinates. When only
+    one plane is visible, its two observed ends and rays past both ends must
+    constrain the other coordinate. The map supplies only the search pose.
+    """
+    dims = np.asarray(dimensions, float)
+    anchor = np.asarray(previous.center[:2])
+    height, half = dims[2], dims[:2]/2
+    tolerance = config['residual_threshold_m']
+    axes = _rotation(previous.yaw_rad)
+    side = np.sign((origin[:2]-anchor) @ axes)
+    local = (points[:, :2]-anchor) @ axes
+    z = points[:, 2]
+    vertical = (z > max(.035, config['floor_clearance_m'])) & (z < height-.018)
+    faces = {}
+    min_points = config['min_face_points']
+    for axis in range(2):
+        other = 1-axis
+        if side[axis]*((origin[:2]-anchor) @ axes[:, axis]) <= half[axis]+tolerance:
+            continue
+        # Exclude the shared corner so the two constraints use distinct returns.
+        band = (vertical & (abs(local[:, axis]-side[axis]*half[axis]) <= 2*tolerance)
+                & (abs(local[:, other]) < half[other]-.035))
+        indices = np.flatnonzero(band)
+        if len(indices) < min_points or np.ptp(z[indices]) < .32*height:
+            continue
+        xy = points[indices, :2]
+        along = local[indices, other]
+        span = float(np.ptp(along))
+        if span < min(.14, .40*dims[other]):
+            continue
+        _, vectors = np.linalg.eigh(np.cov(xy.T))
+        normal = vectors[:, 0]
+        if normal @ axes[:, axis] < 0:
+            normal = -normal
+        delta = math.atan2(axes[0, axis]*normal[1]-axes[1, axis]*normal[0], normal @ axes[:, axis])
+        if abs(delta) > math.radians(10.):
+            continue
+        faces[axis] = (indices, delta, span)
+    if not faces:
+        return None
+    if len(faces) == 2 and abs(faces[0][1]-faces[1][1]) > math.radians(10.):
+        return None
+    weights = [len(idx)*span**2 for idx, _, span in faces.values()]
+    yaw = previous.yaw_rad + float(np.average([delta for _,delta,_ in faces.values()], weights=weights))
+    axes = _rotation(yaw)
+    projected = (points[:, :2]-anchor) @ axes
+    offset = np.zeros(2)
+    proof = ()
+    spans, names, owned, errors = [], [], [], []
+    for axis, (indices, _, _) in faces.items():
+        other = 1-axis
+        plane = float(np.median(projected[indices, axis]))
+        offset[axis] = plane-side[axis]*half[axis]
+        residuals = projected[indices, axis]-plane
+        rms = float(np.sqrt(np.mean(residuals**2)))
+        if rms > tolerance*.65:
+            return None
+        errors.append(rms)
+        on_plane = vertical & (abs(projected[:, axis]-plane) < tolerance)
+        beyond = abs(projected[:, other])-half[other]
+        extension = on_plane & (beyond > .055) & (beyond < .20)
+        if np.count_nonzero(extension) >= min_points:
+            return None
+        trace = np.flatnonzero(on_plane & (beyond <= tolerance))
+        owned.extend(map(int, trace))
+        low, high = np.quantile(projected[trace, other], [.01, .99])
+        spans.append(float(high-low))
+        names.append(('+' if side[axis] > 0 else '-')+'xy'[axis])
+        if len(faces) == 1:
+            if high-low < dims[other]-config['extent_tolerance_m'] or high-low > dims[other]+2*tolerance:
+                return None
+            middle = (high+low)/2
+            for half_trace in (trace[projected[trace, other] <= middle], trace[projected[trace, other] > middle]):
+                if len(half_trace) < min_points or np.ptp(z[half_trace]) < .6*height:
+                    return None
+            tangent = axes[:, other]
+            normal = side[axis]*axes[:, axis]
+            bounds = np.array([low, high])+anchor @ tangent
+            proof = _bounded_face_rays(points, origin, normal, tangent, side[axis]*plane+anchor @ normal,
+                                       bounds, height, dims[axis], config)
+            if proof is None:
+                return None
+            offset[other] = (high+low)/2
+    if np.linalg.norm(offset) > 2*tolerance:
+        return None
+    interior = (abs(projected-offset) < half-2*tolerance).all(axis=1)
+    if np.count_nonzero(vertical & interior) >= min_points:
+        return None
+    inside = (abs(projected-offset) <= half+tolerance).all(axis=1)
+    if np.count_nonzero(inside & (z > height+config['height_tolerance_m'])) >= min_points:
+        return None
+    center = anchor+axes @ offset
+    owned = tuple(sorted(set(owned)))
+    heights = z[list(owned)]
+    if np.ptp(heights) < .60*height or heights.max() < height-config['height_tolerance_m']:
+        return None
+    return BoxFit((*map(float, center), height/2), yaw, tuple(dimensions), max(errors), tuple(names),
+                  tuple(spans), len(owned), max(config['geometry_margin_m'], 3*max(errors)), owned,
+                  'current_lidar_registered_planes' if len(faces)==2 else 'current_lidar_bounded_single_face',
+                  tuple(proof), next(iter(faces)) if len(faces)==1 else None)

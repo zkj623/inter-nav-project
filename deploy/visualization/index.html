@@ -13,7 +13,7 @@
 .viewport{position:relative;aspect-ratio:16/9;background:#f9f9f9;overflow:hidden}
 .viewport canvas,.viewport img{position:absolute;inset:0;width:100%;height:100%;display:block}.viewport canvas{touch-action:none;cursor:grab}.viewport img{object-fit:contain;display:none}
 #tagBoxes{object-fit:contain;pointer-events:none}#tagStatus{color:#526675;font-size:12px}
-#boxMap{pointer-events:none;cursor:default}.box-key{display:inline-block;width:15px;height:9px;margin-right:4px;border:2px solid #006e63}.box-key.lost{border:2px dashed #a64708}
+#boxMap{pointer-events:none;cursor:default}.box-key{display:inline-block;width:15px;height:9px;margin-right:4px;border:2px solid #006e63}
 .empty{position:absolute;inset:0;display:grid;place-content:center;text-align:center;color:#657580;pointer-events:none;padding:16px}
 .stale{position:absolute;top:10px;left:10px;color:#754300;background:#fff0cf;padding:4px 8px;display:none}
 .tools{display:flex;gap:6px;padding:8px 12px 0;flex-wrap:wrap;align-items:center}
@@ -31,8 +31,8 @@ button{border:1px solid #cbd4da;background:#fff;color:#405461;padding:4px 10px;b
  <section class="panel"><div class="panelhead"><h2>前置 RGB</h2><span id="tagStatus"></span><button id="tagToggle" aria-pressed="false" hidden>AprilTag 识别框</button></div>
  <div class="viewport"><img id="rgb" alt="前置 RGB"><canvas id="tagBoxes" aria-hidden="true"></canvas><div id="rgbEmpty" class="empty">等待图像</div><div id="rgbStale" class="stale">图像已过期</div></div></section>
  <section class="panel"><div class="panelhead"><h2>全局路线与局部碰撞地图</h2><button id="mapSize" aria-pressed="false">放大地图</button></div>
- <div class="viewport"><img id="mapImage" alt="导航地图"><canvas id="boxMap" role="img" aria-label="地图箱体跟踪"></canvas><div id="mapEmpty" class="empty">等待建图</div><div id="mapStale" class="stale">地图已过期</div></div>
- <div class="legend" id="boxLegend" hidden><span><i class="box-key"></i>已跟踪</span><span><i class="box-key lost"></i>跟丢 · 上次位置</span></div>
+ <div class="viewport"><img id="mapImage" alt="导航地图"><canvas id="boxMap" role="img" aria-label="地图箱位"></canvas><div id="mapEmpty" class="empty">等待建图</div><div id="mapStale" class="stale">地图已过期</div></div>
+ <div class="legend" id="boxLegend" hidden><span><i class="box-key"></i>已记录的箱位</span></div>
  <div class="legend"><span><i class="dot" style="--color:#afa8a4"></i>未知</span><span><i class="dot" style="--color:#f2f2f2"></i>自由</span><span><i class="dot" style="--color:#5e5853"></i>全局障碍</span><span><i class="dot" style="--color:#df4137"></i>局部障碍</span><span><i class="dot" style="--color:#1969eb"></i>当前路线</span><span><i class="dot" style="--color:#46785a"></i>轨迹</span></div></section>
  <section class="panel"><div class="panelhead"><h2>累计点云图 · 雷达跟随视角</h2></div>
  <div class="viewport"><canvas id="cloud" aria-label="累计点云"></canvas><div id="cloudEmpty" class="empty">等待点云</div><div id="cloudStale" class="stale">点云已过期</div></div>
@@ -142,19 +142,20 @@ canvas.onpointerup=canvas.onpointercancel=()=>drag=null;
 canvas.addEventListener('wheel',e=>{e.preventDefault();if(follow){cameraZoom=Math.max(.5,Math.min(2,cameraZoom*Math.exp(-e.deltaY*.001)));draw();return;}autoFit=false;scale=Math.max(.001,Math.min(260,scale*Math.exp(-e.deltaY*.001)));draw();},{passive:false});
 new ResizeObserver(draw).observe(canvas);
 function markStale(name,stale){$(name+'Stale').style.display=stale?'block':'none';if(name==='rgb')$('rgb').style.opacity=stale?'.35':'1';if(name==='map')$('mapImage').style.opacity=stale?'.35':'1';}
-function windowStatus(row,valid){
- const states={confirming:'正在确认',missing:'本次没看清',searching:'正在找箱子',tracked:'观测已过期'};
+function windowStatus(row,valid,remembered){
+ const states={confirming:'正在确认',missing:'等待首次确认',searching:'正在找箱子',tracked:'等待新扫描'};
  const reasons={filling_window:'正在收集点云',await_distinct_window:'等下一段点云',await_fresh_refit:'正在用新点云核对位置',
-  no_two_face_fit:'还没看清两个相邻的箱面',
+  no_two_face_fit:'还在找符合尺寸的箱面',
   wait_for_stationary_window:'等机器人站稳',outside_registration_region:'超出初始搜索区',
   ambiguous:'有多个可能的箱子',surface_evidence_expired:'箱面的点云已过期',discontinuous_fit:'箱子位置或方向跳变'};
- const parts=['1 秒认箱',row.object_id,valid?'已跟踪':states[row.tracking_state],row.track_id];
+ const parts=['1 秒认箱',row.object_id,valid?'本次扫描已确认':remembered?'采用地图箱位':states[row.tracking_state]];
+ if(valid&&row.surfaces)parts.push(row.surfaces==='top_and_side'?'顶面 + 侧面':'两个侧面');
  if(valid&&row.center)parts.push('中心 ('+row.center.slice(0,2).map(v=>v.toFixed(2)).join(', ')+') m');
  if(valid&&Number.isFinite(row.long_axis_rad))parts.push('长边方向 '+Math.round(row.long_axis_rad*180/Math.PI)+'°');
  return parts.concat(reasons[row.invalid_reason]??row.invalid_reason).filter(Boolean).join(' · ');
 }
 function renderWindowStatus(fit,now,stale){
- const lines=(fit?.detections||[]).map(row=>windowStatus(row,row.valid&&!stale&&row.captured_at<=now&&now<row.expires_at));
+ const lines=(fit?.detections||[]).map(row=>windowStatus(row,row.valid&&!stale&&row.captured_at<=now&&now<row.expires_at,fit.last_seen?.[row.object_id]));
  if(fit?.error)lines.unshift('1 秒认箱 · '+fit.error);
  const value=lines.join('\n');
  if($('windowInteraction').textContent!==value)$('windowInteraction').textContent=value;
@@ -204,16 +205,23 @@ async function poll(){if(polling)return;polling=true;clearTimeout(pollTimer);$('
    const age=Number.isFinite(ageSeconds)?` · 观测年龄 ${(ageSeconds*1000).toFixed(0)} ms`:'';
    const lease=Number.isFinite(o.expires_at)&&Number.isFinite(o.captured_at)?o.expires_at-o.captured_at:0;
    const valid=o.valid&&!offline&&!data.map?.stale&&ageSeconds<lease;
-   if(perception.geometry_source==='window_two_faces')return windowStatus(o,valid);
+   if(perception.geometry_source==='window_two_faces')return windowStatus(o,valid,data.box_window?.last_seen?.[o.object_id]);
    const reasons={'No fully constrained visible box':'这一帧还没看清完整箱体','Awaiting distinct confirming scans':'等下一帧确认'};
-   return `${data.box_window?'当前扫描 · ':''}${o.object_id} · ${valid?'已跟踪':reasons[o.invalid_reason]||o.invalid_reason||'观测已过期'} · ${measured}${quality}${age}`;
+   return `接触前核对 · ${o.object_id} · ${valid?'本次扫描已确认':reasons[o.invalid_reason]||o.invalid_reason||'等待新扫描'} · ${measured}${quality}${age}`;
   });
-  if(data.map?.interaction_perception_error)details.push('跟踪 · '+data.map.interaction_perception_error);
+  if(data.map?.interaction_perception_error)details.push('箱面扫描 · '+data.map.interaction_perception_error);
   if(data.map?.contact_collision&&skill)details.push('接触检查 · '+data.map.contact_collision.reason);
+  const trial=data.map?.first_push_result;
+  if(trial){
+   const moved=trial.first_push?.displacement_m;
+   const outcome=trial.reason==='first_push_observed'?'已确认移动':trial.reason==='first_push_waiting_for_final_scan'?'等待箱面复测':'未确认沿推向移动';
+   details.push('首次短推 · '+outcome+(Number.isFinite(moved)?' · 沿推向 '+(100*moved).toFixed(1)+' cm':''));
+  }
   $('interaction').textContent=details.join('\n');
   const choices={navigate:'沿路线走',push:'已选择推箱',explore:'正在探路',wait:'等待可走的路',failed:'找不到可走的路'};
-  $('task').textContent=[data.status?.mode,data.status?.state,data.map?.phase,choices[data.map?.decision?.kind],
-   skill?`${skill.object_id} · ${skill.state} · ${skill.status}`:null].filter(Boolean).join(' · ');
+  const phases={box_approach:'前往箱边',first_push_wait_scan:'停稳核对箱面',first_push_review:'停稳复测箱位',engage:'接近箱面',push:'推箱中',settle_contact:'对准箱面',first_push_stop:'停止推箱'};
+  $('task').textContent=[data.status?.mode,data.status?.state,phases[data.map?.phase]||data.map?.phase,choices[data.map?.decision?.kind],
+   skill?`${skill.object_id} · ${phases[skill.state]||skill.state}`:null].filter(Boolean).join(' · ');
   if(data.map?.ready){$('mapEmpty').style.display='none';$('mapImage').style.display='block';
    const url='data:image/png;base64,'+data.map.png;if($('mapImage').getAttribute('src')!==url)$('mapImage').src=url;
 

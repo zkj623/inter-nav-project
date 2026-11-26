@@ -80,6 +80,11 @@ class LocalTurnManeuver:
         self.origin=None;self.failed=False
 
     def _select_stage(self,planner,boxes,position,heading,require_stepping_arc=False,require_stable_placement=False):
+        # A confined turn can search hundreds of body placements. The live
+        # controller runs that search after its motion writer confirms a stop.
+        before_search = getattr(planner, 'before_turn_search', None)
+        if before_search is not None:
+            before_search('local_turn_search')
         c,s=math.cos(heading),math.sin(heading)
         last_heading=heading+wrap(self.goal_heading-heading)
         choices=[]

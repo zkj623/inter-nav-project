@@ -1,4 +1,4 @@
-"""Reproject an already deskewed Go2 scan using the MID-360S trajectory."""
+"""MID-360S mounting geometry and the optional deskewed Unitree cloud adapter."""
 from collections import deque
 
 import numpy as np
@@ -15,31 +15,29 @@ def odometry_pose(message):
     return position, (q.w, q.x, q.y, q.z)
 
 
-class MixedCloud:
-    def __init__(self, config):
-        self.unitree = PoseHistory(config['pose_cloud_tolerance_s'])
-        self.lio = PoseHistory(config['pose_cloud_tolerance_s'])
-        self.pending = deque(maxlen=8)
-        self.ready = None
-        mount = config['mid360_mount']
+class LioMount:
+    """Relate the MID-360S IMU reported by Swarm-LIO to the Go2 body."""
+    def __init__(self, mount):
         pitch = np.deg2rad(mount['pitch_deg'])
         self.body_from_imu = rotation([np.cos(pitch/2), 0., np.sin(pitch/2), 0.])
         self.imu_from_body_q = (np.cos(pitch/2), 0., -np.sin(pitch/2), 0.)
         self.imu_in_body = np.array(mount['imu_in_base_m'])
-        self.max_range = config['lidar_max_range']
 
-    def project(self, unitree_stamp, lio_stamp, points):
-        old_p, old_q = self.unitree.at(unitree_stamp, bracketed=True)
-        state, imu_q = self.lio.at(lio_stamp, bracketed=True)
+    def body_state(self, imu_p, imu_q, world_linear):
         body_q = multiply(imu_q, self.imu_from_body_q)
         world_from_body = rotation(body_q)
-        body_p = state[:3] - world_from_body @ self.imu_in_body
-        body_points = (points - old_p) @ rotation(old_q)
-        world_points = (body_points @ world_from_body.T + body_p).astype(np.float32)
-        # Linear velocity at the IMU, in body axes. latest() shifts it to
-        # the body origin with the synchronized gyro.
-        linear = world_from_body.T @ state[3:]
-        return body_p, body_q, linear, world_points
+        body_p = imu_p - world_from_body @ self.imu_in_body
+        return body_p, body_q, world_from_body.T @ world_linear
+
+
+class MixedCloud:
+    def __init__(self, config):
+        self.mount = LioMount(config['mid360_mount'])
+        self.lio = PoseHistory(config['pose_cloud_tolerance_s'])
+        self.unitree = PoseHistory(config['pose_cloud_tolerance_s'])
+        self.pending = deque(maxlen=8)
+        self.ready = None
+        self.max_range = config['lidar_max_range']
 
     def peek(self):
         if self.ready is None:
@@ -50,6 +48,14 @@ class MixedCloud:
         scan = self.peek()
         self.ready = None
         return scan
+
+    def project(self, unitree_stamp, lio_stamp, points):
+        old_p, old_q = self.unitree.at(unitree_stamp, bracketed=True)
+        state, imu_q = self.lio.at(lio_stamp, bracketed=True)
+        body_p, body_q, linear = self.mount.body_state(state[:3], imu_q, state[3:])
+        body_points = (points - old_p) @ rotation(old_q)
+        world_points = (body_points @ rotation(body_q).T + body_p).astype(np.float32)
+        return body_p, body_q, linear, world_points
 
     def _next_scan(self):
         if not self.unitree.samples or not self.lio.samples:

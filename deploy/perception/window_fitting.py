@@ -1,4 +1,4 @@
-"""Locate two bounded perpendicular faces in a window of experiment-frame returns."""
+"""Locate a registered rectangle using two sides or a measured top and side."""
 from dataclasses import dataclass
 import math
 from typing import Optional
@@ -17,6 +17,7 @@ class WindowFit:
     support_index: int  # earlier of the most recent supporting scan on each face
     residual: float
     long_axis_rad: Optional[float] = None  # radians modulo pi for distinguishable sides
+    surfaces: str = 'two_sides'
 
     def angle_to(self, other):
         if self.long_axis_rad is None or other.long_axis_rad is None:
@@ -157,6 +158,125 @@ def verify(points, sources, origin, lengths, height, guess, theta, config):
                      int(min(support)), float(np.sqrt(np.mean(residual**2))), long_axis)
 
 
+def top_side_boxes(points, sources, origin, dimensions, region, config):
+    """Find a bounded horizontal patch and validate a separate, sensor-facing side."""
+    height = dimensions[2]
+    tol = config['residual_threshold_m']
+    if origin[2] <= height+tol:
+        return []
+    lengths = np.sort(dimensions[:2])[::-1]
+    minimum = config['min_face_points']
+    height_band = min(config['height_tolerance_m'], 1.75*tol)
+    top_ids = np.flatnonzero(np.abs(points[:, 2]-height) <= height_band)
+    if len(top_ids) < minimum:
+        return []
+    top = points[top_ids]
+    # Form components before checking the center against the search region.
+    # The halo contains the full footprint plus continuation outside its edges.
+    xmin, xmax, ymin, ymax = region
+    halo = .5*np.linalg.norm(lengths)+.25
+    base = np.array([xmin-halo, ymin-halo])
+    step = .035
+    cols, rows = np.ceil((np.array([xmax+halo, ymax+halo])-base)/step).astype(int)+1
+    cells = np.floor((top[:, :2]-base)/step).astype(int)
+    x, y = cells.T
+    inside = (x >= 0) & (x < cols) & (y >= 0) & (y < rows)
+    x, y, top_ids = x[inside], y[inside], top_ids[inside]
+    raster = np.zeros((rows, cols), np.uint8)
+    raster[y, x] = 1
+    kernel = np.ones((3, 3), np.uint8)
+    filled = cv2.morphologyEx(raster, cv2.MORPH_CLOSE, kernel)
+    patches = cv2.morphologyEx(filled, cv2.MORPH_OPEN, kernel)
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(patches)
+    membership = labels[y, x]
+    found = []
+    for label in range(1, count):
+        if stats[label, cv2.CC_STAT_AREA]*step**2 < .45*np.prod(lengths):
+            continue
+        indices = top_ids[membership == label]
+        if len(indices) < minimum:
+            continue
+        xy = np.ascontiguousarray(points[indices, :2], np.float32)
+        center, size, angle = cv2.minAreaRect(xy)
+        if (not xmin <= center[0] <= xmax or not ymin <= center[1] <= ymax
+                or np.any(abs(np.sort(size)[::-1]-lengths) > config['extent_tolerance_m'])):
+            continue
+        angle = math.radians(angle + (90. if size[1] > size[0] else 0.)) % math.pi
+        fit = verify_top_side(points, sources, origin, lengths, height, np.array(center), angle, config)
+        if fit is not None and xmin <= fit.center[0] <= xmax and ymin <= fit.center[1] <= ymax:
+            found.append(fit)
+    return found
+
+
+def verify_top_side(points, sources, origin, lengths, height, center, angle, config):
+    tol, minimum = config['residual_threshold_m'], config['min_face_points']
+    if origin[2] <= height+tol:
+        return None
+    c, s = math.cos(angle), math.sin(angle)
+    axes = np.array([[c, -s], [s, c]])
+    nearby = np.all(abs(points[:, :2]-center) <= .5*np.linalg.norm(lengths)+.18, axis=1)
+    xyz, ids = points[nearby], sources[nearby]
+    local = (xyz[:, :2]-center) @ axes
+    half = lengths/2
+    z = xyz[:, 2]
+    # Measure all four top edges on every refit. A prior locates the patch
+    # but cannot supply a hidden edge, center, or orientation update.
+    height_band = min(config['height_tolerance_m'], 1.75*tol)
+    core = (abs(z-height) <= height_band) & np.all(abs(local) < half-2*tol, axis=1)
+    if core.sum() < minimum:
+        return None
+    level = float(np.median(z[core]))
+    if origin[2] <= level+tol:
+        return None
+    top = (abs(z-level) <= tol) & np.all(abs(local) <= half+.07, axis=1)
+    if top.sum() < minimum:
+        return None
+    lower, upper = np.quantile(local[top], [.01, .99], axis=0)
+    extents = upper-lower
+    if (np.any(abs(extents-lengths) > np.minimum(config['extent_tolerance_m'], .18*lengths))
+            or np.any(extents < config['min_face_coverage']*lengths)):
+        return None
+    shift = (upper+lower)/2
+    center = center + axes @ shift
+    local -= shift
+    footprint = np.all(abs(local) <= half+tol, axis=1)
+    # Use interior returns, away from the upper edges of vertical walls.
+    inner = top & np.all(abs(local) < half-1.5*tol, axis=1)
+    uv, zz = local[inner], z[inner]
+    if len(zz) < minimum or len(np.unique(ids[inner])) < 2:
+        return None
+    tiles = np.floor((uv/lengths+.5)*[4, 3]).astype(int)
+    if len(np.unique(tiles[:, 0]*3+tiles[:, 1])) < 9:
+        return None
+    slopes = np.linalg.lstsq(uv-uv.mean(axis=0), zz-zz.mean(), rcond=None)[0]
+    if np.linalg.norm(slopes) > .10 or np.std(zz) > .6*tol:
+        return None
+    ring = np.all(abs(local) <= half+config['isolation_margin_m']+.04, axis=1)
+    extension = ring & ~np.all(abs(local) <= half+tol*1.5, axis=1) & (abs(z-level) <= tol)
+    if extension.sum() >= max(minimum, .05*inner.sum()) or (footprint & (z > height+config['height_tolerance_m'])).sum() >= minimum:
+        return None
+    middle = (z >= .16*height) & (z <= level-2*tol)
+    if (middle & np.all(abs(local) < half-2*tol, axis=1)).sum() >= max(minimum, .12*(middle & footprint).sum()):
+        return None
+    sensor = (origin[:2]-center) @ axes
+    side_support = []
+    for i in range(2):
+        if abs(sensor[i]) <= half[i]+tol:
+            continue
+        j = 1-i
+        side = middle & (abs(local[:, i]-np.sign(sensor[i])*half[i]) <= tol) & (abs(local[:, j]) < half[j])
+        if side.sum() < minimum or len(np.unique(ids[side])) < 2:
+            continue
+        span = np.quantile(local[side, j], .98)-np.quantile(local[side, j], .02)
+        if span >= .65*lengths[j] and np.ptp(z[side]) >= .35*height:
+            side_support.append(ids[side].max())
+    if not side_support:
+        return None
+    support = int(min(ids[inner].max(), max(side_support)))
+    return WindowFit(center, angle % (math.pi/2), support, float(np.sqrt(np.mean((zz-level)**2))),
+                     angle if lengths[0] != lengths[1] else None, 'top_and_side')
+
+
 def find_window_boxes(points, sources, origin, dimensions, region, config):
     height = dimensions[2]
     sides = np.asarray(dimensions[:2], float)
@@ -171,7 +291,7 @@ def find_window_boxes(points, sources, origin, dimensions, region, config):
     # Below the depth resolution the long/short axes are interchangeable.
     assignments = ([np.full(2, sides.mean())] if abs(sides[0]-sides[1]) <= config['residual_threshold_m']
                    else [sides, sides[::-1]])
-    found = []
+    found = top_side_boxes(points, sources, origin, dimensions, region, config)
     for lengths in assignments:
         for _, corner, angle, center in proposals(points[middle, :2], origin, lengths, region):
             if any(np.linalg.norm(center-fit.center) < .055 for fit in found):
@@ -199,6 +319,11 @@ def refit_window_box(points, sources, origin, dimensions, config, previous, reac
         axes = inward_axes(angle, previous.center, origin)
         corner = previous.center - axes @ sides/2
         fit = verify(points, sources, origin, sides, dimensions[2], corner, angle, config)
+        if fit is None:
+            x, y = previous.center
+            # Refit a measured rectangle, including yaw, within the local gate.
+            tops = top_side_boxes(points, sources, origin, dimensions, (x-reach, x+reach, y-reach, y+reach), config)
+            fit = tops[0] if len(tops) == 1 else None
         if fit is not None:
             offset = np.linalg.norm(fit.center-previous.center)
             if offset <= reach and offset+reach < separation and fit.angle_to(previous) <= turn:

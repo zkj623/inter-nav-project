@@ -371,7 +371,7 @@ def test_live_start_reacquires_sensors_after_slow_arm(tmp_path, monkeypatch, fre
         def close(self):
             pass
 
-        def wait_next(self, snapshot, timeout, not_before=None):
+        def wait_next(self, snapshot, timeout, not_before=None, *, distinct_lidar=False):
             fake_clock.sleep(timeout)
 
     monkeypatch.setattr(observations, 'LiveObservations', ObservationReads)
@@ -419,6 +419,19 @@ def test_republished_scan_cannot_advance_ordinary_motion_or_renew_its_deadline(c
     from deploy.app import controller as module
     monkeypatch.setattr(module.time, 'monotonic', lambda: original_expiry)
     assert controller.step(duplicate, original_expiry) == 'control_deadline_missed'
+
+
+def test_first_velocity_after_arming_waits_for_a_distinct_mid360_sweep(control):
+    controller, sample, _ = control
+    controller.operate('navigate', '1,0', sample, sample.captured_at)
+    controller.last_control_lidar_at = sample.lidar_at
+    repeated = replace(sample, sequence=sample.sequence+1, captured_at=sample.captured_at+.02)
+    controller.step(repeated, repeated.captured_at)
+    assert controller.last_expires_at is None and not controller.motion.commands
+    new_stamp = sample.captured_at+.1
+    fresh = replace(sample, sequence=sample.sequence+2, captured_at=new_stamp, pose_at=new_stamp, lidar_at=new_stamp)
+    controller.step(fresh, fresh.captured_at)
+    assert len(controller.motion.commands) == 1
 
 
 @pytest.mark.parametrize('operation', ['navigate', 'r'])

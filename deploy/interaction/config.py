@@ -10,7 +10,7 @@ from deploy.robot.world_boundary import WorldBoundary
 
 DEFAULTS = dict(source='rgbd', tracking_enabled=False, geometry_verified=False,
                 boxes=[], tracking={}, contact_profile=None, max_skill_seconds=180.,
-                registry_reference='', window_max_age_s=None)
+                registry_reference='', window_max_age_s=None, first_push=False)
 
 
 def configure(config, payload, directory, *, registry_path=None):
@@ -22,7 +22,7 @@ def configure(config, payload, directory, *, registry_path=None):
     result = {**deepcopy(DEFAULTS), **deepcopy(payload)}
     if result['source'] not in ('rgbd', 'registered_box_lidar'):
         raise ValueError('interaction.source must be rgbd or registered_box_lidar')
-    for name in ('tracking_enabled', 'geometry_verified'):
+    for name in ('tracking_enabled', 'geometry_verified', 'first_push'):
         if type(result[name]) is not bool:
             raise ValueError(f'interaction.{name} must be boolean')
     window_age = result['window_max_age_s']
@@ -39,6 +39,11 @@ def configure(config, payload, directory, *, registry_path=None):
         path = registry_path if registry_path is not None else Path(directory)/'interaction.yaml'
         result['registry_reference'] = str(path.resolve())+'#boxes'
     nav, robot, control = config['navigation'], config['robot'], config['runtime']['control']
+    if result['first_push']:
+        if (result['source'] != 'registered_box_lidar' or not result['tracking_enabled']
+                or not any(row.get('push_allowed') is True for row in result['boxes'] if isinstance(row, dict))):
+            raise ValueError('First push requires a registered, pushable LiDAR box')
+        nav['interaction_enabled'] = True
     requested = nav['interaction_enabled']
     if result['source'] == 'registered_box_lidar':
         if result['tracking_enabled'] or requested or result['boxes']:
@@ -72,6 +77,8 @@ def configure(config, payload, directory, *, registry_path=None):
         profile = yaml.safe_load(path.read_text())
     if profile is not None:
         profile = ContactProfile.from_dict(profile)
+        if result['first_push'] != (profile.mode == 'first_push'):
+            raise ValueError('First-push limits can only be used in first_push mode')
         bounds = {'max_vx': max(profile.max_forward_mps, profile.max_reverse_mps),
                   'max_vy': profile.max_lateral_mps, 'max_wz': profile.max_yaw_rps,
                   'acceleration': profile.linear_acceleration_mps2,
@@ -99,7 +106,7 @@ def tracking_config(settings):
             'registry_reference': settings['registry_reference']}
 
 
-def create_perception(config, *, synchronous=False, box_window=False, live=False):
+def create_perception(config, *, synchronous=False, box_window=False, live=False, box_memory=None):
     """The only provider factory used by live run and deterministic replay."""
     settings = config.get('interaction', DEFAULTS)
     if box_window:
@@ -114,7 +121,7 @@ def create_perception(config, *, synchronous=False, box_window=False, live=False
         if not (settings['tracking_enabled'] or config['navigation']['interaction_enabled']):
             return None
         from deploy.perception.registered_boxes import RegisteredBoxPerception
-        return RegisteredBoxPerception(tracking_config(settings), synchronous=synchronous,
+        return RegisteredBoxPerception(tracking_config(settings), synchronous=synchronous, box_memory=box_memory,
                                        world_boundary=WorldBoundary.from_navigation(config['navigation']))
     if (settings['tracking_enabled'] or config['navigation']['interaction_enabled']) and config['robot']['camera_mode'] == 'rgbd':
         if synchronous:

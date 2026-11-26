@@ -17,7 +17,7 @@ import numpy as np
 
 from grutopia_extension.interactive_navigation.box_push_navigation import BoxState
 from grutopia_extension.interactive_navigation.interaction_catalog import InteractionPermission
-from .box_fitting import scan_candidates, scan_tracked_candidates
+from .box_fitting import refit_registered_surfaces, scan_candidates, scan_tracked_candidates
 
 
 DEFAULT_TRACKING = {
@@ -243,7 +243,8 @@ class RegisteredBoxEvidence:
 class RegisteredBoxPerception:
     source = 'registered_box_lidar'
 
-    def __init__(self, config, clock=time.monotonic, synchronous=False, world_boundary=None):
+    def __init__(self, config, clock=time.monotonic, synchronous=False, world_boundary=None, box_memory=None):
+        self.box_memory = box_memory
         self.world_boundary = world_boundary
         self.config = validate_tracking_config(config)
         self.clock = clock
@@ -317,15 +318,23 @@ class RegisteredBoxPerception:
         return frame
 
     def _tracking_hints(self, stamp):
-        return {key: track['fit'] for key, track in self._tracks.items()
+        known = self.box_memory.locations(stamp) if self.box_memory is not None else {}
+        known.update({key: track['fit'] for key, track in self._tracks.items()
                 if track['confirmed'] and not track['lost']
-                and track['captured_at'] < stamp < track['captured_at']+self.config['max_age_s']}
+                and track['captured_at'] < stamp < track['captured_at']+self.config['max_age_s']})
+        return known
 
     def _fit(self, frame):
         # Share fitting between registry entries with identical dimensions.
         cache, result = {}, {}
         for object_id, row in self.registry.items():
             key = tuple(row['dimensions_m'])
+            if self.box_memory is not None and object_id in frame.hints:
+                fit = refit_registered_surfaces(frame.points, key, frame.origin, self.config, frame.hints[object_id])
+                if fit is not None and (self.world_boundary is None or self.world_boundary.contains_box(
+                        fit.center, key, fit.yaw_rad, self.config['isolation_margin_m'])):
+                    result[object_id] = (fit,)
+                    continue
             if key not in cache:
                 cache[key] = scan_candidates(frame.points, key, frame.origin, self.config)
             candidates = list(cache[key])
@@ -401,7 +410,7 @@ class RegisteredBoxPerception:
         for object_id, track in list(self._visible.items()):
             if not track['captured_at'] <= now < track['captured_at']+self.config['max_age_s']:
                 self._visible.pop(object_id)
-                if track['confirmed']:
+                if track['confirmed'] and (self.box_memory is None or object_id not in self.box_memory.locations(now)):
                     track['lost'], track['reason'] = True, 'Geometry expired; reset required'
 
     @staticmethod
@@ -411,14 +420,24 @@ class RegisteredBoxPerception:
 
     def _accept(self, frame, detections, now):
         proposals, reasons = {}, {}
+        known = self.box_memory.locations(frame.captured_at) if self.box_memory is not None else {}
         for object_id, row in self.registry.items():
             previous = self._tracks.get(object_id)
+            if previous and object_id in known and (previous['lost'] or
+                    frame.captured_at-previous['captured_at'] >= self.config['max_age_s']):
+                self._tracks.pop(object_id)
+                previous = None
             if previous and previous['lost']:
                 reasons[object_id] = previous['reason']
                 continue
             choices = []
             for fit in detections.get(object_id, ()):
-                if previous is None:
+                if previous is None and object_id in known:
+                    anchor = known[object_id]
+                    eligible = (np.linalg.norm(np.asarray(fit.center[:2])-anchor.center[:2]) <= self.config['association_margin_m']
+                                and self._yaw_distance(fit.yaw_rad, anchor.yaw_rad, row['dimensions_m'])
+                                <= math.radians(self.config['association_yaw_margin_deg']))
+                elif previous is None:
                     x0, x1, y0, y1 = row['search_region']
                     eligible = x0 <= fit.center[0] <= x1 and y0 <= fit.center[1] <= y1
                 else:
@@ -451,7 +470,12 @@ class RegisteredBoxPerception:
         for object_id, row in self.registry.items():
             fit, previous = proposals.get(object_id), self._tracks.get(object_id)
             if fit is None:
-                if previous:
+                # A rotating scan can miss the whole box between two good views.
+                # Keep the first vote only within the association time bound.
+                # This scan still supplies no geometry or contact permission.
+                missing_view = (object_id in known and reasons.get(object_id) == 'No fully constrained visible box'
+                                and previous and frame.captured_at-previous['captured_at'] < self.config['max_age_s'])
+                if previous and not missing_view:
                     previous['lost'] = previous['confirmed']
                     previous['reason'] = reasons.get(object_id, 'Lost observation')
                     if not previous['confirmed']:
@@ -463,7 +487,7 @@ class RegisteredBoxPerception:
             # Choose the equivalent pose nearest the previous measurement so
             # symmetric-face changes do not fabricate a large box rotation.
             period = math.pi/2 if abs(fit.dimensions[0]-fit.dimensions[1]) < 1e-6 else math.pi
-            reference_yaw = 0. if previous is None else previous['fit'].yaw_rad
+            reference_yaw = previous['fit'].yaw_rad if previous else getattr(known.get(object_id), 'yaw_rad', 0.)
             pose_yaw = reference_yaw+(fit.yaw_rad-reference_yaw+period/2) % period-period/2
             rotation_change = int(round((pose_yaw-fit.yaw_rad)/(math.pi/2)))
             if abs(pose_yaw-fit.yaw_rad) > 1e-8:
@@ -515,6 +539,8 @@ class RegisteredBoxPerception:
             'geometry_source': 'current_lidar_cuboid_surfaces', 'geometry_verified': self.geometry_verified,
             'permission_source': self.source, 'source_reference': self.source_reference,
             'source_digest': self.source_digest, 'detections': records}
+        if self.box_memory is not None:
+            self.box_memory.observe(self.last_delivery, now)
 
     def expires_at(self, object_id):
         return self.freeze().expires_at(object_id)

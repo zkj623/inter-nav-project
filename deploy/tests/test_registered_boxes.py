@@ -478,3 +478,18 @@ def test_boundary_proof_requires_rays_stay_outside_and_pass_registered_far_face(
     origin = np.array([-.65, .7, .3])
     assert _bounded_face_rays(rays_from(origin, .45), origin, normal, tangent,
                              plane_offset, edges, .5, .4, DEFAULT_TRACKING) is None
+
+
+@pytest.mark.parametrize('options,valid', [({}, True), ({'sides':(-1,)}, False),
+                                           ({'wall':True}, False), ({'truncated':True}, False)])
+def test_known_map_pose_requires_new_single_face_edges(options,valid):
+    from types import SimpleNamespace
+    from deploy.perception.box_fitting import refit_registered_surfaces
+    center=(1., .5)
+    points, origin = bounded_face_cloud(center, yaw=.37, **options)
+    hint=SimpleNamespace(center=(*center,.25), yaw_rad=.35)
+    fit=refit_registered_surfaces(points,DIMS,origin,DEFAULT_TRACKING,hint)
+    assert (fit is not None) == valid
+    if valid:
+        assert fit.center[:2] == pytest.approx(center, abs=.008)
+        assert fit.measured_face_axis == 0 and min(fit.boundary_rays) >= 3

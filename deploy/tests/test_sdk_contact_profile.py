@@ -340,3 +340,88 @@ def test_local_sdk_yaw_command_uses_the_same_stop_envelope():
     command, detail = backend.local_action({'move_by_speed': [0., 0., .3]}, {}, [0., 0.], 0., planner, [])
     assert detail['needs_replan']
     np.testing.assert_array_equal(command['move_by_speed'], np.zeros(3))
+
+
+@pytest.mark.parametrize('stop', ['displacement', 'travel', 'time'])
+def test_first_push_low_box_actual_contact_command_and_stop_threshold(stop):
+    from deploy.app.config import ROOT, load
+    from deploy.interaction.first_push import FirstPushSkill
+    field = load(interaction_path=ROOT/'configs/box_30x80x30.yaml')['interaction']
+    p = ContactProfile.from_dict(field['contact_profile'])
+    _, ctx = fixture()
+    SdkNavigationMotion(p).bind(ctx.planner)
+    ctx.box = BoxState('B1', (.515, 0.), (.36, .86, .36), local_dimensions=(.30,.80,.30),
+                       orientation=(1.,0.,0.,0.), center_z=.15)
+    ctx.boxes = [ctx.box]
+    ctx.position = np.array([0.,0.,.311])
+    ctx.limiter.accept(np.zeros(3), ctx.now-.10)
+    skill = create_push_skill(permission(), NS(box_id='B1', direction=(1.,0.), push_distance=.6),
+                              (-1.,0.),(1.,0.),p)
+    assert isinstance(skill, FirstPushSkill)
+    skill.state, skill.started, skill.state_since, skill.contact_started = 'engage', .1, .1, .1
+    skill.initial_box = np.array(ctx.box.xy)
+    skill.engage_box_position = np.array(ctx.box.xy)
+    assert skill._box_frame(ctx)[0] == pytest.approx(.025)
+    assert skill._contact_face_clear(ctx, moving=True)
+    high = replace(ctx, position=np.array([0.,0.,.40]))
+    assert not skill._contact_face_clear(high, moving=True)
+    command = skill.step(ctx)
+    assert command.status == 'running' and 0. < np.linalg.norm(command.velocity[:2]) <= .06
+    if stop == 'displacement':
+        ctx.box = replace(ctx.box, xy=(.56,0.))
+    elif stop == 'travel':
+        ctx.position[0] += .07
+    else:
+        ctx.now += 1.25
+    result = skill.step(ctx)
+    assert result.status == 'checking' and not any(result.velocity)
+    assert result.reason == {'displacement':'box_reached_trial_distance', 'travel':'first_push_body_travel_limit',
+                             'time':'first_push_time_limit'}[stop]
+    for i in range(1,7):
+        t = ctx.now+i*.12
+        observed = skill.check_stopped_box(t, ctx.position, ctx.box, t, str(i), t)
+        if observed is not None:
+            break
+    assert observed is (stop == 'displacement')
+    assert skill.report()['passage_certificate'] is None
+
+
+def test_trial_selects_box_faces_at_a_non_grid_heading():
+    from deploy.interaction.first_push import RegisteredFacePlanner
+    from math import cos, sin, radians
+    angle=radians(23)
+    planner=RegisteredFacePlanner(np.ones((60,60),bool),[[-3,3],[-3,3]],resolution=.1)
+    aabb=(.3*cos(angle)+.8*sin(angle)+.06, .3*sin(angle)+.8*cos(angle)+.06, .36)
+    box=BoxState('B1',(0.,0.),aabb, local_dimensions=(.30,.80,.30),
+                 orientation=(cos(angle/2),0.,0.,sin(angle/2)), center_z=.15)
+    oriented=planner.oriented_box(box)
+    assert oriented.yaw == pytest.approx(23) and oriented.dimensions[:2] == pytest.approx((.36,.86))
+    for direction in planner.push_directions(oriented):
+        axes=np.array([[cos(angle),sin(angle)],[-sin(angle),cos(angle)]])
+        assert max(abs(axes@direction)) == pytest.approx(1.)
+
+
+def test_first_push_needs_recent_face_after_measured_settling():
+    from deploy.app.config import ROOT, load
+    p = ContactProfile.from_dict(load(interaction_path=ROOT/'configs/box_30x80x30.yaml')['interaction']['contact_profile'])
+    _, ctx = fixture()
+    SdkNavigationMotion(p).bind(ctx.planner)
+    ctx.box = BoxState('B1',(.82,0.),(.36,.86,.36),local_dimensions=(.3,.8,.3),
+                       orientation=(1.,0.,0.,0.),center_z=.15)
+    ctx.position=np.array([0.,0.,.31]); ctx.boxes=[ctx.box]
+    ctx.limiter.accept(np.zeros(3),0.)
+    skill=create_push_skill(permission(),NS(box_id='B1',direction=(1.,0.),push_distance=.6),
+                            (-1.,0.),(1.,0.),p)
+    skill.state, skill.started, skill.state_since='settle_contact',.1,.1
+    skill.initial_box=np.array(ctx.box.xy)
+    for i in range(1,12):
+        ctx.now=.1+i*.10
+        ctx.box_observation_id=str(i) if i%2==0 else None
+        ctx.box_observed_at=ctx.now if ctx.box_observation_id else None
+        command=skill.step(ctx)
+        assert not any(command.velocity)
+        if command.state=='engage':
+            assert ctx.box_observation_id and skill.backend.box_motion.settled
+            break
+        assert skill.contact_started is None
+    assert command.state=='engage'

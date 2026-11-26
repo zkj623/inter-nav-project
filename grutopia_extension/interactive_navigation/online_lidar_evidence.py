@@ -12,31 +12,48 @@ def _mark_cells(mask, cols, rows):
 
 
 def _mark_segments(mask, starts, ends):
-    """Batch the exact grid traversal of world_ray_cells, in grid coordinates."""
-    cols, rows = np.floor(starts).astype(np.intp).T
-    end_cols, end_rows = np.floor(ends).astype(np.intp).T
+    """Traverse measured segments exactly, retiring short rays from the batch."""
+    if not len(starts):
+        return
+    cells = np.floor(starts).astype(np.intp)
+    targets = np.floor(ends).astype(np.intp)
+    # Each traversal step crosses at least one row or column until the ray
+    # reaches its endpoint. Sorting by that bound lets us skip finished rays.
+    lengths = np.abs(targets - cells).sum(axis=1)
+    order = np.argsort(lengths)
+    lengths = lengths[order]
+    starts, ends = starts[order], ends[order]
+    cols, rows = cells[order].T
+    end_cols, end_rows = targets[order].T
     dx, dy = (ends - starts).T
     sx, sy = np.sign(dx).astype(np.intp), np.sign(dy).astype(np.intp)
-    # An axis with zero displacement is already in its endpoint cell.
     dx = np.where(sx == 0, 1., dx)
     dy = np.where(sy == 0, 1., dy)
     tx = (cols + (sx > 0) - starts[:, 0]) / dx
     ty = (rows + (sy > 0) - starts[:, 1]) / dy
     dtx, dty = np.abs(1. / dx), np.abs(1. / dy)
-    while True:
-        _mark_cells(mask, cols, rows)
-        more_x, more_y = cols != end_cols, rows != end_rows
-        if not np.any(more_x | more_y):
-            return
-        # A corner touch enters the diagonal cell only. Never advance a
-        # coordinate past its measured endpoint, even within corner tolerance.
-        corner = np.abs(tx - ty) < 1e-10
-        step_x = more_x & (~more_y | (tx < ty) | corner)
-        step_y = more_y & (~more_x | (ty < tx) | corner)
-        cols += sx * step_x
-        rows += sy * step_y
-        tx += dtx * step_x
-        ty += dty * step_y
+    # The traversal stays within the rectangle between its two endpoints.
+    shape_xy = mask.shape[::-1]
+    inside = ((cells >= 0).all() and (targets >= 0).all()
+              and (cells < shape_xy).all() and (targets < shape_xy).all())
+    for step in range(lengths[-1] + 1):
+        live = slice(lengths.searchsorted(step), None)
+        col, row = cols[live], rows[live]
+        if inside:
+            mask[row, col] = True
+        else:
+            _mark_cells(mask, col, row)
+        more_x, more_y = col != end_cols[live], row != end_rows[live]
+        x_time, y_time = tx[live], ty[live]
+        # Corner touches enter only the diagonal cell. Stop each coordinate
+        # at its measured endpoint, even within the corner tolerance.
+        corner = np.abs(x_time - y_time) < 1e-10
+        step_x = more_x & (~more_y | (x_time < y_time) | corner)
+        step_y = more_y & (~more_x | (y_time < x_time) | corner)
+        col += sx[live] * step_x
+        row += sy[live] * step_y
+        x_time += dtx[live] * step_x
+        y_time += dty[live] * step_y
 
 
 def _first_in_bins(indices, bins, *keys):

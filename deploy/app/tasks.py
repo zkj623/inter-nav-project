@@ -7,9 +7,9 @@ from .navigation import NavigationEngine
 
 
 class Tasks:
-    def __init__(self, config, perception=None, interaction=None):
+    def __init__(self, config, perception=None, interaction=None, box_memory=None):
         self.config, self.perception = config, perception
-        self.engine = NavigationEngine(config, interaction=interaction)
+        self.engine = NavigationEngine(config, interaction=interaction, box_memory=box_memory)
         self.mode = self.state = 'observe'
         self.elapsed = 0.
         self.last_time = None
@@ -65,12 +65,17 @@ class Tasks:
         if self.state != 'active':
             return False
         with self._measure('local_preparation_s'):
-            self.engine.prepare_tracking()
+            _, recognition = self._perceive(snapshot, now)
+            self.engine.prepare_tracking(recognition)
         self.last_timings['total_s'] += self.last_timings['local_preparation_s']
+        if self.engine.status in ('completed', 'failed'):
+            self.state, self.result = 'completed', self.engine.result
+            return False
         self.state = 'paused'
         # A successful computation may still say "wait, no observed route".
         # Keep that goal/map, but do not arm a writer with nothing to execute.
-        self._prepared = (self.engine.decision or {}).get('kind') != 'wait'
+        kind = (self.engine.decision or {}).get('kind')
+        self._prepared = kind != 'wait' and (kind != 'explore' or self.engine.tracker is not None)
         return self._prepared
 
     def activate_prepared(self, now):

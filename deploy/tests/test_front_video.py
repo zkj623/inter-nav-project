@@ -87,7 +87,7 @@ class FrontVideoTests(unittest.TestCase):
                 ticks = iter(i*.1 for i in range(1000))
                 config = {'robot': {'odom_topic': '/bot1/lidar_slam/odom',
                                    'lidar_topic': '/bot1/cloud_registered_sparse',
-                                   'raw_lidar_topic': '/livox/lidar', 'imu_topic': '/livox/imu',
+                                   'imu_topic': '/livox/imu',
                                    'front_video_topic': '/frontvideostream',
                                    'camera_mode': 'unavailable', 'max_data_age_s': .4}}
                 output = Path(directory) / 'report.json'

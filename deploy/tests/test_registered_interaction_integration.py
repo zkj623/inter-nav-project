@@ -426,3 +426,85 @@ def test_skill_context_keeps_box_capture_time_and_scan_identity_when_consumed_la
         assert str(context.map_observation_id).endswith('4')
     finally:
         provider.close()
+
+
+def test_known_registry_box_keeps_map_occupancy_across_occlusion_and_goals():
+    from deploy.perception.box_memory import BoxMapMemory
+    navigation, interaction, registry = settings()
+    memory = BoxMapMemory()
+    interaction['boxes'] = registry['boxes']
+    provider = RegisteredBoxPerception(registry, synchronous=True, box_memory=memory)
+    tasks = Tasks(navigation, provider, interaction=interaction, box_memory=memory)
+    try:
+        for i in (1, 2):
+            tasks.observe_only(scan(i, i*.1), i*.1)
+        original = tasks.engine.layers.detected_boxes['B1']
+        tasks.start('navigate', (0., 2., .4), .3)
+        tasks.observe_only(scan(3, 5., include_box=False), 5.)
+        assert tasks.engine.layers.current_boxes[0].xy == pytest.approx(original.xy)
+        assert tasks.engine.layers.tracked_occupied.any()
+        assert not tasks.engine.latest_visible_ids and provider.permission('B1', 5.) is None
+        tasks.cancel()
+        tasks.start('navigate', (.5, 1., .4), 6.)
+        assert 'B1' in tasks.engine.layers.detected_boxes
+        assert not tasks.engine.execution.active and not tasks.engine.current_proposals
+        assert not BoxMapMemory().locations()
+    finally:
+        provider.close()
+
+
+def test_first_push_dispatch_review_and_same_goal_replan():
+    from deploy.app.config import load, ROOT
+    from deploy.interaction.first_push import FirstPushSkill
+    from deploy.perception.box_memory import BoxMapMemory
+    nav, interaction, registry = settings()
+    field = load(interaction_path=ROOT/'configs/box_30x80x30.yaml')['interaction']
+    interaction.update(contact_profile=field['contact_profile'], boxes=registry['boxes'], first_push=True)
+    memory = BoxMapMemory()
+    provider = RegisteredBoxPerception(registry, synchronous=True, box_memory=memory)
+    engine = NavigationEngine(nav, interaction, box_memory=memory)
+    goal = (0., 2., .4)
+    engine.set_goal(goal, 0.)
+    def measure(i, center=(0., 0.)):
+        t = i*.12
+        packet = scan(i, t, center=center)
+        obs = dict(packet.observation, lidar_captured_at=t)
+        boxes, recognition = provider.update(packet, t)
+        return obs, t, boxes, recognition
+    try:
+        for i in (1, 2):
+            obs, t, boxes, recognition = measure(i)
+            engine.observe(obs, t, boxes)
+            observed_layout(engine)
+        engine.update(obs, t, boxes, recognition)
+        skill = engine.skill
+        assert isinstance(skill, FirstPushSkill) and not engine.execution.active
+        # Starting at a settled approach pose isolates the first-contact handoff.
+        skill.state, skill.started, skill.state_since = 'settle_contact', t, t
+        skill.initial_box = np.array(boxes[0].xy)
+        skill.engage_box_position = skill.initial_box.copy()
+        skill.state, skill.contact_started = 'engage', t
+        engine.execution.start('B1', t)
+        engine.trial_used = True
+        for i in range(3, 7):
+            offset = min(.045, (i-2)*.012)
+            obs, t, boxes, recognition = measure(i, offset*skill.direction)
+            engine.observe(obs, t, boxes)
+        skill.stop_trial(t, engine.position, 'box_reached_trial_distance', boxes[0])
+        engine._stop_first_push()
+        assert engine.execution.awaiting_stop and not engine.passage
+        assert engine.update(obs, t, boxes, recognition).tolist() == [0., 0., 0.]
+        engine.interaction_stopped()
+        for i in range(7, 21):
+            obs, t, boxes, recognition = measure(i, .045*skill.direction)
+            engine.update(obs, t, boxes, recognition)
+            if engine.trial_report:
+                break
+        assert engine.trial_report['reason'] == 'first_push_observed'
+        assert engine.trial_report['first_push']['displacement_m'] == pytest.approx(.045, abs=.01)
+        assert engine.goal == goal and engine.phase == 'decide' and engine.passage is None
+        assert engine.trial_used and not engine.execution.active
+        engine.set_goal((.3, 1., .4), t)
+        assert engine.trial_used
+    finally:
+        provider.close()

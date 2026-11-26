@@ -19,11 +19,11 @@ import time
 
 class LiveObservations:
     def __init__(self, sensors, reference, session, *, hz, max_age, perception=None, window_observer=None,
-                 point_ceiling=None, world_boundary=None):
+                 point_height=None, world_boundary=None, window_submit=None):
         self.sensors, self.reference, self.session = sensors, reference, session
         self.period, self.max_age = 1. / hz, max_age
         self.perception = perception
-        self.point_ceiling = point_ceiling
+        self.point_height = point_height
         self.world_boundary = world_boundary
         self.lock = threading.Lock()
         self.changed = threading.Condition(self.lock)
@@ -37,6 +37,8 @@ class LiveObservations:
             from deploy.perception.window_stream import WindowWorker
             event = 'box_window_result' if perception is not None else 'perception_result'
             self.window_worker = WindowWorker(window_observer, session, event=event)
+            window_submit = self.window_worker.submit
+        self.window_submit = window_submit
         self.thread = threading.Thread(target=self._work, name='go2-observations', daemon=True)
         self.thread.start()
 
@@ -69,18 +71,27 @@ class LiveObservations:
             self.generation += 1
             self.packet = self.delivered = None
 
-    def wait_next(self, snapshot, timeout, not_before=None):
+    def wait_next(self, snapshot, timeout, not_before=None, *, distinct_lidar=False):
         """Wake the consumer on fresh evidence, rather than drift one tick behind.
 
         With ``not_before``, only a packet published at or after that monotonic
         time qualifies: the consumer keeps its decision cadence yet starts each
         decision on a just-arrived scan instead of one that waited for it.
+        A source-paced controller ignores timeout republications of the same
+        sweep. An invalid observation still wakes it immediately.
         """
         def ready():
             packet = self.packet
-            return (self.closed.is_set() or self.failure is not None
-                    or (packet is not None and packet[1] is not snapshot
-                        and (not_before is None or packet[3] >= not_before)))
+            if self.closed.is_set() or self.failure is not None:
+                return True
+            if packet is None or packet[1] is snapshot:
+                return False
+            candidate = packet[1]
+            if candidate is None:
+                return True
+            if distinct_lidar and snapshot is not None and candidate.lidar_at == snapshot.lidar_at:
+                return False
+            return not_before is None or packet[3] >= not_before
         with self.changed:
             return self.changed.wait_for(ready, timeout=max(0., timeout))
 
@@ -122,9 +133,9 @@ class LiveObservations:
                         if snapshot.captured_at >= record_due:
                             record_due = max(record_due, snapshot.captured_at - .5*self.period) + self.period
                             self.session.record_observation(snapshot)
-                        snapshot = snapshot.navigation_view(self.point_ceiling, self.world_boundary)
-                        if self.window_worker is not None:
-                            self.window_worker.submit(snapshot)
+                        snapshot = snapshot.navigation_view(self.point_height, self.world_boundary)
+                        if self.window_submit is not None:
+                            self.window_submit(snapshot)
                         if self.perception is not None:
                             boxes, evidence = self.perception.update(snapshot, time.monotonic())
                             frozen = evidence.freeze() if hasattr(evidence, 'freeze') else deepcopy(evidence)
@@ -137,8 +148,8 @@ class LiveObservations:
                         if hasattr(self.perception, 'invalidate'):
                             self.perception.invalidate(str(exc))
                         snapshot, error = None, str(exc)
-                if snapshot is None and self.window_worker is not None:
-                    self.window_worker.submit(None, error)
+                if snapshot is None and self.window_submit is not None:
+                    self.window_submit(None, error)
                 with self.lock:
                     if generation == self.generation:
                         fit_error = getattr(self.perception, 'last_error', None)

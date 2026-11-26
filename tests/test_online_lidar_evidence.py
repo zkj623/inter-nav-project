@@ -47,6 +47,29 @@ class OnlineRayEvidenceTests(unittest.TestCase):
                     np.testing.assert_array_equal(hit, expected_hit)
                     np.testing.assert_array_equal(free, expected_free)
                     self.assertEqual(stats['free_segments'], 1)
+    def test_batch_of_short_long_and_clipped_rays_matches_individual_grid_walks(self):
+        from grutopia_extension.interactive_navigation.mapping import world_ray_cells
+        from grutopia_extension.interactive_navigation.online_lidar_evidence import _mark_segments
+
+        rng = np.random.default_rng(20261125)
+        cfg = MappingConfig(grid_resolution=1.0, x_limits=(0, 30), y_limits=(0, 20))
+        for low, high in ((1., 18.), (-4., 25.)):
+            starts = rng.uniform(low, high, (40, 2))
+            ends = rng.uniform(low, high, (40, 2))
+            ends[:4] = starts[:4]                            # one-cell rays
+            ends[4:8] = starts[4:8] + np.array([.99, .99])   # short diagonals
+            ends[8:16, 0] = starts[8:16, 0]                  # vertical rays
+            for first in range(0, len(starts), 5):
+                a, b = starts[first:first+5], ends[first:first+5]
+                actual = np.zeros((20, 30), bool)
+                expected = np.zeros_like(actual)
+                _mark_segments(actual, a, b)
+                for origin, end in zip(a, b):
+                    for row, col in world_ray_cells(origin, end, cfg):
+                        if 0 <= row < 20 and 0 <= col < 30:
+                            expected[row, col] = True
+                np.testing.assert_array_equal(actual, expected)
+
     def test_invalid_no_hit_sentinel_cannot_reveal_the_map(self):
         hit,free,_=self.masks([[1e10,0,.3],[float('nan'),0,.3],[0,0,.3]])
         self.assertFalse(hit.any());self.assertFalse(free.any())

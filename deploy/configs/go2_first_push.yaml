@@ -1,0 +1,44 @@
+# First contact only. Nominal head bounds from Unitree's Go2 URDF (Head_upper/Head_lower).
+# https://github.com/unitreerobotics/unitree_ros/blob/master/robots/go2_description/urdf/go2_description.urdf
+# Foot bounds use the deployment navigation footprint. Times/margins below are
+# trial settings. Actual loaded stopping distance must be measured on this box.
+mode: first_push
+backend: sdk
+calibration_reference: null
+nose_offset_m: 0.34
+foot_x_min_m: -0.32
+foot_x_max_m: 0.50
+foot_half_width_m: 0.22
+head_x_min_m: 0.235
+head_x_max_m: 0.34
+head_half_width_m: 0.05
+head_z_min_m: -0.107
+head_z_max_m: 0.055
+max_forward_mps: 0.12
+max_reverse_mps: 0.10
+max_lateral_mps: 0.10
+max_yaw_rps: 0.32
+forward_mps: 0.10
+reverse_mps: 0.08
+lateral_mps: 0.08
+push_start_mps: 0.06
+push_max_mps: 0.06
+min_translation_mps: 0.03
+min_yaw_rps: 0.05
+linear_acceleration_mps2: 0.25
+yaw_acceleration_rps2: 0.70
+push_acceleration_mps2: 0.12
+translation_stop_seconds: 0.65
+push_stop_seconds: 0.80
+stop_margin_m: 0.05
+push_stop_margin_m: 0.08
+release_margin_m: 0.05
+yaw_stop_seconds: 0.65
+yaw_stop_margin_rad: 0.05
+settle_seconds: 0.40
+box_position_tolerance_m: 0.015
+box_settle_seconds: 0.45
+box_max_settled_speed_mps: 0.035
+stall_seconds: 10.0
+max_contact_seconds: 18.0
+max_tilt_degrees: 12.0

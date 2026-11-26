@@ -19,6 +19,7 @@ import requests
 from deploy.recording.recorder import pack, unpack, json_value, provenance
 from deploy.robot.observation import Snapshot
 from deploy.robot.world_boundary import WorldBoundary
+from deploy.perception.box_memory import BoxMapMemory
 from deploy.visualization.scene import SceneCapture
 from deploy.visualization.worker import process_frames
 from deploy.visualization.sources import LatestFrames, jpeg_from_bgr
@@ -96,7 +97,7 @@ class Session:
         self.cloud_json = None
         self.separate_cloud = separate_cloud
         self.world_boundary = WorldBoundary.from_navigation(config['navigation'])
-        self.point_ceiling = config['navigation']['mapping'].get('point_height', (None, None))[1]
+        self.point_height = config['navigation']['mapping'].get('point_height')
         self.capture = SceneCapture()
         context = mp.get_context('spawn')
         self.pending = context.Queue(maxsize=4)
@@ -122,8 +123,7 @@ class Session:
         self.map = {'ready': False, 'reason': '等待 run.py 的有效观测和标定'}
         self.map_at = None
         self.box_window = None
-        self.last_box_poses = {}
-        self.box_generation = None
+        self.box_memory = BoxMapMemory()
         self.status = {'state': 'starting', 'motion': 'disabled', 'mode': 'observe'}
         self.heartbeat = time.monotonic()
         self.summary = None
@@ -162,13 +162,9 @@ class Session:
                 self._append_event(item)
                 if kind == 'box_window_result' or (kind == 'perception_result' and details.get('geometry_source') == 'window_two_faces'):
                     self.box_window = item
-                    generation = item.get('session_id')
-                    if generation is not None and generation != self.box_generation:
-                        self.last_box_poses.clear()
-                        self.box_generation = generation
-                    for row in item.get('detections', ()):
-                        if row.get('valid') and row.get('track_id') and item['at'] < row.get('expires_at', 0):
-                            self.last_box_poses[row['object_id']] = row
+                    self.box_memory.observe({'geometry_source': 'window_two_faces', **item}, item['at'])
+                elif kind == 'perception_result':
+                    self.box_memory.observe(item, item['at'])
 
     def _append_event(self, item):
         # Caller holds Session.lock, including the atomic final event/summary.
@@ -200,13 +196,16 @@ class Session:
         if record_observation:
             self.record_observation(snapshot)
             # Live acquisition already cropped its copy in experiment coordinates.
-            snapshot = snapshot.navigation_view(self.point_ceiling, self.world_boundary)
+            snapshot = snapshot.navigation_view(self.point_height, self.world_boundary)
         lidar = snapshot.observation['sensors']['lidar']
         scan = None
         if (self.separate_cloud and snapshot.geometry_calibrated
                 and lidar['physics_step'] == tasks.last_lidar and lidar['physics_step'] != self.last_scan):
             self.last_scan = lidar['physics_step']
             scan = dict(lidar, captured_at=snapshot.lidar_at, step=snapshot.sequence)
+            measured = getattr(lidar, 'measured_points', None)
+            if measured is not None:
+                scan.update(pointcloud=measured, measured_returns_only=True)
         publish = now-self.last_publish >= self.publish_interval
         if not publish and scan is None:
             return
@@ -329,8 +328,10 @@ class Session:
 
     def _box_at(self, now):
         # Caller holds the session lock so the latest row and the last known pose agree.
-        return (dict(self.box_window, as_of=now, last_seen=dict(self.last_box_poses))
-                if self.box_window is not None else None)
+        poses = {key: loc.display for key, loc in self.box_memory.locations(now).items()}
+        if self.box_window is None and not poses:
+            return None
+        return dict(self.box_window or {'frame': 'experiment', 'detections': []}, as_of=now, last_seen=poses)
 
     def box_snapshot(self):
         with self.lock:

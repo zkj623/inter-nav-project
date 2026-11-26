@@ -24,6 +24,36 @@ def latest_fit(points, sources, *args):
     return [WindowFit(np.zeros(2), 0., int(sources[-1]), .005)]
 
 
+def test_native_rectangle_with_only_one_side_requires_a_bounded_top_from_distinct_scans():
+    from deploy.perception.registered_boxes import DEFAULT_TRACKING
+    from deploy.perception.window_fitting import find_window_boxes, refit_window_box
+    angle = .42
+    axes = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
+    center = np.array([1.2, -.4])
+    u, v = np.meshgrid(np.linspace(-.40, .40, 25), np.linspace(-.15, .15, 13))
+    top = np.c_[u.ravel(), v.ravel(), np.full(u.size, .312)]
+    a, z = np.meshgrid(np.linspace(-.39, .39, 25), np.linspace(.09, .27, 9))
+    side = np.c_[a.ravel(), np.full(a.size, -.15), z.ravel()]
+    origin = np.r_[center + axes @ [0., -1.], .45]
+    dims, region = (.3, .8, .3), (.4, 2., -.9, .4)
+    def data(parts):
+        points = np.concatenate(parts).copy()
+        points[:, :2] = points[:, :2] @ axes.T+center
+        return np.tile(points, (2, 1)), np.repeat([0, 1], len(points))
+    points, ids = data([side, top])
+    args = (origin, dims, region, DEFAULT_TRACKING)
+    fit, = find_window_boxes(points, ids, *args)
+    assert fit.surfaces == 'top_and_side' and fit.support_index == 1
+    np.testing.assert_allclose(fit.center, center, atol=.02)
+    assert abs((fit.long_axis_rad-angle+np.pi/2) % np.pi-np.pi/2) < .04
+    assert refit_window_box(points, ids, origin, dims, DEFAULT_TRACKING, fit, .05, .1, search_region=False)
+    assert not find_window_boxes(points, ids*0, *args)
+    assert not find_window_boxes(points, ids, np.r_[origin[:2], .25], *args[1:])
+    for parts in ([top], [side], [side, top[abs(top[:, 1]) < .04]],
+                  [side, top, top+[0., 0., .12]], [side, top, top+[.7, 0., 0.]]):
+        assert not find_window_boxes(*data(parts), *args)
+
+
 def fixed_fit(monkeypatch, detect=latest_fit):
     monkeypatch.setattr(module, 'find_window_boxes', detect)
     monkeypatch.setattr(module, 'refit_window_box', lambda *args, **kwargs: detect(*args))
@@ -65,11 +95,13 @@ def test_long_low_box_reports_the_long_side_in_both_orientations(swap_xy, expect
         if swap_xy:
             points[:, :2] = points[:, [1, 0]]
         points[:, 0] += 1.
-        assert observer.update(packet, packet.captured_at) == ((), None)
+        field_scan = packet.navigation_view(config['navigation']['mapping']['point_height'])
+        assert observer.update(field_scan, field_scan.captured_at) == ((), None)
     row = observer.last_delivery['detections'][0]
     np.testing.assert_allclose(row['center'], (1., 0., .15), atol=.02)
     error = (row['long_axis_rad']-expected_axis+np.pi/2) % np.pi-np.pi/2
     assert row['valid'] and abs(error) < np.deg2rad(5) and not row['push_allowed']
+    assert row['surfaces'] == 'two_sides'
 
 
 def test_missing_expiry_and_reacquisition(monkeypatch):
@@ -183,7 +215,8 @@ def test_field_window_lease_is_separate_from_contact_evidence():
     try:
         assert window.config['max_age_s'] == .35
         assert single.config['max_age_s'] == .25
-        assert not cfg['navigation']['interaction_enabled']
+        assert cfg['navigation']['interaction_enabled'] and cfg['interaction']['first_push']
+        assert cfg['interaction']['contact_profile']['calibration_reference'] is None
     finally:
         window.close()
         single.close()
@@ -201,6 +234,49 @@ def test_replay_process_reports_a_lost_input_stream(tmp_path):
     assert errors[-1]['detections'] == []
     assert 'observations.jsonl' in errors[-1]['error']
     assert not worker.process.is_alive()
+
+
+def test_box_process_uses_the_navigation_scan_stamp_and_reports_a_sensor_gap():
+    from queue import Queue
+    import time
+    from deploy.perception.window_process import WindowProcess
+
+    results = Queue()
+    sink = SimpleNamespace(event=lambda name, **result: results.put((name, result)))
+    worker = WindowProcess.from_navigation_scans(settings()[2], sink, 'box_window_result', None)
+    try:
+        stamp = time.monotonic()
+        worker.submit(scan(52, stamp))
+        name, result = results.get(timeout=3.)
+        assert name == 'box_window_result' and result['scan_id'] == 52
+        assert result['captured_at'] == stamp
+        worker.submit(None, 'scan unavailable')
+        _, invalid = results.get(timeout=3.)
+        assert invalid['error'] == 'scan unavailable' and not invalid['detections']
+    finally:
+        worker.close()
+
+
+def test_full_box_queue_keeps_the_invalidation_for_the_next_measured_scan():
+    from queue import Queue
+    from threading import Event
+    from deploy.perception.window_process import WindowProcess
+
+    worker = WindowProcess.__new__(WindowProcess)
+    worker.scans, worker.stop, worker.pending_scan_error = Queue(maxsize=1), Event(), None
+    first, latest = scan(1, 10.), scan(3, 10.2)
+    worker.submit(first)
+    worker.submit(None, 'invalid scan')
+    worker.submit(scan(2, 10.1))
+    assert worker.scans.get_nowait() == (None, first)
+    latest.observation['sensors']['camera'] = {'rgba': np.zeros((8, 8, 3))}
+    worker.submit(latest)
+    error, queued = worker.scans.get_nowait()
+    assert error == 'invalid scan' and queued.lidar_at == latest.lidar_at
+    assert set(queued.observation['sensors']) == {'lidar'}
+    assert queued.observation['sensors']['lidar'] is latest.observation['sensors']['lidar']
+    assert 'camera' in latest.observation['sensors']
+    assert worker.pending_scan_error is None
 
 
 def test_moving_box_prefers_recent_faces_and_cannot_renew_a_fully_occluded_pose():

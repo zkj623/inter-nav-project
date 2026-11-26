@@ -215,6 +215,17 @@ def velocity_packet(now, **changes):
                 command_id=int((now-9.)*1000), interaction=envelope(now, **changes))
 
 
+def test_worker_reports_first_forward_push_speed_after_sdk_move(monkeypatch):
+    reports, moves = run_worker(monkeypatch, [(10., dict(op='arm')),
+        (10., lambda now: velocity_packet(now, phase='align')),
+        (10.08, lambda now: velocity_packet(now, phase='engage')),
+        (10.16, lambda now: velocity_packet(now, phase='push'))])
+    sent = [event for event in reports if event.get('event') == 'push_speed_sent']
+    assert len(sent) == 1 and sent[0]['phase'] == 'engage'
+    assert sent[0]['velocity'][0] > 0
+    assert any(t == sent[0]['worker_at'] and np.array_equal(v, sent[0]['velocity']) for t, v in moves)
+
+
 @pytest.mark.parametrize('unsafe,reason', [(None, 'interaction_observation_expired'),
                                          ('takeover', 'remote_takeover'),
                                          ('health', 'robot_state_stale_or_unsafe')])

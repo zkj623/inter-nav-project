@@ -140,6 +140,11 @@ class BoxPushPlanner:
                 if not self.valid_cell(cell) or mask[cell]:return True
         return False
 
+    def push_directions(self, box):
+        diagonal=math.sqrt(.5)
+        return [(1.,0.),(-1.,0.),(0.,1.),(0.,-1.),
+                (diagonal,diagonal),(diagonal,-diagonal),(-diagonal,diagonal),(-diagonal,-diagonal)]
+
     def push_candidates(self,start,goal,boxes,box,optimistic,immovable=()):
         other=np.zeros_like(self.free)
         for candidate in boxes:
@@ -147,9 +152,7 @@ class BoxPushPlanner:
         allowed=self.box_free&~other
         robot_blocked=self.blocked(boxes,omit=box.id)
         yaw=math.radians(box.yaw)
-        diagonal=math.sqrt(.5)
-        for direction in [(1.,0.),(-1.,0.),(0.,1.),(0.,-1.),
-                          (diagonal,diagonal),(diagonal,-diagonal),(-diagonal,diagonal),(-diagonal,-diagonal)]:
+        for direction in self.push_directions(box):
             direction=np.array(direction)
             local=[math.cos(yaw)*direction[0]+math.sin(yaw)*direction[1],
                    -math.sin(yaw)*direction[0]+math.cos(yaw)*direction[1]]

@@ -74,7 +74,7 @@ def test_source_drift_or_jump_is_not_followed_to_hide_bad_ages():
     assert bridge.metadata['source_anchor_ns'] == EPOCH_NS
 
 
-def fake_ros(monkeypatch, *, sim_time=False, silent=False):
+def fake_ros(monkeypatch, *, sim_time=False, silent=False, sample=None):
     state = SimpleNamespace(wall_ns=2_000_000_000, clock_reads=0, destroyed=False,
                             shutdown=False, mono_ns=MONO_NS, subscriptions=[], removed=[])
     def read_clock():
@@ -90,8 +90,9 @@ def fake_ros(monkeypatch, *, sim_time=False, silent=False):
     def spin_once(node, timeout_sec):
         state.mono_ns += 10_000_000
         if not silent:
-            for _, callback in list(state.subscriptions):
-                callback(message(EPOCH_NS + state.mono_ns - MONO_NS))
+            for topic, callback in list(state.subscriptions):
+                stamp = EPOCH_NS + state.mono_ns - MONO_NS
+                callback(sample(topic, stamp) if sample else message(stamp))
     node = SimpleNamespace(
         get_parameter=lambda _: SimpleNamespace(value=sim_time),
         get_clock=lambda: SimpleNamespace(now=read_clock),
@@ -123,7 +124,7 @@ def message(stamp_ns):
 
 def test_sensor_bootstraps_with_wrong_wall_date_and_keeps_fixed_reference(monkeypatch):
     state = fake_ros(monkeypatch)
-    sensors = RosSensors(dict(load()['robot'], sensor_profile='mid360s_lio'))
+    sensors = RosSensors(dict(load()['robot'], ground_z=0.))
     try:
         stamp = EPOCH_NS + state.mono_ns - MONO_NS
         expected = state.mono_ns*1e-9 - .05
@@ -134,7 +135,10 @@ def test_sensor_bootstraps_with_wrong_wall_date_and_keeps_fixed_reference(monkey
         assert before == after
         assert before[1] == pytest.approx(expected)
         assert state.clock_reads == 0  # Neither startup nor callbacks consult ROS/wall date.
-        assert len(state.removed) == 2
+        expected_topics = {'/bot1/cloud_registered_sparse', '/bot1/lidar_slam/odom', '/livox/imu'}
+        assert {topic for topic, _ in state.removed} == expected_topics
+        assert [topic for topic, _ in state.subscriptions].count('/bot1/cloud_registered_sparse') == 1
+        assert {topic for topic, _ in state.subscriptions} == expected_topics
         assert sensors.timebase.metadata['receipt_offset_estimation'] is True
         assert sensors._stamp(message(stamp + 20_000_000))[1] == pytest.approx(expected + .02)
     finally:
@@ -143,7 +147,7 @@ def test_sensor_bootstraps_with_wrong_wall_date_and_keeps_fixed_reference(monkey
 
 def test_sensor_delayed_message_after_bootstrap_is_rejected(monkeypatch):
     state = fake_ros(monkeypatch)
-    sensors = RosSensors(dict(load()['robot'], sensor_profile='mid360s_lio'))
+    sensors = RosSensors(dict(load()['robot'], ground_z=0.))
     try:
         current = EPOCH_NS + state.mono_ns - MONO_NS
         with pytest.raises(ValueError, match='stale'):

@@ -106,6 +106,19 @@ def test_without_new_frames_the_worker_still_publishes_staleness(arriving):
     assert feed.latest().sequence == last  # republished, not renewed or invented
 
 
+def test_source_pacing_uses_the_lidar_stamp_and_wakes_on_invalid_input():
+    feed = LiveObservations.__new__(LiveObservations)
+    feed.closed, feed.failure, feed.changed = threading.Event(), None, threading.Condition()
+    initial = SimpleNamespace(lidar_at=10., sequence=1)
+    repeated = SimpleNamespace(lidar_at=10., sequence=2)
+    feed.packet = (0, repeated, (), 10.2)
+    assert not feed.wait_next(initial, 0., distinct_lidar=True)
+    feed.packet = (0, SimpleNamespace(lidar_at=10.1, sequence=3), (), 10.21)
+    assert feed.wait_next(initial, 0., distinct_lidar=True)
+    feed.packet = (0, None, (), 10.22)
+    assert feed.wait_next(initial, 0., distinct_lidar=True, not_before=11.)
+
+
 def test_sensor_process_delivers_newest_capture_and_reports_outages():
     from multiprocessing import Pipe
     from deploy.robot.sensor_process import RosSensorProcess

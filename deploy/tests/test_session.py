@@ -98,7 +98,7 @@ def test_window_result_reaches_view_and_record_without_waiting_for_the_map(sessi
     assert session.display()['box_window']['detections'] == []
 
 
-def test_map_remembers_only_confirmed_poses_and_resets_on_a_new_generation(session):
+def test_map_remembers_only_confirmed_poses_across_perception_generations(session):
     stamp = time.monotonic()
     row = dict(object_id='box-1', track_id='1:box-1:1', valid=True, center=[1., .5, .15],
                dimensions_m=[.3, .8, .3], long_axis_rad=1.1, captured_at=stamp, expires_at=stamp+.25)
@@ -107,7 +107,7 @@ def test_map_remembers_only_confirmed_poses_and_resets_on_a_new_generation(sessi
     window = session.display()['box_window']
     assert window['last_seen']['box-1'] == row and 'center' not in window['detections'][0]
     session.event('box_window_result', session_id=2, detections=[])
-    assert session.display()['box_window']['last_seen'] == {}
+    assert session.display()['box_window']['last_seen'] == {'box-1': row}
 
 
 def test_packets_keep_raw_observations_and_count_evicted_frames(session):

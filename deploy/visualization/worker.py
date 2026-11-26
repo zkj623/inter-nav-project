@@ -33,9 +33,10 @@ class FrameRenderer:
                 # historical display layer does not decide collision freedom;
                 # current hit/free evidence lives in OnlineNavigationMap.
                 points = np.asarray(scan['pointcloud'], dtype=float)
-                distance = np.linalg.norm(points-np.asarray(scan['position']), axis=1)
-                measured = points[np.isfinite(points).all(axis=1) & (distance < scan['max_range']*.99)]
-                self.voxels.update(measured, step=scan['step'], source='lidar')
+                if not scan.get('measured_returns_only'):
+                    distance = np.linalg.norm(points-np.asarray(scan['position']), axis=1)
+                    points = points[distance < scan['max_range']*.99]
+                self.voxels.update(points, step=scan['step'], source='lidar')
                 self.cloud_step, self.cloud_at = step, scan['captured_at']
         cloud_finished = time.monotonic()
         if item['scene'] is None:

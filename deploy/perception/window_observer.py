@@ -27,6 +27,7 @@ class Measurement:
 class WindowTrack:
     def __init__(self):
         self.serial = 0
+        self.anchor = None
         self.clear()
 
     def clear(self):
@@ -61,8 +62,12 @@ class WindowTrack:
                                                  self.seed.fit, INITIAL_POSITION_TOLERANCE, INITIAL_YAW_TOLERANCE)
             if first_id <= self.seed.end_id:
                 return 'await_distinct_window', []
-        return 'discovery', find_window_boxes(cloud, labels, frame.origin, row['dimensions_m'],
-                                              row['search_region'], cfg)
+        if self.anchor is not None:
+            # After an occlusion the same box can be outside its startup region.
+            # A different item elsewhere in that region cannot take its ID.
+            return 'discovery', refit_window_box(cloud, labels, frame.origin, row['dimensions_m'], cfg,
+                self.anchor, max(.08, cfg['association_margin_m']), math.radians(10.))
+        return 'discovery', find_window_boxes(cloud, labels, frame.origin, row['dimensions_m'], row['search_region'], cfg)
 
     def update(self, match, reason, stationary, fresh, method, now, cfg):
         self.expire(now)
@@ -85,6 +90,7 @@ class WindowTrack:
                     or turn > math.radians(cfg['association_yaw_margin_deg']) + dt*cfg['max_tracking_yaw_rate_rad_s']):
                 return 'missing', 'discontinuous_fit'
             self.last = match
+            self.anchor = match.fit
             return 'tracked', None
         if not stationary or now-match.support > 2*WINDOW:
             self.clear()
@@ -110,6 +116,7 @@ class WindowTrack:
         if not fresh or (method == 'local' and match.support_id <= self.seed.end_id):
             return 'confirming', 'await_fresh_refit'
         self.last, self.seed = match, None
+        self.anchor = match.fit
         self.serial += 1
         return 'tracked', None
 
@@ -224,7 +231,7 @@ class WindowBoxObserver:
                     x0, x1, y0, y1 = row['search_region']
                     in_registry = x0 <= fit.center[0] <= x1 and y0 <= fit.center[1] <= y1
                     active = track.last is not None and finished-track.last.support < WINDOW
-                    if active or in_registry:
+                    if active or track.anchor is not None or in_registry:
                         match = Measurement(fit, support, support_frame.frame_id, frame.frame_id, frame.origin[:2], yaw)
                     else:
                         reason = 'outside_registration_region'
@@ -236,7 +243,7 @@ class WindowBoxObserver:
                 record.update(center=[*map(float, match.fit.center), row['dimensions_m'][2]/2],
                               dimensions_m=row['dimensions_m'],
                               face_angle_rad=match.fit.face_angle, angle_period_deg=90,
-                              fit_residual_m=match.fit.residual, captured_at=match.support,
+                              surfaces=match.fit.surfaces, fit_residual_m=match.fit.residual, captured_at=match.support,
                               expires_at=match.support+self.config['max_age_s'])
                 if match.fit.long_axis_rad is not None:
                     record['long_axis_rad'] = match.fit.long_axis_rad

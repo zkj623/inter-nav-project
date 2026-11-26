@@ -140,6 +140,7 @@ def _worker(pipe, robot, control, sdk_factory=UnitreeSport, test_mode=False):
     stationary_since = None
     last_stop_error = None
     move_reported = stop_reported = False
+    reported_push_id = None
     peak_speed = peak_yaw_speed = None
 
     def send(event):
@@ -252,6 +253,12 @@ def _worker(pipe, robot, control, sdk_factory=UnitreeSport, test_mode=False):
             if velocity is not None:
                 try:
                     sdk.move(velocity)
+                    contact = guard.contact.active
+                    if (contact is not None and contact['phase'] in ('engage', 'push') and velocity[0] > 1e-6
+                            and contact['id'] != reported_push_id):
+                        reported_push_id = contact['id']
+                        report('active', event='push_speed_sent', interaction_id=reported_push_id,
+                               phase=contact['phase'], velocity=velocity.tolist())
                     if test_mode and not move_reported and any(abs(v) > 1e-6 for v in velocity):
                         move_reported = True
                         report('active', 'SportClient.Move returned successfully', event='move_accepted',

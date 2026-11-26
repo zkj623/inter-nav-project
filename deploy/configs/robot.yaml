@@ -1,14 +1,11 @@
-# Go2 deskewed scans with the MID-360S Swarm-LIO trajectory.
+# Swarm-LIO publishes sparse world-frame XYZ and odometry at the same scan end.
 network_interface: eth0
-sensor_profile: mid360s_lio_utlidar
+sensor_profile: mid360s_lio
 map_frame: bot1/world
 base_frame: base_link
 lio_imu_frame: bot1/aft_mapped
 odom_topic: /bot1/lidar_slam/odom
-lidar_topic: /utlidar/cloud_deskewed
-raw_lidar_topic: /utlidar/cloud
-cloud_odom_topic: /utlidar/robot_odom  # only to undo the upstream scan registration
-cloud_odom_frame: odom
+lidar_topic: /bot1/cloud_registered_sparse
 imu_topic: /livox/imu
 imu_frame: livox_frame
 # No standard RGB-D source was found. Custom compressed video is not depth.
@@ -20,15 +17,16 @@ camera_info_topic: ""
 # bot1/world is reinitialized by Swarm-LIO. With null, estimate its floor
 # once at startup from the registered cloud while the robot is stationary.
 ground_z: null
-# Original Unitree scan origin in base_link (measured cloud/cloud_base).
-lidar_origin_offset_base_m: [0.28216003, 0.0, 0.0]
+# MID-360S optical origin in base_link from the nominal mount. In IMU
+# coordinates it is [-0.011, -0.02329, 0.04412] m, as used by Swarm-LIO.
+lidar_origin_offset_base_m: [0.16143, 0.0, 0.12262]
 # Nominal Go2 URDF base -> body IMU, official bracket -> optical origin,
 # then MID-360S optical origin -> internal IMU. Translation is unmeasured.
 mid360_mount:
   imu_in_base_m: [0.16222323, 0.02329, 0.07715633]
   pitch_deg: 13.0
 lidar_max_range: 8.0
-pose_cloud_tolerance_s: 0.065  # bracket 10 Hz LIO samples with normal timestamp jitter
+pose_cloud_tolerance_s: 0.065  # maximum gyro offset from the paired scan/odometry stamp
 image_sync_tolerance_s: 0.04
 max_data_age_s: 0.4
 max_position_jump_m: 0.5

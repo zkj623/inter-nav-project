@@ -114,24 +114,27 @@ class OnlineGoalSelector:
     def reached_frontier(self,xy,observed_count):
         self.visited[self.key(xy)]=int(observed_count)
 
-    def consume_execution_failure(self,xy,observed_count,tracking):
-        """Reject an attempted frontier before a new tracker hides its failure.
+    @staticmethod
+    def execution_failure_reason(tracking):
+        if not tracking.get('needs_replan'):
+            return None
+        if tracking.get('staging_phase')=='staging_failed':
+            return 'staging_failed'
+        if tracking.get('observation_timeout_or_blocked') and not tracking.get('recovering_buffer'):
+            return 'no_turn_placement' if tracking.get('sharp_turn_space_unavailable') else 'no_safe_observation_motion'
+        if int(tracking.get('blocked_ticks',0))>30:
+            return 'no_measured_translation' if tracking.get('execution_stalled') else 'controller_motion_blocked'
+        return None
 
-        Reuse the existing observed-information retry policy. This only
-        removes an unproductive exploration destination; it neither marks
-        unknown space free nor rejects the original navigation goal.
-        """
-        if not tracking.get('needs_replan',False):return None
-        staging_failed=tracking.get('staging_phase')=='staging_failed'
-        blocked_ticks=int(tracking.get('blocked_ticks',0))
-        if not staging_failed and blocked_ticks<=30:return None
+    def consume_execution_failure(self,xy,observed_count,tracking):
+        """Skip this frontier until more space has been observed."""
+        reason=self.execution_failure_reason(tracking)
+        if reason is None:return None
         self.reached_frontier(xy,observed_count)
-        return {'frontier':list(map(float,xy[:2])),
-            'reason':('staging_failed' if staging_failed else 'no_measured_translation'
-                      if tracking.get('execution_stalled') else 'controller_motion_blocked'),
-            'controller':tracking.get('controller'),'blocked_ticks':blocked_ticks,
+        return {'frontier':list(map(float,xy[:2])),'reason':reason,
+            'controller':tracking.get('controller'),'blocked_ticks':int(tracking.get('blocked_ticks',0)),
             'observed_count':int(observed_count),
-            **({'staging_failure_reason':tracking.get('staging_failure_reason')} if staging_failed else {})}
+            **({'staging_failure_reason':tracking.get('staging_failure_reason')} if reason=='staging_failed' else {})}
 
     @staticmethod
     def key(xy):return tuple(np.rint(np.asarray(xy[:2])/.40).astype(int))

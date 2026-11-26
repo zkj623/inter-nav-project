@@ -49,7 +49,7 @@ class BoxMapOverlay {
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
-    canvas.setAttribute('aria-label', '地图箱体跟踪');
+    canvas.setAttribute('aria-label', '地图箱位');
     const map = frame?.map, fit = this.fit, layout = map?.projection;
     const now = fit ? fit.as_of + (performance.now()-this.requestStarted)/1000 : 0;
     const offline = this.offline || this.feedOffline;
@@ -78,25 +78,23 @@ class BoxMapOverlay {
     ctx.clip();
     for (const [id, pose] of poses) {
       const corners = boxFootprint(pose);
-      if (!corners || !pose.track_id) continue;
+      if (!corners) continue;
       const row = current.get(id);
-      const fresh = !stale && row?.valid && row.track_id === pose.track_id
+      const fresh = !stale && row?.valid
         && row.captured_at <= now && now < row.expires_at;
       if (fresh) nextExpiry = Math.min(nextExpiry, row.expires_at);
-      const state = fresh ? '已跟踪' : offline ? '离线 · 上次位置' : '跟丢 · 上次位置';
-      const label = state + ' ' + pose.track_id;
+      const label = '箱位 ' + id;
       labels.push(label);
       const points = corners.map(pixel);
       const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
       const right = x0+w*scale, bottom = y0+h*scale;
       if (Math.max(...xs)<x0 || Math.min(...xs)>right || Math.max(...ys)<y0 || Math.min(...ys)>bottom) continue;
-      const color = fresh ? '#006e63' : '#a64708';
+      const color = '#006e63';
       ctx.beginPath();
       points.forEach(([x,y], i) => i === 0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y));
       ctx.closePath();
-      ctx.fillStyle = fresh ? 'rgba(0,151,130,.25)' : 'rgba(198,99,12,.08)';
+      ctx.fillStyle = 'rgba(0,151,130,.25)';
       ctx.fill();
-      ctx.setLineDash(fresh ? [] : [4,3]);
       ctx.strokeStyle = 'white'; ctx.lineWidth = 4; ctx.stroke();
       ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
       ctx.setLineDash([]);
@@ -110,7 +108,7 @@ class BoxMapOverlay {
     }
     ctx.restore();
     if (labels.length) canvas.setAttribute('aria-label', labels.join('，'));
-    // Don't leave a solid box on screen until the next HTTP response.
+    // Refresh the scan age independently of the persistent map outline.
     if (Number.isFinite(nextExpiry)) {
       this.expiryTimer = setTimeout(() => this.draw(), Math.max(1, (nextExpiry-now)*1000));
     }

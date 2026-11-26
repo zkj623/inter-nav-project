@@ -77,4 +77,9 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
+    # Navigation, sensor acquisition and visualization already have their own
+    # processes. Eight BLAS/OpenCV threads per process delay incoming scans on Orin.
+    import os
+    os.environ.setdefault('OPENBLAS_NUM_THREADS', '1')
+    os.environ.setdefault('OPENCV_FOR_THREADS_NUM', '1')
     raise SystemExit(main())

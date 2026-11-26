@@ -145,8 +145,9 @@ def test_field_guard_checks_turning_corners_and_measured_stopping_motion(request
 
 def test_field_ceiling_rejects_high_rays_before_they_mark_free_cells_or_change_a_route():
     cfg = room_navigation()
-    assert cfg['mapping']['point_height'][1] == cfg['mapping']['obstacle_height'][1] == .28
-    high = np.array([[2., 0., .28001], [1., 1., .5], [.7, 0., 1.5]])
+    assert cfg['mapping']['point_height'] == [-.10, .28]
+    assert cfg['mapping']['obstacle_height'] == [.10, .28]
+    high = np.array([[2., 0., .28001], [1., 1., .30], [.7, 0., 1.5]])
     def packet(points):
         result = observation(points=points)
         result['sensors']['lidar']['position'][2] = .18
@@ -158,6 +159,8 @@ def test_field_ceiling_rejects_high_rays_before_they_mark_free_cells_or_change_a
     assert not engine.layers.observed[engine.planner.cell((1., 0.))]
     engine.observe(packet([[2., 0., float(np.float32(.28))]]), .2)
     assert engine.layers.evidence.log_odds[engine.planner.cell((2., 0.))] > 0
+    engine.observe(packet([[1., .6, .09]]), .4)
+    assert engine.layers.evidence.log_odds[engine.planner.cell((1., .6))] <= 0
 
     ring = observation()['sensors']['lidar']['pointcloud']
     ring[:, 2] = .23
@@ -182,6 +185,27 @@ def test_duplicate_scan_does_not_accumulate_evidence_or_create_new_visibility():
     engine.observe(packet, .1, [BOX])
     assert engine.layers.scan_count == 1
     assert engine.visible_at == {'box': 0.}
+
+
+def test_mapping_reuses_live_crop_and_range_cut_without_changing_the_source(monkeypatch):
+    from unittest.mock import Mock
+    from deploy.robot import observation as packets
+
+    cfg = room_navigation()
+    engine = NavigationEngine(cfg)
+    # The range-limit point is inside the field, while the high point is not in the height band.
+    raw = observation(points=[[1., 0., .2], [4.95, 0., .2], [1., 0., .3]])
+    snapshot = packets.Snapshot(raw, 1., 1., 1., None, (0., 0., 0.), 1)
+    crop = Mock(wraps=packets.navigation_points)
+    monkeypatch.setattr(packets, 'navigation_points', crop)
+    view = snapshot.navigation_view(cfg['mapping']['point_height'], engine.world_boundary)
+    engine.observe(view.observation, 1.)
+    engine.observe(view.observation, 1.1)
+    crop.assert_called_once()
+    lidar = view.observation['sensors']['lidar']
+    assert engine.observation['sensors']['lidar']['pointcloud'] is lidar.measured_points
+    np.testing.assert_array_equal(lidar.measured_points, [[1., 0., .2]])
+    assert len(lidar['pointcloud']) == 2 and len(raw['sensors']['lidar']['pointcloud']) == 3
 
 
 def test_navigation_emits_finite_bounded_velocity_and_retains_map_between_tasks():
