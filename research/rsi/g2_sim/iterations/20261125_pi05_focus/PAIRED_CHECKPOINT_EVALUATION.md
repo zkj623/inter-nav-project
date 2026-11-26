@@ -42,3 +42,41 @@ The aggregate updates after each checkpoint, with `complete: true` only after
 all three. Per-object summaries update during each checkpoint. Videos are
 exported automatically. At the time of this commit, execution has started but
 results are pending; do not infer a winner from the experiment setup.
+
+## Completed results, 2026-11-26 11:32
+
+All 12 paired rollouts completed. Training resumed afterward. See
+`records/paired_lock10_comparison.json` for the original audit outcomes and
+`records/paired_lock10_physical_outcomes.json` for measured hold behavior.
+
+| Checkpoint | Raised and held clear of floor for 5 seconds | Passed all checks |
+| --- | --- | --- |
+| 86000 | 2/4 | 2/4 |
+| 129000 | 4/4 | 2/4 |
+| 140000 | 1/4 | 1/4 |
+
+The secondary hold diagnostic requires the 10 cm trigger, at least 9 cm
+reference-height lift throughout the hold, visual floor clearance over 5 mm,
+and zero policy calls after locking. It does not relabel independent audit
+results or demonstrate transport stability.
+
+- 86k: box and pedal bin passed. Lidded bin slid down and reached the floor;
+  basket never lifted.
+- 129k: box and pedal bin passed. Lidded bin and basket maintained minimum
+  reference lifts of 10.22 cm and 9.78 cm respectively, but their final-window
+  relative drift / rotation were 4.93 cm / 16.59 degrees and 3.34 cm /
+  12.97 degrees. Their entire visual meshes remained at least 5.36 cm and
+  8.37 cm above the floor. The box succeeded despite recorded base contacts.
+- 140k: lidded bin passed. Box reached 10.06 cm but stopped on the visible
+  contact-surface check before holding. Pedal bin reached only 1.76 cm and
+  stopped after right-wrist-link contact. Basket never lifted.
+
+129k has the broadest observed task coverage in this screening comparison;
+86k and 129k tie under the original full-check score. Each object/checkpoint
+has only one rollout, so neither result is a stable success-rate estimate.
+Do not combine different checkpoints' successes into a single-policy claim.
+
+The full local video overview is at
+`E:/G2_interaction/collection_20261122/pi05_paired_lock10_review/index.html`.
+All 12 MP4 files are present under its `reviews/` directory. Weights and videos
+are not committed to Git.
