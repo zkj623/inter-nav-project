@@ -19,12 +19,14 @@ import time
 
 class LiveObservations:
     def __init__(self, sensors, reference, session, *, hz, max_age, perception=None, window_observer=None,
-                 point_height=None, world_boundary=None, window_submit=None, full_box_scan=False):
+                 point_height=None, world_boundary=None, window_submit=None, full_box_scan=False,
+                 window_point_height=None):
         self.sensors, self.reference, self.session = sensors, reference, session
         self.period, self.max_age = 1. / hz, max_age
         self.perception = perception
         self.full_box_scan = full_box_scan
         self.point_height = point_height
+        self.window_point_height = window_point_height
         self.world_boundary = world_boundary
         self.lock = threading.Lock()
         self.changed = threading.Condition(self.lock)
@@ -135,9 +137,12 @@ class LiveObservations:
                             record_due = max(record_due, snapshot.captured_at - .5*self.period) + self.period
                             self.session.record_observation(snapshot)
                         aligned_scan = snapshot
-                        snapshot = snapshot.navigation_view(self.point_height, self.world_boundary)
+                        snapshot = snapshot.navigation_view(self.point_height)
                         if self.window_submit is not None:
-                            self.window_submit(snapshot)
+                            window_height = self.point_height if self.window_point_height is None else self.window_point_height
+                            window_scan = (snapshot if self.world_boundary is None and self.window_point_height is None else
+                                           aligned_scan.navigation_view(window_height, self.world_boundary))
+                            self.window_submit(window_scan)
                         if self.perception is not None:
                             boxes, evidence = self.perception.update(aligned_scan if self.full_box_scan else snapshot,
                                                                      time.monotonic())

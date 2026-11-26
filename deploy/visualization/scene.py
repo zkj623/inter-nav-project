@@ -113,6 +113,9 @@ class SceneCapture:
         boundary = getattr(layers, 'world_boundary', None)
         if boundary is not None:
             result['world_boundary'] = {'x_limits': boundary.x, 'y_limits': boundary.y}
+            field = layers.field_survey.snapshot(layers)
+            if field is not None:
+                result['field_map'] = field
         return result
 
 

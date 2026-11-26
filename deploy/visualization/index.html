@@ -33,7 +33,7 @@ button{border:1px solid #cbd4da;background:#fff;color:#405461;padding:4px 10px;b
  <section class="panel"><div class="panelhead"><h2>全局路线与局部碰撞地图</h2><button id="mapSize" aria-pressed="false">放大地图</button></div>
  <div class="viewport"><img id="mapImage" alt="导航地图"><canvas id="boxMap" role="img" aria-label="地图箱位"></canvas><div id="mapEmpty" class="empty">等待建图</div><div id="mapStale" class="stale">地图已过期</div></div>
  <div class="legend" id="boxLegend" hidden><span><i class="box-key"></i>已记录的箱位</span></div>
- <div class="legend"><span><i class="dot" style="--color:#afa8a4"></i>未知</span><span><i class="dot" style="--color:#f2f2f2"></i>自由</span><span><i class="dot" style="--color:#5e5853"></i>全局障碍</span><span><i class="dot" style="--color:#df4137"></i>局部障碍</span><span><i class="dot" style="--color:#1969eb"></i>当前路线</span><span><i class="dot" style="--color:#46785a"></i>轨迹</span></div></section>
+ <div class="legend"><span><i class="dot" style="--color:#afa8a4"></i>未知</span><span><i class="dot" style="--color:#f2f2f2"></i>自由</span><span><i class="dot" style="--color:#5e5853"></i>全局障碍</span><span><i class="dot" style="--color:#df4137"></i>局部障碍</span><span><i class="dot" style="--color:#2060a5"></i>实验边界</span><span><i class="dot" style="--color:#1969eb"></i>当前路线</span><span><i class="dot" style="--color:#46785a"></i>轨迹</span></div></section>
  <section class="panel"><div class="panelhead"><h2>累计点云图 · 雷达跟随视角</h2></div>
  <div class="viewport"><canvas id="cloud" aria-label="累计点云"></canvas><div id="cloudEmpty" class="empty">等待点云</div><div id="cloudStale" class="stale">点云已过期</div></div>
  <div class="tools"><button id="reset" aria-pressed="true">背后跟随</button><button id="fit" aria-pressed="false">全图</button><button id="top">俯视</button><button id="heightBand" aria-pressed="true">高度切片</button></div>
@@ -148,7 +148,7 @@ function windowStatus(row,valid,remembered){
   no_two_face_fit:'还在找符合尺寸的箱面',
   wait_for_stationary_window:'等机器人站稳',outside_registration_region:'超出初始搜索区',
   ambiguous:'有多个可能的箱子',surface_evidence_expired:'箱面的点云已过期',discontinuous_fit:'箱子位置或方向跳变'};
- const parts=['1 秒认箱',row.object_id,valid?'本次扫描已确认':remembered?'采用地图箱位':states[row.tracking_state]];
+ const parts=['多帧认箱',row.object_id,valid?'本次扫描已确认':remembered?'采用地图箱位':states[row.tracking_state]];
  if(valid&&row.surfaces)parts.push(row.surfaces==='top_and_side'?'顶面 + 侧面':'两个侧面');
  if(valid&&row.center)parts.push('中心 ('+row.center.slice(0,2).map(v=>v.toFixed(2)).join(', ')+') m');
  if(valid&&Number.isFinite(row.long_axis_rad))parts.push('长边方向 '+Math.round(row.long_axis_rad*180/Math.PI)+'°');
@@ -156,7 +156,7 @@ function windowStatus(row,valid,remembered){
 }
 function renderWindowStatus(fit,now,stale){
  const lines=(fit?.detections||[]).map(row=>windowStatus(row,row.valid&&!stale&&row.captured_at<=now&&now<row.expires_at,fit.last_seen?.[row.object_id]));
- if(fit?.error)lines.unshift('1 秒认箱 · '+fit.error);
+ if(fit?.error)lines.unshift('多帧认箱 · '+fit.error);
  const value=lines.join('\n');
  if($('windowInteraction').textContent!==value)$('windowInteraction').textContent=value;
 }
@@ -177,6 +177,12 @@ async function poll(){if(polling)return;polling=true;clearTimeout(pollTimer);$('
  const started=performance.now(),abort=new AbortController(),timer=setTimeout(()=>abort.abort(),2500);let delay=null;
  try{const response=await fetch('/api/frame',{signal:abort.signal,cache:'no-store'});if(!response.ok)throw Error('HTTP '+response.status);const incoming=await response.json();
   if(data?.session_id!==incoming.session_id){autoFit=false;follow=true;cameraPose=null;cameraZoom=1;pan=[0,0];}
+  const area=incoming.map?.world_boundary, cloud=incoming.cloud;
+  if(area && cloud?.accumulated && cloud.frame===incoming.map.frame){
+   const [xmin,xmax]=area.x_limits, [ymin,ymax]=area.y_limits;
+   cloud.points=cloud.points.filter(([x,y])=>x>=xmin && x<=xmax && y>=ymin && y<=ymax);
+   cloud.display_count=cloud.points.length;
+  }
   data=incoming;offline=!!data.finished||data.session_age>2;
   $('boxLegend').hidden=!(data.box_window&&data.map?.projection);
   boxMap.update(data,offline,started);
@@ -210,7 +216,11 @@ async function poll(){if(polling)return;polling=true;clearTimeout(pollTimer);$('
    return `接触前核对 · ${o.object_id} · ${valid?'本次扫描已确认':reasons[o.invalid_reason]||o.invalid_reason||'等待新扫描'} · ${measured}${quality}${age}`;
   });
   if(data.map?.interaction_perception_error)details.push('箱面扫描 · '+data.map.interaction_perception_error);
-  if(data.map?.contact_collision&&skill)details.push('接触检查 · '+data.map.contact_collision.reason);
+  if(data.map?.phase==='box_turn'&&data.map.decision?.turn_clear===false)details.push('转向检查 · 当前空间不足以转身');
+  const waits={waiting_for_box_face:'等新的箱面扫描',waiting_for_settled_box:'等箱位测稳',waiting_for_push_map:'等新的地图扫描',push_path_blocked_or_unknown:'推箱范围内有障碍或未观测格'};
+  const wait=data.map?.decision?.precontact_wait;
+  if(wait)details.push('接触前核对 · '+(waits[wait]||wait));
+  if(data.map?.contact_collision&&skill&&data.map.contact_collision.reason!=='no_contact_scan')details.push('接触检查 · '+data.map.contact_collision.reason);
   const trial=data.map?.first_push_result;
   if(trial){
    const moved=trial.first_push?.displacement_m;
@@ -219,7 +229,7 @@ async function poll(){if(polling)return;polling=true;clearTimeout(pollTimer);$('
   }
   $('interaction').textContent=details.join('\n');
   const choices={navigate:'沿路线走',push:'已选择推箱',explore:'正在探路',wait:'等待可走的路',failed:'找不到可走的路'};
-  const phases={box_approach:'前往箱边',first_push_wait_scan:'停稳核对箱面',first_push_review:'停稳复测箱位',engage:'接近箱面',push:'推箱中',settle_contact:'对准箱面',first_push_stop:'停止推箱'};
+  const phases={box_approach:'前往箱边',box_turn:'转向选定箱面',box_confirm:'已转正，等新的箱面扫描',turn_at_stage:'转向选定箱面',first_push_wait_scan:'停稳核对箱面',first_push_review:'停稳复测箱位',engage:'接近箱面',push:'推箱中',settle_contact:'核对箱面和推路',first_push_stop:'停止推箱'};
   $('task').textContent=[data.status?.mode,data.status?.state,phases[data.map?.phase]||data.map?.phase,choices[data.map?.decision?.kind],
    skill?`${skill.object_id} · ${phases[skill.state]||skill.state}`:null].filter(Boolean).join(' · ');
   if(data.map?.ready){$('mapEmpty').style.display='none';$('mapImage').style.display='block';

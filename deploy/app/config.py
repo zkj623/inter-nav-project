@@ -104,13 +104,6 @@ def load(directory=None, *, interaction_path=None):
     control.pop('contact_limits', None)
     control.pop('contact_max_duration_s', None)
     result['interaction'] = configure(result, payload, path.parent, registry_path=path)
-    if result['interaction']['first_push'] and robot.get('sensor_profile') == 'mid360s_lio':
-        # Keep the installed Swarm-LIO pose, IMU and ground calibration. The
-        # original Unitree odometry only removes the deskewed cloud's old pose.
-        robot.update(sensor_profile='mid360s_lio_utlidar', lidar_topic='/utlidar/cloud_deskewed',
-                     cloud_odom_topic='/utlidar/robot_odom', cloud_odom_frame='odom',
-                     # Nominal radar_joint translation in Unitree's go2_description.urdf.
-                     lidar_origin_offset_base_m=[.28945, 0., -.046825])
     return result
 
 

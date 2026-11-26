@@ -22,7 +22,7 @@ def main(argv=None):
                       help='observe and map without enabling motion through task keys')
     mode.add_argument('--replay', type=Path, help='recorded run directory; hardware is never initialized')
     parser.add_argument('--box-window', action='store_true',
-                        help='show and record 1 s LiDAR box fits during navigation or observation')
+                        help='show and record multi-scan LiDAR box fits during navigation or observation')
     parser.add_argument('--realtime', action='store_true',
                         help='pace a box-window replay at the recorded arrival times and count fitting time')
     mode.add_argument('--motion-test', action='store_true', help='bounded SDK acceptance trials; no ROS, map or autonomous tasks')

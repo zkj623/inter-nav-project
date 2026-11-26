@@ -106,6 +106,19 @@ def tracking_config(settings):
             'registry_reference': settings['registry_reference']}
 
 
+def box_window_height_limits(config):
+    limits = config['navigation']['mapping'].get('point_height')
+    settings = config['interaction']
+    if (config['robot'].get('sensor_profile') != 'mid360s_lio'
+            or settings['source'] != 'registered_box_lidar' or not settings['boxes']
+            or not limits or limits[1] is None):
+        return limits
+    # Keep the box top and an equally wide band above its allowed height
+    # so the shape check can reject a taller surface.
+    ceiling = max(row['dimensions_m'][2] for row in settings['boxes']) + 2*settings['tracking']['height_tolerance_m']
+    return [limits[0], ceiling] if ceiling > limits[1] else limits
+
+
 def create_perception(config, *, synchronous=False, box_window=False, live=False, box_memory=None):
     """The only provider factory used by live run and deterministic replay."""
     settings = config.get('interaction', DEFAULTS)

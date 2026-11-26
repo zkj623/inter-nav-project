@@ -26,6 +26,7 @@ class WindowScanBuffer:
     def __init__(self, config):
         self.reader = RegisteredScanReader(config)
         self.max_gap = config['max_age_s']
+        self.history = config['stationary_window_s']
         self.frames = deque()
         self.epoch = 0
         self.started = self.last_now = self.error = None
@@ -62,7 +63,7 @@ class WindowScanBuffer:
         self.error = None
         if self.started is None:
             self.started = stamp
-        while self.frames and self.frames[0][0].captured_at <= stamp-WINDOW:
+        while self.frames and self.frames[0][0].captured_at <= stamp-self.history:
             self.frames.popleft()
         self.frames.append((frame, yaw))
         return ScanWindow(self.epoch, tuple(self.frames), stamp-self.started >= WINDOW)

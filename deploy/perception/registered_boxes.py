@@ -22,6 +22,7 @@ from .box_fitting import refit_registered_surfaces, scan_candidates, scan_tracke
 
 DEFAULT_TRACKING = {
     'max_age_s': .25,
+    'stationary_window_s': 1.,
     'min_points': 30,
     'min_face_points': 8,
     'min_confirmations': 2,
@@ -70,6 +71,8 @@ def validate_tracking_config(config):
             result[name] = float(value)
     if not .02 <= result['max_age_s'] <= .75:
         raise ValueError('max_age_s must be between .02 and .75 seconds')
+    if not 1. <= result['stationary_window_s'] <= 3.:
+        raise ValueError('stationary_window_s must be between 1 and 3 seconds')
     if (result['min_points'] < 12 or result['min_face_points'] < 4
             or not 2 <= result['min_confirmations'] <= 10
             or not 100 <= result['max_scan_points'] <= 500000

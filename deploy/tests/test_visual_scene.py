@@ -86,22 +86,49 @@ def test_detached_map_geometry_matches_direct_simulation_renderer(bounded):
                                    SimpleNamespace(robot_position=scene['position']), runtime)
     actual = render_map(scene)
     if bounded:
-        xmin, xmax = scene['world_boundary']['x_limits']
-        ymin, ymax = scene['world_boundary']['y_limits']
-        x0, y0 = renderer._world_to_pixel((xmin, ymax), runtime.map)
-        x1, y1 = renderer._world_to_pixel((xmax, ymin), runtime.map)
-        lx, ly, width, height = renderer._map_viewport
-        for sample in (actual[ly:y0-3, lx:lx+width], actual[y1+4:ly+height, lx:lx+width],
-                       actual[y0:y1, lx:x0-3], actual[y0:y1, x1+4:lx+width]):
-            assert sample.size and np.all(sample == [164, 168, 175])
-        assert actual[(y0+y1)//2, x0].tolist() == [165, 96, 32]
-        np.testing.assert_array_equal(actual[y0+3:y1-2, x0+3:x1-2], expected[y0+3:y1-2, x0+3:x1-2])
+        from deploy.visualization.simulation_view import projected_navigation_map
+        area = scene['world_boundary']
+        field = scene['field_map']
+        _, projection = projected_navigation_map(scene)
+        assert projection['x_limits'] == area['x_limits'] and projection['y_limits'] == area['y_limits']
+        assert field['y_limits'][1] > area['y_limits'][1]
+        left, top, width, height = projection['viewport']
+        assert actual[top+height//2, left].tolist() == [165, 96, 32]
+        assert actual[top+height//2, left+width-1].tolist() == [165, 96, 32]
+        # A recording with exterior measurements and one without look identical.
+        np.testing.assert_array_equal(actual, render_map({k: v for k, v in scene.items() if k != 'field_map'}))
+        # Changing only the planning-grid margins cannot affect either map panel.
+        inside = tasks.engine.world_boundary.interior_mask(tasks.engine.layers.config, scene['observed'].shape)
+        exterior_changes = {k: scene[k] ^ ~inside for k in ('observed', 'static', 'local_dynamic')}
+        np.testing.assert_array_equal(actual, render_map({**scene, **exterior_changes}))
     else:
         np.testing.assert_array_equal(actual[35:, :785], expected[35:, :785])
     for field, source in [('stable', 'stable_obstacles'), ('local_dynamic', 'local_dynamic'),
                           ('global_tracked', 'global_tracked')]:
         np.testing.assert_array_equal(scene[field], getattr(tasks.engine.layers, source))
         assert not np.shares_memory(scene[field], getattr(tasks.engine.layers, source))
+
+
+def test_adjusted_boundary_projects_an_interior_obstacle_at_its_world_coordinates():
+    from deploy.visualization.simulation_view import projected_navigation_map
+
+    # Deliberately place the display edges between grid lines.
+    area = {'x_limits': (-.27, 2.34), 'y_limits': (-.85, 1.12)}
+    mask = np.zeros((40, 50), dtype=bool)
+    mask[18, 23] = True  # Cell centre (1.35, .85) in the source grid.
+    scene = dict(config=dict(x_limits=(-1., 4.), y_limits=(-1., 3.), grid_resolution=.1),
+                 world_boundary=area, position=[0., 0., .3], orientation=[1., 0., 0., 0.],
+                 observed=np.ones_like(mask), occupied=mask, static=mask, frame='experiment')
+    image, projection = projected_navigation_map(scene)
+    assert projection['x_limits'] == area['x_limits'] and projection['y_limits'] == area['y_limits']
+    left, top, width, height = projection['viewport']
+    def color_at(x, y):
+        xmin, xmax = projection['x_limits']
+        ymin, ymax = projection['y_limits']
+        return image[top+round((ymax-y)/(ymax-ymin)*(height-1)),
+                     left+round((x-xmin)/(xmax-xmin)*(width-1))].tolist()
+    assert color_at(1.35, .85) == [83, 88, 94]
+    assert color_at(1.45, .85) == [242, 242, 242]
 
 
 def test_follow_cloud_height_slice_is_display_only_and_requires_calibration():

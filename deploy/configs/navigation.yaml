@@ -1,5 +1,10 @@
 # Shared algorithms come from stage1-go2-simulation-release; time is seconds.
 world_boundary: true
+# Visually checked clear floor at the fixed start, in experiment metres.
+# Set to null when starting elsewhere. Apply once, before the first scan is fused.
+startup_clear_area:
+  x_limits: [-0.45, 0.85]
+  y_limits: [-0.40, 0.40]
 mapping:
   # Experiment metres from the startup pose: X forward, Y left.
   x_limits: [-1.2, 5.0]
@@ -7,7 +12,7 @@ mapping:
   grid_resolution: 0.1
   voxel_size: 0.1
   robot_radius: 0.30
-  obstacle_inflation_radius: 0.40
+  obstacle_inflation_radius: 0.30
   # Ground-relative metres. Discard higher endpoints before tracing free rays.
   obstacle_height: [0.10, 0.28]
   point_height: [-0.10, 0.28]
@@ -25,7 +30,10 @@ tick_hz: 10.0
 # are prerequisites; single-camera preview does not enable interaction.
 interaction_enabled: false
 # Global routes keep the deployment clearance; local motion checks full body shape.
-route_clearance: 0.40
+route_clearance: 0.30
+# Log-odds to turn previously free ground near a registered box into a map obstacle.
+# Fresh LiDAR hits still block local motion immediately.
+box_map_occupied_threshold: 2.25
 navigation_half_width: 0.22
 local_map_hz: 10.0
 global_map_hz: 1.0

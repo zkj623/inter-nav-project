@@ -18,7 +18,6 @@ import requests
 
 from deploy.recording.recorder import pack, unpack, json_value, provenance
 from deploy.robot.observation import Snapshot
-from deploy.robot.world_boundary import WorldBoundary
 from deploy.perception.box_memory import BoxMapMemory
 from deploy.visualization.scene import SceneCapture
 from deploy.visualization.worker import process_frames
@@ -96,7 +95,6 @@ class Session:
         self.frames = LatestFrames(stale_after=1., demo=demo)
         self.cloud_json = None
         self.separate_cloud = separate_cloud
-        self.world_boundary = WorldBoundary.from_navigation(config['navigation'])
         self.point_height = config['navigation']['mapping'].get('point_height')
         self.capture = SceneCapture()
         context = mp.get_context('spawn')
@@ -196,7 +194,7 @@ class Session:
         if record_observation:
             self.record_observation(snapshot)
             # Live acquisition already cropped its copy in experiment coordinates.
-            snapshot = snapshot.navigation_view(self.point_height, self.world_boundary)
+            snapshot = snapshot.navigation_view(self.point_height)
         lidar = snapshot.observation['sensors']['lidar']
         scan = None
         if (self.separate_cloud and snapshot.geometry_calibrated

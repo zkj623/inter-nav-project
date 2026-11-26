@@ -63,6 +63,7 @@ class NavigationController:
                 continue
             self.session.event('motion_state', **event)
             if event.get('event') == 'push_speed_sent':
+                self.tasks.engine.push_speed_sent(event.get('object_id'))
                 print(f"已向 Go2 发送顶箱速度，前进 {event['velocity'][0]*100:.1f} cm/s。", flush=True)
             state = event['state']
             self.motion_detail = event.get('detail', '')

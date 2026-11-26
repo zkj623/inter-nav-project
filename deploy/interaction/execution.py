@@ -39,7 +39,7 @@ class InteractionExecution:
         if now >= self.deadline:
             raise ValueError('interaction_duration_elapsed')
         p = self.profile
-        return {'id': f'{self.identity}:{self.segment}', 'phase': phase,
+        return {'id': f'{self.identity}:{self.segment}', 'object_id': self.object_id, 'phase': phase,
                 'deadline': self.deadline, 'source_expires_at': float(source_expires_at),
                 'limits': {'max_vx': max(p.max_forward_mps, p.max_reverse_mps),
                            'max_vy': p.max_lateral_mps, 'max_wz': p.max_yaw_rps,

@@ -480,16 +480,22 @@ def test_boundary_proof_requires_rays_stay_outside_and_pass_registered_far_face(
                              plane_offset, edges, .5, .4, DEFAULT_TRACKING) is None
 
 
-def test_close_registered_face_accepts_floor_only_when_both_ends_are_visible():
+@pytest.mark.parametrize('distance, scanner_height, crossing_heights, expected', [
+    (.06, .264, (.155, .237), True),
+    (.405, .434, (.09, .182), True),
+    (.72, .434, (.055, .135), False),
+], ids=['low_scanner_near', 'mid360_floor_limits_far_rays', 'mid360_far_face_still_visible'])
+def test_close_registered_face_accepts_floor_only_when_both_ends_are_visible(
+        distance, scanner_height, crossing_heights, expected):
     from deploy.perception.box_fitting import _bounded_face_rays
-    origin = np.array([-.06, 0., .264])
+    origin = np.array([-distance, 0., scanner_height])
     crossing = np.array([[0., side*.44, z] for side in (-1, 1)
-                         for z in np.linspace(.155, .237, 12)])
+                         for z in np.linspace(*crossing_heights, 12)])
     floor = origin + (origin[2]/(origin[2]-crossing[:, 2]))[:, None]*(crossing-origin)
     def bounds(points):
         return _bounded_face_rays(points, origin, np.array([-1., 0.]), np.array([0., 1.]),
                                   0., (-.40, .40), .30, .30, DEFAULT_TRACKING)
-    assert bounds(floor) is not None
+    assert (bounds(floor) is not None) == expected
     assert bounds(floor[floor[:, 1] > 0]) is None
     # The same crossings ending at a raised surface before the far face
     # cannot establish that the carton ends are independently visible.

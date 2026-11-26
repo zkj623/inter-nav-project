@@ -106,6 +106,24 @@ def test_first_push_fits_full_carton_on_the_same_cropped_navigation_scan():
         feed.close()
 
 
+def test_mid360_window_gets_box_top_from_the_same_scan_as_the_low_map():
+    from queue import Queue
+    source, sink, windows = Source(), Sink(), Queue()
+    reference = SimpleNamespace(metadata={}, apply=lambda s, *_: s)
+    feed = LiveObservations(source, reference, sink, hz=5., max_age=.4,
+                            point_height=[-.1, .28], window_point_height=[-.1, .46],
+                            window_submit=windows.put)
+    try:
+        window = windows.get(timeout=2.)
+        nav = wait_for(feed.latest)
+        assert window.lidar_at == nav.lidar_at
+        nav_z = nav.observation['sensors']['lidar']['pointcloud'][:, 2]
+        window_z = window.observation['sensors']['lidar']['pointcloud'][:, 2]
+        assert max(nav_z) <= .28 < max(window_z) <= .46
+    finally:
+        feed.close()
+
+
 def test_window_can_lag_and_remains_across_goal_changes(monkeypatch):
     from deploy.perception.window_observer import WindowBoxObserver
     source, sink = Source(), Sink()

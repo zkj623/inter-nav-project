@@ -55,6 +55,17 @@ def control(tmp_path, monkeypatch):
     return controller, snapshot, events
 
 
+def test_only_sent_push_releases_its_box_from_stationary_mapping(control):
+    controller, _, _ = control
+    stationary = controller.tasks.engine.layers.stationary_box_ids
+    stationary.update(('box-1', 'box-2'))
+    controller.motion_events([{'kind': 'command_ack', 'state': 'active', 'accepted': True}])
+    assert stationary == {'box-1', 'box-2'}
+    controller.motion_events([{'event': 'push_speed_sent', 'state': 'active', 'object_id': 'box-1',
+                               'velocity': [.02, 0., 0.]}])
+    assert stationary == {'box-2'}
+
+
 def test_observe_never_arms_and_cancel_clears_task_without_losing_map(control):
     controller, snapshot, events = control
     controller.step(snapshot, snapshot.captured_at)

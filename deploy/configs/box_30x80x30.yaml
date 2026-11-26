@@ -1,6 +1,8 @@
 # Field box. Units are metres, with the 0.80 m side on the floor.
 source: registered_box_lidar
 tracking_enabled: true
+tracking:
+  stationary_window_s: 2.0  # Accumulate sparse MID-360 returns while standing still.
 window_max_age_s: 0.35  # Observation only. Contact uses tracking.max_age_s (0.25 s).
 geometry_verified: true  # Registered box dimensions measured in the field.
 first_push: true

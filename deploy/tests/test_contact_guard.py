@@ -49,7 +49,7 @@ def test_unconfigured_writer_rejects_interaction_but_allows_navigation(missing):
     assert guard.reason == 'interaction_profile_unconfigured' and not guard.armed
 
 
-@pytest.mark.parametrize('change', [dict(id=''), dict(phase=''), dict(deadline=float('nan')),
+@pytest.mark.parametrize('change', [dict(id=''), dict(object_id=[]), dict(phase=''), dict(deadline=float('nan')),
                                    dict(source_expires_at=True), dict(limits={}),
                                    dict(limits=dict(control()['contact_limits'], max_vx=-1.))])
 def test_invalid_envelope_latches_off(change):
@@ -121,6 +121,7 @@ def test_contact_cannot_hide_a_shorter_command_ttl():
 
 
 @pytest.mark.parametrize('packet,reason', [(None, 'interaction_metadata_missing'),
+                                         (envelope(object_id='other'), 'interaction_object_changed_without_stop'),
                                          (envelope(id='skill-2'), 'interaction_id_changed_without_stop')])
 def test_metadata_cannot_disappear_or_change_id_while_armed(packet, reason):
     guard = CommandGuard(control())
@@ -217,11 +218,12 @@ def velocity_packet(now, **changes):
 
 def test_worker_reports_first_forward_push_speed_after_sdk_move(monkeypatch):
     reports, moves = run_worker(monkeypatch, [(10., dict(op='arm')),
-        (10., lambda now: velocity_packet(now, phase='align')),
-        (10.08, lambda now: velocity_packet(now, phase='engage')),
-        (10.16, lambda now: velocity_packet(now, phase='push'))])
+        (10., lambda now: velocity_packet(now, phase='align', object_id='box-1')),
+        (10.08, lambda now: velocity_packet(now, phase='engage', object_id='box-1')),
+        (10.16, lambda now: velocity_packet(now, phase='push', object_id='box-1'))])
     sent = [event for event in reports if event.get('event') == 'push_speed_sent']
     assert len(sent) == 1 and sent[0]['phase'] == 'engage'
+    assert sent[0]['object_id'] == 'box-1'
     assert sent[0]['velocity'][0] > 0
     assert any(t == sent[0]['worker_at'] and np.array_equal(v, sent[0]['velocity']) for t, v in moves)
 

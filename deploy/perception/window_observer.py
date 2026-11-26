@@ -25,9 +25,10 @@ class Measurement:
 
 
 class WindowTrack:
-    def __init__(self):
+    def __init__(self, stationary_window):
         self.serial = 0
         self.anchor = None
+        self.stationary_window = stationary_window
         self.clear()
 
     def clear(self):
@@ -37,10 +38,10 @@ class WindowTrack:
     def expire(self, now):
         if self.last is not None and now-self.last.support >= WINDOW:
             self.clear()
-        if self.seed is not None and now-self.seed.support > 2*WINDOW:
+        if self.seed is not None and now-self.seed.support > self.stationary_window+WINDOW:
             self.clear()
 
-    def search(self, cloud, labels, recent_starts, frame, row, first_id, stationary, cfg):
+    def search(self, cloud, labels, recent_starts, frame, row, frames, normal_start, stationary, cfg):
         if self.last is not None:
             dt = max(0., frame.captured_at-self.last.support)
             reach = cfg['association_margin_m'] + dt*cfg['max_tracking_speed_m_s']
@@ -49,19 +50,25 @@ class WindowTrack:
             # Prefer the newest measured outline; retain absolute scan indices for the two face stamps.
             for start, method in recent_starts:
                 recent = refit_window_box(cloud[start:], labels[start:], frame.origin, row['dimensions_m'],
-                                          cfg, self.last.fit, reach, turn, search_region=method == 'local_recent')
+                                          cfg, self.last.fit, reach, turn, search_region=method == 'local_recent',
+                                          confirmed=True)
                 if recent:
                     return method, recent
             return 'local', refit_window_box(cloud, labels, frame.origin, row['dimensions_m'], cfg,
-                                             self.last.fit, reach, turn)
+                                             self.last.fit, reach, turn, confirmed=True)
         if not stationary:
             return 'wait_for_stationary_window', []
         if self.seed is not None:
             if self.votes >= cfg['min_confirmations']:
                 return 'local', refit_window_box(cloud, labels, frame.origin, row['dimensions_m'], cfg,
                                                  self.seed.fit, INITIAL_POSITION_TOLERANCE, INITIAL_YAW_TOLERANCE)
-            if first_id <= self.seed.end_id:
+            if frames[normal_start][0].frame_id <= self.seed.end_id:
                 return 'await_distinct_window', []
+            if frames[0][0].frame_id <= self.seed.end_id:
+                # The last second is independent of the first vote. Older
+                # stationary scans may overlap it and cannot vote twice.
+                start = labels.searchsorted(normal_start)
+                cloud, labels = cloud[start:], labels[start:]
         if self.anchor is not None:
             # After an occlusion the same box can be outside its startup region.
             # A different item elsewhere in that region cannot take its ID.
@@ -133,7 +140,7 @@ class WindowBoxObserver:
     def reset(self):
         self.generation += 1
         self.buffer = WindowScanBuffer(self.config)
-        self.tracks = {row['id']: WindowTrack() for row in self.config['boxes']}
+        self.tracks = {row['id']: WindowTrack(self.config['stationary_window_s']) for row in self.config['boxes']}
         self.epoch = self.buffer.epoch
         self.last_delivery = self.last_error = None
 
@@ -177,11 +184,16 @@ class WindowBoxObserver:
             return
         begun = time.monotonic()
         frames = window.frames
-        first, (frame, yaw) = frames[0][0], frames[-1]
+        frame, yaw = frames[-1]
         stamp = frame.captured_at
-        stationary = all(np.linalg.norm(f.origin[:2]-frame.origin[:2]) <= INITIAL_POSITION_TOLERANCE
-                         and abs((angle-yaw+math.pi) % (2*math.pi)-math.pi) <= INITIAL_YAW_TOLERANCE
-                         for f, angle in frames)
+        normal_start = next(i for i, (f, _) in enumerate(frames) if f.captured_at > stamp-WINDOW)
+        still = [np.linalg.norm(f.origin[:2]-frame.origin[:2]) <= INITIAL_POSITION_TOLERANCE
+                 and abs((angle-yaw+math.pi) % (2*math.pi)-math.pi) <= INITIAL_YAW_TOLERANCE for f, angle in frames]
+        stationary = all(still[normal_start:])
+        if not all(still):
+            frames = frames[normal_start:]
+            normal_start = 0
+        first = frames[0][0]
         matches, methods = {}, {}
         if window.ready:
             cloud = np.concatenate([f.points for f, _ in frames])
@@ -193,12 +205,14 @@ class WindowBoxObserver:
                 recent_starts.append((short, 'local_short'))
             if recent:
                 recent_starts.append((recent, 'local_recent'))
+            if normal_start:
+                recent_starts.append((labels.searchsorted(normal_start), 'local_one_second'))
             for row in self.config['boxes']:
                 key = row['id']
                 track = self.tracks[key]
                 track.expire(now)
-                methods[key], matches[key] = track.search(cloud, labels, recent_starts, frame, row, first.frame_id,
-                                                         stationary, self.config)
+                methods[key], matches[key] = track.search(cloud, labels, recent_starts, frame, row, frames,
+                                                         normal_start, stationary, self.config)
         finished = now + (time.monotonic()-begun if self.live else 0.)
         detections = []
         for row in self.config['boxes']:

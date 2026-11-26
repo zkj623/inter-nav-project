@@ -56,11 +56,13 @@ class ContactGuard:
                 or any(not _positive(profile.get(key)) for key in LIMIT_KEYS)):
             raise ValueError('interaction_profile_unconfigured')
         identity = packet.get('id')
+        object_id = packet.get('object_id')
         phase = packet.get('phase')
         source_expiry = packet.get('source_expires_at')
         deadline = packet.get('deadline')
         limits = packet.get('limits')
         if (not isinstance(identity, str) or not identity.strip() or len(identity) > 256
+                or (object_id is not None and not isinstance(object_id, str))
                 or not isinstance(phase, str) or not phase.strip() or len(phase) > 128
                 or not _positive(source_expiry) or not _positive(deadline)
                 or not isinstance(limits, dict)
@@ -74,13 +76,15 @@ class ContactGuard:
             if identity in self._used_ids:
                 raise ValueError('interaction_id_reused')
             self._used_ids.add(identity)
-            self.active = dict(id=identity, phase=phase, source_expires_at=source_expiry,
+            self.active = dict(id=identity, object_id=object_id, phase=phase, source_expires_at=source_expiry,
                                deadline=min(deadline, now+duration), limits={
                                    key: min(self.control[key], profile[key], limits[key])
                                    for key in LIMIT_KEYS})
         else:
             if identity != self.active['id']:
                 raise ValueError('interaction_id_changed_without_stop')
+            if object_id != self.active['object_id']:
+                raise ValueError('interaction_object_changed_without_stop')
             self.active['deadline'] = min(self.active['deadline'], deadline)
             self.active['source_expires_at'] = source_expiry
             self.active['phase'] = phase

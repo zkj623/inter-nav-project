@@ -35,6 +35,43 @@ def face_angle_difference(first, second):
     return abs((first - second + math.pi/4) % (math.pi/2) - math.pi/4)
 
 
+def _top_support_for_partial_sides(uv, z, sources, lengths, height, partial, config):
+    """Use a measured top to check dimensions left uncertain by two visible side planes."""
+    tol, minimum = config['residual_threshold_m'], config['min_face_points']
+    inside = np.all((uv >= -tol) & (uv <= lengths+tol), axis=1)
+    interior = np.all((uv > 1.5*tol) & (uv < lengths-1.5*tol), axis=1)
+    band = min(config['height_tolerance_m'], 1.75*tol)
+    core = interior & (abs(z-height) <= band)
+    if core.sum() < minimum:
+        return None
+    level = np.median(z[core])
+    plane = abs(z-level) <= tol
+    inner = plane & interior
+    if inner.sum() < minimum or len(np.unique(sources[inner])) < 2:
+        return None
+    positions, heights = uv[inner], z[inner]
+    tiles = np.floor(positions/lengths*3).astype(int)
+    if len(np.unique(tiles, axis=0)) < 5 or np.any(np.ptp(positions, axis=0) < .40*lengths):
+        return None
+    slope = np.linalg.lstsq(positions-positions.mean(axis=0), heights-heights.mean(), rcond=None)[0]
+    if np.linalg.norm(slope) > .10 or np.std(heights) > .6*tol:
+        return None
+    margin = config['isolation_margin_m']+.04
+    ring = np.all((uv >= -margin) & (uv <= lengths+margin), axis=1)
+    extends = np.any((uv < -1.5*tol) | (uv > lengths+1.5*tol), axis=1)
+    if (ring & extends & plane).sum() >= max(minimum, .05*inner.sum()):
+        return None
+    support = int(sources[inner].max())
+    for axis in partial:
+        margin = min(config['extent_tolerance_m'], .18*lengths[axis])
+        for edge in (0., lengths[axis]):
+            measured = sources[plane & inside & (abs(uv[:, axis]-edge) <= margin)]
+            if len(np.unique(measured)) < 2:
+                return None
+            support = min(support, int(measured.max()))
+    return support
+
+
 def proposals(points, origin, lengths, region):
     """Search a distance image for finite L shapes; include space outside the registry."""
     if not len(points):
@@ -90,7 +127,7 @@ def proposals(points, origin, lengths, region):
     return selected
 
 
-def verify(points, sources, origin, lengths, height, guess, theta, config):
+def verify(points, sources, origin, lengths, height, guess, theta, config, *, confirmed=False):
     tol = config['residual_threshold_m']
     axes = inward_axes(theta, guess, origin)
     center = guess + axes @ lengths / 2
@@ -115,7 +152,8 @@ def verify(points, sources, origin, lengths, height, guess, theta, config):
             best_score, best_angle = score, angle
             axes, corner = rotation, guess + rotation @ offsets
     uv = (local[:, :2]-corner) @ axes
-    support = []
+    support, partial = [], []
+    wide_face = False
     for axis in (0, 1):
         across, along = uv[:, axis], uv[:, 1-axis]
         length = lengths[1-axis]
@@ -128,15 +166,33 @@ def verify(points, sources, origin, lengths, height, guess, theta, config):
             return None
         trace = along[fitted]
         lo, hi = np.quantile(trace, [.02, .98])
-        if hi-lo < .75*length or hi < .82*length or lo > .065:
-            return None
-        if len(np.unique(np.clip((trace/length*5).astype(int), 0, 4))) < 4:
-            return None
+        bins = len(np.unique(np.clip((trace/length*5).astype(int), 0, 4)))
+        span = hi-lo
+        if span >= .65*length and bins >= 4:
+            wide_face = True
+        if span < .75*length or hi < .82*length or lo > .065 or bins < 4:
+            # After acquisition the ends can be hidden. A short, measured
+            # perpendicular face locates this box only beside a broad face.
+            min_span = max(3*tol, .25*length) if confirmed else .40*length
+            if (origin[2] <= height+tol or span < min_span or bins < (2 if confirmed else 3)
+                    or np.ptp(local[fitted, 2]) < .30*height):
+                return None
+            partial.append(1-axis)
         for beyond in (face & (along < -.065) & (along > -.20),
                        face & (along > length+.065) & (along < length+.20)):
             if beyond.sum() >= max(minimum, .16*fitted.sum()) and np.ptp(along[beyond]) > .055:
                 return None
         support.append(scans[-1])
+    if partial and confirmed and not wide_face:
+        return None
+    # Once both dimensions have been confirmed, two intersecting measured
+    # sides can locate the same box again without remeasuring its hidden ends.
+    use_top = bool(partial) and not confirmed
+    if use_top:
+        top_scan = _top_support_for_partial_sides(uv, local[:, 2], scan_ids, lengths, height, partial, config)
+        if top_scan is None:
+            return None
+        support.append(top_scan)
     inside = (uv >= -tol).all(axis=1) & (uv <= lengths+tol).all(axis=1)
     height_margin = config['height_tolerance_m']
     if (inside & (local[:, 2] > height+height_margin)).sum() >= minimum:
@@ -144,7 +200,9 @@ def verify(points, sources, origin, lengths, height, guess, theta, config):
     wall = (np.min(np.abs(uv), axis=1) <= tol) & inside
     zs = local[wall, 2]
     zs = zs[(zs >= config['floor_clearance_m']) & (zs <= height+height_margin)]
-    if len(zs) < config['min_points'] or np.quantile(zs, .01) > height_margin or np.quantile(zs, .99) < height-height_margin:
+    if (len(zs) < config['min_points'] or (not partial and np.quantile(zs, .01) > height_margin)
+            or (partial and confirmed and np.ptp(zs) < .60*height)
+            or np.quantile(zs, .99) < height-height_margin):
         return None
     if (inside & middle & ~wall).sum() > .20 * max(1, (inside & middle).sum()):
         return None
@@ -155,7 +213,8 @@ def verify(points, sources, origin, lengths, height, guess, theta, config):
     if lengths[0] != lengths[1]:
         long_axis = (best_angle + (math.pi/2 if lengths[1] > lengths[0] else 0.)) % math.pi
     return WindowFit(corner + axes @ lengths/2, best_angle % (math.pi/2),
-                     int(min(support)), float(np.sqrt(np.mean(residual**2))), long_axis)
+                     int(min(support)), float(np.sqrt(np.mean(residual**2))), long_axis,
+                     'top_and_side' if use_top else 'two_sides')
 
 
 def top_side_boxes(points, sources, origin, dimensions, region, config):
@@ -305,7 +364,8 @@ def find_window_boxes(points, sources, origin, dimensions, region, config):
     return found
 
 
-def refit_window_box(points, sources, origin, dimensions, config, previous, reach, turn, *, search_region=True):
+def refit_window_box(points, sources, origin, dimensions, config, previous, reach, turn, *,
+                     search_region=True, confirmed=False):
     """Measure fresh faces around a previous pose within the association gate."""
     sides = np.array(sorted(dimensions[:2], reverse=True))
     angle = previous.long_axis_rad
@@ -315,22 +375,36 @@ def refit_window_box(points, sources, origin, dimensions, config, previous, reac
     # A box contains a circle of diameter min(sides). Test whether a second
     # disjoint footprint could fit in the gate beside the measured center.
     separation = min(sides)-2*config['residual_threshold_m']
-    if reach < separation:
+    fit = None
+    if reach < separation or (search_region and confirmed):
         axes = inward_axes(angle, previous.center, origin)
         corner = previous.center - axes @ sides/2
-        fit = verify(points, sources, origin, sides, dimensions[2], corner, angle, config)
-        if fit is None:
+        fit = verify(points, sources, origin, sides, dimensions[2], corner, angle, config, confirmed=confirmed)
+        if fit is None and reach < separation:
             x, y = previous.center
             # Refit a measured rectangle, including yaw, within the local gate.
             tops = top_side_boxes(points, sources, origin, dimensions, (x-reach, x+reach, y-reach, y+reach), config)
             fit = tops[0] if len(tops) == 1 else None
         if fit is not None:
             offset = np.linalg.norm(fit.center-previous.center)
-            if offset <= reach and offset+reach < separation and fit.angle_to(previous) <= turn:
+            if offset > reach or fit.angle_to(previous) > turn:
+                fit = None
+            elif offset+reach < separation:
                 return [fit]
     if not search_region:
         return []
     x, y = previous.center
     region = (x-reach, x+reach, y-reach, y+reach)
-    return [fit for fit in find_window_boxes(points, sources, origin, dimensions, region, config)
-            if np.linalg.norm(fit.center-previous.center) <= reach and fit.angle_to(previous) <= turn]
+    candidates = [other for other in find_window_boxes(points, sources, origin, dimensions, region, config)
+                  if np.linalg.norm(other.center-previous.center) <= reach and other.angle_to(previous) <= turn]
+    # A wide gate can contain another box. Keep both when the other position
+    # is distinct, so the observer reports the ambiguity instead of guessing.
+    if confirmed and fit is not None:
+        for index, other in enumerate(candidates):
+            if np.linalg.norm(other.center-fit.center) < .075:
+                if fit.support_index > other.support_index:
+                    candidates[index] = fit
+                break
+        else:
+            candidates.append(fit)
+    return candidates

@@ -23,11 +23,14 @@ class OnlineNavigationMap(LayeredNavigationMap):
         """Original map self-filter envelope; adapters may supply measured geometry."""
         return BoxState('__robot__',tuple(self.robot_xy+.09*forward),(.82,.44,.5),np.degrees(self.robot_yaw))
 
+    def scan_masks(self,origin,points,*,max_range,min_range):
+        return online_lidar_masks(self.config,origin,points,max_range,min_range)
+
     def measured_scan_masks(self,hit,free):
         """Optional observer before object ownership masks are applied."""
         pass
 
-    def __init__(self,planner,sensor_config,*,floor_height=.01,**kwargs):
+    def __init__(self,planner,sensor_config,*,floor_height=.01,stationary_box_ids=(),**kwargs):
         super().__init__(planner,sensor_config,**kwargs)
         self.static_occupied[:]=False
         self.evidence=OccupancyGridMap(replace(self.config,sticky_free_scale=.25))
@@ -35,6 +38,7 @@ class OnlineNavigationMap(LayeredNavigationMap):
         self.observed=self.evidence.observed
         self.global_observed=np.zeros_like(self.observed)
         self.floor_height=floor_height;self.detected_boxes={}
+        self.stationary_box_ids=set(stationary_box_ids)
         self.visible_box_ids=[];self.scan_count=0
         self.ray_statistics={}
         self.initial_observed_cells=0;self.initial_occupied_cells=0
@@ -91,18 +95,26 @@ class OnlineNavigationMap(LayeredNavigationMap):
             visible=self._visible_proposals(returns,proposals)
             self.visible_box_ids=[b.id for b in visible]
             self.detected_boxes.update({b.id:b for b in visible})
+        previous_boxes=self.current_boxes
         self.current_boxes=list(self.detected_boxes.values())
         new_mask=self._mask(self.current_boxes)
         vacated=self.tracked_occupied & ~new_mask
         if vacated.any():
-            # A moved box does not prove that the hidden space is free.
-            # Discard only its owned evidence; current free rays must confirm
-            # the newly opened passage before motion uses it.
-            self.evidence.log_odds[vacated]=0.;self.observed[vacated]=False
+            # Drop the old box evidence so a new hit here can register immediately.
+            self.evidence.log_odds[vacated]=0.
             self.local_hits[vacated]=False;self.hit_time[vacated]=-np.inf
-            self.vacated_time[vacated]=self.now
-            self.events.append({'event':'visible_box_moved','time_s':self.now,
-                'visible_ids':self.visible_box_ids,'vacated_cells':int(vacated.sum())})
+            if self.stationary_box_ids:
+                # A revised footprint of the same stationary box is still observed.
+                # Where old footprints overlap, a potentially moving owner wins.
+                moving=[b for b in previous_boxes if b.id not in self.stationary_box_ids
+                        or b.id not in self.detected_boxes]
+                vacated &= self._mask(moving)
+            if vacated.any():
+                # A real move can expose hidden space. Require fresh sensor evidence.
+                self.observed[vacated]=False
+                self.vacated_time[vacated]=self.now
+                self.events.append({'event':'visible_box_moved','time_s':self.now,
+                    'visible_ids':self.visible_box_ids,'vacated_cells':int(vacated.sum())})
         self.tracked_occupied=new_mask
         self.tracked_sensor_mask=new_mask.copy()
         for box in self.current_boxes:
@@ -110,7 +122,7 @@ class OnlineNavigationMap(LayeredNavigationMap):
             if part is not None:self.tracked_sensor_mask |= part
         if fresh:
             filtered=self.filter_robot_returns(observation,count=True)['sensors']['lidar']
-            measured_hit,measured_free,self.ray_statistics=online_lidar_masks(self.config,
+            measured_hit,measured_free,self.ray_statistics=self.scan_masks(
                 filtered.get('position',observation['position']),np.asarray(filtered['pointcloud']),
                 max_range=float(filtered.get('max_range',5.)),min_range=float(filtered.get('min_range',.25)))
             self.measured_scan_masks(measured_hit,measured_free)
@@ -140,13 +152,16 @@ class OnlineNavigationMap(LayeredNavigationMap):
         self.local_hits[free]=False;self.local_hits[hit]=True;self.hit_time[hit]=self.now
         self.seen_time[hit|free]=self.now
 
+    def _global_static_mask(self):
+        return self.evidence.occupied_mask() & ~self.tracked_occupied
+
     def refresh_global(self,boxes=None,*,reason='interaction_completed'):
         if reason=='decision' and self.now-self.last_global<self.global_period-1e-8:return self.global_revision
         # The optional boxes argument is intentionally ignored. Only boxes
         # admitted from observations may be published to the global planner.
+        self.static_occupied[:]=self._global_static_mask()
         self.global_boxes=list(self.current_boxes)
         self.global_tracked=self._mask(self.global_boxes)
-        self.static_occupied[:]=self.evidence.occupied_mask() & ~self.tracked_occupied
         self.global_observed[:]=self.observed
         self.last_global=self.now;self.global_updates+=1
         digest=hashlib.blake2b((self.global_occupied | ~self.global_observed).tobytes(),digest_size=12).digest()

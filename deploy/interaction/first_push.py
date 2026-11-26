@@ -13,6 +13,30 @@ from .box_motion import ObservedBoxMotion
 TRIAL_DISTANCE_M = .10
 
 
+def trial_sweep_clear(planner, tracked, direction, boxes, free, profile):
+    """Check just this face on the current map, including a short push and braking."""
+    box = RegisteredFacePlanner.oriented_box(tracked)
+    direction = np.asarray(direction)
+    distance = TRIAL_DISTANCE_M + profile.stopping_distance(
+        profile.push_max_mps, pushing=True, command_speed=profile.push_max_mps)
+    # The measured box can turn a few degrees within the fit uncertainty
+    # while the chosen world direction stays fixed. Cover both local axes.
+    yaw = math.radians(box.yaw)
+    axes = np.array([[math.cos(yaw), -math.sin(yaw)], [math.sin(yaw), math.cos(yaw)]])
+    size = np.asarray(box.dimensions[:2]) + distance * abs(direction @ axes)
+    swept = replace(box, dimensions=(*size, box.dimensions[2]))
+    mask = planner.box_mask(swept, xy=np.asarray(box.xy) + direction * distance/2,
+                            padding=profile.stop_margin_m)
+    if mask is None or not free[mask].all():
+        return False
+    for other in boxes:
+        if other.id != box.id:
+            obstacle = planner.box_mask(other, padding=profile.stop_margin_m)
+            if obstacle is None or (mask & obstacle).any():
+                return False
+    return True
+
+
 class RegisteredFacePlanner(SidePushPlanner):
     """Check the registered rectangle, including its fit margin, at the measured yaw."""
 
@@ -43,32 +67,15 @@ class RegisteredFacePlanner(SidePushPlanner):
     def first_contact_plan(self, start, boxes, eligible, free, profile):
         """Pick a reachable face with room for a short push and its stopping travel."""
         best = None
-        reserve = profile.stopping_distance(profile.push_max_mps, pushing=True,
-                                            command_speed=profile.push_max_mps)
-        sweep = TRIAL_DISTANCE_M + reserve
         for tracked in boxes:
             if tracked.id not in eligible:
                 continue
             box = self.oriented_box(tracked)
-            space = free.copy()
-            for other in boxes:
-                if other.id != box.id:
-                    mask = self.box_mask(other, padding=profile.stop_margin_m)
-                    if mask is None:
-                        space[:] = False
-                        break
-                    space &= ~mask
             center = np.asarray(box.xy)
             for i, direction in enumerate(self.push_directions(box)):
-                axis = i // 2
-                dimensions = list(box.dimensions)
-                extent = dimensions[axis] / 2
-                dimensions[axis] += sweep
-                swept_box = replace(box, dimensions=tuple(dimensions))
-                mask = self.box_mask(swept_box, xy=center + direction*sweep/2,
-                                     padding=profile.stop_margin_m)
-                if mask is None or not space[mask].all():
+                if not trial_sweep_clear(self, box, direction, boxes, free, profile):
                     continue
+                extent = box.dimensions[i // 2] / 2
                 approach = center - direction*(extent + profile.nose_offset_m + PushAsideConfig.front_gap)
                 path = self.path(start, approach, boxes)
                 if not path:
@@ -113,6 +120,7 @@ class FirstPushSkill(PushAsideSkill):
         self.maximum_travel = None
         self.review = ObservedBoxMotion(self.backend.profile)
         self.measurement = {}
+        self.precontact_wait = None
 
     def _box_frame(self, ctx):
         # Intersect the nose's line of travel with the real oriented face. The
@@ -155,14 +163,24 @@ class FirstPushSkill(PushAsideSkill):
     def _step(self, ctx):
         # Preparatory motion keeps the entire box occupied. Starting engagement
         # requires a new scan and a measured stop at the selected face.
+        self.precontact_wait = None
         if self.state == 'settle_contact':
             if ctx.box_observation_id is not None:
                 reason = self.backend.observe_box(self, ctx)
                 if reason:
                     return self._fail(ctx, reason)
-            if ctx.box_observation_id is None or not self.backend.box_motion.settled:
-                # Body feedback remains available when the scanning beam is
-                # elsewhere. Still require a fresh, settled box to leave here.
+            if ctx.box_observation_id is None or ctx.box_observed_at <= self.state_since:
+                self.precontact_wait = 'waiting_for_box_face'
+            elif not self.backend.box_motion.settled:
+                self.precontact_wait = 'waiting_for_settled_box'
+            elif ctx.map_observed_at is None or ctx.map_observed_at <= self.state_since:
+                self.precontact_wait = 'waiting_for_push_map'
+            elif not trial_sweep_clear(ctx.planner, ctx.box, self.direction, ctx.boxes,
+                                       ctx.planner.free & ctx.planner.box_free, self.backend.profile):
+                self.precontact_wait = 'push_path_blocked_or_unknown'
+            if self.precontact_wait:
+                if ctx.now - self.state_since >= self.config.max_alignment_seconds:
+                    return self._fail(ctx, self.precontact_wait)
                 self._quiet(ctx, .4)
                 return self._output()
         if self.contact_started is not None:

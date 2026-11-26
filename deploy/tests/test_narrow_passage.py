@@ -98,6 +98,7 @@ def test_push_reopens_throat_only_after_scan_observes_vacated_strip():
 
     see_box(1, .285)
     assert not engine._try_narrow_passage()
+    engine.push_speed_sent('box-1')
     see_box(2, .330)
     assert not layers.observed[engine.planner.cell((.25, .15))]
     assert not engine._try_narrow_passage()

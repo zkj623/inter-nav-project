@@ -128,7 +128,7 @@ def test_packets_keep_raw_observations_and_count_evicted_frames(session):
     np.testing.assert_array_equal(raw.observation['sensors']['lidar']['pointcloud'], input_points)
     inside = tasks.engine.world_boundary.point_mask(input_points)
     assert inside.any() and not inside.all()
-    np.testing.assert_array_equal(restored.observation['sensors']['lidar']['pointcloud'], input_points[inside])
+    np.testing.assert_array_equal(restored.observation['sensors']['lidar']['pointcloud'], input_points)
     assert restored.geometry_calibrated and scene['ready']
     # Record clients get the exact numeric cloud once; browser clients still
     # receive the display points. Removing duplicate JSON must lose no data.
@@ -362,9 +362,8 @@ def test_session_cloud_keeps_display_history_independent_of_live_occupancy(sessi
     assert session.display()['cloud']['accumulated']
     assert np.any(np.linalg.norm(displayed-old, axis=1) < .01)
     assert session.display()['cloud']['role'] == 'display_history_only'
-    for kept in (unseen, farther):
+    for kept in (unseen, farther, outside):
         assert np.any(np.linalg.norm(displayed-kept, axis=1) < .01)
-    assert not np.any(np.linalg.norm(displayed-outside, axis=1) < .01)
     # Re-reading from another viewer does not mutate or reset the shared map.
     np.testing.assert_array_equal(session.display()['cloud']['points'], displayed)
 

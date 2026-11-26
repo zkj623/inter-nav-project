@@ -86,35 +86,81 @@ def test_real_range_boundary_return_cannot_reveal_space():
     np.testing.assert_array_equal(packet['sensors']['lidar']['pointcloud'], [(5., 0., .4)])
 
 
-def test_field_wall_and_unknown_exterior_survive_scans_and_map_refresh():
+def test_startup_clear_area_is_fixed_once_and_an_actual_obstacle_wins():
     nav = load()['navigation']
-    clean, mixed = NavigationEngine(nav), NavigationEngine(nav)
-    outside = [[-1.21, 0., .15], [1., .91, 0.], [0., -2.61, .2], [5.01, 0., .18]]
-    inside = [[1.1, -.4, .2], [1.5, .1, 0.]]
-    ahead = mixed.planner.cell((1., 0.))
-    assert ahead == mixed.planner.cell((1.01, .01))
-    layers = mixed.layers
-    rim = layers.observed.copy()
-    assert rim.any() and not rim[layers.interior].any()
-    for step in range(4):
-        stamp = step*.4
-        for engine, pts in ((clean, inside), (mixed, inside+outside)):
-            packet = observation(step, points=pts)
-            packet['sensors']['lidar'].update(position=np.array([0., 0., .18]), max_range=8.)
-            engine.observe(packet, stamp)
-    for name in ('observed', 'global_observed', 'local_occupied', 'global_occupied'):
-        np.testing.assert_array_equal(getattr(clean.layers, name), getattr(layers, name))
-    np.testing.assert_array_equal(clean.layers.evidence.log_odds, layers.evidence.log_odds)
-    layers.evidence.mark_free((1., .9), .5)
+    engine = NavigationEngine(nav)
+    layer, cell = engine.layers, engine.planner.cell
+    layer.capture_contact_evidence = True
+    before = layer.observed.copy()
+    untouched, edge = cell((.65, .35)), cell((.85, .35))
+    obstacle = cell((.72, -.32))
+    assert not before[untouched] and not before[edge]
+    engine.observe(observation(points=[[.72, -.32, .18]]), .1)
+    assert layer.observed[untouched] and layer.evidence.log_odds[untouched] == 0.
+    assert not layer.measured_free[untouched] and not layer.observed[edge]
+    assert layer.observed[obstacle] and layer.local_occupied[obstacle]
+    initialized = [e for e in layer.events if e['event'] == 'startup_clear_area_initialized']
+    assert len(initialized) == 1 and initialized[0]['cells'] > 0
+    engine.set_goal((3., 0.), .2)
+    engine.observe(observation(1, position=(1.5, 0., .4), points=[[2.4, -.3, .18]]), .5)
+    assert not layer.observed[cell((2.15, .35))]
+    assert sum(e['event'] == 'startup_clear_area_initialized' for e in layer.events) == 1
+    nav['startup_clear_area'] = None
+    other = NavigationEngine(nav)
+    other.observe(observation(points=[[.72, -.32, .18]]), .1)
+    assert not other.layers.observed[untouched]
+
+
+def test_field_survey_sees_through_virtual_wall_but_exploration_stays_inside(tmp_path):
+    from grutopia_extension.interactive_navigation.exploration_frontiers import local_unknown
+    nav = load()['navigation']
+    engine = NavigationEngine(nav)
+    layers, cell = engine.layers, engine.planner.cell
+    def packet(step, points, max_range=5.):
+        obs = observation(step, points=points)
+        obs['sensors']['lidar'].update(position=np.array([.05, .05, .18]), max_range=max_range)
+        return obs
+    # Only return is outside the north fence. Its ray crosses the field.
+    engine.observe(packet(0, [[.05, 1.65, .18]]), 0.)
+    inside = cell((.05, .75))
+    assert layers.observed[inside] and not layers.local_occupied[inside]
+    for n in range(1, 5):
+        engine.observe(packet(n, [[.05, 2.15, .18]], max_range=8.), n*.4)
+    field = layers.field_survey.snapshot(layers)
+    def field_cell(x, y):
+        return (int((y-field['y_limits'][0])/.1), int((x-field['x_limits'][0])/.1))
+    assert field['observed'][field_cell(.05, 1.65)] and not field['occupied'][field_cell(.05, 1.65)]
+    assert field['occupied'][field_cell(.05, 2.15)]
+    assert not field['observed'][field_cell(.55, 1.65)]
+    assert layers.observed[layers.boundary_wall].all() and layers.local_occupied[layers.boundary_wall].all()
     layers.refresh_global(reason='new_task')
-    assert layers.local_occupied[~layers.interior].all() and layers.global_occupied[~layers.interior].all()
-    np.testing.assert_array_equal(layers.observed & ~layers.interior, rim)
-    np.testing.assert_array_equal(layers.global_observed & ~layers.interior, rim)
+    assert layers.global_occupied[layers.boundary_wall].all()
     with layers.global_planning():
-        assert not mixed.planner.free[~layers.interior].any()
-    mixed.set_goal((4., 0.), 2.)
-    assert mixed.update(observation(8, points=outside), 2.) is None
-    assert mixed.result['reason'] == 'no_lidar_returns_in_world_boundary'
+        assert not engine.planner.free[~layers.interior].any()
+        assert not engine.planner.path((0., 0.), (.05, 1.05), [])
+    # A fully surveyed interior must never send Go2 to look over the fence.
+    # Unknown cells in the real map at the wall stay unknown to the viewer.
+    layers.global_observed[layers.interior & ~layers.boundary_goal_blocked] = True
+    grid = layers.frontier_grid()
+    assert not layers.global_observed[cell((1.25, .85))]
+    assert grid.occupied_mask()[cell((1.25, .85))] and grid.observed.all()
+    assert local_unknown(grid, (1.25, .65), radius=.8) == 0
+    inner_gap = cell((1.25, .45))
+    layers.global_observed[inner_gap] = False
+    assert not layers.frontier_grid().observed[inner_gap]
+    layers.save(tmp_path)
+    saved = np.load(tmp_path/'field_map.npz')
+    np.testing.assert_array_equal(saved['occupied'], field['occupied'])
+    np.testing.assert_array_equal(saved['observed'], field['observed'])
+
+
+def test_exterior_scan_without_any_interior_ray_cannot_start_motion():
+    engine = NavigationEngine(load()['navigation'])
+    engine.set_goal((4., 0.), 0.)
+    obs = observation(points=[[-2., 0., .26]])
+    obs['sensors']['lidar']['position'][2] = .55
+    assert engine.update(obs, .1) is None
+    assert engine.result['reason'] == 'no_lidar_returns_in_world_boundary'
 
 
 def test_adjusted_field_bounds_and_unaligned_edges():
@@ -198,7 +244,7 @@ def test_mapping_reuses_live_crop_and_range_cut_without_changing_the_source(monk
     snapshot = packets.Snapshot(raw, 1., 1., 1., None, (0., 0., 0.), 1)
     crop = Mock(wraps=packets.navigation_points)
     monkeypatch.setattr(packets, 'navigation_points', crop)
-    view = snapshot.navigation_view(cfg['mapping']['point_height'], engine.world_boundary)
+    view = snapshot.navigation_view(cfg['mapping']['point_height'])
     engine.observe(view.observation, 1.)
     engine.observe(view.observation, 1.1)
     crop.assert_called_once()
@@ -290,9 +336,9 @@ def test_unseen_goal_follows_voronoi_to_an_observation_point_and_replans(doorway
     np.testing.assert_array_equal(engine.layers.global_observed, observed)
     assert engine.update(first, .2)[0] > 0.
 
-    # New scans either reveal the continuation or close the gap as the robot approaches.
+    # Reach the observation waypoint's arrival radius at the 30 cm route clearance.
     for step in range(1, 9):
-        x = min(.3 * step, 1.9)
+        x = min(.3 * step, 1.95)
         engine.update(corridor_scan(step, x, doorway), step * .75)
     assert engine.goal == goal and engine.result is None
     if doorway == 'open':
@@ -485,6 +531,77 @@ def test_stale_track_grace_preserves_occupancy_then_retires_to_unknown():
     assert 'box' not in engine.layers.detected_boxes
     assert not engine.layers.observed[cell]
     assert not engine.planner.free[cell]
+
+
+def test_box_approach_weak_hits_block_locally_before_changing_known_global_free_space():
+    from deploy.app.config import ROOT
+    settings = load(interaction_path=ROOT/'configs/box_30x80x30.yaml')
+    engine = NavigationEngine(settings['navigation'], settings['interaction'])
+    layers = engine.layers
+    box = BoxState('box-1', (1., 0.), (.3, .8, .3))
+    engine.observe(observation(points=[(.86, dy, .20) for dy in (-.08, 0., .08)]), 1., [box])
+    known, new, far, other = map(engine.planner.cell, [(.6, -.4), (.6, -.5), (3., -.4), (.6, -.6)])
+    # Seed two known approach cells and one equally clear cell far from the box.
+    for cell in (known, far, other):
+        layers.observed[cell] = True
+        layers.evidence.log_odds[cell] = -.1
+    assert not layers.observed[new]
+    layers.refresh_global(reason='field_fixture')
+    hit = np.zeros_like(layers.observed)
+    for cell in (known, new, far):
+        hit[cell] = True
+    free = np.zeros_like(hit)
+    for count in (1, 2, 3):
+        layers.ingest_scan_masks(hit, free)
+        layers.refresh_global(reason='measured_scan')
+        assert layers.local_occupied[known]
+        assert layers.global_occupied[known] == (count == 3)
+        assert layers.global_occupied[new] and layers.global_occupied[far]
+        assert layers.global_occupied[engine.planner.cell(box.xy)]
+    # A confirmed obstacle uses the ordinary clearing threshold.
+    free[known] = True
+    layers.ingest_scan_masks(np.zeros_like(hit), free)
+    layers.refresh_global(reason='measured_free')
+    assert layers.global_occupied[known]
+    engine.push_speed_sent(box.id)
+    hit[:] = False
+    hit[other] = True
+    layers.ingest_scan_masks(hit, free)
+    layers.refresh_global(reason='after_push')
+    assert layers.global_occupied[other]
+
+
+def test_registered_box_jitter_retains_coverage_until_that_box_is_pushed():
+    registry = [{'id': key, 'push_allowed': True} for key in ('box', 'other')]
+    engine = NavigationEngine(config(), {'source': 'registered_box_lidar', 'boxes': registry})
+    layers = engine.layers
+    # Measure faces from the front. The far edge receives no free rays.
+    def observe_pair(step, offset):
+        boxes = [BoxState(row['id'], (1. + offset, y), (.4, .4, .5))
+                 for row, y in zip(registry, (0., 1.))]
+        points = [(box.xy[0] - .2, box.xy[1] + dy, .3)
+                  for box in boxes for dy in (-.05, 0., .05)]
+        engine.observe(observation(step, points=points), float(step), boxes)
+        return [engine.planner.box_mask(box) for box in boxes]
+
+    old = observe_pair(1, 0.)
+    new = observe_pair(2, -.1)
+    for before, after in zip(old, new):
+        edge = before & ~after
+        assert edge.any() and layers.global_observed[edge].all()
+        assert layers.observed[edge].all() and not layers.tracked_occupied[edge].any()
+        assert layers.global_occupied[after].all()
+    assert not any(e['event'] == 'visible_box_moved' for e in layers.events)
+    assert not layers.observed[engine.planner.cell((1.45, 0.))]
+
+    engine.push_speed_sent('box')
+    engine.set_goal((2., 0.), 2.1)
+    after_push = observe_pair(3, -.2)
+    pushed_edge = new[0] & ~after_push[0]
+    stationary_edge = new[1] & ~after_push[1]
+    assert pushed_edge.any() and not layers.global_observed[pushed_edge].any()
+    assert stationary_edge.any() and layers.global_observed[stationary_edge].all()
+    assert layers.global_occupied[after_push[0]].all()
 
 
 def test_expired_identity_cannot_erase_overlapping_new_live_geometry():

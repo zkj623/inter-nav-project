@@ -9,7 +9,7 @@ from types import SimpleNamespace as Message
 import numpy as np
 import pytest
 
-from deploy.app.config import check_task_inputs, load
+from deploy.app.config import ROOT, check_task_inputs, load
 from deploy.app.tasks import Tasks
 from deploy.robot.diagnostics import describe
 from deploy.robot.localization import PoseContinuity, PoseHistory, registered_floor_height
@@ -283,13 +283,14 @@ def test_default_startup_measures_the_floor_from_registered_xyz(monkeypatch):
         source.close()
 
 
-def test_sparse_cloud_uses_world_xyz_and_matches_body_pose_when_dds_streams_overtake(monkeypatch):
+@pytest.mark.parametrize('interaction_path', [None, ROOT/'configs/box_30x80x30.yaml'], ids=['navigation', 'first_push'])
+def test_sparse_cloud_uses_world_xyz_and_matches_body_pose_when_dds_streams_overtake(monkeypatch, interaction_path):
     from deploy.robot.localization import multiply, rotation
     from deploy.robot.timebase import SourceTimeBridge
     from deploy.tests.test_timebase import EPOCH_NS, MONO_NS, fake_ros, message
 
     state = fake_ros(monkeypatch)
-    cfg = dict(load()['robot'], ground_z=0.)
+    cfg = dict(load(interaction_path=interaction_path)['robot'], ground_z=0.)
     assert cfg['lidar_topic'] == '/bot1/cloud_registered_sparse'
     source = RosSensors(cfg, timebase=SourceTimeBridge(EPOCH_NS, MONO_NS))
     period = 100_000_000
@@ -446,12 +447,9 @@ def test_original_scans_follow_mid360_pose_even_when_old_odometry_underestimates
     from deploy.robot.localization import multiply, rotation
 
     source = sensor()
-    from deploy.app.config import ROOT
-    source.config = dict(load(interaction_path=ROOT/'configs/box_30x80x30.yaml')['robot'], ground_z=0.)
-    assert source.config['sensor_profile'] == 'mid360s_lio_utlidar'
-    assert source.config['lidar_topic'] == '/utlidar/cloud_deskewed'
-    assert source.config['odom_topic'] == '/bot1/lidar_slam/odom'
-    assert source.config['cloud_odom_topic'] == '/utlidar/robot_odom'
+    source.config = dict(load()['robot'], ground_z=0., sensor_profile='mid360s_lio_utlidar',
+                         lidar_topic='/utlidar/cloud_deskewed', cloud_odom_topic='/utlidar/robot_odom',
+                         cloud_odom_frame='odom', lidar_origin_offset_base_m=[.28945, 0., -.046825])
     source.mixed = MixedCloud(source.config)
     source.mount = source.mixed.mount
     source.mid360s, source.matched_scan = True, None

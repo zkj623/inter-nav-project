@@ -17,19 +17,34 @@ class WorldBoundary:
             raise ValueError('navigation.world_boundary must be boolean')
         if not enabled:
             return None
-        mapping = nav['mapping']
+        return cls._rectangle(nav['mapping'], 'mapping')
+
+    @classmethod
+    def startup_area(cls, nav):
+        area = nav.get('startup_clear_area')
+        if area is None:
+            return None
+        if not isinstance(area, dict) or set(area) != {'x_limits', 'y_limits'}:
+            raise ValueError('startup_clear_area requires x_limits and y_limits')
+        rectangle = cls._rectangle(area, 'startup_clear_area')
+        if not rectangle.contains((0., 0.)):
+            raise ValueError('startup_clear_area must contain the experiment origin')
+        return rectangle
+
+    @classmethod
+    def _rectangle(cls, mapping, name):
         axes = []
         for key in ('x_limits', 'y_limits'):
             limits = mapping.get(key)
             if (not isinstance(limits, (list, tuple)) or len(limits) != 2
                     or not all(type(v) in (int, float) and math.isfinite(v) for v in limits)
                     or not limits[0] < limits[1]):
-                raise ValueError(f'mapping.{key} must contain increasing finite limits in metres')
+                raise ValueError(f'{name}.{key} must contain increasing finite limits in metres')
             axes.append(tuple(limits))
         return cls(*axes)
 
     def grid_config(self, mapping):
-        # One cell for a permanent wall, one for visible unknown space beyond.
+        # Keep a closed one-cell wall and a guard cell in the planning grid.
         r = mapping.grid_resolution
         def padded(limits):
             lo, hi = limits

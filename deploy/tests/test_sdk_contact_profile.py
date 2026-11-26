@@ -405,7 +405,8 @@ def test_trial_selects_box_faces_at_a_non_grid_heading():
         assert max(abs(axes@direction)) == pytest.approx(1.)
 
 
-def test_first_push_needs_recent_face_after_measured_settling():
+@pytest.mark.parametrize('blocked_layer', [None, 'free', 'box_free'])
+def test_first_push_needs_recent_face_after_measured_settling(blocked_layer):
     from deploy.app.config import ROOT, load
     p = ContactProfile.from_dict(load(interaction_path=ROOT/'configs/box_30x80x30.yaml')['interaction']['contact_profile'])
     _, ctx = fixture()
@@ -418,14 +419,27 @@ def test_first_push_needs_recent_face_after_measured_settling():
                             (-1.,0.),(1.,0.),p)
     skill.state, skill.started, skill.state_since='settle_contact',.1,.1
     skill.initial_box=np.array(ctx.box.xy)
-    for i in range(1,12):
+    # This cell is beyond the fitted box, inside its forward short-push sweep.
+    cell = ctx.planner.cell((1.19, 0.))
+    if blocked_layer:
+        getattr(ctx.planner, blocked_layer)[cell] = False
+    saw_block = False
+    for i in range(1,20):
+        if blocked_layer and i == 13:
+            getattr(ctx.planner, blocked_layer)[cell] = True
         ctx.now=.1+i*.10
+        ctx.map_observed_at=ctx.now
         ctx.box_observation_id=str(i) if i%2==0 else None
         ctx.box_observed_at=ctx.now if ctx.box_observation_id else None
         command=skill.step(ctx)
         assert not any(command.velocity)
+        if blocked_layer and i < 13:
+            assert skill.contact_started is None
+            saw_block |= skill.precontact_wait == 'push_path_blocked_or_unknown'
         if command.state=='engage':
             assert ctx.box_observation_id and skill.backend.box_motion.settled
             break
         assert skill.contact_started is None
     assert command.state=='engage'
+    if blocked_layer:
+        assert saw_block

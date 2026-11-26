@@ -61,10 +61,33 @@ class TaskVideoRecorder(InteractionVideoRecorder):
         if hasattr(layers,'observed'):
             grid[~layers.observed]=(164,168,175)
         height,width=grid.shape[:2];plot_width=775
-        scale=min(plot_width/width,650/height);w,h=int(width*scale),int(height*scale)
+        display_rows, display_cols = slice(0, height), slice(0, width)
+        if getattr(layers, 'crop_to_map_limits', False):
+            config = runtime.map.config
+            xmin, xmax = config.x_limits
+            ymin, ymax = config.y_limits
+            scale = min(plot_width / (xmax - xmin), 650 / (ymax - ymin))
+            w = max(1, round((xmax - xmin) * scale))
+            h = max(1, round((ymax - ymin) * scale))
+
+            # Sample at pixel centres so the fence can cut through a grid cell.
+            def cell_indices(lo, hi, origin, pixels, count):
+                centres = lo + (np.arange(pixels) + .5) * (hi - lo) / pixels
+                indices = np.floor((centres - origin) / p.resolution).astype(int)
+                return np.clip(indices, 0, count - 1)
+
+            cols = cell_indices(xmin, xmax, p.limits[0][0], w, width)
+            rows = cell_indices(ymin, ymax, p.limits[1][0], h, height)
+            raster = grid[rows[::-1, None], cols]
+            display_rows = slice(rows[0], rows[-1] + 1)
+            display_cols = slice(cols[0], cols[-1] + 1)
+        else:
+            scale = min(plot_width / width, 650 / height)
+            w, h = int(width * scale), int(height * scale)
+            raster = cv2.resize(np.flipud(grid), (w, h), interpolation=cv2.INTER_NEAREST)
         left=(plot_width-w)//2;top=46+(650-h)//2
         self._map_viewport=(left,top,w,h)
-        frame[top:top+h,left:left+w]=cv2.resize(np.flipud(grid),(w,h),interpolation=cv2.INTER_NEAREST)
+        frame[top:top+h,left:left+w]=raster
         pixel=lambda xy:self._world_to_pixel(xy,runtime.map)
         def route(start,points,color,width=2,dashed=False):
             vertices=[start,*points]
@@ -161,7 +184,7 @@ class TaskVideoRecorder(InteractionVideoRecorder):
         line(f'Global {1/layers.global_period:g} Hz | local {1/layers.local_period:g} Hz',scale=.47)
         line(f'Revisions G{layers.global_revision} / L{layers.local_revision}',scale=.44)
         if hasattr(layers,'observed'):
-            line(f'Online map: {100*layers.observed.mean():.1f}% observed | grey: unknown',scale=.43)
+            line(f'Online map: {100*layers.observed[display_rows,display_cols].mean():.1f}% observed | grey: unknown',scale=.43)
         truth=getattr(layers,'interaction_source',None)=='ground_truth_layout'
         enabled=getattr(layers,'interaction_enabled',True)
         line(('Eligibility: layout ground truth' if truth else 'Eligibility: RGB classification')
@@ -172,8 +195,8 @@ class TaskVideoRecorder(InteractionVideoRecorder):
         # The inset uses the exact high-frequency collision layer, not a
         # separately accumulated visualization map.
         r,c=p.cell(layers.robot_xy);extent=int(radius/p.resolution)
-        r0=max(0,r-extent);r1=min(height,r+extent+1)
-        c0=max(0,c-extent);c1=min(width,c+extent+1)
+        r0=max(display_rows.start,r-extent);r1=min(display_rows.stop,r+extent+1)
+        c0=max(display_cols.start,c-extent);c1=min(display_cols.stop,c+extent+1)
         inset=grid[r0:r1,c0:c1].copy()
         if inset.size:
             side=min(270,700-y-22);ix=x+95;iy=y+18

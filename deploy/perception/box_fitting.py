@@ -216,25 +216,34 @@ def _bounded_face_rays(all_points, origin, normal, tangent, plane_offset, edges,
     far_fraction = np.divide(numerator-depth, denominator, out=np.full(len(rays), np.nan), where=denominator < -1e-8)
     far_u = (origin+far_fraction[:, None]*rays)[:, :2] @ tangent
     behind = plane_offset-all_points[:, :2] @ normal
+    floor_tolerance = config['floor_clearance_m']
+    upper_crossing = height-.025
+    required_span = config['boundary_ray_height_fraction']*height
     valid = (np.isfinite(fraction) & (fraction > 0.) & (fraction < 1.)
-             & (crossing[:, 2] >= config['floor_clearance_m']+.02)
-             & (crossing[:, 2] <= height-.025) & (all_points[:, 2] >= -.025))
+             & (crossing[:, 2] >= floor_tolerance+.02)
+             & (crossing[:, 2] <= upper_crossing) & (all_points[:, 2] >= -.025))
     depth_margin = config['boundary_ray_depth_margin_m']
-    past_box = behind >= depth + depth_margin
+    proof_depth = depth + depth_margin
+    past_box = behind >= proof_depth
     distance = -numerator
-    near_low_box = (0 < distance <= depth + depth_margin and origin[2] > 0.
-                    and edges[0] < origin[:2] @ tangent < edges[1])
+    allow_floor = False
+    if distance > 0. and origin[2] > 0. and edges[0] < origin[:2] @ tangent < edges[1]:
+        # Height at the front face of a ray to the floor at the required depth.
+        # A high scanner can run out of vertical span past a low box even
+        # when it is more than one box depth away from its front face.
+        floor_crossing = floor_tolerance + (origin[2]-floor_tolerance)*proof_depth/(distance+proof_depth)
+        allow_floor = distance <= proof_depth or (origin[2] > height and upper_crossing-floor_crossing <= required_span)
     endpoint_u = all_points[:, :2] @ tangent
     counts = []
     for sign, edge in ((-1, edges[0]), (1, edges[1])):
         gap = sign*(crossing_u-edge)
         far_gap = sign*(far_u-edge)
         outside = past_box & (far_gap >= config['boundary_ray_min_gap_m'])
-        if near_low_box:
+        if allow_floor:
             # The measured segment from crossing to ground remains outside
             # the side plane. It establishes an edge, not free space under
             # or behind the box; motion still uses independent sweep evidence.
-            floor = (np.abs(all_points[:, 2]) <= config['floor_clearance_m'])
+            floor = (np.abs(all_points[:, 2]) <= floor_tolerance)
             outside |= floor & (behind >= 2*depth_margin) & (sign*(endpoint_u-edge) >= config['boundary_ray_min_gap_m'])
         selected = valid & (gap >= config['boundary_ray_min_gap_m']) & (gap <= config['boundary_ray_max_gap_m']) & outside
         crossings = crossing[selected]
@@ -242,7 +251,7 @@ def _bounded_face_rays(all_points, origin, normal, tangent, plane_offset, edges,
         independent = np.unique(np.floor(crossings/.01).astype(np.int64), axis=0)
         if (len(independent) < config['min_boundary_rays']
                 or len(crossings) == 0
-                or np.ptp(crossings[:, 2]) < config['boundary_ray_height_fraction']*height):
+                or np.ptp(crossings[:, 2]) < required_span):
             return None
         counts.append(len(independent))
     return tuple(counts)

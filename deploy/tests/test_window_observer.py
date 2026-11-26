@@ -24,6 +24,73 @@ def latest_fit(points, sources, *args):
     return [WindowFit(np.zeros(2), 0., int(sources[-1]), .005)]
 
 
+def test_sparse_top_confirms_both_ends_of_a_partially_visible_box():
+    from deploy.perception.registered_boxes import DEFAULT_TRACKING
+    from deploy.perception.window_fitting import verify
+    corner = np.array([.9, -.2])
+    size, origin = np.array([.3, .8]), np.array([0., -.8, .46])
+    def side(axis, low, high):
+        distance, z = np.meshgrid(np.linspace(low, high, 16), np.linspace(.045, .265, 8))
+        xyz = np.column_stack((distance.ravel(), np.zeros(z.size), z.ravel()))
+        return xyz[:, [axis, 1-axis, 2]]
+    long_side = side(1, .04, .78)
+    short_side = side(0, .105, .275)
+    x, y = np.meshgrid([.018, .065, .15, .235, .282], [.02, .16, .4, .64, .78])
+    top = np.column_stack((x.ravel(), y.ravel(), np.full(x.size, .32)))
+    def fit(parts, *, confirmed=False, repeated=False):
+        points = np.concatenate(parts)+np.r_[corner, 0.]
+        labels = np.repeat([0, 0 if repeated else 1], len(points))
+        return verify(np.tile(points, (2, 1)), labels, origin, size, .30, corner, 0.,
+                      DEFAULT_TRACKING, confirmed=confirmed)
+    sides = [long_side, short_side]
+    result = fit([*sides, top])
+    assert result.surfaces == 'top_and_side' and result.support_index == 1
+    np.testing.assert_allclose(result.center, corner+size/2, atol=.005)
+    assert fit(sides) is None
+    assert fit([*sides, top[top[:, 0] > .06]]) is None
+    assert fit([*sides, top, top+[0., 0., .12]]) is None
+    assert fit([*sides, top], repeated=True) is None
+    narrow_side = side(0, .15, .26)
+    assert fit([long_side, narrow_side], confirmed=True).surfaces == 'two_sides'
+    assert fit([long_side], confirmed=True) is None
+    assert fit([side(1, .3, .55), narrow_side], confirmed=True) is None
+
+
+def test_stationary_window_never_reuses_the_same_scans_for_two_votes(monkeypatch):
+    windows = []
+    def measure(points, sources, *args):
+        windows.append((int(sources[0]), int(sources[-1])))
+        return latest_fit(points, sources)
+    fixed_fit(monkeypatch, measure)
+    observer = WindowBoxObserver({**settings()[2], 'stationary_window_s': 2.})
+    for i in range(20):
+        assert not sample(observer, i)['valid']
+    assert sample(observer, 20)['valid']
+    assert len(windows) == 2 and windows[1][0] == 10
+    # Scans older than a second come from the previous pose.
+    packet = scan(21, 12.1)
+    packet.observation['sensors']['lidar']['position'][0] += .12
+    observer.update(packet, packet.captured_at)
+    assert observer.last_delivery['window_start_at'] > 11.1
+
+
+def test_wide_association_gate_checks_for_another_box_before_refreshing_partial_sides(monkeypatch):
+    from deploy.perception import window_fitting as fitting
+    from deploy.perception.registered_boxes import DEFAULT_TRACKING
+    known = WindowFit(np.array([1., 0.]), 0., 0, .004, 0.)
+    measured = WindowFit(known.center.copy(), 0., 4, .005, 0.)
+    neighbor = WindowFit(known.center+[0., .35], 0., 4, .005, 0.)
+    alternatives = []
+    monkeypatch.setattr(fitting, 'verify', lambda *a, **kw: measured if kw['confirmed'] else None)
+    monkeypatch.setattr(fitting, 'find_window_boxes', lambda *a: alternatives)
+    args = (np.empty((0, 3)), np.empty(0), np.array([0., 0., .46]), (.8, .3, .3),
+            DEFAULT_TRACKING, known, .40, .1)
+    assert fitting.refit_window_box(*args) == []
+    assert fitting.refit_window_box(*args, confirmed=True) == [measured]
+    alternatives.append(neighbor)
+    assert fitting.refit_window_box(*args, confirmed=True) == [neighbor, measured]
+
+
 def test_native_rectangle_with_only_one_side_requires_a_bounded_top_from_distinct_scans():
     from deploy.perception.registered_boxes import DEFAULT_TRACKING
     from deploy.perception.window_fitting import find_window_boxes, refit_window_box
@@ -209,12 +276,16 @@ def test_factory_and_cli_route_the_window_without_changing_motion_mode(monkeypat
 
 def test_field_window_lease_is_separate_from_contact_evidence():
     from deploy.app.config import ROOT
+    from deploy.interaction.config import box_window_height_limits
     cfg = load(interaction_path=ROOT/'configs/box_30x80x30.yaml')
     window = create_perception(cfg, box_window=True)
     single = create_perception(cfg, synchronous=True)
     try:
         assert window.config['max_age_s'] == .35
         assert single.config['max_age_s'] == .25
+        assert box_window_height_limits(cfg) == pytest.approx([-.1, .46])
+        cfg['robot']['sensor_profile'] = 'l1'
+        assert box_window_height_limits(cfg) == cfg['navigation']['mapping']['point_height'] == [-.1, .28]
         assert cfg['navigation']['interaction_enabled'] and cfg['interaction']['first_push']
         assert cfg['interaction']['contact_profile']['calibration_reference'] is None
     finally:

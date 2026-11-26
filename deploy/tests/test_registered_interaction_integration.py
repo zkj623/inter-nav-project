@@ -510,7 +510,8 @@ def test_first_push_dispatch_review_and_same_goal_replan():
         provider.close()
 
 
-def test_first_push_in_open_room_from_navigation_to_measured_result():
+@pytest.mark.parametrize('from_memory', [False, True], ids=['visible_face', 'remembered_face'])
+def test_first_push_in_open_room_from_navigation_to_measured_result(from_memory):
     from deploy.app.config import ROOT, load
     from deploy.interaction.config import tracking_config
     from deploy.interaction.first_push import TRIAL_DISTANCE_M
@@ -536,14 +537,19 @@ def test_first_push_in_open_room_from_navigation_to_measured_result():
     center = np.array([1.1, -.55])
     initial = center.copy()
     pose = np.array([.05, -.59, .311])
-    yaw, velocity = 0., np.zeros(3)
+    yaw = np.deg2rad(-75.) if from_memory else 0.
+    velocity = np.zeros(3)
+    pinned = None
+    saw_face_on_way = turned = contact_request = False
+    waiting_scans = 0
     height, u = np.meshgrid(np.linspace(.035, .29, 9), np.linspace(-1., 1., 22))
     front = np.c_[np.full(u.size, -.15), u.ravel()*.40, height.ravel()]
     side = np.c_[u.ravel()*.15, np.full(u.size, -.40), height.ravel()]
     faces = np.vstack([front, side])
     try:
         for i in range(1, 451):
-            now = i*.12
+            # In the memory case the initial survey predates this approach.
+            now = i*.12 + (2. if from_memory and i > 2 else 0.)
             c, s = np.cos(yaw), np.sin(yaw)
             axes = np.array([[c, -s], [s, c]])
             scan_pose = pose.copy()
@@ -554,6 +560,11 @@ def test_first_push_in_open_room_from_navigation_to_measured_result():
                 # Initial survey from a second viewpoint before the navigation trial.
                 points = faces.copy()
                 points[:, :2] += center
+            elif from_memory and (i == 3 or engine.phase == 'box_turn'
+                                  or (engine.phase == 'box_confirm' and waiting_scans < 3)):
+                points = np.array([[1.9, -.9, .01], [1.9, -.8, .01], [1.9, -.7, .01]])
+                if engine.phase == 'box_confirm':
+                    waiting_scans += 1
             else:
                 points = front.copy()
                 points[:, :2] += center
@@ -579,7 +590,24 @@ def test_first_push_in_open_room_from_navigation_to_measured_result():
                 continue
             if i == 3:
                 engine.set_goal((2.4, -.75, .31), now)
+            previous_phase = engine.phase
             velocity = engine.update(obs, now, boxes, recognition)
+            if from_memory and i == 3:
+                pinned = engine.box_approach
+                assert pinned is not None
+            if engine.box_approach is not None and from_memory:
+                assert engine.box_approach is pinned and engine.interaction_command is None
+                if engine.phase == 'box_approach' and engine._permission(pinned.box_id, recognition):
+                    saw_face_on_way = True
+                if previous_phase == 'box_turn' and velocity is not None:
+                    np.testing.assert_allclose(velocity[:2], 0.)
+                    turned |= abs(velocity[2]) > .01
+                if previous_phase == 'box_confirm' and not boxes:
+                    np.testing.assert_allclose(velocity, 0.)
+            if from_memory and engine.skill is not None:
+                assert engine.skill.plan is pinned
+            if (engine.interaction_command or {}).get('phase') in ('engage', 'push') and velocity is not None:
+                contact_request |= velocity[0] > 0.
             if engine.execution.awaiting_stop:
                 engine.interaction_stopped()
             if engine.trial_report or velocity is None:
@@ -595,6 +623,10 @@ def test_first_push_in_open_room_from_navigation_to_measured_result():
         assert .02 <= displacement <= TRIAL_DISTANCE_M + .015
         assert displacement == pytest.approx(center[0]-initial[0], abs=.008)
         assert engine.trial_used and engine.phase == 'decide'
+        assert contact_request
+        if from_memory:
+            assert saw_face_on_way and turned and waiting_scans == 3
+            assert sum(event.get('event') == 'decision' for event in engine.events) == 1
         assert any(event.get('reason') == 'registered_first_contact' for event in engine.events)
     finally:
         provider.close()
