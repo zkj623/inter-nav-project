@@ -62,3 +62,18 @@ Remote workspace:
 - Stage reviews: `pi05_focus_20261125/reviews/pi05_regular240_<step>_heldout/`
 
 This document records the launch configuration, not completed training results.
+
+## Extension requested before training began
+
+Total training extended to 20 equivalent epochs, with evaluations at 1, 3, 5,
+10, 15 and 20 epochs. The original supervisor continues preparation and stages
+1/3/5. A detached continuation supervisor waits for that exact process to exit
+and verifies successful completion before resuming the same optimizer/model
+state for stages 10/15/20. It does not interrupt conversion or run overlapping
+trainers. If the initial supervisor fails, continuation stops for diagnosis.
+
+The trainer reads extended_training_plan.json before configuring its schedule.
+Cosine decay now spans 596613 steps (20 nominal epochs), including the initial
+stages; no optimizer training had started when this was changed. The original
+training_plan.json describes only the initial five-epoch stage; the extended
+plan describes the full requested schedule.

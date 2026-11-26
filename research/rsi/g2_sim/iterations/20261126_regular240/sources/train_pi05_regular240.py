@@ -10,6 +10,10 @@ from openpi.training import config,optimizer,weight_loaders
 from openpi.shared import nnx_utils,normalize
 from scripts import train
 p=argparse.ArgumentParser();p.add_argument('--dataset',default='pilot4');p.add_argument('--steps',type=int,default=5000);p.add_argument('--batch',type=int,default=1);p.add_argument('--chunk',type=int,default=50);p.add_argument('--run',default='pilot4');p.add_argument('--init-checkpoint');p.add_argument('--lr',type=float,default=5e-5);p.add_argument('--decay-steps',type=int,default=150000);p.add_argument('--checkpoint-root',default='/tmp/zkj_g2_20261125_checkpoints');a=p.parse_args()
+extension_path=W/'pi05_regular240_20261126/extended_training_plan.json'
+if extension_path.exists():
+ extension=json.loads(extension_path.read_text())
+ a.decay_steps=max(a.decay_steps,int(extension['decay_steps']))
 D=W/'datasets'/a.dataset
 while not (D/'manifest.json').exists() or not (W/'weights/pi05_base/DOWNLOAD_COMPLETE').exists():time.sleep(15)
 rows=[r for r in json.loads((D/'manifest.json').read_text()) if r['split']=='train'];stats=json.loads((D/'stats.json').read_text());tok=tokenizer.PaligemmaTokenizer(200)
