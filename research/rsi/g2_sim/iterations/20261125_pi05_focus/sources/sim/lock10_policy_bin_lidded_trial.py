@@ -1,3 +1,5 @@
+import faulthandler
+faulthandler.dump_traceback_later(180,repeat=True)
 """Physical G2 catalog test with contact witnesses; no welds or object-following."""
 from pathlib import Path
 import sys,json,traceback,argparse,time,hashlib
