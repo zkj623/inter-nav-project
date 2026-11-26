@@ -1,0 +1,407 @@
+{
+  "checkpoint": 129000,
+  "conditions": {
+    "fixed_targets": "pi05_focus_paired_relative_129000_lock10",
+    "continued_policy": "pi05_focus_continued_relative_129000_continue10"
+  },
+  "rows": [
+    {
+      "asset": "box_white",
+      "conditions": {
+        "fixed_targets": {
+          "harness_success": true,
+          "verified_success": true,
+          "failure": null,
+          "audit_rejections": [],
+          "max_lift_m": 0.1028842180967331,
+          "min_hold_lift_m": 0.09361288696527481,
+          "final_lift_m": 0.09361288696527481,
+          "hold_start_s": 51.50833333333333,
+          "hold_span_s": 5.0,
+          "min_visual_floor_clearance_m": 0.008750142035572658,
+          "metrics": {
+            "accepted": true,
+            "hold_span_s": 5.0,
+            "final_window_s": 3.0,
+            "height_variation_m": 0.002524241805076599,
+            "relative_drift_m": 0.0034738233224675943,
+            "orientation_change_deg": 0.8777786460398778
+          },
+          "control": {
+            "frame": 976,
+            "inference_calls_at_lock": 196,
+            "targets": {
+              "idx01_body_joint1": -1.0297442586766545,
+              "idx02_body_joint2": 2.600540585471551,
+              "idx03_body_joint3": -1.3089969389957472,
+              "idx22_arm_l_joint2": -0.8018742080114221,
+              "idx62_arm_r_joint2": -0.8083952985906606,
+              "idx24_arm_l_joint4": -1.0925047438063302,
+              "idx64_arm_r_joint4": -1.1893750430482477,
+              "idx31_gripper_l_inner_joint1": -0.6051444894879887,
+              "idx71_gripper_r_inner_joint1": -0.6038384616500612,
+              "idx21_arm_l_joint1": 0.80391363070704,
+              "idx23_arm_l_joint3": -0.18437610679593597,
+              "idx25_arm_l_joint5": -0.990271030724319,
+              "idx26_arm_l_joint6": 0.7240734750237028,
+              "idx27_arm_l_joint7": -0.7276542201766445,
+              "idx61_arm_r_joint1": -0.6560086575423352,
+              "idx63_arm_r_joint3": 0.09552950909647251,
+              "idx65_arm_r_joint5": 1.6155083901975615,
+              "idx66_arm_r_joint6": 0.7231980766168102,
+              "idx67_arm_r_joint7": 0.6873733669823192,
+              "idx04_body_joint4": 0.0,
+              "idx05_body_joint5": 0.0,
+              "idx11_head_joint1": 0.0,
+              "idx12_head_joint2": 0.0,
+              "idx13_head_joint3": 0.47123889803846897,
+              "idx111_chassis_lwheel_front_joint1": 0.0,
+              "idx112_chassis_lwheel_front_joint2": 0.0,
+              "idx131_chassis_rwheel_front_joint1": 0.0,
+              "idx132_chassis_rwheel_front_joint2": 0.0,
+              "idx141_chassis_rwheel_rear_joint1": 0.0,
+              "idx142_chassis_rwheel_rear_joint2": 0.0,
+              "idx121_chassis_lwheel_rear_joint1": 0.0,
+              "idx122_chassis_lwheel_rear_joint2": 0.0
+            },
+            "trigger": "simulator-measured lift >= 0.10m; supervisory stop, not a policy input",
+            "inference_calls_after_lock": 0,
+            "adapter_sha256": "586a2c3823b36d986e47385b7bc2369f49ee75ce93ead41d9f4325ab4fa2863d"
+          },
+          "video": "/data20t/embodied/zkj/inter-nav-results/g2-policy-overnight-20261124/pi05_focus_20261125/reviews/pi05_focus_paired_relative_129000_lock10/box_white.mp4"
+        },
+        "continued_policy": {
+          "harness_success": false,
+          "verified_success": false,
+          "failure": "LIFT_HOLD_CRITERIA_NOT_MET",
+          "audit_rejections": null,
+          "max_lift_m": 0.13064897805452347,
+          "min_hold_lift_m": 0.10132376104593277,
+          "final_lift_m": 0.13064897805452347,
+          "hold_start_s": 50.80833333333333,
+          "hold_span_s": 5.0,
+          "min_visual_floor_clearance_m": -0.0003419824535708105,
+          "metrics": {
+            "accepted": false,
+            "hold_span_s": 5.0,
+            "final_window_s": 3.0,
+            "height_variation_m": 0.010989226400852203,
+            "relative_drift_m": 0.05126091607471912,
+            "orientation_change_deg": 6.7729090314762885
+          },
+          "control": {
+            "frame": 962,
+            "inference_calls_at_trigger": 193,
+            "trigger": "simulator-measured lift >=0.10m; selects observation window only",
+            "queued_actions_at_trigger": 3,
+            "inference_calls_after_trigger": 20,
+            "adapter_sha256": "9f1c4e341d99a341421bda2ac08c15b9014248096198f0fb8d9e71a799ef8e89"
+          },
+          "video": "/data20t/embodied/zkj/inter-nav-results/g2-policy-overnight-20261124/pi05_focus_20261125/reviews/pi05_focus_continued_relative_129000_continue10/box_white.mp4"
+        }
+      },
+      "pretrigger_comparison": {
+        "samples": 507,
+        "until_s": 50.70833333333333,
+        "max_object_position_difference_m": 0.07007605469070846,
+        "max_joint_difference_rad": 0.47138312458992004
+      }
+    },
+    {
+      "asset": "bin_lidded",
+      "conditions": {
+        "fixed_targets": {
+          "harness_success": false,
+          "verified_success": false,
+          "failure": "LIFT_HOLD_CRITERIA_NOT_MET",
+          "audit_rejections": null,
+          "max_lift_m": 0.10928134620189667,
+          "min_hold_lift_m": 0.10219015181064606,
+          "final_lift_m": 0.10732777416706085,
+          "hold_start_s": 25.608333333333334,
+          "hold_span_s": 5.0,
+          "min_visual_floor_clearance_m": 0.05364747333873686,
+          "metrics": {
+            "accepted": false,
+            "hold_span_s": 5.0,
+            "final_window_s": 3.0,
+            "height_variation_m": 0.00709119439125061,
+            "relative_drift_m": 0.0492833852640792,
+            "orientation_change_deg": 16.58960180194447
+          },
+          "control": {
+            "frame": 458,
+            "inference_calls_at_lock": 92,
+            "targets": {
+              "idx01_body_joint1": -1.0297442586766545,
+              "idx02_body_joint2": 2.600540585471551,
+              "idx03_body_joint3": -1.3089969389957472,
+              "idx22_arm_l_joint2": -0.7589297041764818,
+              "idx62_arm_r_joint2": -0.7619337642268462,
+              "idx24_arm_l_joint4": -1.387674128929774,
+              "idx64_arm_r_joint4": -1.4305782772796896,
+              "idx31_gripper_l_inner_joint1": -0.6012705589954133,
+              "idx71_gripper_r_inner_joint1": -0.6021346830921425,
+              "idx21_arm_l_joint1": 1.0757609771457588,
+              "idx23_arm_l_joint3": -0.4913184648924158,
+              "idx25_arm_l_joint5": -1.4398268458384358,
+              "idx26_arm_l_joint6": 0.8883757271162307,
+              "idx27_arm_l_joint7": -0.3287972038327309,
+              "idx61_arm_r_joint1": -0.9932205027354897,
+              "idx63_arm_r_joint3": 0.421225127618988,
+              "idx65_arm_r_joint5": 1.860186369290485,
+              "idx66_arm_r_joint6": 0.7714889579506576,
+              "idx67_arm_r_joint7": 0.3752674221260577,
+              "idx04_body_joint4": 0.0,
+              "idx05_body_joint5": 0.0,
+              "idx11_head_joint1": 0.0,
+              "idx12_head_joint2": 0.0,
+              "idx13_head_joint3": 0.47123889803846897,
+              "idx111_chassis_lwheel_front_joint1": 0.0,
+              "idx112_chassis_lwheel_front_joint2": 0.0,
+              "idx131_chassis_rwheel_front_joint1": 0.0,
+              "idx132_chassis_rwheel_front_joint2": 0.0,
+              "idx141_chassis_rwheel_rear_joint1": 0.0,
+              "idx142_chassis_rwheel_rear_joint2": 0.0,
+              "idx121_chassis_lwheel_rear_joint1": 0.0,
+              "idx122_chassis_lwheel_rear_joint2": 0.0
+            },
+            "trigger": "simulator-measured lift >= 0.10m; supervisory stop, not a policy input",
+            "inference_calls_after_lock": 0,
+            "adapter_sha256": "586a2c3823b36d986e47385b7bc2369f49ee75ce93ead41d9f4325ab4fa2863d"
+          },
+          "video": "/data20t/embodied/zkj/inter-nav-results/g2-policy-overnight-20261124/pi05_focus_20261125/reviews/pi05_focus_paired_relative_129000_lock10/bin_lidded.mp4"
+        },
+        "continued_policy": {
+          "harness_success": false,
+          "verified_success": false,
+          "failure": "NONHAND_OBJECT_CONTACT",
+          "audit_rejections": null,
+          "max_lift_m": 0.2232309877872467,
+          "min_hold_lift_m": 0.1033172756433487,
+          "final_lift_m": 0.2232309877872467,
+          "hold_start_s": 25.808333333333334,
+          "hold_span_s": 4.699999999999999,
+          "min_visual_floor_clearance_m": 0.07076182780773013,
+          "metrics": {
+            "accepted": false,
+            "hold_span_s": 4.699999999999999,
+            "final_window_s": 3.0,
+            "height_variation_m": 0.07801569998264313,
+            "relative_drift_m": 0.07633788762855956,
+            "orientation_change_deg": 18.892050993602446
+          },
+          "control": {
+            "frame": 462,
+            "inference_calls_at_trigger": 93,
+            "trigger": "simulator-measured lift >=0.10m; selects observation window only",
+            "queued_actions_at_trigger": 3,
+            "inference_calls_after_trigger": 19,
+            "adapter_sha256": "9f1c4e341d99a341421bda2ac08c15b9014248096198f0fb8d9e71a799ef8e89"
+          },
+          "video": "/data20t/embodied/zkj/inter-nav-results/g2-policy-overnight-20261124/pi05_focus_20261125/reviews/pi05_focus_continued_relative_129000_continue10/bin_lidded.mp4"
+        }
+      },
+      "pretrigger_comparison": {
+        "samples": 255,
+        "until_s": 25.508333333333333,
+        "max_object_position_difference_m": 0.008767672159201125,
+        "max_joint_difference_rad": 0.026875615119934082
+      }
+    },
+    {
+      "asset": "bin_pedal",
+      "conditions": {
+        "fixed_targets": {
+          "harness_success": true,
+          "verified_success": true,
+          "failure": null,
+          "audit_rejections": [],
+          "max_lift_m": 0.106880784034729,
+          "min_hold_lift_m": 0.0944947898387909,
+          "final_lift_m": 0.0945042073726654,
+          "hold_start_s": 28.808333333333334,
+          "hold_span_s": 4.9999999999999964,
+          "min_visual_floor_clearance_m": 0.06461029707751641,
+          "metrics": {
+            "accepted": true,
+            "hold_span_s": 4.9999999999999964,
+            "final_window_s": 2.9999999999999964,
+            "height_variation_m": 0.004429638385772705,
+            "relative_drift_m": 0.008720194203997111,
+            "orientation_change_deg": 1.966087693203871
+          },
+          "control": {
+            "frame": 522,
+            "inference_calls_at_lock": 105,
+            "targets": {
+              "idx01_body_joint1": -1.0297442586766545,
+              "idx02_body_joint2": 2.600540585471551,
+              "idx03_body_joint3": -1.3089969389957472,
+              "idx22_arm_l_joint2": -0.5761162967281486,
+              "idx62_arm_r_joint2": -0.6307660752356128,
+              "idx24_arm_l_joint4": -1.6620561748189147,
+              "idx64_arm_r_joint4": -1.6947301755256774,
+              "idx31_gripper_l_inner_joint1": -0.6014197977135217,
+              "idx71_gripper_r_inner_joint1": -0.6001702258795877,
+              "idx21_arm_l_joint1": 0.725695219822537,
+              "idx23_arm_l_joint3": -0.13962440748784744,
+              "idx25_arm_l_joint5": -2.0058010126286874,
+              "idx26_arm_l_joint6": 0.8411782833422361,
+              "idx27_arm_l_joint7": -0.0919314016017223,
+              "idx61_arm_r_joint1": -0.6652209744275552,
+              "idx63_arm_r_joint3": 0.1373525489547891,
+              "idx65_arm_r_joint5": 2.2765949272471744,
+              "idx66_arm_r_joint6": 0.7074665552971906,
+              "idx67_arm_r_joint7": -0.008539639702865642,
+              "idx04_body_joint4": 0.0,
+              "idx05_body_joint5": 0.0,
+              "idx11_head_joint1": 0.0,
+              "idx12_head_joint2": 0.0,
+              "idx13_head_joint3": 0.47123889803846897,
+              "idx111_chassis_lwheel_front_joint1": 0.0,
+              "idx112_chassis_lwheel_front_joint2": 0.0,
+              "idx131_chassis_rwheel_front_joint1": 0.0,
+              "idx132_chassis_rwheel_front_joint2": 0.0,
+              "idx141_chassis_rwheel_rear_joint1": 0.0,
+              "idx142_chassis_rwheel_rear_joint2": 0.0,
+              "idx121_chassis_lwheel_rear_joint1": 0.0,
+              "idx122_chassis_lwheel_rear_joint2": 0.0
+            },
+            "trigger": "simulator-measured lift >= 0.10m; supervisory stop, not a policy input",
+            "inference_calls_after_lock": 0,
+            "adapter_sha256": "586a2c3823b36d986e47385b7bc2369f49ee75ce93ead41d9f4325ab4fa2863d"
+          },
+          "video": "/data20t/embodied/zkj/inter-nav-results/g2-policy-overnight-20261124/pi05_focus_20261125/reviews/pi05_focus_paired_relative_129000_lock10/bin_pedal.mp4"
+        },
+        "continued_policy": {
+          "harness_success": false,
+          "verified_success": false,
+          "failure": "LIFT_HOLD_CRITERIA_NOT_MET",
+          "audit_rejections": null,
+          "max_lift_m": 0.16591262817382812,
+          "min_hold_lift_m": 0.10214552283287048,
+          "final_lift_m": 0.16591262817382812,
+          "hold_start_s": 28.808333333333334,
+          "hold_span_s": 4.9999999999999964,
+          "min_visual_floor_clearance_m": 0.0687225030865152,
+          "metrics": {
+            "accepted": false,
+            "hold_span_s": 4.9999999999999964,
+            "final_window_s": 2.9999999999999964,
+            "height_variation_m": 0.028336569666862488,
+            "relative_drift_m": 0.02194437148904087,
+            "orientation_change_deg": 6.890106882804288
+          },
+          "control": {
+            "frame": 522,
+            "inference_calls_at_trigger": 105,
+            "trigger": "simulator-measured lift >=0.10m; selects observation window only",
+            "queued_actions_at_trigger": 3,
+            "inference_calls_after_trigger": 20,
+            "adapter_sha256": "9f1c4e341d99a341421bda2ac08c15b9014248096198f0fb8d9e71a799ef8e89"
+          },
+          "video": "/data20t/embodied/zkj/inter-nav-results/g2-policy-overnight-20261124/pi05_focus_20261125/reviews/pi05_focus_continued_relative_129000_continue10/bin_pedal.mp4"
+        }
+      },
+      "pretrigger_comparison": {
+        "samples": 287,
+        "until_s": 28.708333333333332,
+        "max_object_position_difference_m": 0.014044456717658197,
+        "max_joint_difference_rad": 0.020813584327697754
+      }
+    },
+    {
+      "asset": "basket_rectangular",
+      "conditions": {
+        "fixed_targets": {
+          "harness_success": false,
+          "verified_success": false,
+          "failure": "LIFT_HOLD_CRITERIA_NOT_MET",
+          "audit_rejections": null,
+          "max_lift_m": 0.1068095862865448,
+          "min_hold_lift_m": 0.0977538675069809,
+          "final_lift_m": 0.0977538675069809,
+          "hold_start_s": 35.40833333333333,
+          "hold_span_s": 5.0,
+          "min_visual_floor_clearance_m": 0.0836619181135898,
+          "metrics": {
+            "accepted": false,
+            "hold_span_s": 5.0,
+            "final_window_s": 3.0,
+            "height_variation_m": 0.007603563368320465,
+            "relative_drift_m": 0.03342817225878886,
+            "orientation_change_deg": 12.969374509774731
+          },
+          "control": {
+            "frame": 654,
+            "inference_calls_at_lock": 131,
+            "targets": {
+              "idx01_body_joint1": -1.0297442586766545,
+              "idx02_body_joint2": 2.600540585471551,
+              "idx03_body_joint3": -1.3089969389957472,
+              "idx22_arm_l_joint2": 1.2747051736143717,
+              "idx62_arm_r_joint2": 1.3318736482512676,
+              "idx24_arm_l_joint4": -1.493916328989755,
+              "idx64_arm_r_joint4": -1.4046946033688634,
+              "idx31_gripper_l_inner_joint1": -0.01676324708537935,
+              "idx71_gripper_r_inner_joint1": -0.01322406323984604,
+              "idx21_arm_l_joint1": -2.002902475485376,
+              "idx23_arm_l_joint3": 2.3203173140305235,
+              "idx25_arm_l_joint5": 1.1857097125852079,
+              "idx26_arm_l_joint6": 0.5378815206920384,
+              "idx27_arm_l_joint7": -1.4810364919328367,
+              "idx61_arm_r_joint1": 2.0851782827390366,
+              "idx63_arm_r_joint3": -2.453053550888887,
+              "idx65_arm_r_joint5": -1.2217687627612825,
+              "idx66_arm_r_joint6": 0.5089806576099782,
+              "idx67_arm_r_joint7": 1.4338953450142862,
+              "idx04_body_joint4": 0.0,
+              "idx05_body_joint5": 0.0,
+              "idx11_head_joint1": 0.0,
+              "idx12_head_joint2": 0.0,
+              "idx13_head_joint3": 0.47123889803846897,
+              "idx111_chassis_lwheel_front_joint1": 0.0,
+              "idx112_chassis_lwheel_front_joint2": 0.0,
+              "idx131_chassis_rwheel_front_joint1": 0.0,
+              "idx132_chassis_rwheel_front_joint2": 0.0,
+              "idx141_chassis_rwheel_rear_joint1": 0.0,
+              "idx142_chassis_rwheel_rear_joint2": 0.0,
+              "idx121_chassis_lwheel_rear_joint1": 0.0,
+              "idx122_chassis_lwheel_rear_joint2": 0.0
+            },
+            "trigger": "simulator-measured lift >= 0.10m; supervisory stop, not a policy input",
+            "inference_calls_after_lock": 0,
+            "adapter_sha256": "586a2c3823b36d986e47385b7bc2369f49ee75ce93ead41d9f4325ab4fa2863d"
+          },
+          "video": "/data20t/embodied/zkj/inter-nav-results/g2-policy-overnight-20261124/pi05_focus_20261125/reviews/pi05_focus_paired_relative_129000_lock10/basket_rectangular.mp4"
+        },
+        "continued_policy": {
+          "harness_success": false,
+          "verified_success": false,
+          "failure": "LIFT_HOLD_CRITERIA_NOT_MET",
+          "audit_rejections": null,
+          "max_lift_m": 0.032544828951358795,
+          "min_hold_lift_m": null,
+          "final_lift_m": null,
+          "hold_start_s": null,
+          "hold_span_s": 0,
+          "min_visual_floor_clearance_m": null,
+          "metrics": {
+            "accepted": false
+          },
+          "control": null,
+          "video": "/data20t/embodied/zkj/inter-nav-results/g2-policy-overnight-20261124/pi05_focus_20261125/reviews/pi05_focus_continued_relative_129000_continue10/basket_rectangular.mp4"
+        }
+      },
+      "pretrigger_comparison": {
+        "samples": 353,
+        "until_s": 35.30833333333333,
+        "max_object_position_difference_m": 0.10625372126427952,
+        "max_joint_difference_rad": 0.39005473256111145
+      }
+    }
+  ],
+  "note": "Matched seed and initial conditions; inspect pre-trigger divergence before attributing differences solely to hold control. Continued ascent may exceed height-variation check without being a slip. Relative movement is measured against the left TCP and can include intentional arm adjustment.",
+  "complete": true
+}
