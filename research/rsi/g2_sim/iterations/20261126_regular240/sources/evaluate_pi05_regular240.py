@@ -68,3 +68,5 @@ for asset in assets:
 
 
 subprocess.run([sys.executable,str(W/'export_pi05_focus_review.py'),'--run',a.run],cwd=W,check=True,timeout=3600)
+
+subprocess.run([sys.executable,str(W/'report_regular240_checkpoints.py')],cwd=W,check=True,timeout=600)
