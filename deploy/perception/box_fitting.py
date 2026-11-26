@@ -204,9 +204,8 @@ def scan_candidates(points, dimensions, origin, config):
 def _bounded_face_rays(all_points, origin, normal, tangent, plane_offset, edges, height, depth, config):
     """Prove free space just outside BOTH observed side edges using this scan.
 
-    The rays must cross the face's plane at box height and continue behind the
-    registered far face. A return on the plane is not free evidence. Independent
-    vertical samples prevent one duplicate ray from manufacturing an edge.
+    Use rays behind the far face, or rays to exposed floor outside a low
+    carton's ends when the floor cuts off the far-face vertical span.
     """
     rays = all_points-origin
     denominator = rays[:, :2] @ normal
@@ -218,16 +217,26 @@ def _bounded_face_rays(all_points, origin, normal, tangent, plane_offset, edges,
     far_u = (origin+far_fraction[:, None]*rays)[:, :2] @ tangent
     behind = plane_offset-all_points[:, :2] @ normal
     valid = (np.isfinite(fraction) & (fraction > 0.) & (fraction < 1.)
-             & (behind >= depth+config['boundary_ray_depth_margin_m'])
              & (crossing[:, 2] >= config['floor_clearance_m']+.02)
              & (crossing[:, 2] <= height-.025) & (all_points[:, 2] >= -.025))
+    depth_margin = config['boundary_ray_depth_margin_m']
+    past_box = behind >= depth + depth_margin
+    distance = -numerator
+    near_low_box = (0 < distance <= depth + depth_margin and origin[2] > 0.
+                    and edges[0] < origin[:2] @ tangent < edges[1])
+    endpoint_u = all_points[:, :2] @ tangent
     counts = []
     for sign, edge in ((-1, edges[0]), (1, edges[1])):
         gap = sign*(crossing_u-edge)
         far_gap = sign*(far_u-edge)
-        selected = (valid & (gap >= config['boundary_ray_min_gap_m'])
-                    & (gap <= config['boundary_ray_max_gap_m'])
-                    & (far_gap >= config['boundary_ray_min_gap_m']))
+        outside = past_box & (far_gap >= config['boundary_ray_min_gap_m'])
+        if near_low_box:
+            # The measured segment from crossing to ground remains outside
+            # the side plane. It establishes an edge, not free space under
+            # or behind the box; motion still uses independent sweep evidence.
+            floor = (np.abs(all_points[:, 2]) <= config['floor_clearance_m'])
+            outside |= floor & (behind >= 2*depth_margin) & (sign*(endpoint_u-edge) >= config['boundary_ray_min_gap_m'])
+        selected = valid & (gap >= config['boundary_ray_min_gap_m']) & (gap <= config['boundary_ray_max_gap_m']) & outside
         crossings = crossing[selected]
         # Quantize geometry rather than count repeated packet coordinates.
         independent = np.unique(np.floor(crossings/.01).astype(np.int64), axis=0)

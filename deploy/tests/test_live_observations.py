@@ -90,6 +90,22 @@ def test_slow_planner_keeps_identity_and_full_rate_recording(live):
     assert evidence.snapshot(time.monotonic())['B1']['invalid_reason'] is None
 
 
+def test_first_push_fits_full_carton_on_the_same_cropped_navigation_scan():
+    source, sink = Source(), Sink()
+    provider = RegisteredBoxPerception(config(), synchronous=True)
+    reference = SimpleNamespace(metadata={}, apply=lambda s, *_: s)
+    feed = LiveObservations(source, reference, sink, hz=10., max_age=.4, perception=provider,
+                            point_height=[-.1, .19], full_box_scan=True)
+    try:
+        snapshot, boxes, evidence = wait_for(lambda: read(feed))
+        points = snapshot.observation['sensors']['lidar']['pointcloud']
+        assert max(points[:, 2]) <= .19
+        assert boxes[0].id == 'B1'
+        assert evidence.snapshot(snapshot.captured_at)['B1']['latest_at'] == snapshot.lidar_at
+    finally:
+        feed.close()
+
+
 def test_window_can_lag_and_remains_across_goal_changes(monkeypatch):
     from deploy.perception.window_observer import WindowBoxObserver
     source, sink = Source(), Sink()

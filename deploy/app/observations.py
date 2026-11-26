@@ -19,10 +19,11 @@ import time
 
 class LiveObservations:
     def __init__(self, sensors, reference, session, *, hz, max_age, perception=None, window_observer=None,
-                 point_height=None, world_boundary=None, window_submit=None):
+                 point_height=None, world_boundary=None, window_submit=None, full_box_scan=False):
         self.sensors, self.reference, self.session = sensors, reference, session
         self.period, self.max_age = 1. / hz, max_age
         self.perception = perception
+        self.full_box_scan = full_box_scan
         self.point_height = point_height
         self.world_boundary = world_boundary
         self.lock = threading.Lock()
@@ -133,11 +134,13 @@ class LiveObservations:
                         if snapshot.captured_at >= record_due:
                             record_due = max(record_due, snapshot.captured_at - .5*self.period) + self.period
                             self.session.record_observation(snapshot)
+                        aligned_scan = snapshot
                         snapshot = snapshot.navigation_view(self.point_height, self.world_boundary)
                         if self.window_submit is not None:
                             self.window_submit(snapshot)
                         if self.perception is not None:
-                            boxes, evidence = self.perception.update(snapshot, time.monotonic())
+                            boxes, evidence = self.perception.update(aligned_scan if self.full_box_scan else snapshot,
+                                                                     time.monotonic())
                             frozen = evidence.freeze() if hasattr(evidence, 'freeze') else deepcopy(evidence)
                             result = (boxes, frozen)
                             delivery = self.perception.last_delivery

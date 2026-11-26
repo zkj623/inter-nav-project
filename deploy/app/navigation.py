@@ -10,6 +10,7 @@ from dataclasses import replace
 
 import numpy as np
 from scipy.ndimage import binary_dilation, distance_transform_edt, label
+from deploy.app.narrow_passage import PassageGrid, angle_error, find_passage
 from deploy.robot.safety import checked_velocity
 from deploy.interaction.execution import InteractionExecution
 from deploy.interaction.collision import ContactCollisionChecker
@@ -19,7 +20,7 @@ from deploy.interaction.skill_backend import create_push_skill
 from deploy.interaction.first_push import RegisteredFacePlanner
 from deploy.robot.observation import navigation_lidar
 from deploy.robot.world_boundary import WorldBoundary
-from grutopia_extension.interactive_navigation.box_push_navigation import BoxState
+from grutopia_extension.interactive_navigation.box_push_navigation import BoxDecision, BoxState
 
 from grutopia_extension.interactive_navigation.mapping import MappingConfig, OccupancyGridMap
 from grutopia_extension.interactive_navigation.online_navigation_map import OnlineNavigationMap
@@ -259,6 +260,7 @@ class NavigationEngine:
         self.interaction_command = None
         self.selector = OnlineGoalSelector()
         self._failed_push_probe = None
+        self.trial_targets = frozenset()
         self.velocity_limits = {
             'max_vx': float(self.config.get('max_forward_speed', .5)),
             'max_vy': float(self.config.get('max_lateral_speed', .18)),
@@ -270,6 +272,9 @@ class NavigationEngine:
         self.tracker = None
         self._prepared_tracker = None
         self.skill = None
+        self.narrow = None
+        self.narrow_attempt = None
+        self.narrow_stop = MeasuredStopGate()
         self.box_approach = None
         self.phase = 'idle'
         self.endpoint = None
@@ -854,12 +859,123 @@ class NavigationEngine:
             self.phase = 'decide'
         return self._brake()
 
+    def _try_narrow_passage(self):
+        start, goal = self.position[:2], self.goal[:2]
+        key = (self.layers.global_revision, self.layers.local_revision, self.planner.cell(start),
+               round(self.heading, 1))
+        if (self.narrow_attempt == key or not self.planner.valid_cell(self.planner.cell(start))
+                or not self.layers.global_observed[self.planner.cell(goal)]):
+            return False
+        with self.layers.global_planning() as boxes:
+            blocked = self.planner.blocked(boxes)
+            regions, _ = label(~blocked)
+            here, there = regions[self.planner.cell(start)], regions[self.planner.cell(goal)]
+            if here and here == there:
+                self.narrow_attempt = key
+                return False
+            if not here and not self._between_obstacles(start):
+                # A single nearby wall belongs to ordinary buffer recovery. Its
+                # cached exit must be allowed to run without another planning hold.
+                self.narrow_attempt = key
+                return False
+            self._planning_boundary('narrow_passage_search')
+            free = self.planner.free & self.layers.observed & ~self.layers.local_occupied & ~self.layers.global_tracked
+            plan = find_passage(self.planner, PassageGrid(self.planner, free), blocked, start, self.heading, goal)
+        self.narrow_attempt = key
+        if plan is None:
+            return False
+        self.narrow = plan
+        self.narrow_stop.reset()
+        self.phase = 'cross_passage'
+        self.goal_kind = 'narrow_entry'
+        self.narrow_stage = 'arrive'
+        self.tracker = None
+        if plan.approach and np.linalg.norm(start-plan.entry) > .13:
+            self.phase = 'navigate'
+            self.endpoint = tuple(plan.entry)
+            self.tracker = self._tracker(plan.approach, short_goal=True)
+        self.layers.global_path = plan.approach if self.tracker else (tuple(plan.entry), tuple(plan.exit))
+        self.layers.local_path = ()
+        self.layers.decision = dict(kind='navigate', reason='oriented_narrow_passage',
+            entry=plan.entry.tolist(), exit=plan.exit.tolist(), heading_rad=plan.heading)
+        self.events.append(dict(event='narrow_passage_selected', time_s=self.now, **self.layers.decision))
+        return True
+
+    def _between_obstacles(self, point):
+        occupied = self.layers.global_occupied | self.layers.local_occupied
+        planner = self.planner
+        radius = planner.navigation_route_radius + planner.resolution
+        distances = np.arange(planner.resolution / 2, radius, planner.resolution / 2)
+        for theta in np.arange(8) * math.pi / 8:
+            offset = np.array([math.cos(theta), math.sin(theta)])
+            sides = [[planner.cell(point + sign*d*offset) for d in distances] for sign in (-1, 1)]
+            if all(any(planner.valid_cell(cell) and occupied[cell] for cell in side) for side in sides):
+                return True
+        return False
+
+    def _leave_narrow(self, reason):
+        self.events.append(dict(event=reason, time_s=self.now))
+        self.narrow = self.tracker = self.endpoint = None
+        self.goal_kind = None
+        self.phase = 'decide'
+        self.layers.global_path = self.layers.local_path = ()
+        self.layers.decision = dict(kind='replan', reason=reason)
+        return self._output(np.zeros(3))
+
+    def _cross_narrow(self):
+        plan = self.narrow
+        grid = PassageGrid(self.planner, self.layers.observed & ~self.layers.local_occupied)
+        pos = self.position[:2]
+        error = angle_error(plan.heading, self.heading)
+        target = plan.entry if self.narrow_stage != 'cross' else plan.exit
+        delta = target-pos
+        distance = np.linalg.norm(delta)
+        request = np.zeros(3)
+        aligned = abs(error) <= .035
+        axes = np.array([[math.cos(self.heading), math.sin(self.heading)],
+                         [-math.sin(self.heading), math.cos(self.heading)]])
+        if not grid.clear(plan.entry if self.narrow_stage != 'cross' else pos, plan.exit, plan.heading):
+            return self._leave_narrow('narrow_passage_changed')
+        # At arrival, keep a zero request until measured approach motion settles.
+        if self.narrow_stage == 'align':
+            if not grid.can_turn(pos, self.heading, plan.heading):
+                return self._leave_narrow('narrow_turn_blocked')
+            if not aligned:
+                request[2] = np.clip(1.8*error, -.4, .4)
+        elif self.narrow_stage in ('center', 'cross'):
+            if not grid.clear(pos, target, self.heading) or not grid.can_turn(pos, self.heading, plan.heading):
+                return self._leave_narrow('narrow_sweep_blocked')
+            if distance > .025:
+                request[:2] = axes @ delta * min(1.2, .18/distance)
+            request[2] = np.clip(1.5*error, -.22, .22)
+            if aligned and distance <= .025:
+                request[:] = 0.
+        command, safe = checked_contact_turn_command(request, self.position, self.heading, self.planner,
+            self.layers.current_boxes, self.limiter, self.now)
+        if not safe:
+            return self._leave_narrow('narrow_command_blocked')
+        if np.any(request) or np.linalg.norm(command) > .02:
+            self.narrow_stop.reset()
+        elif self.narrow_stop.update(self.position, self.linear, self.angular, self.tilt, self.now):
+            self.narrow_stop.reset()
+            if self.narrow_stage == 'cross':
+                self.narrow_attempt = None
+                return self._leave_narrow('narrow_passage_crossed')
+            self.narrow_stage = {'arrive': 'align', 'align': 'center', 'center': 'cross'}[self.narrow_stage]
+        self.layers.decision['stage'] = self.narrow_stage
+        self.last_tracking = dict(controller='narrow_passage', stage=self.narrow_stage,
+                                  heading_error_rad=error, distance_m=float(distance))
+        return self._output(command)
+
     def _decide(self, recognition):
         if self.now < self.next_decision:
             return self._brake()
         self.layers.refresh_global(reason='decision')
-        # Match the release's decision-time body recovery before interpreting
-        # a blocked circular-plan seed as an unreachable task.
+        # A straight throat can put the robot inside both circular wall buffers.
+        # Check for an oriented way through before trying to back out of it.
+        if (not self.trial_targets and self.passage is None
+                and not self.recovery_pending_settle and self._try_narrow_passage()):
+            return self._brake()
         current = self.layers.current_boxes
         recovery = None
         if decision_recovery_required(self.planner, current, self.position[:2], self.heading, self.recovery_tracker):
@@ -939,7 +1055,23 @@ class NavigationEngine:
                                         'object_id': inspection.object_id, 'interaction_allowed': False}
                 return self._brake()
         self._planning_boundary('global_decision')
+        if self.trial_targets:
+            self.layers.refresh_global(reason='registered_first_contact')
+            free = self.planner.free
+            with self.layers.global_planning():
+                plan = self.planner.first_contact_plan(self.position[:2], current, self.trial_targets,
+                                                       self.planner.box_free & free, self.contact_profile)
+            if plan is not None:
+                decision = BoxDecision('push', 'registered_first_contact', push=plan, explanation={
+                    'box_id': plan.box_id, 'push_distance_m': plan.push_distance,
+                    'push_direction': list(plan.direction), 'approach_xy': list(plan.approach_xy)})
+                return self._apply_decision(decision, None, recognition)
+            if self.passage is None and self._try_narrow_passage():
+                return self._brake()
         decision, endpoint = self.selector.decide(self.layers, self.position[:2], self.goal[:2])
+        return self._apply_decision(decision, endpoint, recognition)
+
+    def _apply_decision(self, decision, endpoint, recognition):
         self.layers.decision = {**(decision.explanation or {}), 'kind': decision.kind,
                                 'reason': decision.reason, 'decision_time_s': self.now}
         event = {'event': 'decision', 'time_s': self.now, 'kind': decision.kind, 'reason': decision.reason}
@@ -1014,11 +1146,18 @@ class NavigationEngine:
             box.id for box in self.layers.current_boxes if self._permission(box.id, recognition) is not None)
         self.layers.interactable_ids = self.planner.interactable_ids
         if self.first_push:
-            # Selection may consider walking to a known box. The SDK lease is
-            # issued separately at the face, on the original scan's expiry.
-            candidates = self.pushable_ids.intersection(self.layers.detected_boxes) if (
-                self.config.get('interaction_enabled') and self.full_motion_feedback and not self.trial_used) else ()
-            self.planner.interactable_ids = frozenset(candidates)
+            previous_targets = self.trial_targets
+            # Walk to a known registered box even between face observations;
+            # starting contact still requires its current LiDAR permission.
+            self.trial_targets = (self.pushable_ids.intersection(self.layers.detected_boxes)
+                                  if self.config.get('interaction_enabled') and self.full_motion_feedback
+                                  and not self.trial_used else frozenset())
+            self.planner.interactable_ids = frozenset(self.trial_targets)
+            if (self.phase == 'navigate' and self.trial_targets - previous_targets
+                    and self.goal_kind != 'narrow_entry'):
+                self.tracker = None
+                self.phase = 'decide'
+                self.next_decision = self.now
         self.layers.interaction_source = ('registered_box_lidar' if self.interaction_source == 'registered_box_lidar' else 'rgb_dino_qwen_vl')
         self.layers.recognized_objects = {} if recognition is None else recognition.snapshot(self.now)
         if self.status != 'running':
@@ -1086,6 +1225,15 @@ class NavigationEngine:
             return self._skill_step(recognition)
         if self.phase.startswith('inspect_'):
             return self._inspect_step(recognition)
+        if self.phase == 'navigate' and self.goal_kind == 'narrow_entry' and np.linalg.norm(
+                self.position[:2]-self.narrow.entry) < .13:
+            self.phase = 'cross_passage'
+            self.tracker = None
+            self.layers.global_path = (tuple(self.narrow.entry), tuple(self.narrow.exit))
+            self.layers.local_path = ()
+            return self._output(np.zeros(3))
+        if self.phase == 'cross_passage':
+            return self._cross_narrow()
         distance = float(np.linalg.norm(self.position[:2]-np.asarray(self.goal[:2])))
         tolerance = float(self.config.get('success_distance', .25))
         if distance < tolerance:
@@ -1122,6 +1270,8 @@ class NavigationEngine:
         if self._reject_failed_frontier(detail):
             return self._brake()
         if detail.get('needs_replan') and self.now-self.last_replan >= self.layers.global_period:
+            if self.goal_kind == 'narrow_entry':
+                return self._leave_narrow('narrow_approach_blocked')
             self.tracker = None
             self.phase = 'decide'
             self.last_replan = self.now

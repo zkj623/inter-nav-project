@@ -480,6 +480,23 @@ def test_boundary_proof_requires_rays_stay_outside_and_pass_registered_far_face(
                              plane_offset, edges, .5, .4, DEFAULT_TRACKING) is None
 
 
+def test_close_registered_face_accepts_floor_only_when_both_ends_are_visible():
+    from deploy.perception.box_fitting import _bounded_face_rays
+    origin = np.array([-.06, 0., .264])
+    crossing = np.array([[0., side*.44, z] for side in (-1, 1)
+                         for z in np.linspace(.155, .237, 12)])
+    floor = origin + (origin[2]/(origin[2]-crossing[:, 2]))[:, None]*(crossing-origin)
+    def bounds(points):
+        return _bounded_face_rays(points, origin, np.array([-1., 0.]), np.array([0., 1.]),
+                                  0., (-.40, .40), .30, .30, DEFAULT_TRACKING)
+    assert bounds(floor) is not None
+    assert bounds(floor[floor[:, 1] > 0]) is None
+    # The same crossings ending at a raised surface before the far face
+    # cannot establish that the carton ends are independently visible.
+    elevated = origin + ((origin[2]-.09)/(origin[2]-crossing[:, 2]))[:, None]*(crossing-origin)
+    assert bounds(elevated) is None
+
+
 @pytest.mark.parametrize('options,valid', [({}, True), ({'sides':(-1,)}, False),
                                            ({'wall':True}, False), ({'truncated':True}, False)])
 def test_known_map_pose_requires_new_single_face_edges(options,valid):

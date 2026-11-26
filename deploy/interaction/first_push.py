@@ -1,13 +1,16 @@
-"""One short, measured push during point navigation, before loaded braking is calibrated."""
+"""Select and execute one measured push of a registered box during point navigation."""
 import math
 from dataclasses import replace
 
 import numpy as np
 
-from grutopia_extension.interactive_navigation.push_aside_skill import PushAsideSkill
+from grutopia_extension.interactive_navigation.push_aside_skill import PushAsideConfig, PushAsideSkill
 from grutopia_extension.interactive_navigation.side_push_navigation import SidePushPlanner
+from grutopia_extension.interactive_navigation.box_push_navigation import PushPlan
 from deploy.robot.localization import rotation
 from .box_motion import ObservedBoxMotion
+
+TRIAL_DISTANCE_M = .10
 
 
 class RegisteredFacePlanner(SidePushPlanner):
@@ -37,6 +40,45 @@ class RegisteredFacePlanner(SidePushPlanner):
         v = np.array([-u[1], u[0]])
         return (u, -u, v, -v)
 
+    def first_contact_plan(self, start, boxes, eligible, free, profile):
+        """Pick a reachable face with room for a short push and its stopping travel."""
+        best = None
+        reserve = profile.stopping_distance(profile.push_max_mps, pushing=True,
+                                            command_speed=profile.push_max_mps)
+        sweep = TRIAL_DISTANCE_M + reserve
+        for tracked in boxes:
+            if tracked.id not in eligible:
+                continue
+            box = self.oriented_box(tracked)
+            space = free.copy()
+            for other in boxes:
+                if other.id != box.id:
+                    mask = self.box_mask(other, padding=profile.stop_margin_m)
+                    if mask is None:
+                        space[:] = False
+                        break
+                    space &= ~mask
+            center = np.asarray(box.xy)
+            for i, direction in enumerate(self.push_directions(box)):
+                axis = i // 2
+                dimensions = list(box.dimensions)
+                extent = dimensions[axis] / 2
+                dimensions[axis] += sweep
+                swept_box = replace(box, dimensions=tuple(dimensions))
+                mask = self.box_mask(swept_box, xy=center + direction*sweep/2,
+                                     padding=profile.stop_margin_m)
+                if mask is None or not space[mask].all():
+                    continue
+                approach = center - direction*(extent + profile.nose_offset_m + PushAsideConfig.front_gap)
+                path = self.path(start, approach, boxes)
+                if not path:
+                    continue
+                score = self.length(start, path)
+                if best is None or score < best.score:
+                    best = PushPlan(box.id, box.xy, tuple(center + direction*TRIAL_DISTANCE_M),
+                                    tuple(direction), tuple(approach), path, TRIAL_DISTANCE_M, score)
+        return best
+
     def side_parking_allowed(self, box, destination, direction):
         if box.id not in self.active_passages:
             return False
@@ -48,18 +90,24 @@ class RegisteredFacePlanner(SidePushPlanner):
         return self.clearance(box, destination)['passage_clearance_margin_m'] >= .025
 
     def clearance(self, box, xy=None):
+        if box.id not in self.active_passages:
+            # A trial in an open room has no corridor parking objective.
+            return {'side_parked': False}
         return super().clearance(self.oriented_box(box), xy)
 
 
 class FirstPushSkill(PushAsideSkill):
     # Stop-command thresholds. Physical coast is measured separately after stopping.
-    stop_displacement = .04
+    stop_displacement = TRIAL_DISTANCE_M
     nose_travel_allowance = .04
-    near_seconds = 1.25
+    near_seconds = 5.
+    stall_seconds = 2.5
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.near_at = self.stop_at = None
+        self.progress_mark_m = 0.
+        self.last_progress_at = None
         self.contact_deadline = None
         self.start_base = self.stop_box = self.stop_base = None
         self.maximum_travel = None
@@ -92,6 +140,18 @@ class FirstPushSkill(PushAsideSkill):
         delta = np.asarray(ctx.box.xy)-self.engage_box_position
         return self._box_frame(ctx)[0] > .06 and np.linalg.norm(delta) < .015
 
+    def step(self, ctx):
+        result = super().step(ctx)
+        if (result.status == 'failed' and self.contact_started is not None
+                and result.reason in ('sdk_body_or_box_sweep_blocked', 'contact_motion_blocked')
+                and ctx.box_observation_id is not None and self.engage_box_position is not None):
+            along = (np.asarray(ctx.box.xy) - self.engage_box_position) @ self.direction
+            if along >= .02:
+                # The next command is blocked. Stop and measure what the push
+                # already achieved before declaring its result.
+                return self.stop_trial(ctx.now, ctx.position, result.reason, ctx.box)
+        return result
+
     def _step(self, ctx):
         # Preparatory motion keeps the entire box occupied. Starting engagement
         # requires a new scan and a measured stop at the selected face.
@@ -115,16 +175,21 @@ class FirstPushSkill(PushAsideSkill):
             delta = np.asarray(ctx.box.xy)-self.engage_box_position
             along = float(delta @ self.direction)
             body_travel = np.linalg.norm(ctx.position[:2]-self.start_base)
-            if self.near_at is None and (gap <= .035 or along >= .015):
-                self.near_at = ctx.now
+            if ((self.near_at is None and gap <= .035)
+                    or along >= self.progress_mark_m + self.backend.profile.box_position_tolerance_m):
+                if self.near_at is None:
+                    self.near_at = ctx.now
+                self.last_progress_at = ctx.now
+                self.progress_mark_m = max(self.progress_mark_m, along)
             reason = None
             if abs(delta @ self.tangent) >= .035 or along < -.02:
                 reason = 'box_moved_off_push_line'
             elif along >= self.stop_displacement:
                 reason = 'box_reached_trial_distance'
-            elif body_travel >= self.maximum_travel:
+            elif body_travel >= self.maximum_travel + np.clip(along, 0., self.stop_displacement):
                 reason = 'first_push_body_travel_limit'
-            elif self.near_at is not None and ctx.now >= self.near_at+self.near_seconds-.20:
+            elif self.near_at is not None and (ctx.now-self.last_progress_at >= self.stall_seconds
+                                                or ctx.now-self.near_at >= self.near_seconds-.20):
                 reason = 'first_push_time_limit'
             if reason:
                 return self.stop_trial(ctx.now, ctx.position, reason, ctx.box)

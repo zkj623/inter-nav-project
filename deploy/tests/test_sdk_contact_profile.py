@@ -368,11 +368,15 @@ def test_first_push_low_box_actual_contact_command_and_stop_threshold(stop):
     command = skill.step(ctx)
     assert command.status == 'running' and 0. < np.linalg.norm(command.velocity[:2]) <= .06
     if stop == 'displacement':
+        ctx.now = ctx.box_observed_at = 1.0
+        ctx.box_observation_id = 'scan:3'
         ctx.box = replace(ctx.box, xy=(.56,0.))
+        assert skill.step(ctx).status == 'running'
+        ctx.box = replace(ctx.box, xy=(.62,0.))
     elif stop == 'travel':
         ctx.position[0] += .07
     else:
-        ctx.now += 1.25
+        ctx.now += skill.stall_seconds
     result = skill.step(ctx)
     assert result.status == 'checking' and not any(result.velocity)
     assert result.reason == {'displacement':'box_reached_trial_distance', 'travel':'first_push_body_travel_limit',

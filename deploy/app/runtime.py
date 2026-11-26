@@ -72,13 +72,15 @@ def run_replay(args, config):
     worker = None
     point_height = config['navigation']['mapping'].get('point_height')
     boundary = WorldBoundary.from_navigation(config['navigation'])
-    packets = (packet.navigation_view(point_height, boundary) for packet in snapshots(args.replay))
+    full_box_scan = config['interaction'].get('first_push', False) and perception is not window
+    packets = snapshots(args.replay)
     try:
         if paced:
             from deploy.perception.window_process import WindowProcess
             worker = WindowProcess.replay(window.config, recorder, args.replay, point_height, boundary, box_memory=memory)
             packets = clock.play(packets, on_start=worker.begin)
-        for snapshot in packets:
+        for aligned_scan in packets:
+            snapshot = aligned_scan.navigation_view(point_height, boundary)
             now = snapshot.captured_at
             if snapshot.geometry_calibrated:
                 check_observation(snapshot, now, config['robot'], config['runtime']['control'],
@@ -92,7 +94,7 @@ def run_replay(args, config):
             if window is not None and window is not perception and worker is None:
                 window.publish(snapshot, now, recorder)
                 memory.observe(window.last_delivery, now)
-            velocity, handoff_event = handoff.update(tasks, snapshot, now)
+            velocity, handoff_event = handoff.update(tasks, aligned_scan if full_box_scan else snapshot, now)
             if window is not None and window is perception:
                 memory.observe(window.last_delivery, now)
             if handoff_event is not None:
@@ -237,7 +239,7 @@ def run_live(args, config):
             if window is not None:
                 from deploy.perception.window_process import WindowProcess
                 event = 'box_window_result' if perception is not None else 'perception_result'
-                if registered_cloud:
+                if lio_odometry:
                     # The box worker consumes the same experiment-frame scan as navigation.
                     window_process = WindowProcess.from_navigation_scans(window.config, session, event, boundary)
                     window_submit = window_process.submit
@@ -246,6 +248,7 @@ def run_live(args, config):
                 session.event(event, geometry_source='window_two_faces', detections=[], error='等待导航坐标系')
         observations = LiveObservations(sensors, reference, session, hz=nav['tick_hz'],
                                         max_age=robot['max_data_age_s'], perception=perception,
+                                        full_box_scan=config['interaction'].get('first_push', False),
                                         point_height=point_height, world_boundary=boundary, window_submit=window_submit)
         tasks = Tasks(nav, observations if perception is not None else None, interaction=config.get('interaction'),
                       box_memory=box_memory)
@@ -272,7 +275,7 @@ def run_live(args, config):
             push_enabled = (args.allow_motion and nav['interaction_enabled']
                             and any(row['push_allowed'] for row in window.config['boxes']))
             if push_enabled and tasks.engine.first_push:
-                print('首次短推已启用。箱子挡路时可试推一次，测到约 4 厘米位移就请求停稳复测。', flush=True)
+                print('首次推箱已启用。点导航时优先接近已登记箱体，目标推移 10 厘米，停稳后复测。', flush=True)
             else:
                 print('自主推箱已启用，接触前用当前扫描确认箱体。' if push_enabled else '本轮自主推箱已关闭。', flush=True)
         print(f"来源坐标系={'demo_odom' if args.demo else robot['map_frame']}；等待有效观测初始化 experiment；相机={robot['camera_mode']}", flush=True)

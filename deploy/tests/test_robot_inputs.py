@@ -446,8 +446,12 @@ def test_original_scans_follow_mid360_pose_even_when_old_odometry_underestimates
     from deploy.robot.localization import multiply, rotation
 
     source = sensor()
-    source.config = dict(load()['robot'], ground_z=0., cloud_odom_frame='odom',
-                         lidar_topic='/utlidar/cloud_deskewed', lidar_origin_offset_base_m=[.28216003, 0., 0.])
+    from deploy.app.config import ROOT
+    source.config = dict(load(interaction_path=ROOT/'configs/box_30x80x30.yaml')['robot'], ground_z=0.)
+    assert source.config['sensor_profile'] == 'mid360s_lio_utlidar'
+    assert source.config['lidar_topic'] == '/utlidar/cloud_deskewed'
+    assert source.config['odom_topic'] == '/bot1/lidar_slam/odom'
+    assert source.config['cloud_odom_topic'] == '/utlidar/robot_odom'
     source.mixed = MixedCloud(source.config)
     source.mount = source.mixed.mount
     source.mid360s, source.matched_scan = True, None

@@ -508,3 +508,93 @@ def test_first_push_dispatch_review_and_same_goal_replan():
         assert engine.trial_used
     finally:
         provider.close()
+
+
+def test_first_push_in_open_room_from_navigation_to_measured_result():
+    from deploy.app.config import ROOT, load
+    from deploy.interaction.config import tracking_config
+    from deploy.interaction.first_push import TRIAL_DISTANCE_M
+    from deploy.perception.box_memory import BoxMapMemory
+    config = load(interaction_path=ROOT/'configs/box_30x80x30.yaml')
+    field = config['interaction']
+    nav = config['navigation']
+    mount = config['robot']['lidar_origin_offset_base_m']
+    memory = BoxMapMemory()
+    engine = NavigationEngine(nav, field, box_memory=memory)
+    provider = RegisteredBoxPerception(tracking_config(field), synchronous=True, box_memory=memory,
+                                       world_boundary=engine.world_boundary)
+    # Prior scans surveyed the empty floor. Live synthetic returns below describe
+    # the two faces of the registered carton, with its 80 cm side along Y.
+    layers = engine.layers
+    layers.observed[layers.interior] = True
+    layers.evidence.log_odds[layers.interior] = -4.
+    layers.refresh_global(reason='surveyed_room')
+    layers._bind_local()
+    evidence = engine.contact_collision.evidence
+    evidence.observed[:] = True
+    evidence.log_odds[:] = -4.
+    center = np.array([1.1, -.55])
+    initial = center.copy()
+    pose = np.array([.05, -.59, .311])
+    yaw, velocity = 0., np.zeros(3)
+    height, u = np.meshgrid(np.linspace(.035, .29, 9), np.linspace(-1., 1., 22))
+    front = np.c_[np.full(u.size, -.15), u.ravel()*.40, height.ravel()]
+    side = np.c_[u.ravel()*.15, np.full(u.size, -.40), height.ravel()]
+    faces = np.vstack([front, side])
+    try:
+        for i in range(1, 451):
+            now = i*.12
+            c, s = np.cos(yaw), np.sin(yaw)
+            axes = np.array([[c, -s], [s, c]])
+            scan_pose = pose.copy()
+            if i <= 2:
+                scan_pose[1] = center[1]-.85
+            origin = scan_pose + np.r_[axes @ mount[:2], mount[2]]
+            if i <= 2:
+                # Initial survey from a second viewpoint before the navigation trial.
+                points = faces.copy()
+                points[:, :2] += center
+            else:
+                points = front.copy()
+                points[:, :2] += center
+                # Observed background rays pass outside the two ends of the front face.
+                crossings = np.array([[center[0]-.15, center[1]+edge*.445, z] for edge in (-1, 1)
+                                      for z in np.linspace(.09, .274, 30)])
+                wall_scale = (center[0]+.50-origin[0]) / (center[0]-.15-origin[0])
+                floor_scale = origin[2] / np.maximum(.001, origin[2]-crossings[:, 2])
+                scale = np.minimum(wall_scale, floor_scale)[:, None]
+                points = np.vstack([points, origin + scale*(crossings-origin)])
+            points += np.random.default_rng(4).normal(0., .001, points.shape)
+            obs = dict(position=scan_pose, orientation=np.array([np.cos(yaw/2), 0., 0., np.sin(yaw/2)]),
+                       velocity=velocity.copy(), body_linear_velocity=np.array([*velocity[:2], 0.]),
+                       body_angular_velocity=np.array([0., 0., velocity[2]]), lidar_captured_at=now,
+                       sensors={'lidar': dict(pointcloud=points, physics_step=i, max_range=6., min_range=.10,
+                                              position=origin)})
+            packet = Snapshot(obs, now, now, now, None, tuple(velocity), i, planning_frame="experiment",
+                              coordinate_transform={"source_frame": "synthetic_odom"})
+            boxes, recognition = provider.update(packet, now)
+            obs = packet.navigation_view(nav['mapping']['point_height'], engine.world_boundary).observation
+            if i <= 2:
+                engine.observe(obs, now, boxes)
+                continue
+            if i == 3:
+                engine.set_goal((2.4, -.75, .31), now)
+            velocity = engine.update(obs, now, boxes, recognition)
+            if engine.execution.awaiting_stop:
+                engine.interaction_stopped()
+            if engine.trial_report or velocity is None:
+                break
+            pose[:2] += .12 * (axes @ velocity[:2])
+            yaw += .12*velocity[2]
+            # Ideal non-slip forward contact only moves the box once the nose reaches it.
+            if engine.execution.active and abs(pose[1]-center[1]) < .36:
+                center[0] = max(center[0], pose[0] + .34*np.cos(yaw) + .15)
+        assert engine.trial_report and engine.trial_report['reason'] == 'first_push_observed', (
+            engine.result, engine.phase, engine.decision, engine.contact_collision.diagnostic, pose, center, provider.last_delivery)
+        displacement = engine.trial_report['first_push']['displacement_m']
+        assert .02 <= displacement <= TRIAL_DISTANCE_M + .015
+        assert displacement == pytest.approx(center[0]-initial[0], abs=.008)
+        assert engine.trial_used and engine.phase == 'decide'
+        assert any(event.get('reason') == 'registered_first_contact' for event in engine.events)
+    finally:
+        provider.close()
