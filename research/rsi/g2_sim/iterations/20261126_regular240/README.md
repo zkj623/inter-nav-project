@@ -112,3 +112,21 @@ Cosine decay now spans 596613 steps (20 nominal epochs), including the initial
 stages; no optimizer training had started when this was changed. The original
 training_plan.json describes only the initial five-epoch stage; the extended
 plan describes the full requested schedule.
+
+## Recovery on 2026-11-27
+
+All 240 episodes finished preprocessing. The first four-GPU run started at
+02:56:43 but stopped at 03:01:16 after approximately 34 optimizer steps because
+GPU 0/4 free memory fell below the 1536 MiB safety floor. Available host memory
+was 191.9 GiB and swap I/O was zero. No completed checkpoint or policy evaluation
+was produced. The original continuation correctly refused to proceed after failure,
+but the initial supervisor lacked automatic resource-recovery handling.
+
+recover_pi05_regular240.py replaces both supervisors, reuses the completed data
+and covers stages 1/3/5/10/15/20 in one process. It selects four GPUs with at
+least 22000 MiB free before each training attempt. After GPU-memory/resource
+pressure it stops only its own child, cools down currently busy cards, selects
+available cards again and resumes a completed checkpoint when one exists.
+Resource retries are bounded to eight per training stage; unrelated jobs are
+never terminated. Unexpected non-resource training errors still stop for diagnosis.
+The initial recovery selection was physical GPUs 6/7/2/5, batch 8.
