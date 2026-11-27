@@ -10,38 +10,43 @@
 | `grutopia_extension/interactive_navigation/` | 共享地图、决策、规划、技能和几何查询；包含原仿真默认执行后端 |
 | `deploy/app/` | 真机会话、任务生命周期、导航调度、启停与命令交接 |
 | `deploy/app/observations.py` | 独立观测线程：坐标适配、持续跟踪、原始观测发布；向导航交付固定的一对观测与证据 |
-| `deploy/perception/` | 当前 LiDAR 的登记箱体跟踪；视觉接口保留为诊断来源 |
+| `deploy/perception/` | MID-360S 单帧箱面复核、多帧拟合与本轮箱位记忆 |
 | `deploy/interaction/` | SDK 参数、执行后端、接触检查、箱体停稳和回放交接 |
 | `deploy/robot/` | ROS/SDK 边界、时间与坐标适配、独立运动 writer |
 | `deploy/visualization/`、`deploy/recording/` | 读取同一会话，显示和保存证据；不创建另一套导航决策 |
 | `tests/`、`deploy/tests/` | 分别覆盖共享/仿真行为与真机适配；合成输入不作为物理验收 |
 | `reproduction/`、`delivery/` | 仿真资产、固定任务复现和历史交付证据 |
 
-## 导航与交互链路
+## 真机从观测到运动
+
+`deploy/run.py` 加载配置并选择真机、诊断或回放入口。真机由 `run_live()` 组装模块。默认配置只做点导航。现场箱体配置 `box_30x80x30.yaml` 启用首次短推，`--box-window` 另外启用多帧认箱。下图以这组现场配置为例。
 
 ```mermaid
 flowchart TD
-    SIM[仿真入口与观测] --> MAP[OnlineNavigationMap]
-    REAL[run / ROS / ExperimentFrame] --> FEED[LiveObservations 独立观测线程]
-    TRACK[RegisteredBoxPerception] --> FEED
-    FEED --> TASK[Tasks / NavigationEngine]
-    FEED --> RECORD[原始观测记录通道]
-    TASK --> MAP
-    MAP --> SELECT[OnlineGoalSelector]
-    SELECT --> PLAN[SidePushPlanner]
-    PLAN --> SKILL[PushAsideSkill 唯一阶段循环]
-    DEFAULT[默认 PushAsideBackend] -. 提供执行原语 .-> SKILL
-    SDK[显式注入 SdkPushBackend] -. 提供执行原语 .-> SKILL
-    SKILL --> INTENT[SkillCommand]
-    INTENT --> SIMOUT[仿真 runner / loco 控制器]
-    INTENT --> CONTROL[NavigationEngine / NavigationController]
-    CONTROL --> WRITER[MotionProcess / CommandGuard]
+    ROS[MID-360S 点云 / Swarm-LIO 位姿] --> OBS[LiveObservations / ExperimentFrame]
+    OBS -->|导航点云与位姿| ENG[Tasks / NavigationEngine]
+    OBS --> TRACK[RegisteredBoxPerception]
+    TRACK -->|与观测配对的当前箱面证据| ENG
+    OBS --> WIN[WindowProcess 多帧拟合]
+    WIN --> MEM[BoxMapMemory 箱位记忆]
+    TRACK --> MEM
+    MEM -->|已知箱位| ENG
+    ENG -->|选箱与推向| SKILL[FirstPushSkill / SdkPushBackend]
+    SKILL -->|动作意图与复测结果| ENG
+    ENG -->|期望速度| CTRL[NavigationController]
+    CTRL --> WRITER[MotionProcess / CommandGuard / ContactGuard]
     WRITER --> SPORT[SportClient.Move]
 ```
 
-图中实线表示数据与阶段流，虚线表示后端注入；调用调度由仿真 runner 或真机 NavigationEngine 完成。共享模块只依赖通用接口，不导入 deploy，也不按 `sdk` 字符串选择实现。仿真直接构造技能时使用默认后端；真机由 `deploy/interaction/skill_backend.py:create_push_skill()` 注入 SDK 后端。技能和后端只产生动作意图，真机命令统一交给独立 writer。
+多帧点云让稀疏的箱面逐渐清楚，`Session` 把有效箱位写入 `BoxMapMemory`，供地图显示和接近规划使用。接触前，`RegisteredBoxPerception` 用当前扫描复核箱体身份与箱面。普通 `view.py` 和 `record.py` 从同一个 `Session` 读取地图、观测和事件。离线回放复用 `Tasks`，通过录制的机身运动反馈判断停稳。
 
-完整任务仍为：探索/导航 → 比较绕行与推移 → 选择箱体、推向和停放位置 → 接近与对齐 → 推移与退出 → 新扫描确认整机通道 → 恢复原目标并停稳。
+| 模式 | 规划与执行 | 完成依据 |
+|---|---|---|
+| 默认点导航 | `NavigationEngine` 调用共享地图、`OnlineGoalSelector` 和路径跟踪器，选择直达、绕行或探索 | 到达输入目标并停稳 |
+| 首次短推 | 对已知的可推箱，`RegisteredFacePlanner` 优先寻找可达且有刹停空间的箱面。地图箱位可引导接近。当前扫描确认后，由 `FirstPushSkill` 复用共享技能的对齐和接触动作 | 沿推向约 10 cm 请求停车。停稳后，新扫描测得沿推向至少 2 cm、横移小于 3.5 cm，且本次未因偏离推向而停，才记为成功并对原目标重新规划 |
+| 完整推箱 | 使用实测接触参数，由共享规划器比较绕行与侧推。`PushAsideSkill` 调用 `SdkPushBackend` 执行接近、推移和退出 | 新扫描确认整机通道，运动端确认停稳后，导航继续前往原目标 |
+
+仿真通过同一共享技能调用默认后端，输出交给仿真控制器。真机通过 `create_push_skill()` 选择首次短推或完整技能，两者的运动命令最终都经过 `MotionProcess`。[技能工厂](deploy/interaction/skill_backend.py)
 
 ## 模块之间的约定
 
@@ -49,10 +54,10 @@ flowchart TD
 |---|---|---|
 | Sensors → Tasks | `Snapshot`：规划坐标中的点云、机器人位姿/速度与原始采集时刻 | 检查新鲜度；同一周期的感知结果只消费一次 |
 | Perception → NavigationEngine | 完整 `BoxState`、登记权限、关联代次、源扫描时间与 ID | 当前几何与地图可见性共同决定能否交互 |
-| Planner → Skill | 箱体、推向、推距和任务起终点 | 推进唯一阶段循环，不直接改动物体或机器人位姿 |
+| Planner → Skill | 箱体、推向、推距和任务起终点 | 按所选技能推进阶段，返回动作意图 |
 | Skill → Backend | 当前上下文、控制目标与阶段需求 | 根据对应执行系统生成原语和测量依据，不另建状态机 |
 | Engine → Controller → Writer | 机身速度、执行代次、源观测期限和绝对预算 | 最终限速、超时、接管和停稳；请求回执不等于物理成功 |
-| Skill → Navigation | 新扫描支持的通道证书 | 完成停稳交接后才能继续决策，不能提前开启下一次推箱 |
+| Skill → Navigation | 首次短推给出停后位移，完整推箱给出通道证书 | 完成相应的停稳交接和复核，再决定下一段路线 |
 
 耗时规划在 writer 停稳后执行。观测线程持续采集和更新箱体身份，原始观测以采集频率发布；它不访问地图、技能或运动 writer。导航每轮读取固定的 Snapshot 与箱体证据，后台更新不能改写正在计算的证据；开始/恢复任务通过代次重置，旧代次的拟合结果不能重新出现。地图和技能仍由导航主线程独占，恢复运动前必须用新观测重新检查。
 
@@ -61,6 +66,12 @@ flowchart TD
 技能若在无输出期间完成，使用该次匹配的停稳确认交接，不先重新启用再停止。控制周期预算仅用于决定是否提前停稳；真实观测截止时间与 writer 的硬截止独立执行。
 
 SDK 的平移与转向停止响应分别配置。接近、转向、恢复中的扫掠检查覆盖相应停止响应；接触阶段还独立检查未被目标图层擦除的实测点云及箱体停止空间。
+
+## 真机推箱的排查顺序
+
+1. 先查 `box_window_result`。地图上的箱位和长边方向用于选择接近位置。
+2. 查 `decision` 是否选中推箱。从记忆箱位接近时，`box_face_aligned` 记录转正，`box_face_confirmed` 记录转正后新扫描确认了箱面。已有当前扫描许可时，导航器可直接启动技能，对齐和推路检查在技能内完成。
+3. 查 `push_speed_sent`，确认运动端实际发出了第一条顶箱速度。停车后查 `first_push_result` 的停止原因和实测位移。与现场箱底标记对照，再看原导航目标的 `task_result`。
 
 ## 仿真隔离与验证范围
 

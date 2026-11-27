@@ -126,7 +126,7 @@ def test_live_entrypoint_rebases_before_map_boundary_check(monkeypatch):
     from deploy.app import keyboard, runtime, session
     from deploy.robot import sensors
     from deploy.robot.timebase import SourceTimeBridge
-    from deploy.tests.test_robot_inputs import sensor, odometry, cloud
+    from deploy.tests.test_robot_inputs import sensor, odometry, matched_packet
     source = sensor()
     clock_samples = [(10_000_000_000+i*100_000_000, 1_800_000_000_000_000_000+i*100_000_000)
                      for i in range(31)]
@@ -138,9 +138,8 @@ def test_live_entrypoint_rebases_before_map_boundary_check(monkeypatch):
     def start_sensors(*args):
         # Live ROS subscription starts after display-process initialization.
         # Produce fresh messages at that same boundary in this fixture.
-        source._pose(message)
-        source._lidar(cloud(1_000_000_000))
-        source.lidar[1]['pointcloud'] = np.array([[30., 42., -.05], [29., 42., .7]])
+        matched_packet(source, message)
+        source.matched_scan[1][1]['pointcloud'] = np.array([[30., 42., -.05], [29., 42., .7]])
         return source
     monkeypatch.setattr(sensors, 'RosSensors', start_sensors)
     polls = [0]

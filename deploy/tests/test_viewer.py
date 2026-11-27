@@ -112,20 +112,15 @@ def test_actual_http_has_only_read_routes_and_explicit_demo():
         with urlopen(url + '/') as response:
             html = response.read().decode()
             assert '累计点云图' in html and '前置 RGB' in html
-            assert 'id="tagToggle" aria-pressed="false"' in html
+            assert '/tags/' not in html and 'tagToggle' not in html
             assert 'id="boxMap"' in html
         with urlopen(url + '/box_map.js') as response:
             assert response.headers.get_content_type() == 'text/javascript' and response.read()
-        for script in ('overlay.js', 'worker.js', 'js-aruco2/cv.js', 'js-aruco2/aruco.js',
-                       'js-aruco2/apriltag_36h11.js'):
-            with urlopen(url + '/tags/' + script) as response:
-                assert response.headers.get_content_type() == 'text/javascript'
-                assert response.read()
         with urlopen(url + '/api/frame') as response:
             state = json.load(response)
             assert state['demo'] and state['rgb'] is None
             assert state['cloud']['points'] == [[1, 2, 3]]
-        for path, method, expected in [('/move', 'GET', 404), ('/api/frame', 'POST', 501), ('/../configs/robot.yaml', 'GET', 404)]:
+        for path, method, expected in [('/tags/overlay.js', 'GET', 404), ('/move', 'GET', 404), ('/api/frame', 'POST', 501), ('/../configs/robot.yaml', 'GET', 404)]:
             with pytest.raises(HTTPError) as exc:
                 urlopen(Request(url + path, method=method))
             assert exc.value.code == expected

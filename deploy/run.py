@@ -30,7 +30,7 @@ def main(argv=None):
     parser.add_argument('--goal', nargs=2, type=float, metavar=('X', 'Y'))
     parser.add_argument('--output', type=Path, help='diagnostic/replay output only; live recording uses record.py')
     parser.add_argument('--session-port', type=int, default=8765, help='read-only data feed for view.py and record.py')
-    parser.add_argument('--camera', choices=('sdk', 'ros', 'none'), default='sdk', help='preview RGB source; never substitutes for RGB-D')
+    parser.add_argument('--camera', choices=('sdk', 'ros', 'none'), default='sdk', help='front RGB preview source')
     parser.add_argument('--rgb-topic', help='sensor_msgs/Image topic for --camera ros')
     mode.add_argument('--demo', action='store_true', help='synthetic inputs through the real mapper; no robot connection')
     parser.add_argument('--demo-seconds', type=float, default=0., help='optional demo time limit; 0 runs until Ctrl+C')

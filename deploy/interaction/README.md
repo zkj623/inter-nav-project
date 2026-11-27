@@ -1,6 +1,6 @@
 # 推箱执行适配
 
-这个目录负责真实传感器和 SportClient 的执行差异。探索、绕行/推移决策、推箱阶段循环及通道几何证明继续复用共享算法。
+这个目录负责首次短推、完整推箱的 SDK 适配，以及接触和停稳检查。首次短推测量箱子移动了多远。完整推箱还要确认机器人能从腾出的通道通过。
 
 ## 调用关系
 
@@ -8,12 +8,10 @@
 LiveObservations：采集 Snapshot → RegisteredBoxPerception → 固定观测/证据对
   ↓
 Tasks → NavigationEngine
-          ├─ OnlineGoalSelector / SidePushPlanner
-          └─ create_push_skill(..., profile)
-               └─ PushAsideSkill（唯一状态机）
-                    └─ SdkPushBackend
-                         ├─ SdkNavigationMotion / SdkHeadingTrim
-                         └─ ObservedBoxMotion
+          ├─ RegisteredFacePlanner → FirstPushSkill（首次短推）
+          └─ OnlineGoalSelector / SidePushPlanner → PushAsideSkill（完整推箱）
+
+create_push_skill() 按接触配置选择技能，两者都使用 SdkPushBackend。
 
 SkillCommand → NavigationEngine → NavigationController
              → MotionProcess / ContactGuard → SportClient.Move
@@ -26,6 +24,7 @@ SkillCommand → NavigationEngine → NavigationController
 | 文件 | 职责与调用边界 |
 |---|---|
 | `config.py` | 配置检查、provider 工厂、writer 限额；live/replay 共用 |
+| `first_push.py` | 根据登记箱体朝向选择可达的箱面，检查短推和刹停空间，停后复测位移 |
 | `profile.py` | 全字段显式填写的 SDK 参数；统一平移/转向停止响应计算，无仿真参数继承或默认标定 |
 | `skill_backend.py` | 工厂组装共享技能，SDK 后端提供权限校验、运动原语、执行检查和通道观测证据 |
 | `motion.py` | SDK 对齐/转向/导航恢复原语；`bind(planner)` 仅设置该 planner 的运动后端、足部几何和接触余量 |
@@ -36,7 +35,7 @@ SkillCommand → NavigationEngine → NavigationController
 
 ## 共享层边界
 
-`PushAsideSkill` 只有一个阶段循环。它接受可选 `backend=`；不提供时使用共享 `PushAsideBackend` 的原仿真实现。SDK 的实际实现继承这个接口，位于本目录。共享文件不导入 deploy，不识别 `sdk` 配置或 `registered_box_lidar` 来源。
+`FirstPushSkill` 继承 `PushAsideSkill`，复用对齐和接触动作，另外处理短推的停止和测量。真机技能工厂为两者注入 `SdkPushBackend`。仿真直接使用共享技能时，使用默认的 `PushAsideBackend`。真机各模块及箱位记忆的关系见[项目结构](../../ARCHITECTURE.md#真机从观测到运动)。
 
 后端接口按职责分为：
 

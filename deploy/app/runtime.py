@@ -11,12 +11,12 @@ from deploy.recording.recorder import Recorder
 from deploy.robot.observation import ExperimentFrame
 from deploy.robot.world_boundary import WorldBoundary
 from deploy.robot.safety import check_observation, checked_velocity
-from deploy.interaction.config import box_window_height_limits, create_perception
+from deploy.interaction.config import box_window_config, box_window_height_limits, create_perception
 
 
 def check(config):
     required = ('numpy', 'cv2', 'yaml', 'requests', 'scipy')
-    optional = ('rclpy', 'tf2_ros', 'sensor_msgs', 'nav_msgs', 'unitree_sdk2py')
+    optional = ('rclpy', 'sensor_msgs', 'nav_msgs', 'unitree_sdk2py')
     status = {name: importlib.util.find_spec(name) is not None for name in required+optional}
     Tasks(config['navigation'], interaction=config.get('interaction'))
     try:
@@ -30,16 +30,13 @@ def check(config):
                       'navigation_point_height_m': config['navigation']['mapping'].get('point_height'),
                       'box_window_point_height_m': box_window_height_limits(config),
                       'startup_clear_area': config['navigation'].get('startup_clear_area'),
-                      'camera_mode': config['robot']['camera_mode'],
                       'navigation_backend': 'simulation_release_online_navigation',
                       'interaction_enabled': config['navigation']['interaction_enabled'],
                       'first_push': config.get('interaction', {}).get('first_push', False),
-                      'interaction_source': config.get('interaction', {}).get('source', 'rgbd'),
+                      'interaction_source': config['interaction']['source'],
                       'registered_boxes': len(config.get('interaction', {}).get('boxes', [])),
                       'contact_profile_configured': config.get('interaction', {}).get('contact_profile') is not None,
-                      'interaction_geometry_verified': (config.get('interaction', {}).get('geometry_verified', False)
-                          if config.get('interaction', {}).get('source') == 'registered_box_lidar'
-                          else config['runtime']['perception']['geometry_verified']),
+                      'interaction_geometry_verified': config['interaction']['geometry_verified'],
                       'geometry_calibrated': config['robot']['ground_z'] is not None and
                                              config['robot']['lidar_origin_offset_base_m'] is not None,
                       'MCF': 'kept running; no mode release or joystick switching'}, indent=2))
@@ -61,10 +58,15 @@ def run_replay(args, config):
     from deploy.interaction.replay import RecordedInteractionHandoff
     paced = getattr(args, 'realtime', False)
     memory = BoxMapMemory()
-    window = create_perception(config, box_window=True, live=paced) if getattr(args, 'box_window', False) else None
-    perception = (window if window is not None and args.task == 'observe' and not paced
-                  else create_perception(config, synchronous=True, box_memory=memory))
-    tasks = Tasks(config['navigation'], None if perception is window else perception,
+    tracking = box_window_config(config) if getattr(args, 'box_window', False) else None
+    boundary = WorldBoundary.from_navigation(config['navigation'])
+    window = None
+    if tracking is not None and not paced:
+        from deploy.perception.window_observer import WindowBoxObserver
+        window = WindowBoxObserver(tracking, world_boundary=boundary)
+    window_only = window is not None and args.task == 'observe'
+    perception = window if window_only else create_perception(config, synchronous=True, box_memory=memory)
+    tasks = Tasks(config['navigation'], None if window_only else perception,
                   interaction=config.get('interaction'), box_memory=memory)
     handoff = RecordedInteractionHandoff(config['runtime']['control'], config['robot']['max_data_age_s'])
     recorder = _recorder(args, config, 'offline_replay_no_motion')
@@ -75,14 +77,13 @@ def run_replay(args, config):
     clock = ReplayClock() if paced else None
     worker = None
     point_height = config['navigation']['mapping'].get('point_height')
-    window_height = box_window_height_limits(config) if window is not None else point_height
-    boundary = WorldBoundary.from_navigation(config['navigation'])
-    full_box_scan = config['interaction'].get('first_push', False) and perception is not window
+    window_height = box_window_height_limits(config) if tracking is not None else point_height
+    full_box_scan = config['interaction'].get('first_push', False) and not window_only
     packets = snapshots(args.replay)
     try:
         if paced:
             from deploy.perception.window_process import WindowProcess
-            worker = WindowProcess.replay(window.config, recorder, args.replay, window_height, boundary, box_memory=memory)
+            worker = WindowProcess.replay(tracking, recorder, args.replay, window_height, boundary, box_memory=memory)
             packets = clock.play(packets, on_start=worker.begin)
         for aligned_scan in packets:
             snapshot = aligned_scan.navigation_view(point_height)
@@ -97,9 +98,9 @@ def run_replay(args, config):
                 tasks.start('navigate', (*args.goal, float(snapshot.observation['position'][2])), now)
                 started = True
             perception_scan = aligned_scan if full_box_scan else snapshot
-            if window is not None and worker is None:
+            if window is not None:
                 window_scan = aligned_scan.navigation_view(window_height, boundary)
-                if perception is window:
+                if window_only:
                     window.update(window_scan, now)
                 else:
                     window.publish(window_scan, now, recorder)
@@ -109,7 +110,7 @@ def run_replay(args, config):
                 recorder.event(handoff_event.pop('event'), **handoff_event)
             if perception is not None:
                 delivery = perception.last_delivery
-                if delivery is not None and (perception is not window or delivery is not previous_delivery):
+                if delivery is not None and (not window_only or delivery is not previous_delivery):
                     recorder.event('perception_result', **delivery)
                 previous_delivery = delivery
             while tasks.engine.events:
@@ -139,7 +140,7 @@ def run_replay(args, config):
                 worker.close(drain=error is None and reason == 'recording_exhausted')
             except RuntimeError as exc:
                 error, reason = str(exc), 'box_window_replay_error'
-        elif window is not None and window is not perception:
+        elif window is not None and not window_only:
             window.close()
         try:
             if tasks.map_ready:
@@ -173,14 +174,11 @@ def run_live(args, config):
     from deploy.robot.motion import MotionProcess
     if args.allow_motion:
         check_motion_configuration(config)
-    window = create_perception(config, box_window=True, live=True) if getattr(args, 'box_window', False) else None
+    tracking = box_window_config(config) if getattr(args, 'box_window', False) else None
     robot, nav, runtime = config['robot'], config['navigation'], config['runtime']
-    registered_cloud = robot.get('sensor_profile') == 'mid360s_lio'
-    lio_odometry = registered_cloud or robot.get('sensor_profile') == 'mid360s_lio_utlidar'
     control = runtime['control']
     reference = ExperimentFrame(0. if args.demo else robot['ground_z'])
-    separate_cloud = True
-    session = Session(config, REPO, port=args.session_port, demo=args.demo, separate_cloud=separate_cloud,
+    session = Session(config, REPO, port=args.session_port, demo=args.demo,
                       mode='synthetic_demo' if args.demo else ('live_motion_enabled' if args.allow_motion else 'live_observe_only'))
     box_memory = session.box_memory if config['interaction'].get('boxes') else None
     print(f'本轮会话：{session.info["session_id"]}；数据服务：{session.url}', flush=True)
@@ -189,7 +187,7 @@ def run_live(args, config):
     window_process = None
     window_submit = None
     point_height = nav['mapping'].get('point_height')
-    window_height = box_window_height_limits(config) if window is not None else point_height
+    window_height = box_window_height_limits(config) if tracking is not None else point_height
     boundary = WorldBoundary.from_navigation(nav)
     snapshot = None
     started_at = time.monotonic()
@@ -209,28 +207,25 @@ def run_live(args, config):
         else:
             topic = args.rgb_topic or robot['rgb_topic']
             print('正在采样传感器时间参照（约 3 秒）；不修改 Orin 系统时间。', flush=True)
-            if (args.allow_motion and window is not None
-                    and lio_odometry
-                    and args.camera != 'ros' and robot['camera_mode'] != 'rgbd'):
+            if args.allow_motion and tracking is not None and args.camera != 'ros':
                 # Keep ROS subscriptions and high-rate IMU callbacks off the control thread.
                 from deploy.robot.sensor_process import RosSensorProcess
                 sensors = RosSensorProcess(robot)
             else:
                 sensors = RosSensors(robot, session.rgb if args.camera == 'ros' else None,
                                      topic if args.camera == 'ros' else None)
-            if lio_odometry:
-                robot = sensors.config
-                reference = ExperimentFrame(robot['ground_z'])
-                session.event('lio_observation_reference', pose_frame=robot['base_frame'],
-                              ground_z=robot['ground_z'], lidar_origin_offset=robot['lidar_origin_offset_base_m'])
-                print(f"里程计 {robot['odom_topic']}，点云 {robot['lidar_topic']}，"
-                      f"位姿参考点 {robot['base_frame']}，本次地面 Z={robot['ground_z']} m", flush=True)
+            robot = sensors.config
+            reference = ExperimentFrame(robot['ground_z'])
+            session.event('lio_observation_reference', pose_frame=robot['base_frame'],
+                          ground_z=robot['ground_z'], lidar_origin_offset=robot['lidar_origin_offset_base_m'])
+            print(f"里程计 {robot['odom_topic']}，点云 {robot['lidar_topic']}，"
+                  f"位姿参考点 {robot['base_frame']}，本次地面 Z={robot['ground_z']} m", flush=True)
             timebase = getattr(sensors, 'timebase', None)
             if timebase is not None:
                 session.event('time_reference_initialized', **timebase.metadata)
                 print('时间参照已固定：共用启动收包偏差，额外预留 50 ms；无需单独运行 sync_time.py。'
                       '这是相对延迟监控，启动前已有的共同固定延迟仍未知。', flush=True)
-            if args.camera == 'sdk' and robot['camera_mode'] != 'rgbd':
+            if args.camera == 'sdk':
                 video = SdkVideo(session.frames, robot['network_interface'], 2.)
             elif args.camera == 'none':
                 session.frames.error('rgb', 'RGB preview disabled (--camera none)')
@@ -240,20 +235,14 @@ def run_live(args, config):
         if not args.demo:
             # Verified box geometry must match the navigation scan. A display-only
             # fit can run on the provider's worker while navigation gets the scan.
-            if window is None or args.allow_motion:
-                interaction = config['interaction']
-                coupled = (interaction['source'] == 'registered_box_lidar'
-                           and (window is None or interaction['geometry_verified']))
+            if tracking is None or args.allow_motion:
+                coupled = tracking is None or config['interaction']['geometry_verified']
                 perception = create_perception(config, synchronous=coupled, box_memory=box_memory)
-            if window is not None:
+            if tracking is not None:
                 from deploy.perception.window_process import WindowProcess
                 event = 'box_window_result' if perception is not None else 'perception_result'
-                if lio_odometry:
-                    # Share the registered scan and its timestamp with the box worker.
-                    window_process = WindowProcess.from_navigation_scans(window.config, session, event, boundary)
-                    window_submit = window_process.submit
-                else:
-                    window_process = WindowProcess.live(window.config, session, event, robot, sensors.timebase, window_height, boundary)
+                window_process = WindowProcess.from_navigation_scans(tracking, session, event, boundary)
+                window_submit = window_process.submit
                 session.event(event, geometry_source='window_two_faces', detections=[], error='等待导航坐标系')
         observations = LiveObservations(sensors, reference, session, hz=nav['tick_hz'],
                                         max_age=robot['max_data_age_s'], perception=perception,
@@ -271,24 +260,24 @@ def run_live(args, config):
         # command before its source or the writer's watchdog expires.
         period = 1/nav['tick_hz']
         # Swarm-LIO publishes at about 10 Hz. A separate wall-clock tick can skip a scan.
-        pace_on_lidar = registered_cloud and nav['tick_hz'] >= 10 and not args.demo
+        pace_on_lidar = nav['tick_hz'] >= 10 and not args.demo
         decision_due = float('-inf')
         consumed = None
         print(('合成演示：未连接机器人。' if args.demo else 'MCF 保持运行。默认观察；') + ('运动需按任务键启动。' if motion else '本次会话禁止运动。'), flush=True)
         if boundary is not None:
             print(f'实验边界已启用，X 从 {boundary.x[0]:g} 到 {boundary.x[1]:g} 米，'
                   f'Y 从 {boundary.y[0]:g} 到 {boundary.y[1]:g} 米。', flush=True)
-        if window is not None:
-            for row in window.config['boxes']:
+        if tracking is not None:
+            for row in tracking['boxes']:
                 size = ' × '.join(f'{d * 100:g}' for d in row['dimensions_m'])
                 print(f"多帧 LiDAR 认箱已开启。{row['id']} 长 × 宽 × 高为 {size} 厘米。", flush=True)
             push_enabled = (args.allow_motion and nav['interaction_enabled']
-                            and any(row['push_allowed'] for row in window.config['boxes']))
+                            and any(row['push_allowed'] for row in tracking['boxes']))
             if push_enabled and tasks.engine.first_push:
                 print('首次推箱已启用。点导航时优先接近已登记箱体，目标推移 10 厘米，停稳后复测。', flush=True)
             else:
                 print('自主推箱已启用，接触前用当前扫描确认箱体。' if push_enabled else '本轮自主推箱已关闭。', flush=True)
-        print(f"来源坐标系={'demo_odom' if args.demo else robot['map_frame']}；等待有效观测初始化 experiment；相机={robot['camera_mode']}", flush=True)
+        print(f"来源坐标系={'demo_odom' if args.demo else robot['map_frame']}；等待有效观测初始化 experiment；视频预览={args.camera}", flush=True)
         if not args.demo and (robot['ground_z'] is None or robot['lidar_origin_offset_base_m'] is None):
             print('地面/雷达原点未标定：本次可记录观测，导航地图暂不生成。', flush=True)
         while not quitting:
@@ -302,8 +291,6 @@ def run_live(args, config):
                 controller.motion_events(motion.events())
             sensor_read_started = time.monotonic()
             snapshot = observations.latest()
-            if window_process is not None and not window_process.started and reference.metadata is not None:
-                window_process.begin(reference)
             sensor_read_duration = time.monotonic()-sensor_read_started
             if observations.failure is not None:
                 raise RuntimeError(observations.failure)

@@ -5,7 +5,7 @@
 | 使用场景 | 入口 |
 |---|---|
 | 运行真机导航、view、record 与推箱交互 | [deploy 操作说明](deploy/README.md) |
-| 查看 AprilTag 识别与箱体跟踪结果 | [识别入口与可视化说明](deploy/README.md#apriltag-识别与查看) |
+| 查看点云认箱结果 | [箱位与地图显示](deploy/README.md#点云认箱与查看) |
 | 理解共享算法、仿真和真机的调用关系 | [项目结构与执行边界](ARCHITECTURE.md) |
 | 复现 stage1 仿真交付 | 下文及 [安装指南](reproduction/INSTALL.md) |
 

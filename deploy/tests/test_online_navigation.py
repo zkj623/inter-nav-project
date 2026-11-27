@@ -7,8 +7,7 @@ import pytest
 
 from deploy.app.config import load
 from deploy.app.navigation import NavigationEngine
-from grutopia_extension.interactive_navigation.box_push_navigation import BoxState, BoxDecision, PushPlan
-from grutopia_extension.interactive_navigation.interaction_catalog import RecognitionEvidence, RecognitionStore
+from grutopia_extension.interactive_navigation.box_push_navigation import BoxState
 from grutopia_extension.interactive_navigation.mapping import AStarMapPlanner
 
 
@@ -38,13 +37,6 @@ def observation(step=0, position=(0., 0., .4), velocity=(0., 0., 0.), points=Non
         result.update(body_linear_velocity=np.array([*velocity[:2], 0.]),
                       body_angular_velocity=np.array([0., 0., velocity[2]]))
     return result
-
-
-def recognized(now=1., frames=('first', 'second')):
-    store = RecognitionStore()
-    for frame in frames:
-        store.observe(RecognitionEvidence('box', 'box', frame, now, .9, 'Qwen-VL', '/observed/crop.jpg', 'rgb_dino_qwen_vl'))
-    return store
 
 
 BOX = BoxState('box', (1., 0.), (.4, .4, .5))
@@ -424,67 +416,6 @@ def test_clipped_arc_is_rechecked_and_stops_if_blocked(monkeypatch):
     np.testing.assert_array_equal(command, np.zeros(3))
     np.testing.assert_array_equal(engine.limiter.command, command)
     assert engine.events[-1]['event'] == 'velocity_limit_blocked'
-
-
-@pytest.mark.parametrize('frames', [(), ('same',), ('same', 'same')])
-def test_single_or_duplicate_rgb_frame_never_authorizes_push(frames):
-    engine = NavigationEngine(config(interaction_enabled=True))
-    engine.observe(observation(points=BOX_POINTS), 1., [BOX])
-    assert engine._permission('box', recognized(frames=frames)) is None
-
-
-def test_two_real_frames_require_fresh_geometry_and_full_motion_feedback():
-    engine = NavigationEngine(config(interaction_enabled=True))
-    store = recognized()
-    engine.observe(observation(points=BOX_POINTS), 1., [BOX])
-    assert engine._permission('box', store) is not None
-    engine.observe(observation(points=BOX_POINTS, full=False), 1.1, [BOX])
-    assert engine._permission('box', store) is None
-    engine.observe(observation(1, points=BOX_POINTS), 1.2, [])
-    assert engine._permission('box', store) is None
-    assert any(box.id == 'box' for box in engine.layers.current_boxes)
-
-
-@pytest.mark.parametrize('evidence_time', [-20., 2.])
-def test_old_or_future_rgb_evidence_cannot_authorize_push(evidence_time):
-    engine = NavigationEngine(config(interaction_enabled=True))
-    engine.observe(observation(points=BOX_POINTS), 1., [BOX])
-    assert engine._permission('box', recognized(evidence_time)) is None
-
-
-def test_new_lidar_without_target_revokes_visibility_even_with_rgb_geometry():
-    engine = NavigationEngine(config(interaction_enabled=True))
-    engine.observe(observation(points=BOX_POINTS), 1., [BOX])
-    assert engine._permission('box', recognized()) is not None
-    engine.observe(observation(1, points=[(-2., 0., .4)]), 1.1, [BOX])
-    assert engine._permission('box', recognized()) is None
-
-
-def test_all_filtered_new_lidar_returns_also_revoke_live_target_visibility():
-    engine = NavigationEngine(config(interaction_enabled=True))
-    engine.observe(observation(points=BOX_POINTS), 1., [BOX])
-    assert engine._permission('box', recognized()) is not None
-    engine.observe(observation(1, points=[(5., 0., .4)]), 1.1, [BOX])
-    assert engine.layers.scan_count == 1
-    assert engine._permission('box', recognized()) is None
-
-
-def test_dispatch_uses_release_skill_then_lost_live_track_fails_before_skill_step(monkeypatch):
-    engine = NavigationEngine(config(interaction_enabled=True))
-    engine.set_goal((2., 0., .4), 1.)
-    plan = PushPlan('box', (1., 0.), (1., .7), (0., 1.), (1., -.8), ((1., -.8),), .7, 3.)
-    decision = BoxDecision('push', 'blocked_observed_route', push=plan, explanation={})
-    monkeypatch.setattr(engine.inspection_planner, 'propose', lambda *args: None)
-    monkeypatch.setattr(engine.selector, 'decide', lambda *args: (decision, (2., 0.)))
-    velocity = engine.update(observation(points=BOX_POINTS), 1., [BOX], recognized())
-    assert engine.phase == 'skill' and engine.skill.spec.name == 'push_aside'
-    assert engine.skill.permission.source == 'rgb_dino_qwen_vl'
-    np.testing.assert_array_equal(velocity, np.zeros(3))
-    # Map still retains the obstacle, but a contact controller cannot use it.
-    assert engine.update(observation(1, points=BOX_POINTS), 1.1, [], recognized()) is None
-    assert engine.status == 'failed'
-    assert 'live_geometry_or_recognition_lost' in engine.result['reason']
-    np.testing.assert_array_equal(engine.limiter.command, np.zeros(3))
 
 
 def test_pause_discards_contact_state_and_observe_cannot_resume_it():

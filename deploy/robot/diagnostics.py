@@ -48,13 +48,7 @@ def run(config, duration, output):
     topics = {robot['odom_topic']: 'nav_msgs/msg/Odometry',
               robot['lidar_topic']: 'sensor_msgs/msg/PointCloud2',
               robot['front_video_topic']: 'unitree_go/msg/Go2FrontVideoData'}
-    for key, kind in (('imu_topic', 'sensor_msgs/msg/Imu'), ('cloud_odom_topic', 'nav_msgs/msg/Odometry')):
-        if robot.get(key):
-            topics[robot[key]] = kind
-    if robot['camera_mode'] == 'rgbd':
-        topics.update({robot['rgb_topic']: 'sensor_msgs/msg/Image',
-                       robot['depth_topic']: 'sensor_msgs/msg/Image',
-                       robot['camera_info_topic']: 'sensor_msgs/msg/CameraInfo'})
+    topics[robot['imu_topic']] = 'sensor_msgs/msg/Imu'
     report = {
         'read_only': True, 'hardware_validated': False, 'duration_s': duration,
         'age_reference': 'local_ros_wall_clock_minus_source_stamp; not run.py relative age',
@@ -157,6 +151,6 @@ def run(config, duration, output):
         print(f'诊断记录：{destination.resolve()}', flush=True)
     # Receipt and envelope checks are not complete DDS/hardware acceptance.
     geometry_received = all(report['topics'][robot[key]]['received'] > 0
-                            for key in ('odom_topic', 'lidar_topic', 'imu_topic', 'cloud_odom_topic') if robot.get(key))
+                            for key in ('odom_topic', 'lidar_topic', 'imu_topic'))
     samples_valid = not any(s.get('sample_error_count', 0) for s in report['topics'].values())
     return 0 if geometry_received and samples_valid else 2

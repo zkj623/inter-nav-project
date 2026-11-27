@@ -29,7 +29,7 @@ def write(tmp_path, data):
 def test_registered_interaction_does_not_require_rgbd_or_models(tmp_path):
     configured(tmp_path, active=True)
     loaded = load(tmp_path)
-    assert loaded['robot']['camera_mode'] == 'unavailable'
+    assert 'perception' not in loaded['runtime']
     assert loaded['runtime']['control']['contact_limits']['max_vx'] == .25
     provider = create_perception(loaded, synchronous=True)
     try:
@@ -107,7 +107,7 @@ def test_missing_optional_interaction_file_keeps_plain_navigation(tmp_path):
     for name in ('robot', 'navigation', 'runtime'):
         (tmp_path/f'{name}.yaml').write_text(yaml.safe_dump(data[name]))
     loaded = load(tmp_path)
-    assert loaded['interaction']['source'] == 'rgbd'
+    assert loaded['interaction']['source'] == 'registered_box_lidar'
     assert create_perception(loaded) is None
 
 

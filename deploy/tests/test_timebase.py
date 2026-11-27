@@ -174,19 +174,3 @@ def test_invalid_bootstrap_releases_ros_resources(monkeypatch, sim_time, silent)
         RosSensors(load()['robot'])
     assert state.destroyed and state.shutdown
     assert not state.subscriptions
-
-
-def test_mixed_clocks_remove_epoch_difference_and_keep_scan_latency():
-    raw_epoch = 1_700_000_000_000_000_000
-    lio_epoch = 3_000_000_000
-    samples = {}
-    for key, epoch, delay in [('cloud_odom', raw_epoch, 2_000_000), ('imu', lio_epoch, 2_000_000),
-                              ('lidar', raw_epoch, 35_000_000), ('odom', lio_epoch, 30_000_000)]:
-        samples[key] = [(MONO_NS+i*100_000_000+delay, epoch+i*100_000_000) for i in range(32)]
-    clock = SourceTimeBridge.from_mixed_samples(samples, max_age_s=.4)
-    assert clock.unitree_to_lio_ns == lio_epoch-raw_epoch
-    receipt, raw = samples['lidar'][-1]
-    stamp = raw+clock.unitree_to_lio_ns
-    assert receipt*1e-9-clock.captured_at(stamp, receipt, .4) == pytest.approx(.083)
-    with pytest.raises(ValueError, match='stale'):
-        clock.captured_at(stamp, receipt+500_000_000, .4)

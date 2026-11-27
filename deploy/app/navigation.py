@@ -34,15 +34,13 @@ from grutopia_extension.interactive_navigation.go2_voronoi_navigation import (
 from grutopia_extension.interactive_navigation.go2_exploration_tracking import decision_buffer_recovery
 from grutopia_extension.interactive_navigation.smooth_go2_navigation import (
     SmoothExplorationTracker, VelocitySlewLimiter, smooth_recovery_action)
-from grutopia_extension.interactive_navigation.interaction_catalog import InteractionCatalog
 from grutopia_extension.interactive_navigation.interaction_skill import SkillContext
-from grutopia_extension.interactive_navigation.push_aside_skill import PushAsideSkill, PushAsideConfig
+from grutopia_extension.interactive_navigation.push_aside_skill import PushAsideConfig
 from grutopia_extension.interactive_navigation.go2_interaction_motion import (
     MeasuredStopGate, ObservedSubgoalArrival, checked_skill_action, navigation_recovery_enabled)
 from grutopia_extension.interactive_navigation.go2_attitude_recovery import NavigationAttitudeRecovery
-from grutopia_extension.interactive_navigation.go2_contact_turn import ContactTurnControl, checked_contact_turn_command
+from grutopia_extension.interactive_navigation.go2_contact_turn import checked_contact_turn_command
 from grutopia_extension.interactive_navigation.go2_passage_guidance import PassageEntryGuide
-from grutopia_extension.interactive_navigation.object_inspection import ObjectInspectionPlanner
 from grutopia_extension.interactive_navigation.local_path_guidance import local_guidance_path
 
 
@@ -155,7 +153,7 @@ class DeploymentNavigationMap(OnlineNavigationMap):
                                    if self.world_boundary is not None else None),
                 'startup_clear_area': ({'x_limits': self.startup_clear_area.x, 'y_limits': self.startup_clear_area.y}
                                        if self.startup_clear_area is not None else None),
-                'movable_pose_source': getattr(self, 'interaction_source', 'measured_rgbd_geometry_admitted_by_current_lidar_visibility'),
+                'movable_pose_source': 'registered_box_lidar',
                 'uses_simulator_object_poses': False,
                 'free_ray_model': 'height_clipped_measured_return_rays_only_no_synthetic_misses'}
 
@@ -176,10 +174,11 @@ class DeploymentVelocityLimiter(VelocitySlewLimiter):
 class NavigationEngine:
     """Keep one observed map while tasks replace their execution state."""
 
+    interaction_source = 'registered_box_lidar'
+
     def __init__(self, config, interaction=None, box_memory=None):
         self.config = config
         self.interaction = interaction or {}
-        self.interaction_source = self.interaction.get('source', 'rgbd')
         self.box_memory = box_memory
         self.registered_ids = {row['id'] for row in self.interaction.get('boxes', ())}
         raw_profile = self.interaction.get('contact_profile')
@@ -219,7 +218,7 @@ class NavigationEngine:
         self.layers = DeploymentNavigationMap(
             self.planner, self.mapping_config, floor_height=0., world_boundary=self.world_boundary,
             startup_clear_area=WorldBoundary.startup_area(config),
-            stationary_box_ids=self.registered_ids if self.interaction_source == 'registered_box_lidar' else (),
+            stationary_box_ids=self.registered_ids,
             box_map_occupied_threshold=config.get('box_map_occupied_threshold'),
             box_approach_margin=(self.contact_profile.nose_offset_m + PushAsideConfig.front_gap
                                  + self.planner.navigation_route_radius if self.contact_profile else 0.),
@@ -230,7 +229,6 @@ class NavigationEngine:
                                                           world_boundary=self.world_boundary)
                                   if self.contact_profile is not None else None)
         self.routes = ExplorationVoronoiRoutes(self.planner)
-        self.catalog = InteractionCatalog()
         self.visible_at = {}
         self.latest_visible_ids = frozenset()
         self.current_proposals = {}
@@ -366,11 +364,6 @@ class NavigationEngine:
         self.sub_started = None
         self.sub_reached = False
         self.passage = None
-        self.inspection_planner = ObjectInspectionPlanner()
-        self.inspection = None
-        self.inspection_turn = None
-        self.inspection_started = None
-        self.inspection_stop = MeasuredStopGate()
         self.layers.global_path = self.layers.local_path = ()
         self.layers.decision = None
         self.planner.passages = {}
@@ -511,23 +504,11 @@ class NavigationEngine:
     def _permission(self, object_id, recognition):
         if not self.config.get('interaction_enabled', False) or not self.full_motion_feedback or not self._fresh_object(object_id) or recognition is None:
             return None
-        if self.interaction_source == 'registered_box_lidar':
-            from deploy.perception.registered_boxes import RegisteredBoxPerception, RegisteredBoxEvidence
-            if not isinstance(recognition, (RegisteredBoxPerception, RegisteredBoxEvidence)):
-                return None
-            permission = recognition.permission(object_id, self.now)
-            if permission is None or permission.source != 'registered_box_lidar':
-                return None
-            return permission
-        item = recognition.confirmed(object_id, self.now)
-        if item is None:
+        from deploy.perception.registered_boxes import RegisteredBoxPerception, RegisteredBoxEvidence
+        if self.contact_profile is None or not isinstance(recognition, (RegisteredBoxPerception, RegisteredBoxEvidence)):
             return None
-        max_age = float(self.config.get('recognition_max_age_s', 10.))
-        fresh = [e for e in item.evidence if 0. <= self.now-e.observed_at <= max_age]
-        if len({e.frame_id for e in fresh}) < 2 or any(e.source != 'rgb_dino_qwen_vl' for e in fresh):
-            return None
-        permission = self.catalog.permission(object_id, 'push_aside', recognition, self.now)
-        return permission if permission is not None and permission.source == 'rgb_dino_qwen_vl' else None
+        permission = recognition.permission(object_id, self.now)
+        return permission if permission is not None and permission.source == self.interaction_source else None
 
     def _output(self, velocity):
         command = np.array(velocity, float, copy=True)
@@ -578,11 +559,7 @@ class NavigationEngine:
     def _interaction_lease(self, recognition):
         if not self.execution.active or self.skill is None or self.contact_profile is None:
             return
-        if self.interaction_source == 'registered_box_lidar':
-            expiry = recognition.expires_at(self.skill.plan.box_id)
-        else:
-            item = recognition.confirmed(self.skill.plan.box_id, self.now)
-            expiry = None if item is None else item.latest_at+float(self.config.get('object_max_age_s', .75))
+        expiry = recognition.expires_at(self.skill.plan.box_id)
         self.interaction_command = self.execution.metadata(self.skill.state, self.now, expiry)
         if self.first_push and self.skill.contact_started is not None:
             p = self.contact_profile
@@ -949,6 +926,28 @@ class NavigationEngine:
                                       recovery_from_contact=self.skill.recovery_from_contact)
         return self._output(action['move_by_speed'])
 
+    def _advance_first_push(self, recognition):
+        if self.phase == 'first_push_review':
+            return self._review_first_push(recognition)
+        if self.phase != 'first_push_wait_scan':
+            return self._approach_box_face(recognition)
+        # Waiting for a new face after the writer has stopped before contact.
+        if self.now >= self.skill.contact_deadline:
+            return self._finish(False, 'push_aside:first_push_approach_time_limit')
+        key = self.skill.plan.box_id
+        if self._permission(key, recognition) is None:
+            return self._output(np.zeros(3))
+        context = replace(self._contact_context, box=self.current_proposals[key], position=self.position,
+                          heading=self.heading, orientation=self.orientation)
+        if not self.skill.may_recheck_before_touch(context):
+            self.skill.stop_trial(self.now, self.position, 'box_rechecked_after_stop', context.box)
+            self.phase = 'first_push_review'
+            return self._output(np.zeros(3))
+        self.execution.start(key, self.now)
+        self.execution.deadline = min(self.execution.deadline, self.skill.contact_deadline)
+        self.phase = 'skill'
+        return self._skill_step(recognition)
+
     def _stop_first_push(self):
         self.phase = 'first_push_review'
         self.layers.decision = dict(kind='push', skill_state='first_push_stop', reason=self.skill.reason)
@@ -978,43 +977,6 @@ class NavigationEngine:
         self._reset_subnavigation()
         self.tracker, self.phase = None, 'decide'
         return self._output(np.zeros(3))
-
-    def _inspect_step(self, recognition):
-        if self.phase == 'inspect_navigate':
-            velocity, arrived, failed = self._subnavigation(self.inspection.position)
-            if failed:
-                self.phase = 'decide'
-            elif arrived:
-                self.phase = 'inspect_turn'
-                self.inspection_started = self.now
-                self.inspection_stop.reset()
-            return velocity
-        settled = self.inspection_stop.update(self.position, self.linear, self.angular, self.tilt, self.now)
-        if self.phase == 'inspect_turn':
-            if self.inspection_turn is None:
-                if not settled:
-                    return self._brake()
-                self.inspection_turn = ContactTurnControl(self.position, self.heading, self.inspection.heading,
-                                                         self.planner, self.layers.current_boxes, self.now)
-            answer = self.inspection_turn.update(self.position, self.heading, self.planner,
-                                                 self.layers.current_boxes, self.limiter, self.now)
-            error = (self.inspection.heading-self.heading+math.pi) % (2*math.pi)-math.pi
-            if abs(error) < .10:
-                self.phase = 'inspect_wait'
-                self.inspection_started = self.now
-                self.inspection_stop.reset()
-                return self._brake()
-            if self.inspection_turn.failed or self.now-self.inspection_started > 40.:
-                self.phase = 'decide'
-                return self._brake()
-            return self._output(np.zeros(3) if answer is None else answer[0])
-        item = recognition.confirmed(self.inspection.object_id, self.now) if recognition is not None else None
-        if item is not None and len({e.frame_id for e in item.evidence if e.observed_at >= self.inspection_started}) >= 2 and settled:
-            self.inspection_planner.review(self.inspection.object_id, item.category, self.now)
-            self.phase = 'decide'
-        elif self.now-self.inspection_started > float(self.config.get('inspection_timeout_s', 20.)):
-            self.phase = 'decide'
-        return self._brake()
 
     def _try_narrow_passage(self):
         start, goal = self.position[:2], self.goal[:2]
@@ -1197,20 +1159,6 @@ class NavigationEngine:
                 return self._brake()
             # A changed map invalidates execution of the old certificate.
             self.passage = None
-        if (self.interaction_source == 'rgbd' and self.config.get('interaction_enabled', False)
-                and recognition is not None and self.full_motion_feedback):
-            self._planning_boundary('object_inspection')
-            inspection = self.inspection_planner.propose(self.layers, self.position[:2], self.heading,
-                                                        self.goal[:2], recognition, self.now)
-            if inspection is not None:
-                self.inspection = inspection
-                self.inspection_turn = None
-                self.inspection_started = self.now
-                self._reset_subnavigation()
-                self.phase = 'inspect_navigate'
-                self.layers.decision = {'kind': 'inspect', 'reason': inspection.reason,
-                                        'object_id': inspection.object_id, 'interaction_allowed': False}
-                return self._brake()
         self._planning_boundary('global_decision')
         if self.trial_targets:
             self.layers.refresh_global(reason='registered_first_contact')
@@ -1236,15 +1184,12 @@ class NavigationEngine:
             lateral_speed=min(.35, float(self.config.get('max_lateral_speed', .18))),
             forward_speed=min(.25, float(self.config.get('max_forward_speed', .5))), reverse_speed=.35,
             max_skill_seconds=float(self.interaction.get('max_skill_seconds', 180.)))
-        if self.contact_profile is None:
-            self.skill = PushAsideSkill(permission, plan, self.task_start, self.goal[:2], config=skill_config)
-        else:
-            self.skill = create_push_skill(permission, plan, self.task_start, self.goal[:2],
-                                           self.contact_profile, config=skill_config)
-            self._use_contact_motion()
-            if not self.first_push:
-                self.execution.start(plan.box_id, self.now)
-                self._interaction_lease(recognition)
+        self.skill = create_push_skill(permission, plan, self.task_start, self.goal[:2],
+                                       self.contact_profile, config=skill_config)
+        self._use_contact_motion()
+        if not self.first_push:
+            self.execution.start(plan.box_id, self.now)
+            self._interaction_lease(recognition)
         self.box_approach = self.box_turn = None
         self.tracker = None
         self.phase = 'skill'
@@ -1319,7 +1264,6 @@ class NavigationEngine:
                 self.tracker = None
                 self.phase = 'decide'
                 self.next_decision = self.now
-        self.layers.interaction_source = ('registered_box_lidar' if self.interaction_source == 'registered_box_lidar' else 'rgb_dino_qwen_vl')
         self.layers.recognized_objects = {} if recognition is None else recognition.snapshot(self.now)
         if self.status != 'running':
             return None
@@ -1339,26 +1283,8 @@ class NavigationEngine:
             return self._finish(False, 'robot_outside_map_bounds')
         if self.tilt >= 30. or self.position[2] < float(self.config.get('fall_height', .16)):
             return self._finish(False, 'robot_unstable')
-        if self.phase == 'first_push_review':
-            return self._review_first_push(recognition)
-        if self.phase == 'first_push_wait_scan':
-            if self.now >= self.skill.contact_deadline:
-                return self._finish(False, 'push_aside:first_push_approach_time_limit')
-            key = self.skill.plan.box_id
-            if self._permission(key, recognition) is None:
-                return self._output(np.zeros(3))
-            context = replace(self._contact_context, box=self.current_proposals[key], position=self.position,
-                              heading=self.heading, orientation=self.orientation)
-            if not self.skill.may_recheck_before_touch(context):
-                self.skill.stop_trial(self.now, self.position, 'box_rechecked_after_stop', context.box)
-                self.phase = 'first_push_review'
-                return self._output(np.zeros(3))
-            self.execution.start(key, self.now)
-            self.execution.deadline = min(self.execution.deadline, self.skill.contact_deadline)
-            self.phase = 'skill'
-            return self._skill_step(recognition)
-        if self.box_approach is not None:
-            return self._approach_box_face(recognition)
+        if self.box_approach is not None or self.phase in ('first_push_review', 'first_push_wait_scan'):
+            return self._advance_first_push(recognition)
         if self.phase == 'skill' and not self.first_push and self._permission(self.skill.plan.box_id, recognition) is None:
             return self._finish(False, 'push_aside:live_geometry_or_recognition_lost')
         if self.phase == 'skill' and not self.first_push:
@@ -1381,8 +1307,6 @@ class NavigationEngine:
                 self.phase = 'decide'
         if self.phase == 'skill':
             return self._skill_step(recognition)
-        if self.phase.startswith('inspect_'):
-            return self._inspect_step(recognition)
         if self.phase == 'navigate' and self.goal_kind == 'narrow_entry' and np.linalg.norm(
                 self.position[:2]-self.narrow.entry) < .13:
             self.phase = 'cross_passage'

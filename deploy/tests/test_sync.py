@@ -49,3 +49,7 @@ raise SystemExit(subprocess.call([os.environ['TEST_RSYNC'], *args]))
     assert (target/'deploy/configs/robot.yaml').read_text() == measured
     assert (target/'deploy/configs/interaction.yaml').read_text() == 'tracking_enabled: false\n'
     assert json.loads((target/'.deploy-source.json').read_text())['dirty_worktree'] is False
+    (source/'deploy/run.py').unlink()
+    subprocess.run([*command, '--apply'], env=env, check=True, capture_output=True)
+    assert json.loads((target/'.deploy-source.json').read_text())['dirty_worktree'] is True
+    assert (target/'deploy/run.py').read_text() == 'new code\n'

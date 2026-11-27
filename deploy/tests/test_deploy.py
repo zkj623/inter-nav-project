@@ -13,7 +13,7 @@ import pytest
 from deploy.app.config import load, REPO, check_motion_configuration
 from deploy.app.tasks import Tasks
 from deploy.recording.replay import snapshots
-from deploy.robot.localization import camera_cloud, PoseContinuity, rotation, multiply
+from deploy.robot.localization import PoseContinuity
 from deploy.robot.observation import Snapshot, normalize
 from deploy.robot.safety import CommandGuard, check_observation, checked_velocity
 from deploy.robot.sensors import decode_image
@@ -85,20 +85,10 @@ def test_turning_forward_command_keeps_acceleration_and_timeout_guards():
     assert guard.tick(now+.31) is None
     assert guard.reason == 'command_timeout' and not guard.armed
 
-def test_camera_geometry_and_invalid_pixel_alignment():
-    depth = np.array([[1., np.nan], [2., 2.]], dtype=np.float32)
-    k = np.array([[2., 0, 0], [0, 2., 0], [0, 0, 1]])
-    points = camera_cloud(depth, k, (1, 2, 3), (1, 0, 0, 0))
-    np.testing.assert_allclose(points[0], [1, 2, 4])
-    np.testing.assert_allclose(points[3], [2, 3, 5])
-    assert np.isnan(points[1]).all()
-    # View-frame +X is optical-frame +Z; this must match actual camera viewing yaw.
-    np.testing.assert_allclose(rotation(multiply((1, 0, 0, 0), (.5, .5, -.5, .5)))[:, 0], [0, 0, 1])
-
-def test_image_padding_endianness_and_depth_units():
-    raw = np.array([1000, 2000, 99, 3000, 4000, 99], dtype='>u2').tobytes()
-    message = SimpleNamespace(encoding='16UC1', is_bigendian=True, width=2, height=2, step=6, data=raw)
-    np.testing.assert_allclose(decode_image(message), [[1, 2], [3, 4]])
+def test_ros_preview_honours_row_padding_and_bgr_order():
+    message = SimpleNamespace(encoding='bgr8', width=1, height=2, step=4,
+                              data=bytes([1, 2, 3, 99, 4, 5, 6, 99]))
+    np.testing.assert_array_equal(decode_image(message), [[[3, 2, 1]], [[6, 5, 4]]])
 
 def test_pose_jump_latches_until_new_session():
     continuity = PoseContinuity(.5, .7)

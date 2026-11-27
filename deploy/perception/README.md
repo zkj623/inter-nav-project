@@ -1,70 +1,10 @@
-# Robot interaction perception
+# MID-360S 点云认箱
 
-The live non-semantic push path is `RegisteredBoxPerception` in
-`registered_boxes.py`: current LiDAR + measured full dimensions → conservative
-`BoxState` + a `registered_box_lidar` permission with source-time expiry. See
-[robot interaction](../docs/interaction.md) for configuration and the complete
-module chain. `interaction/config.py` is the single provider factory for live
-run and offline replay. The RGB-D path below remains available for diagnostics;
-its visible AABB alone cannot authorize the new SDK contact backend.
+点导航、认箱和推箱使用同一路 Swarm-LIO 配准点云。箱体尺寸、初始搜索区域和是否允许推移来自登记配置。前置 RGB 画面用于现场预览。
 
-`AsyncInteractionPerception(config, backend=None, clock=time.monotonic, catalog=None)`
-returns `(tuple[BoxState], RecognitionStore)` from `update(snapshot, now)`.
-It shares the release `InteractionCatalog`, aliases, classifier labels, RGB crop
-processing, `RecognitionEvidence` and `RecognitionStore`. Detection, segmentation
-and classification still use the existing DINO, SAM and Qwen-VL HTTP interfaces.
-The obsolete target-search and Qwen3 frontier-ranking clients were removed.
+| 输入 | 处理 | 用途 |
+|---|---|---|
+| 多帧点云 | `WindowProcess` 接收导航观测线程的扫描，`WindowBoxObserver` 用多个扫描窗口拟合箱位和朝向。有效结果写入 `BoxMapMemory` | 地图显示、规划前往已知箱位的路线 |
+| 当前扫描 | `RegisteredBoxPerception` 用登记尺寸复核箱面，返回与扫描时间及箱体身份绑定的证据 | 接触许可、短推位移测量和停后复测 |
 
-The input is the **captured** RGB-D frame in `snapshot.observation['sensors']['camera']`:
-`rgba`, `depth`, `capture_step` and `pointcloud_image` (H × W × 3). The existing
-dense `pointcloud` (H W × 3) is accepted and reshaped without dropping pixels.
-XYZ must already be metric coordinates in `snapshot.planning_frame`; this module
-does not apply another camera or robot transform. Calibrated geometry and a named
-planning frame are required. `camera_at` is the capture time, not packet receipt
-or inference completion time. Missing RGB-D, mismatched shapes, wrong declared
-point frame, future captures and stale captures cannot supply interaction boxes.
-
-A segmented object's finite points provide a measured axis-aligned bounding box,
-expanded by `geometry_margin_m` (default 0.03 m per side). An axis with less than
-0.04 m observed extent is rejected; padding cannot manufacture hidden thickness.
-This is an envelope of visible returns. It does **not** establish full object
-dimensions, mass, complete occluded surfaces or safe contact geometry. Therefore
-`geometry_verified: false` is the default. In this state proposals are available
-in `last_delivery` only and never enter the movable-object map or execution.
-Enabling the flag means that the installed sensor's complete conservative bounds
-have been separately accepted. It does not cause this client to reconstruct them.
-
-IDs are local geometric tracks; scene names and simulator metadata are ignored.
-Verified, fresh geometry can produce a live proposal after one frame, including
-an unknown category, so the release object inspection planner can acquire more
-views. A proposal is an obstacle, **not** a push permission. Two distinct, recent
-RGB classifications of the same tracked object and catalog authorization are
-required for `push_aside`. Unknown or conflicting categories revoke the preceding
-permission. Ambiguous spatial matches start a new identity rather than inheriting
-another object's permission. The engine's permission checks and planner's
-interactable IDs must be retained. Robot motion acceptance is a separate gate.
-
-One daemon worker and a single replaceable pending frame bound inference work.
-Every HTTP timeout is capped by the remaining `result_max_age_s` capture budget
-(default 8 s). `reset()` increments the task generation and discards queued and
-late results; it cannot kill the already running HTTP request, but prevents the
-next request in that pipeline. `close()` has the same cancellation behavior and
-does not wait indefinitely for a service. No fallback grants interaction access.
-
-The separate `input_max_age_s` (0.5 s) and `geometry_max_age_s` (0.75 s) apply to
-camera capture time. Late classification may contribute recent semantic evidence,
-but never renews old geometry. A slow model may therefore produce diagnostics and
-category evidence while producing no usable live boxes. Increasing the geometry
-timeout is not a substitute for fresh contact feedback. Every vote also expires
-individually after `recognition_max_age_s` (10 s).
-
-`last_delivery` contains per-object capture coordinates, source, classifier model,
-score, frame ID, response and the actual classification crop in
-`crop_jpeg_base64` (JPEG, maximum side 384 pixels; at most six candidates per frame).
-The normal recorder can preserve that JSON payload and reconstruct its images
-after the client exits. `image_path` refers to a temporary local crop unless an
-explicit `evidence_dir` is configured; temporary paths do not survive `close()`.
-
-Offline contract tests: `deploy/tests/test_interaction_perception.py`. These use
-fake RGB-D and fake HTTP and do not establish camera calibration, classifier
-accuracy, complete object bounds or physical push acceptance.
+默认配置只运行点导航。查看登记箱时，现场配置为 `configs/box_30x80x30.yaml`，`--box-window` 开启多帧跟踪。只需观察时加 `--observe-only`。[现场步骤](../README.md#点云认箱与查看)

@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from deploy.app.config import load
-from deploy.interaction.config import create_perception
+from deploy.interaction.config import box_window_config, create_perception
 from deploy.perception import window_observer as module
 from deploy.perception.registered_boxes import RegisteredBoxPerception
 from deploy.perception.window_fitting import WindowFit
@@ -154,7 +154,7 @@ def test_box_crossing_field_wall_cannot_acquire_a_track(monkeypatch):
 def test_long_low_box_reports_the_long_side_in_both_orientations(swap_xy, expected_axis):
     from deploy.app.config import ROOT
     config = load(interaction_path=ROOT/'configs/box_30x80x30.yaml')
-    observer = create_perception(config, box_window=True)
+    observer = WindowBoxObserver(box_window_config(config))
     for index in range(21):
         packet = scan(index, 10+index/10)
         points = packet.observation['sensors']['lidar']['pointcloud']
@@ -252,9 +252,9 @@ def test_factory_and_cli_route_the_window_without_changing_motion_mode(monkeypat
     from deploy.app import runtime
     config = load()
     with pytest.raises(ValueError, match='tracking_enabled'):
-        create_perception(config, box_window=True)
+        box_window_config(config)
     config['interaction'].update(settings()[2], tracking_enabled=True)
-    assert isinstance(create_perception(config, box_window=True), WindowBoxObserver)
+    assert box_window_config(config)['boxes'] == config['interaction']['boxes']
     single = create_perception(config, synchronous=True)
     assert type(single) is RegisteredBoxPerception
     single.close()
@@ -278,14 +278,12 @@ def test_field_window_lease_is_separate_from_contact_evidence():
     from deploy.app.config import ROOT
     from deploy.interaction.config import box_window_height_limits
     cfg = load(interaction_path=ROOT/'configs/box_30x80x30.yaml')
-    window = create_perception(cfg, box_window=True)
+    window = WindowBoxObserver(box_window_config(cfg))
     single = create_perception(cfg, synchronous=True)
     try:
         assert window.config['max_age_s'] == .35
         assert single.config['max_age_s'] == .25
         assert box_window_height_limits(cfg) == pytest.approx([-.1, .46])
-        cfg['robot']['sensor_profile'] = 'l1'
-        assert box_window_height_limits(cfg) == cfg['navigation']['mapping']['point_height'] == [-.1, .28]
         assert cfg['navigation']['interaction_enabled'] and cfg['interaction']['first_push']
         assert cfg['interaction']['contact_profile']['calibration_reference'] is None
     finally:

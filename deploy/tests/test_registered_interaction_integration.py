@@ -99,12 +99,8 @@ def dispatch(setup):
     return engine.skill
 
 
-def test_registered_provider_dispatches_real_side_push_planner_and_shared_skill_without_semantics(setup, monkeypatch):
+def test_registered_provider_dispatches_real_side_push_planner_and_shared_skill_without_semantics(setup):
     provider, engine, packet, boxes, recognition = setup
-    def no_semantics(*args, **kwargs):
-        pytest.fail('Registered LiDAR must not invoke RGB-D inspection/classification')
-    monkeypatch.setattr(engine.inspection_planner, 'propose', no_semantics)
-    monkeypatch.setattr(engine.catalog, 'permission', no_semantics)
     skill = dispatch(setup)
     assert isinstance(engine.planner, SidePushPlanner)
     assert engine.decision['kind'] == 'push'
@@ -143,6 +139,18 @@ def test_expired_registration_geometry_stops_before_shared_skill_step(setup, mon
     assert engine.status == 'failed'
     assert engine.result['reason'] == 'push_aside:live_geometry_or_recognition_lost'
     np.testing.assert_array_equal(engine.limiter.command, np.zeros(3))
+
+
+def test_only_registered_scan_evidence_can_authorize_contact(setup):
+    from grutopia_extension.interactive_navigation.interaction_catalog import RecognitionEvidence, RecognitionStore
+    provider, engine, packet, _, _ = setup
+    assert engine._permission('B1', provider) is not None
+    semantic = RecognitionStore()
+    for frame in ('first', 'second'):
+        semantic.observe(RecognitionEvidence('B1', 'box', frame, packet.lidar_at, .9,
+                                             'Qwen-VL', '/observed/crop.jpg', 'rgb_dino_qwen_vl'))
+    assert semantic.confirmed('B1', packet.lidar_at) is not None
+    assert engine._permission('B1', semantic) is None
 
 
 def test_unregistered_box_is_never_given_permission_even_when_selector_requests_it(setup, monkeypatch):

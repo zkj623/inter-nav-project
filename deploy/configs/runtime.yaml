@@ -11,20 +11,6 @@ control:
   stop_yaw_speed: 0.05
   stop_timeout_s: 3.0
   stop_settle_s: 0.3
-perception:
-  grounding_dino_url: http://127.0.0.1:12181/gdino
-  mobile_sam_url: http://127.0.0.1:12183/mobile_sam
-  qwen_vl_url: http://127.0.0.1:12185/classify
-  request_timeout: 2.0
-  qwen_vl_timeout: 5.0
-  semantic_classifier: qwen-vl
-  qwen_vl_max_candidates: 6
-  # One captured frame shares this budget across DINO, SAM and Qwen requests.
-  result_max_age_s: 8.0
-  geometry_max_age_s: 0.75
-  input_max_age_s: 0.5
-  # Partial visible surfaces are not a verified full object envelope.
-  geometry_verified: false
 recording:
   root: results/deploy
   # record.py output root; live run.py publishes data without writing experiment files.

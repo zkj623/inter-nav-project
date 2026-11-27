@@ -4,7 +4,6 @@ import multiprocessing as mp
 from queue import Empty, Full
 import signal
 import threading
-import time
 
 from .window_observer import WindowBoxObserver
 from .window_stream import WindowWorker
@@ -24,40 +23,6 @@ def _start_message(channel, stop):
         if channel.poll(.1):
             return channel.recv()
     return None
-
-
-def _ros(config, channel, stop, robot, timebase, point_height, boundary=None):
-    from deploy.robot.sensors import RosSensors
-    sensors = RosSensors(dict(robot, camera_mode='unavailable'), timebase=timebase, node_name='inter_nav_box_window')
-    worker = None
-    try:
-        # The parent fixes the experiment origin once. Never initialize a second map here.
-        reference = _start_message(channel, stop)
-        if reference is None:
-            return
-        if reference.metadata is None:
-            raise ValueError('Box tracking requires the initialized navigation frame')
-        worker = WindowWorker(WindowBoxObserver(config, live=True, world_boundary=boundary), _ResultPipe(channel))
-        seen = None
-        while not stop.is_set():
-            seen = sensors.wait_frame(seen, .1)
-            if worker.failure:
-                raise RuntimeError(worker.failure)
-            snapshot = sensors.latest()
-            if snapshot is None:
-                worker.submit(None, sensors.last_error or 'no_valid_observation')
-                continue
-            try:
-                snapshot = reference.apply(snapshot, time.monotonic(), robot['max_data_age_s'])
-                worker.submit(snapshot.navigation_view(point_height, boundary))
-            except ValueError as exc:
-                worker.submit(None, str(exc))
-    finally:
-        try:
-            if worker is not None:
-                worker.close()
-        finally:
-            sensors.close()
 
 
 def _recording(config, channel, stop, directory, point_height, boundary=None):
@@ -124,12 +89,6 @@ class WindowProcess:
         return process
 
     @classmethod
-    def live(cls, config, sink, event, robot, timebase, point_height, boundary=None):
-        if timebase is None:
-            raise ValueError('Box tracking requires the navigation time reference')
-        return cls(_ros, (robot, timebase, point_height, boundary), config, sink, event)
-
-    @classmethod
     def replay(cls, config, sink, directory, point_height, boundary=None, *, box_memory=None):
         return cls(_recording, (directory, point_height, boundary), config, sink, 'box_window_result', box_memory)
 
@@ -174,8 +133,7 @@ class WindowProcess:
             return
         if snapshot is None:
             self.pending_scan_error = error or 'no_valid_observation'
-        elif 'camera' in snapshot.observation['sensors']:
-            # Only LiDAR is used here. Keep RGB-D arrays off the box worker's pipe.
+        elif snapshot.observation['sensors'].keys() != {'lidar'}:
             sensors = {'lidar': snapshot.observation['sensors']['lidar']}
             snapshot = replace(snapshot, observation={**snapshot.observation, 'sensors': sensors}, camera_at=None)
         try:

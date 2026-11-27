@@ -35,13 +35,13 @@ def load(directory=None, *, interaction_path=None):
         raise ValueError('Retired deploy configuration; migrate from deploy/configs: ' +
                          ', '.join(sorted(unknown | retired | ({'topology_scorer'} if 'topology_scorer' in result['runtime'] else set()))))
     positive = {
-        'robot': ('max_data_age_s', 'image_sync_tolerance_s', 'lidar_max_range',
+        'robot': ('max_data_age_s', 'lidar_max_range',
                   'max_position_jump_m', 'max_orientation_jump_rad', 'pose_cloud_tolerance_s'),
         'navigation': ('tick_hz', 'task_timeout_s', 'max_forward_speed', 'max_lateral_speed',
                        'success_distance', 'final_goal_slow_radius', 'safe_base_height', 'fall_height',
                        'max_yaw_speed', 'route_clearance', 'navigation_half_width', 'local_map_hz', 'global_map_hz',
-                       'local_map_radius', 'object_max_age_s', 'recognition_max_age_s', 'push_start_speed',
-                       'push_max_speed', 'subnavigation_timeout_s', 'inspection_timeout_s',
+                       'local_map_radius', 'object_max_age_s', 'push_start_speed',
+                       'push_max_speed', 'subnavigation_timeout_s',
                        'linear_acceleration', 'yaw_acceleration'),
     }
     for group, keys in positive.items():
@@ -58,26 +58,17 @@ def load(directory=None, *, interaction_path=None):
     control = result['runtime']['control']
     if not 0 < control['max_tilt_degrees'] < 90 or control['stop_settle_s'] >= control['stop_timeout_s']:
         raise ValueError('Invalid tilt limit or stopping time configuration')
-    for key in ('request_timeout', 'qwen_vl_timeout', 'result_max_age_s', 'geometry_max_age_s', 'input_max_age_s'):
-        if key not in result['runtime']['perception']:
-            raise ValueError(f'Missing perception.{key}; migrate from deploy/configs')
-        value = result['runtime']['perception'][key]
-        if type(value) not in (int, float) or value <= 0:
-            raise ValueError(f'perception.{key} must be positive')
     if type(result['navigation']['interaction_enabled']) is not bool:
         raise ValueError('navigation.interaction_enabled must be boolean')
     from deploy.robot.world_boundary import WorldBoundary
     WorldBoundary.from_navigation(result['navigation'])
-    if type(result['runtime']['perception']['geometry_verified']) is not bool:
-        raise ValueError('perception.geometry_verified must be boolean')
     if result['robot']['map_frame'] == result['robot']['base_frame']:
         raise ValueError('map_frame and base_frame must differ')
     robot = result['robot']
-    if robot['camera_mode'] not in ('unavailable', 'rgbd'):
-        raise ValueError('camera_mode must be unavailable or rgbd')
-    if robot['camera_mode'] == 'rgbd' and not all(
-            robot[key].strip() for key in ('rgb_topic', 'depth_topic', 'camera_info_topic')):
-        raise ValueError('RGB-D requires explicit RGB, aligned depth and CameraInfo topics')
+    if robot.get('sensor_profile') != 'mid360s_lio':
+        raise ValueError('robot.sensor_profile must be mid360s_lio for registered MID-360S scans')
+    if robot.get('camera_mode', 'unavailable') != 'unavailable':
+        raise ValueError('RGB-D input was retired. Use MID-360S point clouds and --camera for RGB preview.')
     offset = robot['lidar_origin_offset_base_m']
     if offset is not None and (not isinstance(offset, list) or len(offset) != 3
                               or not all(type(v) in (int, float) and math.isfinite(v) for v in offset)):

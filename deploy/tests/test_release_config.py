@@ -35,19 +35,18 @@ def test_planner_limits_cannot_exceed_real_command_guard(tmp_path, field, value)
         load(write_config(tmp_path, config))
 
 
-def test_single_camera_preview_cannot_enable_interaction(tmp_path):
+@pytest.mark.parametrize('enabled', [True, False])
+def test_only_registered_lidar_can_supply_box_evidence(tmp_path, enabled):
     config = load()
     config['interaction']['source'] = 'rgbd'
-    config['navigation']['interaction_enabled'] = True
-    with pytest.raises(ValueError, match='RGB-D'):
+    config['navigation']['interaction_enabled'] = enabled
+    with pytest.raises(ValueError, match='registered_box_lidar'):
         load(write_config(tmp_path, config))
 
 
-def test_rgbd_alone_cannot_supply_oriented_contact_geometry(tmp_path):
+@pytest.mark.parametrize('profile', ['mid360s_lio_utlidar', 'mid360s_raw_lio', 'l1', None])
+def test_only_registered_mid360_input_is_supported(tmp_path, profile):
     config = load()
-    config['interaction']['source'] = 'rgbd'
-    config['navigation']['interaction_enabled'] = True
-    config['robot'].update(camera_mode='rgbd', rgb_topic='/rgb', depth_topic='/depth', camera_info_topic='/info')
-    config['runtime']['perception']['geometry_verified'] = True
-    with pytest.raises(ValueError, match='full oriented contact geometry'):
+    config['robot']['sensor_profile'] = profile
+    with pytest.raises(ValueError, match='mid360s_lio'):
         load(write_config(tmp_path, config))

@@ -27,10 +27,11 @@ trap 'rm -f "$manifest" "$config_manifest" "$source_info"' EXIT
 # Include new nonignored deployment files as well as tracked code. No --delete.
 git -C "$repo_dir" ls-files -co --exclude-standard -z -- . ':!deploy/configs' > "$manifest"
 git -C "$repo_dir" ls-files -co --exclude-standard -z -- deploy/configs > "$config_manifest"
-rsync "${options[@]}" --from0 --files-from="$manifest" "$repo_dir/" "$remote_host:$remote_path/"
+# A working-tree cleanup can remove tracked files before the next commit.
+rsync "${options[@]}" --ignore-missing-args --from0 --files-from="$manifest" "$repo_dir/" "$remote_host:$remote_path/"
 # Seed missing configuration files only. Existing calibration/acceptance stays
 # device-owned; a code update must never overwrite it with repository defaults.
-rsync "${options[@]}" --ignore-existing --from0 --files-from="$config_manifest" "$repo_dir/" "$remote_host:$remote_path/"
+rsync "${options[@]}" --ignore-existing --ignore-missing-args --from0 --files-from="$config_manifest" "$repo_dir/" "$remote_host:$remote_path/"
 
 python3 - "$repo_dir" "$source_info" <<'META'
 import json

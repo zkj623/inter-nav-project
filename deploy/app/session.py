@@ -85,23 +85,20 @@ class _RecordedFrame(_RecordedPacket):
 class Session:
     def __init__(self, config, repo, port=8765, demo=False, mode='live_observe_only', frame_limit=4, event_limit=4096,
                  separate_cloud=True, observation_limit=32):
-        # All online planning maps are independent of display-only voxels,
-        # including when RGB-D is available. Preserve the argument for callers.
-        separate_cloud = True
+        # Keep separate_cloud in the call signature for existing session producers.
         self.info = {'session_id': uuid4().hex, 'started_at': datetime.now(timezone.utc).isoformat(),
                      'config': config, 'provenance': provenance(repo), 'mode': mode, 'demo': demo,
-                     'separate_cloud': separate_cloud, 'recording_version': 2}
+                     'separate_cloud': True, 'recording_version': 2}
         self.lock = threading.Lock()
         self.frames = LatestFrames(stale_after=1., demo=demo)
         self.cloud_json = None
-        self.separate_cloud = separate_cloud
         self.point_height = config['navigation']['mapping'].get('point_height')
         self.capture = SceneCapture()
         context = mp.get_context('spawn')
         self.pending = context.Queue(maxsize=4)
         self.rendered, output = context.Pipe(duplex=False)
         self.renderer = context.Process(target=process_frames,
-                                        args=(self.pending, output, config['navigation']['mapping'], separate_cloud),
+                                        args=(self.pending, output, config['navigation']['mapping'], True),
                                         name='go2-visualization', daemon=True)
         self.last_scan = None
         self.cloud_input_dropped = 0
@@ -197,7 +194,7 @@ class Session:
             snapshot = snapshot.navigation_view(self.point_height)
         lidar = snapshot.observation['sensors']['lidar']
         scan = None
-        if (self.separate_cloud and snapshot.geometry_calibrated
+        if (snapshot.geometry_calibrated
                 and lidar['physics_step'] == tasks.last_lidar and lidar['physics_step'] != self.last_scan):
             self.last_scan = lidar['physics_step']
             scan = dict(lidar, captured_at=snapshot.lidar_at, step=snapshot.sequence)

@@ -13,8 +13,7 @@ class Tasks:
         self.mode = self.state = 'observe'
         self.elapsed = 0.
         self.last_time = None
-        self.last_step = -1
-        self.last_lidar = self.last_camera = None
+        self.last_lidar = None
         self.result = None
         self.map_ready = False
         self.last_mapping_at = None
@@ -32,7 +31,7 @@ class Tasks:
         self._perception_sample = None
         self.engine.set_goal(tuple(value), now)
         self.mode, self.state = 'navigate', 'active'
-        self.elapsed, self.last_time, self.last_step = 0., now, -1
+        self.elapsed, self.last_time = 0., now
         self.result = None
         self._prepared = False
 
@@ -97,11 +96,6 @@ class Tasks:
         self.elapsed, self.last_time = 0., None
         self._prepared = False
 
-    def fail(self, reason):
-        self.engine.pause()
-        self.state = 'fault'
-        self.result = {'success': False, 'reason': reason}
-
     def check_navigation_goal(self, goal):
         if len(goal) < 2 or not all(math.isfinite(v) for v in goal[:2]):
             raise ValueError('目标坐标必须为有限数值')
@@ -162,7 +156,6 @@ class Tasks:
         if advance and self.state == 'active':
             self.elapsed += max(0., now-self.last_time)
             self.last_time = now
-            self.last_step = max(self.last_step+1, int(self.elapsed*self.config['tick_hz']))
             if self.elapsed >= self.config['task_timeout_s']:
                 self.engine.pause()
                 self.state = 'completed'

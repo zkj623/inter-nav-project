@@ -4,7 +4,7 @@
 
 deploy 复用仿真的完整流程：在线探索/导航 → 比较绕行与推移 → 接近并对齐 → 推开箱体 → 退出接触 → 用新扫描确认通道 → 继续原目标并停稳。
 
-已接入的非语义路径使用登记尺寸和实时 LiDAR 位姿，不需要 DINO、SAM、Qwen 或 RGB-D。真机通过 SportClient 执行机身速度；仿真的 loco 权重不在真机中加载。普通配置运行点导航。30 × 80 × 30 cm 箱体的首次短推使用标称机头尺寸，接触速度上限为 6 cm/s。完整推箱需要本机实测参数。
+真机按登记尺寸从 MID-360S 点云估计箱体位姿。真机通过 SportClient 执行机身速度；仿真的 loco 权重不在真机中加载。普通配置运行点导航。30 × 80 × 30 cm 箱体的首次短推使用标称机头尺寸，接触速度上限为 6 cm/s。完整推箱需要本机实测参数。
 
 ## 模块与数据流
 
@@ -175,4 +175,4 @@ python run.py --replay /实际记录目录 --output ../results/deploy/interactio
 | `recorded_stop_handoff` | 仅用于回放的录制停稳证据，未向机器人发送命令 |
 | `task_result` 中的 `skill_reports` | 实测推移量、通道证书、profile 和成功/失败原因 |
 
-原始 LiDAR/odom/IMU 问题仍按 [sensor_check.md](sensor_check.md) 录制 ROS bag。RGB-D 视觉模型接口保留为诊断/候选来源；其可见点 AABB 没有完整朝向几何，本实现不会把它伪装成可执行接触模型。
+原始 LiDAR/odom/IMU 问题仍按 [sensor_check.md](sensor_check.md) 录制 ROS bag。

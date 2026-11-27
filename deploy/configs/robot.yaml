@@ -8,12 +8,9 @@ odom_topic: /bot1/lidar_slam/odom
 lidar_topic: /bot1/cloud_registered_sparse
 imu_topic: /livox/imu
 imu_frame: livox_frame
-# No standard RGB-D source was found. Custom compressed video is not depth.
-camera_mode: unavailable  # unavailable | rgbd
+# Optional front RGB preview.
 front_video_topic: /frontvideostream
 rgb_topic: ""
-depth_topic: ""
-camera_info_topic: ""
 # bot1/world is reinitialized by Swarm-LIO. With null, estimate its floor
 # once at startup from the registered cloud while the robot is stationary.
 ground_z: null
@@ -27,7 +24,6 @@ mid360_mount:
   pitch_deg: 13.0
 lidar_max_range: 8.0
 pose_cloud_tolerance_s: 0.065  # maximum gyro offset from the paired scan/odometry stamp
-image_sync_tolerance_s: 0.04
 max_data_age_s: 0.4
 max_position_jump_m: 0.5
 max_orientation_jump_rad: 0.7

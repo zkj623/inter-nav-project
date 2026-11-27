@@ -13,15 +13,13 @@ import requests
 def make_server(frames, port, metadata=None):
     directory = Path(__file__).parent
     page = (directory / 'index.html').read_bytes()
-    tag_scripts = {'/tags/' + name for name in (
-        'overlay.js', 'worker.js', 'js-aruco2/cv.js', 'js-aruco2/aruco.js', 'js-aruco2/apriltag_36h11.js')}
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             path = urlsplit(self.path).path
             if path == '/':
                 body, mime = page, 'text/html; charset=utf-8'
-            elif path == '/box_map.js' or path in tag_scripts:
+            elif path == '/box_map.js':
                 body, mime = (directory / path[1:]).read_bytes(), 'text/javascript; charset=utf-8'
             elif path == '/api/frame' or (path == '/api/box' and hasattr(frames, 'box_snapshot')):
                 try:

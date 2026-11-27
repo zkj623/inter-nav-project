@@ -12,7 +12,6 @@
 .panelhead{padding:10px 14px;display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid #e6eaec}h2{font-size:14px;font-weight:600;margin:0}
 .viewport{position:relative;aspect-ratio:16/9;background:#f9f9f9;overflow:hidden}
 .viewport canvas,.viewport img{position:absolute;inset:0;width:100%;height:100%;display:block}.viewport canvas{touch-action:none;cursor:grab}.viewport img{object-fit:contain;display:none}
-#tagBoxes{object-fit:contain;pointer-events:none}#tagStatus{color:#526675;font-size:12px}
 #boxMap{pointer-events:none;cursor:default}.box-key{display:inline-block;width:15px;height:9px;margin-right:4px;border:2px solid #006e63}
 .empty{position:absolute;inset:0;display:grid;place-content:center;text-align:center;color:#657580;pointer-events:none;padding:16px}
 .stale{position:absolute;top:10px;left:10px;color:#754300;background:#fff0cf;padding:4px 8px;display:none}
@@ -28,8 +27,8 @@ button{border:1px solid #cbd4da;background:#fff;color:#405461;padding:4px 10px;b
 @media(max-width:1000px){body{padding:8px}.grid{grid-template-columns:1fr}.panel:first-child{grid-column:auto}}
 </style>
 <main class="grid">
- <section class="panel"><div class="panelhead"><h2>前置 RGB</h2><span id="tagStatus"></span><button id="tagToggle" aria-pressed="false" hidden>AprilTag 识别框</button></div>
- <div class="viewport"><img id="rgb" alt="前置 RGB"><canvas id="tagBoxes" aria-hidden="true"></canvas><div id="rgbEmpty" class="empty">等待图像</div><div id="rgbStale" class="stale">图像已过期</div></div></section>
+ <section class="panel"><div class="panelhead"><h2>前置 RGB</h2></div>
+ <div class="viewport"><img id="rgb" alt="前置 RGB"><div id="rgbEmpty" class="empty">等待图像</div><div id="rgbStale" class="stale">图像已过期</div></div></section>
  <section class="panel"><div class="panelhead"><h2>全局路线与局部碰撞地图</h2><button id="mapSize" aria-pressed="false">放大地图</button></div>
  <div class="viewport"><img id="mapImage" alt="导航地图"><canvas id="boxMap" role="img" aria-label="地图箱位"></canvas><div id="mapEmpty" class="empty">等待建图</div><div id="mapStale" class="stale">地图已过期</div></div>
  <div class="legend" id="boxLegend" hidden><span><i class="box-key"></i>已记录的箱位</span></div>
@@ -42,12 +41,10 @@ button{border:1px solid #cbd4da;background:#fff;color:#405461;padding:4px 10px;b
 <div class="status"><span id="connection">连接中</span><button id="reconnect" hidden>重新连接</button><span id="demo"></span><span id="task"></span><span id="performance"></span></div>
 <div id="errors" role="status"></div>
 <div id="windowInteraction" role="status"></div><div id="interaction" role="status"></div>
-<script src="/tags/overlay.js"></script>
 <script src="/box_map.js"></script>
 <script>
 'use strict';
 const $=id=>document.getElementById(id), canvas=$('cloud'), ctx=canvas.getContext('2d');
-const boxTags=new BoxTagOverlay($('rgb'),$('tagBoxes'),$('tagToggle'),$('tagStatus'));
 const boxMap=new BoxMapOverlay($('boxMap'),renderWindowStatus);
 let data=null, yaw=-.75, pitch=.7, scale=42, center=[0,0,0], pan=[0,0], drag=null, autoFit=false, offline=true;
 let follow=true, heightSlice=true;
@@ -241,11 +238,8 @@ async function poll(){if(polling)return;polling=true;clearTimeout(pollTimer);$('
 }
   if(!data.rgb){$('rgb').style.display='none';$('rgbEmpty').style.display='grid';}
   markStale('rgb',offline||!!data.rgb?.stale);
-  $('tagToggle').hidden=!data.rgb;
-  if(!data.rgb&&boxTags.worker)boxTags.stop();
-  boxTags.update(offline||data.rgb?.stale?null:data.rgb?.jpeg, data.session_id);
   $('errors').textContent=Object.entries({...data.errors,...(data.status?.error?{run:data.status.error}:{})}).map(([k,v])=>k+': '+v).join('\n');draw();
- }catch(error){offline=true;boxMap.update(data,true,started);boxTags.update(null);delay=null;$('connection').textContent='连接中断 · 已停止刷新';$('reconnect').hidden=false;markStale('cloud',true);markStale('rgb',true);markStale('map',true);$('interaction').textContent='';$('errors').textContent='数据源不可用，请恢复连接后重试。';draw();}
+ }catch(error){offline=true;boxMap.update(data,true,started);delay=null;$('connection').textContent='连接中断 · 已停止刷新';$('reconnect').hidden=false;markStale('cloud',true);markStale('rgb',true);markStale('map',true);$('interaction').textContent='';$('errors').textContent='数据源不可用，请恢复连接后重试。';draw();}
  finally{clearTimeout(timer);polling=false;$('reconnect').disabled=false;if(delay!==null)pollTimer=setTimeout(poll,Math.max(0,delay-(performance.now()-started)));}}
 $('reconnect').onclick=()=>{$('connection').textContent='正在重新连接…';poll();};
 poll();

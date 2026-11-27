@@ -1,5 +1,4 @@
 """Geometry shared by ROS adapters and offline tests; quaternions are wxyz."""
-from collections import deque
 import numpy as np
 
 
@@ -49,22 +48,6 @@ def registered_floor_height(points, position):
     return float(position[2] + intercept)
 
 
-def camera_cloud(depth, intrinsics, position, orientation):
-    """Rectified, RGB-aligned optical depth in metres to dense map-frame XYZ."""
-    depth = np.asarray(depth, dtype=np.float32)
-    if depth.ndim != 2:
-        raise ValueError('Depth must be H x W')
-    k = np.asarray(intrinsics, dtype=float).reshape(3, 3)
-    if not np.isfinite(k).all() or k[0, 0] <= 0 or k[1, 1] <= 0:
-        raise ValueError('Invalid camera intrinsics')
-    v, u = np.indices(depth.shape)
-    points = np.stack(((u-k[0, 2])*depth/k[0, 0],
-                       (v-k[1, 2])*depth/k[1, 1], depth), axis=-1)
-    points = transform(points, position, orientation)
-    points[~np.isfinite(depth) | (depth <= 0)] = np.nan
-    return points.reshape(-1, 3).astype(np.float32)
-
-
 class PoseContinuity:
     """Latch jumps: a fixed fused map cannot absorb SLAM relocalization silently."""
     def __init__(self, distance, angle):
@@ -91,40 +74,25 @@ def multiply(left, right):
                        w*c-x*d+y*a+z*b, w*d+x*c-y*b+z*a))
 
 
-class PoseHistory:
-    """Time-align a range origin with world-frame points, never with world origin.
+def odometry_pose(message):
+    pose = message.pose.pose
+    p, q = pose.position, pose.orientation
+    position = np.array([p.x, p.y, p.z])
+    if not np.isfinite(position).all():
+        raise ValueError('Invalid odometry position')
+    return position, (q.w, q.x, q.y, q.z)
 
-    Interpolate only nearby samples; allow nearest sample within the same tolerance
-    at the stream edge. No unbounded extrapolation during odometry outages.
-    """
-    def __init__(self, tolerance_s):
-        self.tolerance_ns = tolerance_s * 1e9
-        self.samples = deque(maxlen=512)
 
-    def add(self, stamp, position, orientation):
-        if self.samples and stamp <= self.samples[-1][0]:
-            raise ValueError('Non-increasing odometry timestamp')
-        self.samples.append((stamp, np.asarray(position).copy(), quaternion(orientation)))
+class LioMount:
+    """Relate the MID-360S IMU reported by Swarm-LIO to the Go2 body."""
+    def __init__(self, mount):
+        pitch = np.deg2rad(mount['pitch_deg'])
+        self.body_from_imu = rotation([np.cos(pitch/2), 0., np.sin(pitch/2), 0.])
+        self.imu_from_body_q = (np.cos(pitch/2), 0., -np.sin(pitch/2), 0.)
+        self.imu_in_body = np.array(mount['imu_in_base_m'])
 
-    def at(self, stamp, *, bracketed=False):
-        if not self.samples:
-            raise ValueError('Waiting for odometry at point-cloud time')
-        nearest = min(self.samples, key=lambda sample: abs(sample[0]-stamp))
-        if nearest[0] == stamp:
-            return nearest[1].copy(), nearest[2].copy()
-        if abs(nearest[0]-stamp) > self.tolerance_ns:
-            raise ValueError('Point-cloud / odometry timestamp mismatch')
-        for left, right in zip(self.samples, list(self.samples)[1:]):
-            if left[0] <= stamp <= right[0] and right[0]-left[0] <= 2*self.tolerance_ns:
-                alpha = (stamp-left[0])/(right[0]-left[0])
-                q0, q1 = left[2], right[2]
-                dot = np.dot(q0, q1)
-                if dot < 0:
-                    q1, dot = -q1, -dot
-                theta = np.arccos(np.clip(dot, 0, 1))
-                q = ((1-alpha)*q0+alpha*q1 if theta < 1e-5 else
-                     (np.sin((1-alpha)*theta)*q0+np.sin(alpha*theta)*q1)/np.sin(theta))
-                return (1-alpha)*left[1]+alpha*right[1], quaternion(q)
-        if bracketed:
-            raise ValueError('Waiting for bracketing odometry samples at point-cloud time')
-        return nearest[1].copy(), nearest[2].copy()
+    def body_state(self, imu_p, imu_q, world_linear):
+        body_q = multiply(imu_q, self.imu_from_body_q)
+        world_from_body = rotation(body_q)
+        body_p = imu_p - world_from_body @ self.imu_in_body
+        return body_p, body_q, world_from_body.T @ world_linear
