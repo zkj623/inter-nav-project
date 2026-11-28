@@ -166,7 +166,7 @@ def contact_face_lateral_allowance(dimensions, direction, heading_error, tilt_de
 
 
 def observed_contact_face_clear(position, orientation, box_xy, center_z, local_dimensions,
-                                box_orientation, direction, maximum=.10, face_margin=.04, *, head_bounds=None, require_vertical=False):
+                                box_orientation, direction, maximum=.10, face_margin=.04, *, head_bounds=None, require_vertical=False, min_vertical_overlap=None, travel_direction=None):
     """Project the padded head envelope onto the observed, oriented box face.
 
     The world AABB is retained for obstacle checks, but is not a physical
@@ -197,8 +197,22 @@ def observed_contact_face_clear(position, orientation, box_xy, center_z, local_d
     head_world=position+corners@robot_rotation.T
     box_center=np.array([*box_xy,float(center_z)])
     local_head=(head_world-box_center)@box_rotation
+    if travel_direction is not None:
+        # Intersect each corner's actual straight travel ray with the measured
+        # face. At a residual yaw the rear corners reach that plane later.
+        ray = np.asarray(travel_direction, float)
+        if ray.shape != (2,) or not np.isfinite(ray).all():return False
+        local_ray = np.array([*ray, 0.]) @ box_rotation
+        sign = np.sign((normal @ box_rotation)[face_axis])
+        if sign * local_ray[face_axis] <= 1e-8:return False
+        plane = -sign * dimensions[face_axis]/2
+        travel = (plane - local_head[:, face_axis]) / local_ray[face_axis]
+        local_head = local_head + travel[:, None] * local_ray
     projected=local_head[:,tangent_axis];lower=float(projected.min());upper=float(projected.max())
     half_face=dimensions[tangent_axis]/2
+    if min_vertical_overlap is not None:
+        overlap = min(local_head[:,2].max(), dimensions[2]/2) - max(local_head[:,2].min(), -dimensions[2]/2)
+        if overlap < min_vertical_overlap:return False
     if require_vertical and (local_head[:,2].min() < -dimensions[2]/2+face_margin or local_head[:,2].max() > dimensions[2]/2-face_margin):return False
     return bool(lower>=-half_face+face_margin and upper<=half_face-face_margin
                 and abs((lower+upper)/2)<maximum)

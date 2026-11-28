@@ -77,8 +77,11 @@ def test_map_change_while_crossing_stops_the_command():
     assert engine.decision['reason'] == 'narrow_passage_changed'
 
 
-def test_push_reopens_throat_only_after_scan_observes_vacated_strip():
+@pytest.mark.parametrize('field_floor', [True, False])
+def test_push_reopens_throat_from_confirmed_field_floor_or_new_rays(field_floor):
     profile = load(interaction_path=ROOT/'configs/box_30x80x30.yaml')['interaction']
+    if not field_floor:
+        profile = dict(profile, first_push_face=None)
     engine, _ = scene(interaction=profile)
     layers = engine.layers
     # A shallow recess in one wall accommodates the shifted box.
@@ -89,7 +92,8 @@ def test_push_reopens_throat_only_after_scan_observes_vacated_strip():
     start = (-1.5, 0., .31)
 
     def see_box(step, center_y):
-        box = BoxState('box-1', (0., center_y), (.8, .3, .3))
+        box = BoxState('box-1', (0., center_y), (.8, .3, .3), local_dimensions=(.8, .3, .3),
+                       orientation=(1., 0., 0., 0.), center_z=.15)
         packet = observation(step, start, points=[(-.39, center_y+d, .20) for d in (-.03, 0., .03)])
         packet['sensors']['lidar']['position'] = np.array(start)
         engine.observe(packet, .2*step, [box])
@@ -99,17 +103,19 @@ def test_push_reopens_throat_only_after_scan_observes_vacated_strip():
     see_box(1, .285)
     assert not engine._try_narrow_passage()
     engine.push_speed_sent('box-1')
-    see_box(2, .330)
-    assert not layers.observed[engine.planner.cell((.25, .15))]
-    assert not engine._try_narrow_passage()
-
-    # Fan of returns from beyond the box now crosses the newly visible strip.
-    targets = [(2., y, .25) for y in np.linspace(-.7, .64, 300)]
+    see_box(2, .35)
+    assert bool(layers.observed[engine.planner.cell((.25, .15))]) == field_floor
+    if field_floor:
+        targets = [(-2.8, -2.8, .2)]  # No ray across the vacated strip.
+    else:
+        assert not engine._try_narrow_passage()
+        targets = [(2., y, .25) for y in np.linspace(-.7, .64, 300)]
     packet = observation(3, start, points=targets)
     packet['sensors']['lidar']['position'] = np.array(start)
     engine.observe(packet, .6)
     layers.refresh_global(reason='first_push_reobserve_route')
     engine.trial_used = True
+    engine.trial_report = {'reason': 'first_push_observed'}
     original_goal = engine.goal
     engine.update(packet, .7)
     assert engine.narrow is not None

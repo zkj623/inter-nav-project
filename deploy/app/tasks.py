@@ -6,6 +6,10 @@ import numpy as np
 from .navigation import NavigationEngine
 
 
+BOX_SCAN_WAITS = {'waiting_for_registered_box', 'waiting_for_motion_feedback',
+                  'no_reachable_upper_short_end', 'waiting_for_post_push_scan', 'waiting_for_post_push_exit', 'waiting_for_post_push_route'}
+
+
 class Tasks:
     def __init__(self, config, perception=None, interaction=None, box_memory=None):
         self.config, self.perception = config, perception
@@ -51,7 +55,7 @@ class Tasks:
         self.last_time, self.state = now, 'active'
         self._prepared = False
 
-    def prepare_for_motion(self, snapshot, now):
+    def prepare_for_motion(self, snapshot, now, *, retain_box_wait=False):
         """Build the first route while the SDK writer is still disarmed.
 
         The resulting velocity is deliberately discarded. Activation preserves
@@ -68,13 +72,15 @@ class Tasks:
             self.engine.prepare_tracking(recognition)
         self.last_timings['total_s'] += self.last_timings['local_preparation_s']
         if self.engine.status in ('completed', 'failed'):
-            self.state, self.result = 'completed', self.engine.result
+            self.state, self.result = self.engine.status, self.engine.result
             return False
-        self.state = 'paused'
         # A successful computation may still say "wait, no observed route".
         # Keep that goal/map, but do not arm a writer with nothing to execute.
-        kind = (self.engine.decision or {}).get('kind')
+        decision = self.engine.decision or {}
+        kind = decision.get('kind')
         self._prepared = kind != 'wait' and (kind != 'explore' or self.engine.tracker is not None)
+        if not (retain_box_wait and kind == 'wait' and decision.get('reason') in BOX_SCAN_WAITS):
+            self.state = 'paused'
         return self._prepared
 
     def activate_prepared(self, now):
@@ -136,6 +142,10 @@ class Tasks:
         with self._measure('total_s'):
             return self._update(snapshot, now, advance=False)
 
+    def contact_scan_ready(self, snapshot, now):
+        _, recognition = self._perceive(snapshot, now)
+        return self.engine.contact_scan_ready(recognition)
+
     def _perceive(self, snapshot, now):
         cached = self._perception_sample
         if cached is not None and cached[0] is snapshot and cached[1] == now:
@@ -157,26 +167,25 @@ class Tasks:
             self.elapsed += max(0., now-self.last_time)
             self.last_time = now
             if self.elapsed >= self.config['task_timeout_s']:
-                self.engine.pause()
-                self.state = 'completed'
-                self.result = {'success': False, 'reason': 'task_timeout'}
+                self.engine.now = now
+                self.engine._finish(False, 'task_timeout')
+                self.state, self.result = self.engine.status, self.engine.result
                 return None
             with self._measure('navigation_s'):
                 velocity = self.engine.update(observation, now, boxes=boxes, recognition=recognition)
         else:
             with self._measure('mapping_s'):
-                self.engine.observe(observation, now, boxes=boxes)
+                self.engine.observe(observation, now, boxes=boxes, recognition=recognition)
             velocity = None
         if self.engine.layers.scan_count:
             self.map_ready = True
             self.last_lidar = self.engine.layers.last_scan
             if self.last_lidar == observation['sensors']['lidar'].get('physics_step'):
                 self.last_mapping_at = snapshot.lidar_at
-        if advance and self.state == 'active':
+        if advance and self.state == 'active' and self.engine.status != 'failed':
             with self._measure('goal_check_s'):
                 self.check_navigation_goal(self.engine.goal)
         if advance and self.state == 'active' and self.engine.status in ('completed', 'failed'):
-            self.state = 'completed'
-            self.result = self.engine.result
+            self.state, self.result = self.engine.status, self.engine.result
             return None
         return velocity

@@ -3,6 +3,8 @@ import math
 from uuid import uuid4
 
 
+TIMED_PUSH_PHASES = frozenset({'timed_push', 'push_settle'})
+
 CONTACT_PHASES = frozenset({'engage', 'push', 'settle_push_progress', 'brake_after_push',
     'retreat', 'settle_after_retreat', 'settle_blocked_retreat', 'recover_release_pose',
     'settle_released_corridor', 'verify_passage', 'reobserve'})

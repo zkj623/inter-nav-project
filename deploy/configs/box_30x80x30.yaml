@@ -2,10 +2,13 @@
 source: registered_box_lidar
 tracking_enabled: true
 tracking:
+  max_age_s: 0.38  # Measured capture-to-dispatch ~0.22 s plus a 0.10 s scan interval.
   stationary_window_s: 2.0  # Accumulate sparse MID-360 returns while standing still.
-window_max_age_s: 0.35  # Observation only. Contact uses tracking.max_age_s (0.25 s).
+window_max_age_s: 0.35  # Map observation only.
 geometry_verified: true  # Registered box dimensions measured in the field.
 first_push: true
+first_push_face: upper_short_end  # Approach from +Y and push the 30 x 30 cm end toward -Y.
+timed_push_speed_mps: 0.50
 registry_reference: "Field box: measured 0.30 x 0.80 m footprint, 0.30 m height"
 boxes:
   - id: box-1

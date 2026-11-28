@@ -41,9 +41,13 @@ class CommandGuard:
         self.last_time = None
         self.deadline = None
         self.contact = ContactGuard(config)
+        self.launched_segment = None
+        self.forward_started_at = None
 
     def arm(self, now, duration_s=None):
         self.contact.arm()
+        self.launched_segment = None
+        self.forward_started_at = None
         self.armed = True
         self.reason = 'active'
         self.expires = now + self.config['command_ttl_s']
@@ -94,6 +98,13 @@ class CommandGuard:
         except ValueError:
             self.stop('invalid_command')
             return False
+        if self.contact.active is not None and self.contact.active['phase'] == 'timed_push':
+            if self.launched_segment == self.contact.active['id'] and self.forward_started_at is None:
+                self.stop('timed_push_after_forward_motion')
+                return False
+            if self.velocity[0] < 0. or np.any(self.velocity[1:]):
+                self.stop('invalid_timed_push_velocity')
+                return False
         # Entering contact or reducing its bounds cannot leave the previous,
         # faster navigation output alive for a deceleration ramp.
         self.output = checked_velocity(self.output, effective)
@@ -110,6 +121,21 @@ class CommandGuard:
         dt = min(max(now-self.last_time, 0), .1)
         effective = self.contact.effective_config()
         delta = np.array([effective['acceleration']]*2+[effective['angular_acceleration']])*dt
+        contact = self.contact.active
+        if contact is not None and contact.get('forward_duration_s') is not None:
+            if contact['phase'] == 'push_settle' or (contact['phase'] == 'timed_push'
+                    and self.forward_started_at is not None and now - self.forward_started_at >= contact['forward_duration_s']):
+                self.output.fill(0.)
+                self.last_time = now
+                return self.output.copy()
+        if (contact is not None and contact['phase'] in ('engage', 'push', 'timed_push')
+                and contact['id'] != self.launched_segment and self.velocity[0] > 0.):
+            # Only the first positive SDK tick of this segment may step up from rest.
+            # Use the locally authorized box speed and the already bounded command.
+            cap = self.config.get('field_push_launch_speeds', {}).get(contact['object_id'], 0.)
+            if cap > 0. and np.linalg.norm(self.output[:2]) < self.config['stop_speed']:
+                delta[0] = max(delta[0], min(cap, self.velocity[0]) - self.output[0])
+            self.launched_segment = contact['id']
         self.output += np.clip(self.velocity-self.output, -delta, delta)
         self.output = checked_velocity(self.output, effective)
         self.last_time = now

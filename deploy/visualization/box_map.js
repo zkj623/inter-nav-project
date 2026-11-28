@@ -77,7 +77,7 @@ class BoxMapOverlay {
     ctx.rect(x0, y0, w*scale, h*scale);
     ctx.clip();
     for (const [id, pose] of poses) {
-      const corners = boxFootprint(pose);
+      const corners = map.box_outlines?.[id] ?? boxFootprint(pose);
       if (!corners) continue;
       const row = current.get(id);
       const fresh = !stale && row?.valid

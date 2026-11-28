@@ -33,6 +33,7 @@ def check(config):
                       'navigation_backend': 'simulation_release_online_navigation',
                       'interaction_enabled': config['navigation']['interaction_enabled'],
                       'first_push': config.get('interaction', {}).get('first_push', False),
+                      'first_push_face': config['interaction'].get('first_push_face'),
                       'interaction_source': config['interaction']['source'],
                       'registered_boxes': len(config.get('interaction', {}).get('boxes', [])),
                       'contact_profile_configured': config.get('interaction', {}).get('contact_profile') is not None,
@@ -123,8 +124,8 @@ def run_replay(args, config):
                            requested_velocity=None if velocity is None else checked_velocity(
                                velocity, config['runtime']['control']), sent_to_robot=False)
             count += 1
-            if tasks.state == 'completed':
-                reason = 'task_completed'
+            if tasks.state in ('completed', 'failed'):
+                reason = 'task_' + tasks.state
                 break
         if count == 0:
             raise ValueError('Empty recording')
@@ -274,7 +275,10 @@ def run_live(args, config):
             push_enabled = (args.allow_motion and nav['interaction_enabled']
                             and any(row['push_allowed'] for row in tracking['boxes']))
             if push_enabled and tasks.engine.first_push:
-                print('首次推箱已启用。点导航时优先接近已登记箱体，目标推移 10 厘米，停稳后复测。', flush=True)
+                if config['interaction'].get('first_push_face') == 'upper_short_end':
+                    print('首次推箱已启用。从地图上方接近短端面，向下推，停稳复测后检查原目标通路。', flush=True)
+                else:
+                    print('首次推箱已启用。点导航时优先接近已登记箱体，目标推移 10 厘米，停稳后复测。', flush=True)
             else:
                 print('自主推箱已启用，接触前用当前扫描确认箱体。' if push_enabled else '本轮自主推箱已关闭。', flush=True)
         print(f"来源坐标系={'demo_odom' if args.demo else robot['map_frame']}；等待有效观测初始化 experiment；视频预览={args.camera}", flush=True)

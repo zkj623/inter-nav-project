@@ -13,12 +13,17 @@ class ObservedBoxMotion:
     """
     def __init__(self,profile):
         self.profile=profile;self.samples=deque();self.seen_ids=set()
+        self.position_tolerance = profile.box_position_tolerance_m
+        self.speed_tolerance = profile.box_max_settled_speed_mps
+        if profile.mode == 'first_push':
+            self.position_tolerance = max(.03, self.position_tolerance)
+            self.speed_tolerance = max(.07, self.speed_tolerance)
         self.anchor=None;self.last_motion_at=None;self.last_motion_id=None
         self.latest_at=None;self.latest_id=None;self.latest_corners=None
         self.settled=False;self.center_velocity=np.zeros(2);self.diagnostic={}
 
     @staticmethod
-    def _corners(box):
+    def corners(box):
         dimensions=np.asarray(getattr(box,'local_dimensions',None),float)
         q=np.asarray(getattr(box,'orientation',None),float)
         z=getattr(box,'center_z',None)
@@ -38,7 +43,7 @@ class ObservedBoxMotion:
         if (stamp is None or not isinstance(source_id,(str,int,np.integer)) or not str(source_id)
                 or not np.isfinite(stamp) or not np.isfinite(now) or float(stamp)>float(now)+1e-6):
             raise ValueError('Box stability requires an original source timestamp and scan identity')
-        stamp=float(stamp);source_id=str(source_id);corners=self._corners(box)
+        stamp=float(stamp);source_id=str(source_id);corners=self.corners(box)
         if source_id==self.latest_id:
             if stamp!=self.latest_at or not np.allclose(corners,self.latest_corners,rtol=0.,atol=1e-9):
                 raise ValueError('A repeated box source cannot change its measurement or timestamp')
@@ -48,7 +53,7 @@ class ObservedBoxMotion:
         p=self.profile
         if self.latest_at is not None and stamp-self.latest_at>p.box_settle_seconds:
             self.samples.clear();self.anchor=None
-        if self.anchor is None or np.max(np.linalg.norm(corners-self.anchor,axis=1))>p.box_position_tolerance_m:
+        if self.anchor is None or np.max(np.linalg.norm(corners-self.anchor,axis=1))>self.position_tolerance:
             self.anchor=corners.copy();self.last_motion_at=stamp;self.last_motion_id=source_id
         self.samples.append((stamp,corners.copy()))
         self.seen_ids.add(source_id)
@@ -64,7 +69,7 @@ class ObservedBoxMotion:
         speed=float(np.max(np.linalg.norm(velocity,axis=1)))
         excursion=float(np.max(np.linalg.norm(points-points[0],axis=2)))
         self.center_velocity=velocity.mean(axis=0)[:2]
-        motion=(speed>p.box_max_settled_speed_mps or excursion>p.box_position_tolerance_m)
+        motion=(speed>self.speed_tolerance or excursion>self.position_tolerance)
         # A short window has not averaged the calibrated stationary jitter yet.
         # Accumulated anchor displacement still detects real movement immediately.
         full=len(self.samples)>=3 and span+1e-9>=p.box_settle_seconds
@@ -74,7 +79,7 @@ class ObservedBoxMotion:
             'last_motion_source_at':self.last_motion_at,'last_motion_source_id':self.last_motion_id,
             'window_seconds':span,'independent_scans':len(self.samples),
             'max_surface_displacement_m':excursion,'max_surface_speed_mps':speed,
-            'position_tolerance_m':p.box_position_tolerance_m,'speed_tolerance_mps':p.box_max_settled_speed_mps,
+            'position_tolerance_m':self.position_tolerance,'speed_tolerance_mps':self.speed_tolerance,
             'required_window_seconds':p.box_settle_seconds,'calibration_reference':p.calibration_reference,
             'geometry':'full_registered_cuboid_at_measured_pose'}
         return self.diagnostic

@@ -1,4 +1,4 @@
-"""Locate a registered rectangle using two sides or a measured top and side."""
+"""Locate a registered box from measured side faces or a bounded lid."""
 from dataclasses import dataclass
 import math
 from typing import Optional
@@ -218,7 +218,7 @@ def verify(points, sources, origin, lengths, height, guess, theta, config, *, co
 
 
 def top_side_boxes(points, sources, origin, dimensions, region, config):
-    """Find a bounded horizontal patch and validate a separate, sensor-facing side."""
+    """Find a bounded horizontal patch and verify its footprint and support."""
     height = dimensions[2]
     tol = config['residual_threshold_m']
     if origin[2] <= height+tol:
@@ -330,6 +330,15 @@ def verify_top_side(points, sources, origin, lengths, height, center, angle, con
         if span >= .65*lengths[j] and np.ptp(z[side]) >= .35*height:
             side_support.append(ids[side].max())
     if not side_support:
+        if config.get('use_box_top') and lengths[0] != lengths[1]:
+            support = int(ids[inner].max())
+            for axis in range(2):
+                for edge in (-half[axis], half[axis]):
+                    edge_ids = ids[top & (abs(local[:, axis]-edge) < min(.06, .18*lengths[axis]))]
+                    if len(np.unique(edge_ids)) < 2:
+                        return None
+                    support = min(support, int(edge_ids.max()))
+            return WindowFit(center, angle % (math.pi/2), support, float(np.std(zz)), angle, 'top')
         return None
     support = int(min(ids[inner].max(), max(side_support)))
     return WindowFit(center, angle % (math.pi/2), support, float(np.sqrt(np.mean((zz-level)**2))),

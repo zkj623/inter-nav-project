@@ -114,8 +114,36 @@ def test_missing_optional_interaction_file_keeps_plain_navigation(tmp_path):
 def test_no_opaque_control_caps_can_override_the_measured_profile(tmp_path):
     data = configured(tmp_path, active=True)
     data['runtime']['control']['contact_limits'] = {'max_vx': 1000.}
+    data['runtime']['control']['field_push_launch_speeds'] = {'wrong-box': 1000.}
+    data['runtime']['control']['timed_push_speeds'] = {'wrong-box': 1000.}
     loaded = write(tmp_path, data)
     assert loaded['runtime']['control']['contact_limits']['max_vx'] == .25
+    assert 'field_push_launch_speeds' not in loaded['runtime']['control']
+    assert 'timed_push_speeds' not in loaded['runtime']['control']
+
+
+def test_preserved_field_preset_uses_scoped_stroke_speed(tmp_path):
+    from deploy.app.config import ROOT
+    import shutil
+    for name in ('navigation', 'runtime', 'robot', 'go2_first_push'):
+        shutil.copyfile(ROOT/'configs'/f'{name}.yaml', tmp_path/f'{name}.yaml')
+    path = tmp_path/'box_30x80x30.yaml'
+    field = yaml.safe_load((ROOT/'configs'/path.name).read_text())
+    del field['timed_push_speed_mps']
+    del field['first_push_face']
+    path.write_text(yaml.safe_dump(field))
+    cfg = load(tmp_path, interaction_path=path)
+    control = cfg['runtime']['control']
+    assert cfg['interaction']['timed_push_speed_mps'] == .50
+    assert control['timed_push_speeds'] == {'box-1': .50}
+    assert control['contact_limits']['max_vx'] == control['field_push_launch_speeds']['box-1'] == .20
+    field['timed_push_speed_mps'] = .25
+    path.write_text(yaml.safe_dump(field))
+    assert load(tmp_path, interaction_path=path)['runtime']['control']['timed_push_speeds']['box-1'] == .25
+    field['timed_push_speed_mps'] = .8
+    path.write_text(yaml.safe_dump(field))
+    with pytest.raises(ValueError, match='timed_push_speed_mps'):
+        load(tmp_path, interaction_path=path)
 
 
 @pytest.mark.parametrize('task_args', [[], ['--task', 'navigate', '--goal', '0', '2', '--box-window'],

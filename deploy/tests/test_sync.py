@@ -44,7 +44,8 @@ raise SystemExit(subprocess.call([os.environ['TEST_RSYNC'], *args]))
     subprocess.run(command, env=env, check=True, capture_output=True)
     assert (target/'deploy/run.py').read_text() == 'old code\n'
     assert not (target/'deploy/configs/interaction.yaml').exists()
-    subprocess.run([*command, '--apply'], env=env, check=True, capture_output=True)
+    applied = subprocess.run([*command, '--apply'], env=env, check=True, capture_output=True, text=True)
+    assert '已保留设备版本：\ndeploy/configs/robot.yaml' in applied.stdout
     assert (target/'deploy/run.py').read_text() == 'new code\n'
     assert (target/'deploy/configs/robot.yaml').read_text() == measured
     assert (target/'deploy/configs/interaction.yaml').read_text() == 'tracking_enabled: false\n'

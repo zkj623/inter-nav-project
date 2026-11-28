@@ -1,9 +1,8 @@
-"""Measured, upright cuboid poses from one LiDAR scan (no temporal cloud fusion).
+"""Fit registered upright boxes on the calibrated experiment floor.
 
-The full size is registered; pose is constrained by two visible, perpendicular
-side faces with observed end boundaries. A confirmed track may subsequently
-use one complete face only with independent free-ray proof outside both edges.
-A partial or unbounded plane is deliberately not a box estimate. The floor is experiment z=0, already calibrated upstream.
+Side-face fits use one scan. The upper-short-end field preset also tracks a
+known box by its lid, using recent points for orientation and current returns
+on the lid and its near short edge for position along the push direction.
 """
 from __future__ import annotations
 
@@ -28,11 +27,114 @@ class BoxFit:
     geometry_source: str = 'current_lidar_two_side_faces'
     boundary_rays: tuple = ()
     measured_face_axis: int | None = None
+    top_end: str | None = None
+
+    def sees_push_face(self, direction, tolerance):
+        """Check the planned push against the measured side face or short lid edge."""
+        local_push = np.asarray(direction) @ _rotation(self.yaw_rad)
+        length = math.hypot(*local_push)
+        inward = {'-x': local_push[0], '+x': -local_push[0],
+                  '-y': local_push[1], '+y': -local_push[1]}
+        ends = (self.top_end,) if self.top_end is not None else self.visible_faces
+        return length > 0 and any(inward[face] >= length*math.cos(tolerance) for face in ends)
 
 
 def _rotation(yaw):
     c, s = math.cos(yaw), math.sin(yaw)
     return np.array([[c, -s], [s, c]])
+
+
+def refit_box_top(points, dimensions, origin, config, previous, recent=()):
+    """Track the registered rectangle from its lid and the near short top edge."""
+    dims = np.asarray(dimensions)
+    height, half = dims[2], dims[:2]/2
+    long = int(np.argmax(half))
+    across = 1-long
+    tol = config['residual_threshold_m']
+    if origin[2] <= height+tol or half[long]-half[across] <= tol:
+        return None
+    anchor = np.asarray(previous.center[:2])
+    axes = _rotation(previous.yaw_rad)
+    current_count = len(points)
+    if recent:
+        points = np.concatenate((points, *recent))
+    local = (points[:, :2]-anchor) @ axes
+    sensor = (origin[:2]-anchor) @ axes
+    if abs(sensor[long]) <= half[long]+tol:
+        return None
+    sign = np.sign(sensor[long])
+    z = points[:, 2]
+    near = (abs(local) <= half+config['isolation_margin_m']+.05).all(axis=1)
+    band = near & (abs(z-height) <= min(config['height_tolerance_m'], 1.75*tol))
+    minimum = max(6, config['min_face_points']-2)
+    if band.sum() < minimum:
+        return None
+    level = np.median(z[band])
+    ids = np.flatnonzero(band & (abs(z-level) <= tol))
+    outside = (abs(local[ids]) > half+2*tol).any(axis=1)
+    newest = ids < current_count
+    if (outside[newest].sum() >= max(2, math.ceil(.10*newest.sum()))
+            or outside.sum() >= max(2, math.ceil(.10*len(ids)))):
+        return None
+    ids = ids[~outside]
+    uv = local[ids]
+    if len(ids) < minimum:
+        return None
+    inside = (abs(local) <= half-tol).all(axis=1)
+    if np.count_nonzero(inside & (z > height+config['height_tolerance_m'])) >= minimum:
+        return None
+    span = np.ptp(uv, axis=0)
+    if span[across] < .60*dims[across] or span[long] < .35*dims[long]:
+        return None
+    # Reject lines, tilted surfaces and the upper rims of vertical walls.
+    inner = (abs(uv) < half-tol).all(axis=1)
+    if inner.sum() < 3 or np.linalg.svd(uv-uv.mean(0), compute_uv=False)[1] < .25*dims[across]:
+        return None
+    slopes = np.linalg.lstsq(uv-uv.mean(0), z[ids]-z[ids].mean(), rcond=None)[0]
+    if np.linalg.norm(slopes) > .16 or np.std(z[ids]) > .6*tol:
+        return None
+    # Measure the near rim on both halves of the lid. The registered depth
+    # supplies the far edge when the grazing beam misses it.
+    along = sign*uv[:, long]
+    leading = np.quantile(along, .98)
+    if abs(leading-half[long]) > config['extent_tolerance_m']:
+        return None
+    rim = along >= leading-tol
+    current = ids < current_count
+    if current.sum() < 4 or not (rim & current).any() or not (inner & current).any():
+        return None
+    if np.ptp(uv[current, across]) < .40*dims[across] or np.ptp(uv[current, long]) < .25*dims[long]:
+        return None
+    rim_points = uv[rim]
+    low, high = rim_points[:, across].min(), rim_points[:, across].max()
+    if high-low < .36*dims[across] or abs((high+low)/2) > .25*dims[across]:
+        return None
+    ends = []
+    for group in (rim_points[:, across] <= low+.15*(high-low),
+                  rim_points[:, across] >= high-.15*(high-low)):
+        part = rim_points[group]
+        ends.append(part[np.argmax(sign*part[:, long])])
+    edge = ends[1]-ends[0]
+    if edge[across] < .36*dims[across]:
+        return None
+    angle = math.atan2(edge[long], edge[across]) * (1 if across == 0 else -1)
+    if abs(angle) > math.radians(2*config['association_yaw_margin_deg']):
+        return None
+    yaw = previous.yaw_rad + .25*angle
+    refined = _rotation(yaw)
+    projected = (points[ids, :2]-anchor) @ refined
+    bounds = np.quantile(projected, [.02, .98], axis=0)
+    offset = bounds.mean(axis=0)
+    # Old points stabilize the edge angle and width. Measure progress along
+    # the push axis from the current scan, including when the box is moving.
+    offset[long] = sign*(np.quantile(sign*projected[rim & current, long], .9)-half[long])
+    if np.linalg.norm(offset) > config['extent_tolerance_m']:
+        return None
+    center = anchor + refined @ offset
+    end = ('+' if sign > 0 else '-')+'xy'[long]
+    return BoxFit((*center, height/2), yaw, tuple(dims), float(np.std(z[ids])), ('top',),
+                  tuple(span), int(current.sum()), config['geometry_margin_m'], tuple(map(int, ids[current])),
+                  geometry_source='current_lidar_registered_top', top_end=end)
 
 
 def _clusters(points, cell_size, min_points):

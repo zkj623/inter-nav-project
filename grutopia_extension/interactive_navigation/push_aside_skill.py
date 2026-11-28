@@ -56,6 +56,9 @@ class PushAsideConfig:
     max_alignment_seconds:float=20.
     max_verify_seconds:float=8.
     release_distance:float=.55
+    heading_drift_tolerance:float=.18
+    push_lateral_deadband:float=0.
+    brake_before_push_target:bool=True
 
 
 class PushAsideSkill:
@@ -149,6 +152,25 @@ class PushAsideSkill:
         allowance=self._contact_lateral_allowance(ctx,moving=moving)
         return allowance>0 and abs(self._box_frame(ctx)[1])<allowance
 
+    def _lateral_alignment_error(self, ctx):
+        return float(np.dot(np.asarray(ctx.box.xy) - np.asarray(ctx.position[:2]), self.tangent))
+
+    def _push_request(self,ctx,speed,lateral,yaw_error):
+        c,s=math.cos(ctx.heading),math.sin(ctx.heading);rot=np.array([[c,-s],[s,c]])
+        world_v=rot@np.asarray(ctx.body_velocity[:2])
+        lateral_correction=math.copysign(max(0.,abs(lateral)-self.config.push_lateral_deadband),lateral)
+        velocity=push_centerline_velocity(self.direction,speed,lateral_correction,float(np.dot(world_v,self.tangent)))
+        rate=float(np.clip(3.*yaw_error-.35*ctx.yaw_rate,-.55,.55))
+        return np.array([*(rot.T@velocity),rate])
+
+    def _preview_push(self, ctx, request):
+        return ctx.limiter.preview(request, ctx.now)
+
+    def _push_speed(self, elapsed, attempt_progress):
+        if self.state == 'engage':
+            return min(self.config.push_start_speed, self.config.push_max_speed)
+        return min(self.config.push_max_speed, self.config.push_start_speed + self.config.push_acceleration * elapsed)
+
     def _contact_ready(self,ctx):
         # Accept a verified approach corridor, not a tiny exact body pose.
         # The final task goal and measured-stop gates are unchanged.
@@ -156,11 +178,13 @@ class PushAsideSkill:
         if (not self._contact_face_clear(ctx) or abs(error)>=self.config.yaw_tolerance
                 or not .20<=gap<=self.config.max_engage_standoff):return False
         if not body_motion_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,0.,0.,horizon=0.):return False
-        # Keep the selected box in this check. The endpoint is still outside
-        # the front-foot contact envelope; intentional contact is checked by
-        # the existing execution guard only after the measured stop.
+        # End this corridor before front-foot contact. The execution guard
+        # checks intentional contact after the measured stop.
         distance=max(0.,gap-(self.config.front_contact_reach+.075))
         target=np.asarray(ctx.position[:2])+self.direction*distance
+        return self._contact_approach_clear(ctx,target)
+
+    def _contact_approach_clear(self,ctx,target):
         return body_translation_recovery_clear(ctx.planner,ctx.boxes,ctx.position,ctx.heading,target)
 
     def _reuse_alignment_pose(self,ctx):
@@ -629,7 +653,7 @@ class PushAsideSkill:
             if done:self._transition(self._centering_state_after_stop(ctx),ctx)
             return self._output(command)
         if self.state in ['align_longitudinal','align_lateral','settle_contact']:
-            if abs(yaw_error)>.18:return self._retry(ctx,'heading_drift_during_alignment')
+            if abs(yaw_error)>self.config.heading_drift_tolerance:return self._retry(ctx,'heading_drift_during_alignment')
             if ctx.now-self.state_since>self.config.max_alignment_seconds:return self._retry(ctx,'alignment_timeout')
             actual_ready=self._contact_ready(ctx)
             if self.state!='settle_contact' and actual_ready and self.lateral_step is None and self.longitudinal_step is None:
@@ -664,12 +688,7 @@ class PushAsideSkill:
                 if gap<.20 or gap>self.config.max_engage_standoff+.05:
                     self._transition('settle_alignment',ctx,'standoff_drift_during_sidestep')
                     return self._output()
-                # The validated anchor is a BODY pose at push_heading.
-                # Centering the currently rotated nose shifts that target by
-                # .33*sin(yaw_error), then final heading trim undoes it. Track
-                # the same body centerline that preparation planning checked;
-                # final contact still validates the actual nose and heading.
-                body_lateral=float(np.dot(np.asarray(ctx.box.xy)-np.asarray(ctx.position[:2]),self.tangent))
+                body_lateral = self._lateral_alignment_error(ctx)
                 body_target=np.asarray(ctx.position[:2])+self.tangent*body_lateral
                 if (self.progress_mark is None or self.progress_since is None or
                         abs(float(np.dot(np.asarray(ctx.position[:2])-self.progress_mark,self.tangent)))>=ContactTranslationStep.PROGRESS_DISTANCE):
@@ -715,7 +734,7 @@ class PushAsideSkill:
             if gap<.20 or gap>self.config.max_engage_standoff+.05:
                 self._transition('align_longitudinal',ctx,'settled_standoff_outside_preparation_band')
                 return self._output()
-            body_lateral=abs(float(np.dot(np.asarray(ctx.box.xy)-np.asarray(ctx.position[:2]),self.tangent)))
+            body_lateral = abs(self._lateral_alignment_error(ctx))
             if body_lateral>self.config.preparation_face_offset_max:
                 # Correct a large sidestep overshoot before trying a fine
                 # turn next to the jamb. The actual 3D face gate still decides
@@ -750,7 +769,7 @@ class PushAsideSkill:
             return self._output()
         if self.state in ['engage','push']:
             if ctx.tilt_degrees>self.movement_tilt_limit:return self._retry(ctx,'contact_attitude')
-            if abs(yaw_error)>.18 or not self._contact_face_clear(ctx,moving=True):return self._retry(ctx,'contact_alignment_drift')
+            if abs(yaw_error)>self.config.heading_drift_tolerance or not self._contact_face_clear(ctx,moving=True):return self._retry(ctx,'contact_alignment_drift')
             if self.state=='engage' and (gap<=self.config.front_contact_reach+.02 or float(np.dot(np.asarray(ctx.box.xy)-self.engage_box_position,self.direction))>.015):
                 self._transition('push',ctx);self.push_progress=along;self.push_progress_time=ctx.now
             clearance=ctx.planner.clearance(ctx.box)
@@ -767,7 +786,7 @@ class PushAsideSkill:
             # After a partial push, the robot is accelerating toward contact
             # again. Historical box displacement cannot prove that THIS push
             # is moving the box or will coast with the approaching robot.
-            if (self.state=='push' and along>.10 and attempt_progress>.015
+            if (self.config.brake_before_push_target and self.state=='push' and along>.10 and attempt_progress>.015
                     and self.plan.push_distance-along<=stopping_distance):
                 self.push_brakes+=1
                 self._transition('settle_push_progress',ctx,'predicted_push_coast')
@@ -782,14 +801,9 @@ class PushAsideSkill:
                 if along-self.push_progress>.015:self.push_progress=along;self.push_progress_time=ctx.now
                 if ctx.now-self.push_progress_time>self.backend.contact_timeout('push'):
                     return self.backend.stalled(self,ctx,'box_motion_stalled')
-            speed=min(self.config.push_start_speed,self.config.push_max_speed) if self.state=='engage' else min(self.config.push_max_speed,self.config.push_start_speed+self.config.push_acceleration*elapsed)
-            c,s=math.cos(ctx.heading),math.sin(ctx.heading);rot=np.array([[c,-s],[s,c]])
-            world_v=rot@np.asarray(ctx.body_velocity[:2])
-            velocity=push_centerline_velocity(self.direction,speed,lateral,float(np.dot(world_v,self.tangent)))
-            rate=float(np.clip(3.*yaw_error-.35*ctx.yaw_rate,-.55,.55))
-            request=np.array([*(rot.T@velocity),rate])
-            request=self.backend.limit_request(request)
-            command=ctx.limiter.preview(request,ctx.now)
+            speed = self._push_speed(elapsed, attempt_progress)
+            request=self.backend.limit_request(self._push_request(ctx,speed,lateral,yaw_error))
+            command=self._preview_push(ctx,request)
             return self._output(command)
         if self.state in ['brake_for_recovery','brake_after_push']:
             reason=self.backend.brake_failure(self,ctx)

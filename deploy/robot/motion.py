@@ -140,7 +140,8 @@ def _worker(pipe, robot, control, sdk_factory=UnitreeSport, test_mode=False):
     stationary_since = None
     last_stop_error = None
     move_reported = stop_reported = False
-    reported_push_id = None
+    reported_push_id = reported_stroke_speed_id = None
+    last_sidestep = None
     peak_speed = peak_yaw_speed = None
 
     def send(event):
@@ -204,6 +205,7 @@ def _worker(pipe, robot, control, sdk_factory=UnitreeSport, test_mode=False):
                                         TEST_MAX_DURATION_S if duration is None else duration)
                                     if test_mode else None)
                         guard.arm(now, duration)
+                        last_sidestep = None
                         was_armed = True
                         move_reported = stop_reported = False
                         peak_speed = peak_yaw_speed = None
@@ -216,16 +218,29 @@ def _worker(pipe, robot, control, sdk_factory=UnitreeSport, test_mode=False):
                     accepted = guard.submit(packet['velocity'], packet['generated_at'], packet['expires_at'], now,
                                             interaction=packet.get('interaction'))
                     if packet.get('command_id') is not None:
+                        state = getattr(sdk, 'state', None)
+                        feedback = {}
+                        if last_sidestep is not None and state is not None:
+                            feedback['sidestep_feedback'] = dict(
+                                move_at=last_sidestep[0], sdk_velocity=last_sidestep[1],
+                                state_at=sdk.state_at, gait_type=int(state.gait_type),
+                                foot_force=list(map(int, state.foot_force)),
+                                foot_z_body_m=[_finite(z) for z in state.foot_position_body[2::3]])
                         send({'kind': 'command_ack', 'state': 'active' if accepted else 'command_rejected',
                               'command_id': packet['command_id'], 'accepted': accepted,
                               'worker_at': now, 'expires_at': guard.expires,
-                              'detail': guard.reason, 'interaction': guard.contact.snapshot()})
+                              'detail': guard.reason, 'interaction': guard.contact.snapshot(), **feedback})
                 elif operation in ('stop', 'close'):
                     planned = operation == 'stop' and str(packet.get('reason', '')).startswith('planning_hold:')
                     if planned:
                         if guard.check_deadlines(now) and (sdk.takeover or not sdk.healthy(now)):
                             guard.stop('remote_takeover' if sdk.takeover else 'robot_state_stale_or_unsafe')
-                        if not guard.armed and guard.reason not in ('manual', 'task_completed', 'p', 'prepare', 'stop', 'o', 'm') and not guard.reason.startswith('planning_hold:'):
+                        if (guard.reason == 'interaction_observation_expired'
+                                and packet['reason'].endswith(':first_push_wait_scan')):
+                            # The same scan already stopped the writer. Deliver
+                            # its actual stopping/stopped events with that reason.
+                            break
+                        if not guard.armed and guard.reason not in ('manual', 'task_completed', 'task_failed', 'p', 'prepare', 'stop', 'o', 'm') and not guard.reason.startswith('planning_hold:'):
                             # A late planning request cannot relabel a real
                             # timeout/takeover/fault and authorize auto-resume.
                             report('rejected', 'Planning hold refused after '+guard.reason)
@@ -253,12 +268,24 @@ def _worker(pipe, robot, control, sdk_factory=UnitreeSport, test_mode=False):
             if velocity is not None:
                 try:
                     sdk.move(velocity)
+                    last_sidestep = ((now, velocity.tolist()) if abs(velocity[1]) > max(.08, abs(velocity[0]))
+                                     else None)
                     contact = guard.contact.active
-                    if (contact is not None and contact['phase'] in ('engage', 'push') and velocity[0] > 1e-6
+                    if (contact is not None and contact['phase'] in ('engage', 'push', 'timed_push')
+                            and guard.velocity[0] > 1e-6 and velocity[0] > 1e-6
                             and contact['id'] != reported_push_id):
                         reported_push_id = contact['id']
+                        if contact['phase'] == 'timed_push':
+                            guard.forward_started_at = now
                         report('active', event='push_speed_sent', interaction_id=reported_push_id,
-                               object_id=contact['object_id'], phase=contact['phase'], velocity=velocity.tolist())
+                               object_id=contact['object_id'], phase=contact['phase'], velocity=velocity.tolist(),
+                               move_at=now)
+                    if (contact is not None and contact['phase'] == 'timed_push'
+                            and contact['id'] != reported_stroke_speed_id
+                            and velocity[0] >= contact['limits']['max_vx'] - 1e-6):
+                        reported_stroke_speed_id = contact['id']
+                        report('active', event='timed_push_speed_reached', interaction_id=contact['id'],
+                               object_id=contact['object_id'], velocity=velocity.tolist(), move_at=now)
                     if test_mode and not move_reported and any(abs(v) > 1e-6 for v in velocity):
                         move_reported = True
                         report('active', 'SportClient.Move returned successfully', event='move_accepted',

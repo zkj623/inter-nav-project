@@ -18,7 +18,8 @@ def test_online_layers_and_push_state_are_detached_from_display():
     planner = BoxPushPlanner(np.zeros((40, 40), dtype=bool),
                              (config.x_limits, config.y_limits), resolution=.1)
     layers = OnlineNavigationMap(planner, config)
-    box = BoxState('observed_box_7', (.8, .6), (.4, .3, .5))
+    box = BoxState('observed_box_7', (.8, .6), (.4, .3, .5), local_dimensions=(.3, .4, .5),
+                   orientation=(2**-.5, 0., 0., 2**-.5), center_z=.25)
     layers.current_boxes = [box]
     layers.observed[15:25, 15:25] = True
     layers.tracked_occupied[25:28, 27:31] = True
@@ -27,7 +28,7 @@ def test_online_layers_and_push_state_are_detached_from_display():
         'before_length_m': float('inf'), 'after_length_m': 2.5})
     skill = SimpleNamespace(state='settle_contact', status='running', reason='',
                             plan=SimpleNamespace(box_id=box.id))
-    engine = SimpleNamespace(layers=layers, planner=planner, goal=(1.5, 0.),
+    engine = SimpleNamespace(layers=layers, planner=planner, goal=(1.5, 0.), upper_short_end=True,
                               path=[(.4, 0., .3)], phase='skill', decision=decision, skill=skill)
     tasks = SimpleNamespace(map_ready=True, engine=engine, last_mapping_at=3.,
                              state='active', mode='navigate', result=None, last_timings={})
@@ -50,6 +51,7 @@ def test_online_layers_and_push_state_are_detached_from_display():
     assert render_map(scene).shape == (720, 1280, 3)
     scene['voxel_count'] = 3
     payload = map_payload(scene)
+    np.testing.assert_allclose(payload['box_outlines'][box.id], [[1., .45], [1., .75], [.6, .75], [.6, .45]])
     projection = payload['projection']
     assert projection['image_size'] == [1280, 720] and projection['x_limits'] == (-2., 2.)
     assert projection['viewport'] == [62, 46, 650, 650]

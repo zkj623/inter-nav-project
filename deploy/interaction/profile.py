@@ -93,8 +93,8 @@ class ContactProfile:
             raise ValueError('Box settling window must fit inside the contact budget')
         if self.box_position_tolerance_m >= min(self.stop_margin_m,self.release_margin_m):
             raise ValueError('Box stationary tolerance must be smaller than the contact geometry margins')
-        if self.mode == 'first_push' and (self.push_max_mps > .06 or self.max_forward_mps > .12
-                or self.max_lateral_mps > .10 or self.max_contact_seconds > 18.):
+        if self.mode == 'first_push' and (self.push_max_mps > .20 or self.max_forward_mps > .20
+                or self.max_lateral_mps > .40 or self.max_contact_seconds > 18.):
             raise ValueError('First-push speed or duration exceeds its trial limits')
 
     @classmethod
@@ -142,12 +142,13 @@ class ContactProfile:
         return (margin + response * max(0., float(measured_speed))
                 + max(0., float(command_speed))**2 / (2 * self.linear_acceleration_mps2))
 
-    def motion_horizon(self, velocity):
+    def motion_horizon(self, velocity, *, linear_acceleration=None):
         """Cover translation coast and the separately measured yaw response."""
         velocity = np.asarray(velocity, dtype=float)
         if velocity.shape != (3,) or not np.isfinite(velocity).all():
             raise ValueError('Motion horizon requires finite (vx, vy, wz)')
-        linear = self.translation_stop_seconds + np.linalg.norm(velocity[:2]) / (2*self.linear_acceleration_mps2)
+        acceleration = self.linear_acceleration_mps2 if linear_acceleration is None else linear_acceleration
+        linear = self.translation_stop_seconds + np.linalg.norm(velocity[:2]) / (2*acceleration)
         return max(linear, self.yaw_stop_seconds) if abs(velocity[2]) > 1e-8 else linear
 
     def skill_overrides(self):

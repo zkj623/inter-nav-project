@@ -116,6 +116,39 @@ def test_sdk_yaw_stall_never_uses_simulation_pulse_or_priming_arc():
     assert np.all(command==0.)
 
 
+@pytest.mark.parametrize('refining', [False, True])
+def test_upper_short_end_aims_for_six_degrees_and_accepts_settled_rebound(refining):
+    from deploy.app.config import ROOT, load
+    field = load(interaction_path=ROOT/'configs/box_30x80x30.yaml')['interaction']
+    base, ctx = fixture()
+    skill = create_push_skill(permission(), base.plan, (0, 0), (1, 0), ContactProfile.from_dict(field['contact_profile']),
+                              upper_short_end=True)
+    turn = skill.backend.heading_trim(skill) if refining else skill.backend.new_turn(skill, ctx)
+    limiter = VelocitySlewLimiter()
+
+    def tick(degrees, now, measured_yaw=0.):
+        velocity = np.array([0., 0., measured_yaw])
+        limiter.observe(velocity, now)
+        command, done, _ = turn.update(ctx.position, np.deg2rad(degrees), ctx.planner, [], limiter, now,
+                                       np.zeros(3), velocity, 0.)
+        limiter.accept(command, now)
+        return command[2], done
+
+    for t in np.arange(0., 1., .1):
+        _, done = tick(7.4, t)
+        assert not done
+    yaw_request, done = tick(6.7, 1.)
+    assert yaw_request < 0. and not done and not turn.braking
+    tick(5.9, 1.1)
+    assert turn.braking
+    for t in np.arange(1.2, 2.2, .1):
+        _, done = tick(6.7, t, measured_yaw=.12)
+        assert not done
+    for t in np.arange(2.2, 3.2, .1):
+        _, done = tick(6.7, t)
+    assert done
+
+
 def test_sdk_contact_requires_scan_collision_check_and_stays_bounded():
     skill,ctx=fixture();ctx.contact_motion_check=None
     result=skill.step(ctx)
@@ -366,7 +399,7 @@ def test_first_push_low_box_actual_contact_command_and_stop_threshold(stop):
     high = replace(ctx, position=np.array([0.,0.,.40]))
     assert not skill._contact_face_clear(high, moving=True)
     command = skill.step(ctx)
-    assert command.status == 'running' and 0. < np.linalg.norm(command.velocity[:2]) <= .06
+    assert command.status == 'running' and 0. < np.linalg.norm(command.velocity[:2]) <= p.push_max_mps
     if stop == 'displacement':
         ctx.now = ctx.box_observed_at = 1.0
         ctx.box_observation_id = 'scan:3'
@@ -405,8 +438,110 @@ def test_trial_selects_box_faces_at_a_non_grid_heading():
         assert max(abs(axes@direction)) == pytest.approx(1.)
 
 
-@pytest.mark.parametrize('blocked_layer', [None, 'free', 'box_free'])
-def test_first_push_needs_recent_face_after_measured_settling(blocked_layer):
+@pytest.mark.parametrize('yaw', [12., 192., 90.])
+def test_field_plan_only_approaches_the_upper_short_end(yaw):
+    from deploy.interaction.first_push import RegisteredFacePlanner
+    planner = RegisteredFacePlanner(np.ones((60, 60), bool), [[-3, 3], [-3, 3]], resolution=.1)
+    angle = np.deg2rad(yaw)
+    dims = (.3, .8, .3)
+    c, s = abs(np.cos(angle)), abs(np.sin(angle))
+    box = BoxState('B1', (0., 0.), (c*.3+s*.8, s*.3+c*.8, .3), local_dimensions=dims,
+                   orientation=(np.cos(angle/2), 0., 0., np.sin(angle/2)), center_z=.15)
+    # All push-space observations are pending. The walking route is known.
+    unverified = np.zeros_like(planner.free)
+    plan = planner.first_contact_plan((-1.5, 0.), [box], {'B1'}, unverified, profile(), upper_end_goal=(1.5, 0.))
+    if yaw == 90.:  # Both short ends face sideways.
+        assert plan is None
+        return
+    assert plan.approach_xy[1] > box.xy[1] and plan.direction[1] < -.95
+    assert abs(np.dot(plan.direction, [np.cos(angle), np.sin(angle)])) < 1e-6
+    planner.static_clear[planner.cell(plan.approach_xy)] = False
+    assert planner.first_contact_plan((-1.5, 0.), [box], {'B1'}, unverified, profile(), upper_end_goal=(1.5, 0.)) is None
+
+
+def test_first_push_moves_the_turn_away_from_a_blocked_front_corner():
+    from deploy.interaction.first_push import RegisteredFacePlanner
+    # Field frame 945: the base was within the 16 cm arrival band. The front
+    # left foot crossed the (1.15, -1.15) cell about halfway through the turn.
+    planner = RegisteredFacePlanner(np.ones((39, 66), bool), [[-1.4, 5.2], [-2.8, 1.1]], resolution=.1)
+    SdkNavigationMotion(profile()).bind(planner)
+    position = np.array([.625, -.907])
+    heading, target = np.deg2rad([-67., -2.])
+    direction = np.array([np.cos(target), np.sin(target)])
+    plan = NS(direction=direction, approach_xy=np.array([.626, -1.036]))
+    box = BoxState('box-1', (1.487, -1.036), (.314, .805, .30))
+    planner.free[planner.cell((1.15, -1.15))] = False
+    backoff = planner.turn_standoff(position, heading, plan, [box], 0., .16)
+    assert backoff == .25
+    stage = plan.approach_xy - backoff*direction
+    assert planner.turn_standoff(stage, heading, plan, [box], backoff, .16) == backoff
+    planner.free[:] = False
+    assert planner.turn_standoff(position, heading, plan, [box], 0., .16) is None
+
+
+@pytest.mark.parametrize('wall', [False, True])
+def test_field_sidestep_keeps_a_safe_speed_when_its_next_acceleration_is_blocked(wall):
+    from deploy.app.config import ROOT, load
+    cfg = load(interaction_path=ROOT/'configs/box_30x80x30.yaml')
+    p = ContactProfile.from_dict(cfg['interaction']['contact_profile'])
+    _, ctx = fixture()
+    SdkNavigationMotion(p).bind(ctx.planner)
+    ctx.boxes = []
+    if wall:
+        # The target at Y=.18 fits, but the body cannot sweep far beyond it.
+        row, _ = ctx.planner.cell((0., .49))
+        ctx.planner.free[row:, :] = False
+    skill = create_push_skill(permission(), NS(box_id='B1', direction=(1., 0.), push_distance=.1),
+                              (0., 0.), (1., 0.), p, upper_short_end=True)
+    skill.state, skill.push_heading = 'align_lateral', 0.
+    ctx.limiter.linear_acceleration = cfg['navigation']['linear_acceleration']
+    ctx.limiter.accept(np.zeros(3), 0.)
+    for i in range(1, 16):
+        ctx.now = i * .1
+        v, done = skill.backend.translate(skill, ctx, np.array([0., .18]), np.array([0., 1.]), p.lateral_mps, .03)
+        assert not done and skill.backend.motion_clear(skill, ctx, v, contact=False)
+        ctx.limiter.accept(v, ctx.now)
+    if wall:
+        assert .10 < v[1] < p.lateral_mps
+    else:
+        assert v[1] == pytest.approx(.40)
+
+
+def test_upper_face_uses_a_side_turn_when_the_center_is_only_clear_after_turning():
+    from deploy.interaction.first_push import RegisteredFacePlanner
+    from grutopia_extension.interactive_navigation.go2_voronoi_navigation import body_rotation_clear, body_translation_recovery_clear
+    planner = RegisteredFacePlanner(np.ones((60, 60), bool), [[-3, 3], [-3, 3]], resolution=.1)
+    p = profile()
+    SdkNavigationMotion(p).bind(planner)
+    dims = (.30, .80, .30)
+    box = BoxState('B1', (0., 0.), dims, local_dimensions=dims, orientation=(1., 0., 0., 0.), center_z=.15)
+    anchor = np.array([0., .40 + p.nose_offset_m + PushAsideConfig.front_gap])
+    start = anchor - [1., 0.]
+    planner.free[planner.cell(anchor + [.43, 0.])] = False
+    plan = planner.first_contact_plan(start, [box], {'B1'}, planner.free, p, upper_end_goal=(1.5, 0.))
+    assert plan.direction == (0., -1.) and plan.approach_xy[0] == pytest.approx(-.10)
+    assert not body_rotation_clear(planner, [box], anchor, 0., -np.pi/2)
+    assert body_rotation_clear(planner, [box], plan.approach_xy, 0., -np.pi/2)
+    assert body_translation_recovery_clear(planner, [box], plan.approach_xy, -np.pi/2, anchor)
+
+
+def test_first_push_checks_where_the_head_will_land_on_a_narrow_face():
+    from deploy.app.config import ROOT, load
+    p = ContactProfile.from_dict(load(interaction_path=ROOT/'configs/box_30x80x30.yaml')['interaction']['contact_profile'])
+    original, ctx = fixture()
+    skill = create_push_skill(permission(), original.plan, (0., 0.), (1., 0.), p)
+    ctx.box = replace(ctx.box, xy=(1.1, 0.), local_dimensions=(.8, .3, .3), center_z=.15)
+    ctx.position = np.array([0., 0., .311])
+    assert skill._contact_face_clear(ctx)
+    angle = np.deg2rad(12.)
+    ctx.heading, ctx.orientation = angle, (np.cos(angle/2), 0., 0., np.sin(angle/2))
+    assert abs(angle) < skill.config.yaw_tolerance
+    assert not skill._contact_face_clear(ctx)
+
+
+@pytest.mark.parametrize('blocked_layer,tight_reserve',
+                         [(None, False), ('free', False), ('box_free', False), (None, True)])
+def test_first_push_needs_recent_face_after_measured_settling(blocked_layer, tight_reserve):
     from deploy.app.config import ROOT, load
     p = ContactProfile.from_dict(load(interaction_path=ROOT/'configs/box_30x80x30.yaml')['interaction']['contact_profile'])
     _, ctx = fixture()
@@ -423,6 +558,10 @@ def test_first_push_needs_recent_face_after_measured_settling(blocked_layer):
     cell = ctx.planner.cell((1.19, 0.))
     if blocked_layer:
         getattr(ctx.planner, blocked_layer)[cell] = False
+    if tight_reserve:
+        # This cell lies beyond the slower push's braking reserve. Leave it
+        # occupied and verify that the skill selects the executable speed.
+        ctx.planner.box_free[ctx.planner.cell((1.39, 0.))] = False
     saw_block = False
     for i in range(1,20):
         if blocked_layer and i == 13:
@@ -441,5 +580,6 @@ def test_first_push_needs_recent_face_after_measured_settling(blocked_layer):
             break
         assert skill.contact_started is None
     assert command.state=='engage'
+    assert skill.config.push_max_speed == (p.push_start_mps if tight_reserve else p.push_max_mps)
     if blocked_layer:
         assert saw_block

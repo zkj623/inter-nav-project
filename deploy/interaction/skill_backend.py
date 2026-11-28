@@ -12,25 +12,42 @@ from grutopia_extension.interactive_navigation.go2_contact_control import contac
 from grutopia_extension.interactive_navigation.go2_contact_turn import checked_contact_turn_command
 from grutopia_extension.interactive_navigation.go2_voronoi_navigation import body_motion_clear, body_translation_recovery_clear
 from .box_motion import ObservedBoxMotion
-from .motion import SdkYawServo, SdkHeadingTrim
+from .collision import box_sweep_space
+from .motion import SdkYawServo, SdkHeadingTrim, SdkSidestep, sidestep_speed
 
 
 def wrap(value):
     return (value+math.pi)%(2*math.pi)-math.pi
 
 
-def create_push_skill(permission, plan, start, goal, profile, *, config=None):
+def create_push_skill(permission, plan, start, goal, profile, *, config=None, upper_short_end=False):
     settings = replace(config or PushAsideConfig(), **profile.skill_overrides())
-    from .first_push import FirstPushSkill
-    skill = FirstPushSkill if profile.mode == 'first_push' else PushAsideSkill
-    return skill(permission, plan, start, goal, settings, backend=SdkPushBackend(profile))
+    from .first_push import (FirstPushSkill, TRIAL_YAW_TOLERANCE, SHORT_END_YAW_TOLERANCE,
+                             SHORT_END_SETTLED_YAW_TOLERANCE, SHORT_END_MAX_STANDOFF_M, SHORT_END_LANDING_OFFSET_M)
+    skill = PushAsideSkill
+    if profile.mode == 'first_push':
+        skill = FirstPushSkill
+        settings = replace(settings, yaw_tolerance=TRIAL_YAW_TOLERANCE, heading_drift_tolerance=math.radians(18.),
+                           preparation_face_offset_max=.20, pushing_face_offset_max=.20, push_lateral_deadband=.10)
+        if upper_short_end:
+            settings = replace(settings, alignment_yaw_tolerance=SHORT_END_YAW_TOLERANCE,
+                               yaw_tolerance=SHORT_END_SETTLED_YAW_TOLERANCE, alignment_tolerance=.03,
+                               max_engage_standoff=SHORT_END_MAX_STANDOFF_M,
+                               preparation_face_offset_max=SHORT_END_LANDING_OFFSET_M, pushing_face_offset_max=.095,
+                               contact_face_margin=.02, push_lateral_deadband=.03,
+                               brake_before_push_target=False)
+    backend = SdkPushBackend(profile, upper_short_end=upper_short_end and profile.mode == 'first_push')
+    return skill(permission, plan, start, goal, settings, backend=backend)
 
 
 class SdkPushBackend(PushAsideBackend):
     policy_translation_steps = False
 
-    def __init__(self, profile):
+    def __init__(self, profile, *, upper_short_end=False):
         self.profile = profile
+        self.upper_short_end = upper_short_end
+        self.centering = None
+        self.centering_detail = {}
         self.nose_offset_m = profile.nose_offset_m
         self.movement_tilt_limit = self.hard_tilt_limit = profile.max_tilt_degrees
         self.box_motion = ObservedBoxMotion(profile)
@@ -52,9 +69,12 @@ class SdkPushBackend(PushAsideBackend):
 
     def heading_trim(self, skill):
         return SdkHeadingTrim(skill.push_heading, min(skill.config.alignment_yaw_tolerance, skill.config.yaw_tolerance),
-                              acceptance_tolerance=skill.config.yaw_tolerance, profile=self.profile)
+                              acceptance_tolerance=skill.config.yaw_tolerance, profile=self.profile,
+                              compensate_rebound=self.upper_short_end)
 
     def new_turn(self, skill, ctx):
+        if self.upper_short_end:
+            return self.heading_trim(skill)
         return SdkHeadingTrim(skill.push_heading, skill.config.yaw_tolerance, profile=self.profile)
 
     def update_turn(self, turn, ctx):
@@ -80,11 +100,31 @@ class SdkPushBackend(PushAsideBackend):
         if self.profile.mode == 'first_push':
             # The 30 cm box meets the leading cap of Head_lower. The upper head
             # extends above the box. Keep the full head width in the side check.
-            face = (ctx.position, ctx.orientation, ctx.box.xy, geometry[2], geometry[0], geometry[1], skill.direction)
+            forward = np.array([math.cos(ctx.heading), math.sin(ctx.heading)])
+            gap, lateral, _ = skill._box_frame(ctx, travel_direction=forward)
+            if not math.isfinite(gap):
+                return False
+            margin = skill.config.contact_face_margin
+            straight = self.upper_short_end
+            if straight:
+                if abs(skill.landing_offset(ctx, forward, gap)) > maximum + 1e-9:
+                    return False
+                margin = .015
+            elif abs(lateral) > maximum:
+                return False
+            # At an oblique stand-off, a nose currently inside the side edges
+            # may pass outside them by the time it reaches the measured face.
+            contact_pose = np.array(ctx.position, dtype=float, copy=True)
+            contact_pose[:2] += max(0., gap)*forward
+            face = (contact_pose, ctx.orientation, ctx.box.xy, geometry[2], geometry[0], geometry[1], skill.direction)
+            half_extent = max(geometry[0][:2])/2
             lower_cap = ((.337, .340), (-.017, .017), (-.077, -.043))
-            return (observed_contact_face_clear(*face, maximum, skill.config.contact_face_margin,
-                                                head_bounds=self.profile.head_bounds)
-                    and observed_contact_face_clear(*face, maximum, .015, head_bounds=lower_cap, require_vertical=True))
+            ray = forward if straight else None
+            return (observed_contact_face_clear(*face, half_extent, margin,
+                                                head_bounds=self.profile.head_bounds, travel_direction=ray)
+                    and observed_contact_face_clear(*face, half_extent, .015, head_bounds=lower_cap,
+                                                    require_vertical=not straight, min_vertical_overlap=.015 if straight else None,
+                                                    travel_direction=ray))
         return observed_contact_face_clear(ctx.position, ctx.orientation, ctx.box.xy, geometry[2],
             geometry[0], geometry[1], skill.direction, maximum, skill.config.contact_face_margin,
             head_bounds=self.profile.head_bounds, require_vertical=True)
@@ -99,6 +139,14 @@ class SdkPushBackend(PushAsideBackend):
             return 'invalid_measured_motion'
         if skill.contact_started is not None and ctx.now-skill.contact_started >= self.profile.max_contact_seconds:
             return 'contact_budget_exhausted'
+        if self.centering is not None and skill.state in ('align_lateral', 'settle_contact'):
+            # A brief lean can enter settle_contact and spring back outside
+            # the face. Keep the progress timer across those transitions.
+            if self.centering.stalled(ctx.now):
+                return 'lid_centering_no_progress'
+        elif self.centering is not None and skill.state not in ('settle_alignment', 'refine_heading'):
+            self.centering = None
+            self.centering_detail = {}
         if (skill.state in {'align_longitudinal', 'align_lateral'} and skill.progress_since is not None
                 and ctx.now-skill.progress_since >= self.profile.stall_seconds
                 and np.linalg.norm(np.asarray(ctx.position[:2])-skill.progress_mark) < .01):
@@ -108,9 +156,16 @@ class SdkPushBackend(PushAsideBackend):
     def after_step(self, skill, ctx, result):
         if result.status != 'running':
             return result
+        if skill.state == 'align_lateral' and self.centering_detail.get('stalled'):
+            return skill._fail(ctx, 'lid_centering_no_progress')
+        if (self.upper_short_end and skill.state == 'align_lateral' and self.centering_detail.get('limited_by_sweep')
+                and not self.centering_detail['braking']
+                and self.centering_detail['measured_closing_mps'] < self.profile.min_translation_mps
+                and np.linalg.norm(result.velocity[:2]) < self.profile.min_translation_mps):
+            return skill._fail(ctx, 'sdk_body_or_box_sweep_blocked')
         bounded = self.profile.limit(result.velocity)
         if self.profile.mode == 'first_push' and skill.contact_started is not None:
-            bounded[:2] /= max(1., np.linalg.norm(bounded[:2])/self.profile.push_max_mps)
+            bounded[:2] /= max(1., np.linalg.norm(bounded[:2])/skill.config.push_max_speed)
         if np.any(np.abs(bounded) > 1e-9):
             contact = skill.state in {'engage', 'push', 'settle_push_progress', 'brake_after_push'}
             if skill.contact_started is not None:
@@ -194,6 +249,17 @@ class SdkPushBackend(PushAsideBackend):
     def translate(self, skill, ctx, target, axis, speed, tolerance):
         delta = np.asarray(target) - np.asarray(ctx.position[:2])
         error = float(np.dot(delta, axis))
+        if self.upper_short_end and skill.state == 'align_lateral':
+            # Keep the checked translation continuous through small yaw fluctuations.
+            # The skill checks large drift in motion and verifies yaw again at rest.
+            center = ctx.position[:2] + axis*error
+            if self.centering is None:
+                self.centering = SdkSidestep(center, tolerance, ctx.now, self.profile)
+            angular = ctx.body_angular_velocity if ctx.body_angular_velocity is not None else [0., 0., ctx.yaw_rate]
+            command, done, self.centering_detail = self.centering.move(
+                ctx.position, ctx.heading, ctx.planner, ctx.boxes, ctx.limiter, ctx.now,
+                ctx.body_velocity, angular, ctx.tilt_degrees, target=center, speed_limit=speed)
+            return command, done
         if skill.translation_braking:
             if not skill._quiet(ctx):
                 return (np.zeros(3), False)
@@ -214,18 +280,45 @@ class SdkPushBackend(PushAsideBackend):
         if toward > 0.06 and abs(error) < stopping_distance:
             skill.translation_braking = True
             return (np.zeros(3), False)
-        speed = float(np.clip(1.5 * abs(error) - 0.6 * max(0.0, toward), self.profile.min_translation_mps, speed))
+        sidestep = self.profile.mode == 'first_push' and skill.state == 'align_lateral'
+        if sidestep:
+            # The old proportional request fell to 0.13–0.22 m/s while the
+            # field robot was still well off center and only leaning.
+            requested_speed = sidestep_speed(speed, ctx.limiter.linear_acceleration, abs(error))
+        else:
+            requested_speed = 1.5 * abs(error) - 0.6 * max(0., toward)
+        speed = float(np.clip(requested_speed, self.profile.min_translation_mps, speed))
         world = unit * speed
-        yaw_request = contact_heading_hold(wrap(skill.push_heading - ctx.heading), ctx.yaw_rate)
+        heading_error = wrap(skill.push_heading - ctx.heading)
+        if self.profile.mode == 'first_push':
+            # At an accepted heading, a pure sidestep follows the checked
+            # centerline without sweeping the nose sideways near the box.
+            yaw_request = 0.
+            if abs(heading_error) > skill.config.yaw_tolerance:
+                rate = math.copysign(max(self.profile.min_yaw_rps, 3 * abs(heading_error)), heading_error)
+                yaw_request = rate - .35 * ctx.yaw_rate
+        else:
+            yaw_request = contact_heading_hold(heading_error, ctx.yaw_rate)
         if not body_motion_clear(ctx.planner, ctx.boxes, ctx.position, ctx.heading, 0.0, 0.0, horizon=0.0):
             yaw_request = 0.0
         request = [*rot.T @ world, yaw_request]
         request = self.profile.limit(request)
-        (command, _) = checked_contact_turn_command(request, ctx.position, ctx.heading, ctx.planner, ctx.boxes, ctx.limiter, ctx.now, target_position=np.asarray(ctx.position[:2]) + axis * error)
+        args = (ctx.position, ctx.heading, ctx.planner, ctx.boxes, ctx.limiter, ctx.now)
+        if sidestep:
+            # Use the same full stopping sweep as after_step. An acceleration
+            # that would cross an occupied cell need not end a clear sidestep.
+            command, clear = checked_contact_turn_command(request, *args)
+            if not clear:
+                request[:2] = rot.T @ unit * min(speed, command_toward)
+                command, clear = checked_contact_turn_command(request, *args)
+                if not clear:
+                    command, _ = checked_contact_turn_command(np.zeros(3), *args)
+        else:
+            command, _ = checked_contact_turn_command(request, *args, target_position=ctx.position[:2] + axis * error)
         return (command, False)
 
     def motion_clear(self, skill,ctx,command,*,contact):
-        """Keep map obstacles and unknown space in every executed SDK sweep.
+        """Check body motion on observed floor and box motion on its own map.
 
         The deployment callback independently checks unmasked current returns
         and target-surface ownership; omitting the target object layer here
@@ -234,8 +327,10 @@ class SdkPushBackend(PushAsideBackend):
         boxes=[box for box in ctx.boxes if not (contact and box.id==ctx.box.id)]
         measured=np.asarray(ctx.limiter.measured,float)
         if measured.shape!=(3,) or not np.isfinite(measured).all():return False
-        for velocity in (command,measured):
-            horizon=self.profile.motion_horizon(velocity)
+        command_acceleration = (ctx.limiter.linear_acceleration if self.upper_short_end and not contact
+                                and skill.state == 'align_lateral' else None)
+        for velocity, acceleration in ((command, command_acceleration), (measured, None)):
+            horizon=self.profile.motion_horizon(velocity, linear_acceleration=acceleration)
             safe=body_motion_clear(ctx.planner,boxes,ctx.position,ctx.heading,
                 velocity[0],velocity[2],horizon=horizon,lateral=velocity[1])
             if not safe and not contact and abs(velocity[2])<.10 and abs(command[2])<1e-8:
@@ -243,7 +338,7 @@ class SdkPushBackend(PushAsideBackend):
                 target=np.asarray(ctx.position[:2])+np.array([[c,-s],[s,c]])@velocity[:2]*horizon
                 safe=body_translation_recovery_clear(ctx.planner,boxes,ctx.position,ctx.heading,target,require_clear_end=False)
             if not safe:return False
-        if contact:
+        if contact and (not self.upper_short_end or skill.box_within_stopping_reach(ctx, command)):
             # Reserve the box's complete swept extent, including measured
             # stopping travel. Recompute on every scan/command, not just plan.
             c,s=math.cos(ctx.heading),math.sin(ctx.heading)
@@ -251,7 +346,7 @@ class SdkPushBackend(PushAsideBackend):
             speed=max(0.,float(np.dot(rotation@command[:2],skill.direction)),
                 float(np.dot(rotation@measured[:2],skill.direction)),skill.box_velocity)
             distance=self.profile.stopping_distance(speed,pushing=True,command_speed=speed)
-            allowed=ctx.planner.box_free.copy()
+            allowed=box_sweep_space(ctx.planner, ctx.planner.box_free).copy()
             for box in boxes:
                 mask=ctx.planner.box_mask(box,padding=self.profile.stop_margin_m)
                 if mask is None:return False

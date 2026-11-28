@@ -146,7 +146,7 @@ function windowStatus(row,valid,remembered){
   wait_for_stationary_window:'等机器人站稳',outside_registration_region:'超出初始搜索区',
   ambiguous:'有多个可能的箱子',surface_evidence_expired:'箱面的点云已过期',discontinuous_fit:'箱子位置或方向跳变'};
  const parts=['多帧认箱',row.object_id,valid?'本次扫描已确认':remembered?'采用地图箱位':states[row.tracking_state]];
- if(valid&&row.surfaces)parts.push(row.surfaces==='top_and_side'?'顶面 + 侧面':'两个侧面');
+ if(valid&&row.surfaces)parts.push(({top:'顶面',top_and_side:'顶面 + 侧面',two_sides:'两个侧面'})[row.surfaces]||row.surfaces);
  if(valid&&row.center)parts.push('中心 ('+row.center.slice(0,2).map(v=>v.toFixed(2)).join(', ')+') m');
  if(valid&&Number.isFinite(row.long_axis_rad))parts.push('长边方向 '+Math.round(row.long_axis_rad*180/Math.PI)+'°');
  return parts.concat(reasons[row.invalid_reason]??row.invalid_reason).filter(Boolean).join(' · ');
@@ -213,20 +213,36 @@ async function poll(){if(polling)return;polling=true;clearTimeout(pollTimer);$('
    return `接触前核对 · ${o.object_id} · ${valid?'本次扫描已确认':reasons[o.invalid_reason]||o.invalid_reason||'等待新扫描'} · ${measured}${quality}${age}`;
   });
   if(data.map?.interaction_perception_error)details.push('箱面扫描 · '+data.map.interaction_perception_error);
+  const stage=data.map?.decision?.stage_tracking;
+  if(['box_approach','box_stage_brake','box_stage_translate'].includes(data.map?.phase)&&Number.isFinite(stage?.stage_error_m)){
+   details.push(`距预定站位 ${(stage.stage_error_m*100).toFixed(1)} cm${stage.stalled?' · 实测前进停滞':''}`);
+  }
+  const centering=data.map?.decision?.lid_centering;
+  if(data.map?.decision?.skill_state==='align_lateral'&&Number.isFinite(centering?.stage_error_m)){
+   details.push(`箱顶横向误差 ${(centering.stage_error_m*100).toFixed(1)} cm · 实测向中心速度 ${(centering.measured_closing_mps*100).toFixed(1)} cm/s`);
+  }
+  if(data.map?.phase==='box_turn'&&Number.isFinite(data.map?.decision?.measured_rebound_rad)){
+   details.push(`转身误差 ${Math.abs(data.map.decision.heading_error_rad*180/Math.PI).toFixed(1)}° · 实测回弹 ${(data.map.decision.measured_rebound_rad*180/Math.PI).toFixed(1)}°`);
+  }
   if(data.map?.phase==='box_turn'&&data.map.decision?.turn_clear===false)details.push('转向检查 · 当前空间不足以转身');
-  const waits={waiting_for_box_face:'等新的箱面扫描',waiting_for_settled_box:'等箱位测稳',waiting_for_push_map:'等新的地图扫描',push_path_blocked_or_unknown:'推箱范围内有障碍或未观测格'};
+  const waits={braking_for_lid_recheck:'等横移停稳',waiting_for_stopped_lid:'等停稳后的箱顶点云',stopped_pose_outside_standoff_or_heading:'距离或朝向超出范围',stopped_head_misses_short_face:'机头落点或接触高度不足',stopped_head_wide_of_face:'机头落点超出端面',waiting_for_box_face:'等新的箱面扫描',waiting_for_settled_box:'等箱位测稳',waiting_for_push_map:'等新的地图扫描',push_path_blocked_or_unknown:'推箱范围内有障碍或未观测格'};
   const wait=data.map?.decision?.precontact_wait;
   if(wait)details.push('接触前核对 · '+(waits[wait]||wait));
-  if(data.map?.contact_collision&&skill&&data.map.contact_collision.reason!=='no_contact_scan')details.push('接触检查 · '+data.map.contact_collision.reason);
+  const collision=data.map?.contact_collision;
+  if(collision&&skill&&collision.reason!=='no_contact_scan'){
+   const reason=collision.reason==='box_sweep_obstacle'?'箱子前移范围有障碍':collision.reason;
+   const xy=collision.cell_xy_m;
+   details.push('接触检查 · '+reason+(xy?' · 地图 ('+xy.map(v=>v.toFixed(2)).join(', ')+') m':''));
+  }
   const trial=data.map?.first_push_result;
   if(trial){
    const moved=trial.first_push?.displacement_m;
-   const outcome=trial.reason==='first_push_observed'?'已确认移动':trial.reason==='first_push_waiting_for_final_scan'?'等待箱面复测':'未确认沿推向移动';
+   const outcome=trial.reason==='timed_push_released'?'推箱动作结束，已交回导航':trial.reason==='first_push_observed'?'已确认移动':trial.reason==='first_push_waiting_for_final_scan'?'等待箱面复测':'未确认沿推向移动';
    details.push('首次短推 · '+outcome+(Number.isFinite(moved)?' · 沿推向 '+(100*moved).toFixed(1)+' cm':''));
   }
   $('interaction').textContent=details.join('\n');
-  const choices={navigate:'沿路线走',push:'已选择推箱',explore:'正在探路',wait:'等待可走的路',failed:'找不到可走的路'};
-  const phases={box_approach:'前往箱边',box_turn:'转向选定箱面',box_confirm:'已转正，等新的箱面扫描',turn_at_stage:'转向选定箱面',first_push_wait_scan:'停稳核对箱面',first_push_review:'停稳复测箱位',engage:'接近箱面',push:'推箱中',settle_contact:'核对箱面和推路',first_push_stop:'停止推箱'};
+  const choices={recover:'正在脱离膨胀区',navigate:'沿路线走',push:'已选择推箱',explore:'正在探路',wait:'等待可走的路',failed:'找不到可走的路'};
+  const phases={recheck_lid:'原地复核箱顶和落点',box_approach:'前往箱边',box_stage_brake:'前进停滞，刹停复核站位',box_stage_translate:'横移到原定站位',box_turn:'转向选定箱面',box_confirm:'已转正，等新的箱面扫描',turn_at_stage:'转向选定箱面',first_push_wait_scan:'停稳核对箱面',first_push_review:'停稳复测箱位',engage:'接近箱面',push:'推箱中',settle_contact:'停稳核对箱面',timed_push:'定时向前推箱',push_settle:'推后停稳',post_push_reobserve:'推后停稳，等待新点云',first_push_stop:'停止推箱'};
   $('task').textContent=[data.status?.mode,data.status?.state,phases[data.map?.phase]||data.map?.phase,choices[data.map?.decision?.kind],
    skill?`${skill.object_id} · ${phases[skill.state]||skill.state}`:null].filter(Boolean).join(' · ');
   if(data.map?.ready){$('mapEmpty').style.display='none';$('mapImage').style.display='block';

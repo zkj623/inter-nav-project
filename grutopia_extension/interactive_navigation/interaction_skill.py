@@ -48,6 +48,7 @@ class SkillContext:
     box_observation_id:Any=None
     map_observed_at:Any=None
     map_observation_id:Any=None
+    box_top_observed:bool=False
 
 
 class SkillRegistry:

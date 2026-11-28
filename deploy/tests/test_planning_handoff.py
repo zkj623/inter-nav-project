@@ -164,6 +164,54 @@ def test_slow_plan_is_discarded_until_fresh_revalidation_then_same_goal_resumes(
     assert run.motion.commands[0][1] == current.captured_at
 
 
+def test_post_push_wait_keeps_writer_stopped_until_the_goal_route_is_observed(run, monkeypatch):
+    engine = run.tasks.engine
+    goal = engine.goal
+    token = run.hold()
+    run.feedback('stopped', token)
+    engine.upper_short_end = engine.trial_used = True
+    engine.trial_report = {'reason': 'timed_push_released'}
+    path = engine.planner.path
+    with monkeypatch.context() as patch:
+        patch.setattr(engine, '_try_narrow_passage', lambda: False)
+        patch.setattr(engine.planner, 'path', lambda *args, **kwargs: ())
+        for advance in (.1, .4, .8):
+            run.controller.step(run.sample(advance), run.clock[0])
+            assert engine.decision['reason'] == 'waiting_for_post_push_route'
+            assert run.tasks.state == 'active' and run.motion.state == 'stopped'
+            assert run.motion.arm_count == 1 and not run.motion.commands
+    assert engine.planner.path == path
+    run.controller.step(run.sample(1.1), run.clock[0])
+    assert engine.decision['reason'] == 'post_push_route_observed'
+    assert run.controller.planning_hold['prepared_at'] is not None and run.motion.arm_count == 1
+    run.controller.step(run.sample(), run.clock[0])
+    assert run.motion.arm_count == 2 and run.tasks.engine.goal == goal and not run.motion.commands
+
+
+@pytest.mark.parametrize('cancel', [False, True])
+def test_new_goal_waits_disarmed_for_field_box_without_a_second_operator_action(run, cancel):
+    run.controller.operate('o', None, run.sample(), run.clock[0])
+    run.feedback('stopped', 'o')
+    engine = run.tasks.engine
+    engine.upper_short_end = True
+    run.controller.operate('navigate', '1,0', run.sample(), run.clock[0])
+    token = run.controller.planning_hold['token']
+    run.feedback('stopped', token)
+    run.controller.step(run.sample(1.1), run.clock[0])
+    assert engine.decision['reason'] in ('waiting_for_motion_feedback', 'waiting_for_registered_box')
+    assert run.tasks.state == 'active' and run.motion.arm_count == 1 and not run.motion.commands
+    if cancel:
+        run.controller.operate('p', None, run.sample(), run.clock[0])
+        run.feedback('stopped', 'p')
+    # Expose the fixture's ordinary executable route on the next fresh scan.
+    engine.upper_short_end = False
+    run.controller.step(run.sample(1.1), run.clock[0])
+    run.controller.step(run.sample(), run.clock[0])
+    assert run.motion.arm_count == (1 if cancel else 2)
+    assert run.tasks.state == ('paused' if cancel else 'active')
+    assert not run.motion.commands
+
+
 def test_expired_revalidation_stays_disarmed_and_requires_another_frame(run, monkeypatch):
     prepare_hold(run)
     prepared_at = run.controller.planning_hold['prepared_at']

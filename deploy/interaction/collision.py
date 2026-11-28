@@ -1,9 +1,9 @@
 """Contact checks from measured rays, independent of movable-object map masks.
 
 The ordinary mapper deliberately owns whole object envelopes. This second,
-small evidence grid never erases those envelopes when objects move. A temporary
-contact query permits only the fitted target solid; all other returns and
-unobserved cells keep blocking. No query mutates navigation or stored evidence.
+small evidence grid never erases those envelopes when objects move. Walking
+requires observed space. In the fixed short-end trial, the box may slide into
+unobserved cells while measured obstacles and the field boundary remain blocking.
 """
 from copy import copy
 from dataclasses import replace
@@ -12,6 +12,11 @@ import numpy as np
 
 from grutopia_extension.interactive_navigation.mapping import OccupancyGridMap
 from grutopia_extension.interactive_navigation.go2_voronoi_navigation import body_motion_clear
+
+
+def box_sweep_space(planner, observed_free):
+    field_space = getattr(planner, 'field_box_sweep_free', None)
+    return observed_free if field_space is None else field_space(observed_free)
 
 
 class ContactCollisionChecker:
@@ -23,33 +28,44 @@ class ContactCollisionChecker:
                          if world_boundary is not None else None)
         self.last_scan = None
         self.points = np.empty((0, 3))
+        self.top_returns = {}
         self.diagnostic = {'clear': False, 'reason': 'no_contact_scan'}
         rows, cols = np.indices(self.evidence.observed.shape)
         self.xy = np.stack((planner.limits[0][0]+(cols+.5)*planner.resolution,
                             planner.limits[1][0]+(rows+.5)*planner.resolution), axis=-1)
 
     def update(self, observation, layers):
-        lidar = layers.filter_robot_returns(observation).get('sensors', {}).get('lidar', {})
-        scan = lidar.get('physics_step')
-        if scan is None or scan == self.last_scan or layers.last_scan != scan:
+        scan = observation.get('sensors', {}).get('lidar', {}).get('physics_step')
+        if scan is None or layers.last_scan != scan:
             return
+        # Replace the cloud, lid and identity together. A fit can also arrive
+        # on a repeated delivery of the same cloud, without tracing rays twice.
+        top = getattr(layers, 'top_returns', {})
+        if scan == self.last_scan and len(self.points):
+            self.top_returns = top
+            return
+        self.last_scan, self.points, self.top_returns = scan, np.empty((0, 3)), {}
+        lidar = layers.filter_robot_returns(observation)['sensors']['lidar']
         points = np.asarray(lidar.get('pointcloud', []), float)
         if points.ndim != 2 or points.shape[1] != 3 or not len(points) or not np.isfinite(points).all():
-            self.points = np.empty((0, 3))
             return
         # The mapper has already traced these exact rays before masking object
         # ownership. Reuse them; tracing a large scan twice stalls the control loop.
         hit = getattr(layers, 'measured_hit', None)
         measured_free = getattr(layers, 'measured_free', None)
         if hit is None or measured_free is None:
-            self.points = np.empty((0, 3))
             return
         free = measured_free & ~hit
+        # Registered surface returns are checked against the actual boxes and
+        # current raw cloud on every command. Accumulating them as fixed walls
+        # leaves a ghost corner in front of the feet as the short end moves.
+        for _, owned in getattr(self.planner, 'measured_box_cells', {}).values():
+            hit = hit & ~owned
         self.evidence.log_odds[hit] += self.config.occupied_update
         self.evidence.log_odds[free] -= self.config.free_update
         np.clip(self.evidence.log_odds, -4., 4., out=self.evidence.log_odds)
         self.evidence.observed[hit | free] = True
-        self.points, self.last_scan = points.copy(), scan
+        self.points, self.top_returns = points.copy(), top
 
     @staticmethod
     def _geometry(box):
@@ -82,9 +98,42 @@ class ContactCollisionChecker:
         result[row[valid], col[valid]] = True
         return result
 
+    def _surface_returns(self, points, box, dims, rot):
+        local = np.column_stack(((points[:, :2]-box.xy) @ rot, points[:, 2]-box.center_z))
+        tol = min(.04, self.profile.release_margin_m)
+        inside = (np.abs(local) <= dims/2+tol).all(axis=1)
+        surface = (np.abs(np.abs(local)-dims/2) <= tol).any(axis=1)
+        return inside & surface
+
+    def _surface_measured(self, box, dims, rot, raw_hits=None):
+        top = self.top_returns.get(box.id)
+        lid_count = 0 if top is None else np.count_nonzero(self._surface_returns(top, box, dims, rot))
+        if lid_count >= 3:
+            return True
+        if raw_hits is None:
+            raw_hits = self._surface_returns(self.points, box, dims, rot)
+        return lid_count + np.count_nonzero(raw_hits) >= 3
+
+    def target_measured(self, box, scan_id):
+        return (scan_id is not None and scan_id == self.last_scan and len(self.points) > 0
+                and self._surface_measured(box, *self._geometry(box)))
+
+    def surface_cells(self, points, box, *, confirmed_lid=False):
+        """Attribute obstacle-height hits to the box, retaining mixed cells."""
+        dims, rot = self._geometry(box)
+        z0, z1 = self.config.obstacle_height
+        obstacles = points[(points[:, 2] >= z0) & (points[:, 2] <= z1)]
+        on_box = self._surface_returns(obstacles, box, dims, rot)
+        hit = self._point_mask(obstacles[on_box])
+        mixed = hit & self._point_mask(obstacles[~on_box])
+        owned = hit & ~mixed
+        if not confirmed_lid and np.count_nonzero(on_box) < 3:
+            owned.fill(False)
+        return owned, mixed
+
     def __call__(self, command, context, *, pushing=True):
-        def finish(clear, reason):
-            self.diagnostic = {'clear': bool(clear), 'reason': reason, 'scan_id': self.last_scan}
+        def finish(clear, reason, **details):
+            self.diagnostic = {'clear': bool(clear), 'reason': reason, 'scan_id': self.last_scan, **details}
             return bool(clear)
         try:
             target = context.box
@@ -93,12 +142,10 @@ class ContactCollisionChecker:
             if velocity.shape != (3,) or not np.isfinite(velocity).all() or not len(self.points):
                 return finish(False, 'contact_scan_or_command_invalid')
             points = self.points
-            local = np.column_stack(((points[:, :2]-target.xy) @ rot, points[:, 2]-target.center_z))
-            tol = min(.04, self.profile.release_margin_m)
-            inside = (np.abs(local) <= dims/2+tol).all(axis=1)
-            surface = (np.abs(np.abs(local)-dims/2) <= tol).any(axis=1)
-            target_returns = inside & surface
-            if np.count_nonzero(target_returns) < 3:
+            target_returns = self._surface_returns(points, target, dims, rot)
+            # A measured lid confirms the target. It cannot clear the ground
+            # around the box edges or conceal an obstacle in a mixed cell.
+            if not self._surface_measured(target, dims, rot, target_returns):
                 return finish(False, 'target_surface_not_measured')
             z0, z1 = self.config.obstacle_height
             non_target = points[(~target_returns) & (points[:, 2] >= z0) & (points[:, 2] <= z1)]
@@ -108,7 +155,8 @@ class ContactCollisionChecker:
             core_local = (self.xy-np.asarray(target.xy)) @ rot
             core = (np.abs(core_local) <= np.maximum(0., dims[:2]/2-self.planner.resolution/math.sqrt(2))).all(axis=-1)
             owned = self._point_mask(points[target_returns]) | core
-            free = self.evidence.observed & ~self.evidence.occupied_mask()
+            occupied = self.evidence.occupied_mask()
+            free = self.evidence.observed & ~occupied
             free = free | owned
             # Actual occupied body footprint is known, without revealing future space.
             c, s = math.cos(context.heading), math.sin(context.heading)
@@ -119,7 +167,8 @@ class ContactCollisionChecker:
             free |= body_here
             if self.interior is not None:
                 free &= self.interior
-            free[self._point_mask(non_target)] = False
+            non_target_cells = self._point_mask(non_target)
+            free[non_target_cells] = False
             shadow = copy(self.planner)
             shadow.free = shadow.box_free = free
             others = [box for box in context.boxes if box.id != target.id]
@@ -150,12 +199,34 @@ class ContactCollisionChecker:
                     if not all(self.world_boundary.contains_box(xy, size, yaw)
                                for xy in (target.xy, destination)):
                         return finish(False, 'box_sweep_outside_world_boundary')
-                blocked = ~free
+                field_space = getattr(self.planner, 'field_box_sweep_free', None)
+                if field_space is None:
+                    blocked = ~free & ~current
+                else:
+                    # "free" includes the measured target and the actual body
+                    # footprint. The outer padded box raster proves neither.
+                    blocked = occupied & ~free
+                    blocked |= self.evidence.static_occupied | ~field_space(self.planner.free & self.planner.box_free)
+                blocked |= non_target_cells
+                # At the trailing short edge one grid cell can contain both
+                # the lid's footprint and a low return of uncertain ownership.
+                # A second scan can resolve it. Other boxes and fixed walls
+                # always take priority, as do blocks elsewhere in the sweep.
+                edge = np.zeros_like(blocked)
+                if field_space is not None and target.id in self.top_returns:
+                    local_direction = direction @ rot
+                    axis = int(np.argmax(dims[:2]))
+                    if abs(local_direction[axis]) > .9:
+                        behind = -np.sign(local_direction[axis]) * core_local[..., axis]
+                        edge = (current & (abs(behind - dims[axis]/2) <= self.planner.resolution/math.sqrt(2))
+                                & ~self.evidence.static_occupied)
                 for box in others:
                     mask = shadow.box_mask(box)
                     if mask is None:
                         return finish(False, 'other_box_outside_map')
                     blocked |= mask
+                    edge &= ~mask
+                uncertain = None
                 for step in np.linspace(0., distance, max(2, int(math.ceil(distance/shadow.resolution))+1)):
                     center = np.asarray(target.xy)+direction*step
                     corners = np.array([[a, b] for a in (-1., 1.) for b in (-1., 1.)])
@@ -164,8 +235,21 @@ class ContactCollisionChecker:
                                for axis, (lo, hi) in enumerate(shadow.limits)):
                         return finish(False, 'box_sweep_outside_map')
                     swept = self._mask(center, dims, rot, p.release_margin_m)
-                    if np.any(swept & ~current & blocked):
-                        return finish(False, 'box_sweep_blocked_or_unknown')
+                    overlap = swept & blocked
+                    if overlap.any():
+                        if np.any(overlap & ~edge):
+                            overlap &= ~edge
+                        else:
+                            uncertain = np.unravel_index(overlap.argmax(), overlap.shape)
+                            continue
+                        row, col = np.unravel_index(overlap.argmax(), overlap.shape)
+                        reason = 'box_sweep_obstacle' if field_space is not None else 'box_sweep_blocked_or_unknown'
+                        return finish(False, reason, cell_rc=[int(row), int(col)],
+                                      cell_xy_m=self.xy[row, col].tolist())
+                if uncertain is not None:
+                    row, col = uncertain
+                    return finish(False, 'box_edge_needs_new_scan', cell_rc=[int(row), int(col)],
+                                  cell_xy_m=self.xy[row, col].tolist())
             return finish(True, 'measured_contact_sweep_clear')
         except (ValueError, TypeError, IndexError, AttributeError, FloatingPointError):
             return finish(False, 'invalid_contact_geometry')

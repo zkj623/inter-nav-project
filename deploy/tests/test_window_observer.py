@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from deploy.app.config import load
+from deploy.app.config import ROOT, load
 from deploy.interaction.config import box_window_config, create_perception
 from deploy.perception import window_observer as module
 from deploy.perception.registered_boxes import RegisteredBoxPerception
@@ -18,6 +18,21 @@ def sample(observer, i, **kw):
     packet = scan(i, 10 + i/10, **kw)
     assert observer.update(packet, packet.captured_at) == ((), None)
     return observer.last_delivery['detections'][0]
+
+
+def test_preserved_old_field_preset_uses_upper_end_and_respects_explicit_override(tmp_path):
+    import yaml
+    payload = yaml.safe_load((ROOT/'configs/box_30x80x30.yaml').read_text())
+    del payload['first_push_face']
+    payload['contact_profile'] = str(ROOT/'configs'/payload['contact_profile'])
+    field = tmp_path/'box_30x80x30.yaml'
+    field.write_text(yaml.safe_dump(payload))
+    assert load(interaction_path=field)['interaction']['first_push_face'] == 'upper_short_end'
+    custom = tmp_path/'other.yaml'
+    custom.write_text(field.read_text())
+    assert load(interaction_path=custom)['interaction']['first_push_face'] is None
+    field.write_text(yaml.safe_dump(dict(payload, first_push_face=None)))
+    assert load(interaction_path=field)['interaction']['first_push_face'] is None
 
 
 def latest_fit(points, sources, *args):
@@ -119,6 +134,14 @@ def test_native_rectangle_with_only_one_side_requires_a_bounded_top_from_distinc
     for parts in ([top], [side], [side, top[abs(top[:, 1]) < .04]],
                   [side, top, top+[0., 0., .12]], [side, top, top+[.7, 0., 0.]]):
         assert not find_window_boxes(*data(parts), *args)
+    field_args = (*args[:-1], dict(DEFAULT_TRACKING, use_box_top=True))
+    points, ids = data([top])
+    lid, = find_window_boxes(points, ids, *field_args)
+    assert lid.surfaces == 'top' and lid.support_index == 1
+    np.testing.assert_allclose(lid.center, center, atol=.02)
+    assert not find_window_boxes(points, ids*0, *field_args)
+    for parts in ([top[abs(top[:, 1]) < .04]], [top, top+[0., 0., .12]], [top, top+[.7, 0., 0.]]):
+        assert not find_window_boxes(*data(parts), *field_args)
 
 
 def fixed_fit(monkeypatch, detect=latest_fit):
@@ -282,7 +305,7 @@ def test_field_window_lease_is_separate_from_contact_evidence():
     single = create_perception(cfg, synchronous=True)
     try:
         assert window.config['max_age_s'] == .35
-        assert single.config['max_age_s'] == .25
+        assert single.config['max_age_s'] == .38
         assert box_window_height_limits(cfg) == pytest.approx([-.1, .46])
         assert cfg['navigation']['interaction_enabled'] and cfg['interaction']['first_push']
         assert cfg['interaction']['contact_profile']['calibration_reference'] is None

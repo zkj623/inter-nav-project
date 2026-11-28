@@ -59,6 +59,40 @@ def establish(provider, center=(1., .5), yaw=.3):
     return boxes[0]
 
 
+@pytest.mark.parametrize('new_center', [(1., .5), (1., -.18)])
+def test_push_reset_discards_old_fits_until_new_scans_confirm_a_location(new_center):
+    from deploy.perception.box_memory import BoxMapMemory
+    memory = BoxMapMemory()
+    provider = RegisteredBoxPerception(config(), synchronous=True, box_memory=memory)
+    try:
+        box = establish(provider)
+        old_delivery = provider.last_delivery
+        memory.reset_after_push(box.id, box.xy, (1., -.18), .12, 8.)
+        memory.observe(old_delivery, .14)
+        # Even a new window ending after release can contain pre-release geometry.
+        row = dict(old_delivery['detections'][0], track_id='w1', dimensions_m=DIMS,
+                   long_axis_rad=.3, captured_at=.13, expires_at=.5)
+        window = dict(geometry_source='window_two_faces', detections=[row], window_start_at=.1)
+        memory.observe(window, .14)
+        assert not memory.locations()
+        assert not provider.update(packet(2, .1), .14)[0]
+        assert provider.permission(box.id, .14) is None
+        # A box can stay put, or reappear outside its initial registration region.
+        for i, stamp in [(3, 9.), (4, 9.1)]:
+            boxes, _ = provider.update(packet(i, stamp, center=new_center), stamp)
+            if i == 3:
+                assert not boxes and not memory.locations()
+        assert len(boxes) == 1 and boxes[0].xy == pytest.approx(new_center, abs=.008)
+        assert memory.locations()[box.id].captured_at == 9.1
+        assert not memory.push_searches(9.2)
+        memory.reset_after_push(box.id, new_center, new_center, 10., 8.)
+        row.update(captured_at=10.3, expires_at=10.5)
+        memory.observe(dict(window, window_start_at=10.1), 10.4)
+        assert memory.locations()[box.id].from_window
+    finally:
+        provider.close()
+
+
 @pytest.mark.parametrize('yaw', [-1.1, -.6, -.1, 0., .3, .9, 1.4])
 def test_known_size_fit_recovers_measured_translation_rotation_and_full_geometry(yaw):
     fit = fit_upright_box(cloud(yaw=yaw), DIMS, origin_for(yaw=yaw), DEFAULT_TRACKING)
@@ -97,6 +131,29 @@ def test_floor_and_top_alone_do_not_supply_vertical_box_pose():
     assert fit_upright_box(p, DIMS, origin_for(), DEFAULT_TRACKING) is None
     raised = cloud(noise=0.) + [0, 0, .15]
     assert fit_upright_box(raised, DIMS, origin_for(), DEFAULT_TRACKING) is None
+
+
+def test_known_lid_requires_current_rim_and_interior_and_identifies_only_the_near_end():
+    from types import SimpleNamespace
+    from deploy.perception.box_fitting import refit_box_top
+    x, y = np.meshgrid(np.linspace(-.15, .15, 9), np.linspace(-.40, .40, 11))
+    lid = np.c_[x.ravel(), y.ravel(), np.full(x.size, .30)]
+    prior = SimpleNamespace(center=(0., 0., .15), yaw_rad=np.pi)
+    dims, origin = (.30, .80, .30), np.array([.34, .72, .46])
+    def fit(current):
+        return refit_box_top(current, dims, origin, DEFAULT_TRACKING, prior, (lid,))
+    observed = fit(lid)
+    assert observed.visible_faces == ('top',) and observed.top_end == '-y'
+    assert observed.sees_push_face((0., -1.), .1)
+    assert not observed.sees_push_face((0., 1.), .1)
+    assert not observed.sees_push_face((1., 0.), .1)
+    assert not fit(lid[:0])
+    assert not fit(lid[lid[:, 1] < .20])
+    assert not fit(lid[abs(lid[:, 0]) < .03])
+    assert not fit(lid+[0., 0., .15])
+    assert not fit(np.vstack((lid, lid+[.12, 0., 0.])))
+    shifted = fit(lid+[0., -.012, 0.])
+    assert shifted.center[1] == pytest.approx(-.012, abs=.002)
 
 
 def test_registration_permission_is_separate_and_has_actual_lidar_evidence():
@@ -391,6 +448,23 @@ def front_packet(index, stamp, **kwargs):
     result = packet(index, stamp, points)
     result.observation['sensors']['lidar']['position'] = origin
     return result
+
+
+def test_permission_requires_the_selected_face_on_the_current_scan():
+    provider = engine()
+    try:
+        establish(provider)
+        now = .2
+        provider.update(front_packet(3, now), now)
+        axis = np.array([np.cos(.3), np.sin(.3)])
+        evidence = provider.freeze()
+        assert evidence.permission('B1', now, push_direction=axis, face_tolerance=.10)
+        for wrong in (-axis, [-axis[1], axis[0]], [np.cos(.5), np.sin(.5)]):
+            assert evidence.permission('B1', now, push_direction=wrong, face_tolerance=.10) is None
+        assert evidence.permission('B1', now+provider.config['max_age_s'],
+                                   push_direction=axis, face_tolerance=.10) is None
+    finally:
+        provider.close()
 
 
 def test_confirmed_track_uses_new_bounded_face_position_through_centered_contact():

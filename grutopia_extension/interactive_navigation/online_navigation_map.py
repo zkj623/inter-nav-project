@@ -56,7 +56,7 @@ class OnlineNavigationMap(LayeredNavigationMap):
 
     def _visible_proposals(self,points,proposals):
         visible=[]
-        if points.ndim!=2 or points.shape[1]<3:return visible
+        if not proposals or points.ndim!=2 or points.shape[1]<3:return visible
         points=points[np.isfinite(points[:,:3]).all(axis=1),:3]
         for box in proposals:
             # Actor identity/size is supplied only after a sensor visibility
@@ -69,9 +69,9 @@ class OnlineNavigationMap(LayeredNavigationMap):
             if np.count_nonzero(inside)>=3:visible.append(box)
         return visible
 
-    def update(self,now,observation,boxes,*,force=False):
+    def update(self,now,observation,boxes,*,force=False,force_local=False):
         self.now=float(now)
-        if not force and self.now-self.last_local<self.local_period-1e-8:return False
+        if not (force or force_local) and self.now-self.last_local<self.local_period-1e-8:return False
         self.last_local=self.now;self.local_updates+=1
         self.robot_xy=np.asarray(observation['position'][:2],float)
         q=np.asarray(observation.get('orientation',[1,0,0,0]),float);q/=max(np.linalg.norm(q),1e-9)
@@ -86,9 +86,9 @@ class OnlineNavigationMap(LayeredNavigationMap):
         fresh=bool(points.size and (scan is None or scan!=self.last_scan))
         self.visible_box_ids=[]
         proposals=tuple(boxes) if fresh else ()
-        if proposals:
+        if fresh:
             returns=points
-            if not lidar.get('measured_returns_only'):
+            if proposals and not lidar.get('measured_returns_only'):
                 origin=np.asarray(lidar.get('position',observation['position']),float)
                 distances=np.linalg.norm(points[:,:3]-origin,axis=1)
                 returns=points[distances<float(lidar.get('max_range',5.))*.99]

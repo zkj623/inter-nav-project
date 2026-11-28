@@ -5,7 +5,8 @@ Only a fresh measured cuboid fit supplies pose. One worker and one replaceable
 pending scan keep fitting off the navigation/writer thread. Losing an established
 identity requires reset/reassociation; registration never renews stale geometry.
 """
-from dataclasses import dataclass, replace
+from collections import deque
+from dataclasses import dataclass, field, replace
 import hashlib
 import json
 import math
@@ -17,7 +18,7 @@ import numpy as np
 
 from grutopia_extension.interactive_navigation.box_push_navigation import BoxState
 from grutopia_extension.interactive_navigation.interaction_catalog import InteractionPermission
-from .box_fitting import refit_registered_surfaces, scan_candidates, scan_tracked_candidates
+from .box_fitting import refit_registered_surfaces, refit_box_top, scan_candidates, scan_tracked_candidates
 
 
 DEFAULT_TRACKING = {
@@ -55,7 +56,7 @@ def validate_tracking_config(config):
     """Return an independent normalized config; reject coercive bool/NaN input."""
     if not isinstance(config, dict):
         raise ValueError('interaction tracking must be a mapping')
-    unknown = set(config) - set(DEFAULT_TRACKING) - {'boxes', 'geometry_verified', 'registry_reference'}
+    unknown = set(config) - set(DEFAULT_TRACKING) - {'boxes', 'geometry_verified', 'registry_reference', 'use_box_top'}
     if unknown:
         raise ValueError('Unknown tracking settings: ' + ', '.join(sorted(unknown)))
     result = {**DEFAULT_TRACKING, **config}
@@ -97,6 +98,8 @@ def validate_tracking_config(config):
             or result['association_yaw_margin_deg'] > 15):
         raise ValueError('Tracking continuity limits exceed supported bounds')
     verified = result.setdefault('geometry_verified', False)
+    if type(result.setdefault('use_box_top', False)) is not bool:
+        raise ValueError('use_box_top must be boolean')
     if not isinstance(verified, bool):
         raise ValueError('geometry_verified must be an explicit boolean')
     reference = result.setdefault('registry_reference', '')
@@ -143,6 +146,8 @@ class _Scan:
     origin: np.ndarray
     source_stamp: object
     hints: dict
+    recent_top: tuple = ()
+    push_searches: dict = field(default_factory=dict)
 
 
 class RegisteredScanReader:
@@ -218,13 +223,25 @@ class RegisteredBoxEvidence:
             return None
         return entry['track']['captured_at'] + self.max_age
 
-    def permission(self, object_id, now):
+    def top_returns(self, scan_id, now):
+        result = {}
+        for key, entry in self.entries.items():
+            track = entry['track']
+            expiry = self.expires_at(key)
+            if ('top_returns' in track and track['scan_id'] == scan_id and expiry is not None
+                    and track['captured_at'] <= now < expiry):
+                result[key] = track['top_returns']
+        return result
+
+    def permission(self, object_id, now, *, push_direction=None, face_tolerance=0.):
         expiry = self.expires_at(object_id)
         if expiry is None or not self.geometry_verified or not math.isfinite(now):
             return None
         entry = self.entries[object_id]
         track = entry['track']
         if not entry['push_allowed'] or not track['captured_at'] <= now < expiry:
+            return None
+        if push_direction is not None and not track['fit'].sees_push_face(push_direction, face_tolerance):
             return None
         return InteractionPermission(object_id, 'box', 'push_aside', track['evidence'], (), float(now),
                                      self.source, self.source_reference, self.source_digest)
@@ -236,6 +253,8 @@ class RegisteredBoxEvidence:
         return {key: {'category': 'box', 'confirmed': self.permission(key, now) is not None,
                      'frames': entry['track'].get('confirmations', 0),
                      'latest_at': entry['track'].get('captured_at'),
+                     'scan_id': entry['track'].get('scan_id'),
+                     'observed_top': 'top_returns' in entry['track'],
                      'source': self.source, 'source_reference': self.source_reference,
                      'source_digest': self.source_digest,
                      'invalid_reason': entry['track'].get('reason'),
@@ -272,6 +291,7 @@ class RegisteredBoxPerception:
         self.last_query_status = 'idle'
         self._tracks, self._visible = {}, {}
         self.reader = RegisteredScanReader(self.config)
+        self._top_history = deque(maxlen=3)
         self._last_accepted = None
         self._last_time = -math.inf
 
@@ -308,6 +328,7 @@ class RegisteredBoxPerception:
     def invalidate(self, reason):
         """Revoke identity after an invalid upstream frame; only reset can recover."""
         self._visible.clear()
+        self._top_history.clear()
         for track in self._tracks.values():
             if track['confirmed']:
                 track['lost'] = True
@@ -317,7 +338,17 @@ class RegisteredBoxPerception:
     def _capture(self, snapshot, now):
         frame = self.reader.capture(snapshot, now, self.generation)
         if frame is not None:
-            frame = replace(frame, hints=self._tracking_hints(frame.captured_at))
+            frame = replace(frame, hints=self._tracking_hints(frame.captured_at),
+                            push_searches=self.box_memory.push_searches(frame.captured_at) if self.box_memory else {})
+            if self.config['use_box_top']:
+                recent = tuple(points for stamp, points in self._top_history
+                               if frame.captured_at-stamp < min(.25, self.config['max_age_s']))
+                frame = replace(frame, recent_top=recent)
+                height = frame.points[:, 2]
+                keep = np.zeros(len(height), bool)
+                for row in self.registry.values():
+                    keep |= abs(height-row['dimensions_m'][2]) <= self.config['height_tolerance_m']
+                self._top_history.append((frame.captured_at, frame.points[keep]))
         return frame
 
     def _tracking_hints(self, stamp):
@@ -332,8 +363,33 @@ class RegisteredBoxPerception:
         cache, result = {}, {}
         for object_id, row in self.registry.items():
             key = tuple(row['dimensions_m'])
+            area = frame.push_searches.get(object_id)
+            if (area is not None and frame.captured_at <= area.expires_at and area.hint is not None
+                    and self.config['use_box_top']):
+                # A displaced lid can be outside the pre-push association radius.
+                # Test centers on the known push line against actual current returns.
+                candidates = []
+                length = np.linalg.norm(np.subtract(area.end, area.start))
+                count = 1 + math.ceil(length / self.config['extent_tolerance_m'])
+                for xy in np.linspace(area.start, area.end, count):
+                    hint = replace(area.hint, center=(*xy, key[2]/2))
+                    fit = refit_box_top(frame.points, key, frame.origin, self.config, hint, frame.recent_top)
+                    if fit is None or (self.world_boundary and not self.world_boundary.contains_box(
+                            fit.center, key, fit.yaw_rad, self.config['isolation_margin_m'])):
+                        continue
+                    if not any(np.linalg.norm(np.subtract(fit.center, old.center)) <= self.config['extent_tolerance_m']
+                               for old in candidates):
+                        candidates.append(fit)
+                if candidates:
+                    result[object_id] = tuple(candidates)
+                    continue
             if self.box_memory is not None and object_id in frame.hints:
                 fit = refit_registered_surfaces(frame.points, key, frame.origin, self.config, frame.hints[object_id])
+                if self.config['use_box_top'] and (fit is None or fit.measured_face_axis is not None):
+                    top = refit_box_top(frame.points, key, frame.origin, self.config, frame.hints[object_id],
+                                        frame.recent_top)
+                    if top is not None:
+                        fit = top
                 if fit is not None and (self.world_boundary is None or self.world_boundary.contains_box(
                         fit.center, key, fit.yaw_rad, self.config['isolation_margin_m'])):
                     result[object_id] = (fit,)
@@ -376,6 +432,13 @@ class RegisteredBoxPerception:
             self.invalidate('Tracking clock moved backwards; reset required')
             return (), self
         self._last_time = now
+        resets = self.box_memory.reset_times() if self.box_memory is not None else {}
+        for key, cutoff in resets.items():
+            if key in self._tracks and self._tracks[key]['captured_at'] <= cutoff:
+                self._tracks.pop(key)
+                self._visible.pop(key, None)
+            while self._top_history and self._top_history[0][0] <= cutoff:
+                self._top_history.popleft()
         # Capture validation precedes result delivery: changed frames or invalid
         # observations cannot resurrect a queued fit from the old frame.
         try:
@@ -403,7 +466,9 @@ class RegisteredBoxPerception:
                 elif self._last_accepted is not None and completed.frame_id <= self._last_accepted:
                     self.invalidate('Discarded out-of-order fitting result')
                 else:
-                    self._accept(completed, detections, now)
+                    current = {key: fits for key, fits in detections.items()
+                               if completed.captured_at > resets.get(key, -math.inf)}
+                    self._accept(completed, current, now)
         if frame is not None and not self.synchronous:
             self._replace(self.jobs, replace(frame, hints=self._tracking_hints(frame.captured_at)))
         visible = tuple(track['box'] for track in self._visible.values()) if self.geometry_verified else ()
@@ -437,12 +502,18 @@ class RegisteredBoxPerception:
             for fit in detections.get(object_id, ()):
                 if previous is None and object_id in known:
                     anchor = known[object_id]
-                    eligible = (np.linalg.norm(np.asarray(fit.center[:2])-anchor.center[:2]) <= self.config['association_margin_m']
+                    area = frame.push_searches.get(object_id)
+                    nearby = (area.contains(fit.center[:2], self.config['association_margin_m']) if area else
+                              np.linalg.norm(np.asarray(fit.center[:2])-anchor.center[:2]) <= self.config['association_margin_m'])
+                    eligible = (nearby
                                 and self._yaw_distance(fit.yaw_rad, anchor.yaw_rad, row['dimensions_m'])
                                 <= math.radians(self.config['association_yaw_margin_deg']))
                 elif previous is None:
                     x0, x1, y0, y1 = row['search_region']
                     eligible = x0 <= fit.center[0] <= x1 and y0 <= fit.center[1] <= y1
+                    area = frame.push_searches.get(object_id)
+                    if area is not None:
+                        eligible |= area.contains(fit.center[:2], self.config['association_margin_m'])
                 else:
                     dt = frame.captured_at-previous['captured_at']
                     distance = np.linalg.norm(np.asarray(fit.center[:2])-previous['fit'].center[:2])
@@ -499,8 +570,12 @@ class RegisteredBoxPerception:
                 observed_axes = (0, 1) if fit.measured_face_axis is None else ((fit.measured_face_axis+rotation_change) % 2,)
                 face_names = tuple(('+' if sensor_local[i] > 0 else '-')+('x', 'y')[i] for i in observed_axes)
                 spans = fit.face_spans[::-1] if rotation_change % 2 else fit.face_spans
-                fit = replace(fit, yaw_rad=pose_yaw, visible_faces=face_names, face_spans=spans,
-                              measured_face_axis=None if fit.measured_face_axis is None else observed_axes[0])
+                if fit.top_end is not None:
+                    axis = int(np.argmax(fit.dimensions[:2]))
+                    fit = replace(fit, yaw_rad=pose_yaw, top_end=('+' if sensor_local[axis] > 0 else '-')+'xy'[axis])
+                else:
+                    fit = replace(fit, yaw_rad=pose_yaw, visible_faces=face_names, face_spans=spans,
+                                  measured_face_axis=None if fit.measured_face_axis is None else observed_axes[0])
             confirmations = 1 if previous is None else previous['confirmations']+1
             confirmed = confirmations >= self.config['min_confirmations']
             c, s = abs(math.cos(fit.yaw_rad)), abs(math.sin(fit.yaw_rad))
@@ -513,10 +588,12 @@ class RegisteredBoxPerception:
                            center_z=fit.center[2])
             evidence = [] if previous is None else list(previous['evidence'])
             evidence.append(f'lidar:{self.generation}:{frame.frame_id}')
-            track = {'box': box, 'fit': fit, 'captured_at': frame.captured_at,
+            track = {'box': box, 'fit': fit, 'captured_at': frame.captured_at, 'scan_id': frame.frame_id,
                      'confirmed': confirmed, 'confirmations': confirmations, 'lost': False,
                      'reason': None, 'evidence': tuple(evidence[-self.config['min_confirmations']:])}
             self._tracks[object_id] = track
+            if fit.top_end is not None:
+                track['top_returns'] = frame.points[list(fit.indices)]
             if confirmed:
                 visible[object_id] = track
             records.append({'object_id': object_id, 'valid': confirmed,
@@ -529,6 +606,7 @@ class RegisteredBoxPerception:
                 'pose_uncertainty_m': fit.uncertainty_m, 'point_count': fit.point_count,
                 'dimensions_source': 'measured_registry', 'height_source': 'registered_height_on_calibrated_floor',
                 'geometry_source': fit.geometry_source, 'geometry_verified': self.geometry_verified,
+                'measured_top_end': fit.top_end,
                 'boundary_free_ray_counts': fit.boundary_rays, 'measured_face_axis': fit.measured_face_axis,
                 'hidden_thickness_source': 'measured_registry' if fit.measured_face_axis is not None else None,
                 'permission_source': self.source, 'source_reference': self.source_reference,
@@ -548,8 +626,11 @@ class RegisteredBoxPerception:
     def expires_at(self, object_id):
         return self.freeze().expires_at(object_id)
 
-    def permission(self, object_id, now):
-        return self.freeze().permission(object_id, now)
+    def top_returns(self, scan_id, now):
+        return self.freeze().top_returns(scan_id, now)
+
+    def permission(self, object_id, now, *, push_direction=None, face_tolerance=0.):
+        return self.freeze().permission(object_id, now, push_direction=push_direction, face_tolerance=face_tolerance)
 
     def eligible_ids(self, now):
         return self.freeze().eligible_ids(now)

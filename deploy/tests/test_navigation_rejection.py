@@ -62,6 +62,7 @@ def test_invalid_endpoint_rejected_before_arm(navigation, capsys, case, reason):
     assert any(e['event'] == 'task_rejected' for e in events.items)
 
 
+@pytest.mark.parametrize('navigation', [dict(x_limits=[-1.2, 5.], y_limits=[-2.6, .9])], indirect=True)
 @pytest.mark.parametrize('goal', ['0.2,0.6', '0,0.9', '5.01,0', '-1.21,0', '0,-2.61'])
 def test_field_boundary_rejects_goals_before_motion(navigation, goal):
     controller, snapshot, _ = navigation

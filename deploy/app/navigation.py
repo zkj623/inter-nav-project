@@ -13,13 +13,17 @@ import numpy as np
 from scipy.ndimage import binary_dilation, distance_transform_edt, label
 from deploy.app.field_survey import FieldSurvey
 from deploy.app.narrow_passage import PassageGrid, angle_error, find_passage
+from deploy.perception.box_memory import BoxGuidancePose, BoxMapMemory
 from deploy.robot.safety import checked_velocity
-from deploy.interaction.execution import InteractionExecution
+from deploy.interaction.execution import InteractionExecution, TIMED_PUSH_PHASES
 from deploy.interaction.collision import ContactCollisionChecker
+from deploy.interaction.box_motion import ObservedBoxMotion
 from deploy.interaction.profile import ContactProfile
-from deploy.interaction.motion import SdkHeadingTrim, SdkNavigationMotion
+from deploy.interaction.motion import SdkSidestep, SdkHeadingTrim, SdkNavigationMotion
 from deploy.interaction.skill_backend import create_push_skill
-from deploy.interaction.first_push import RegisteredFacePlanner
+from deploy.interaction.first_push import (RegisteredFacePlanner, TimedFacePush, NEARBY_TURN_RADIUS_M, SHORT_END_YAW_TOLERANCE,
+                                          SHORT_END_SETTLED_YAW_TOLERANCE, SIDE_STAGE_ARRIVAL_M,
+                                          TRIAL_YAW_TOLERANCE, face_turn_profile, trial_push_speed)
 from deploy.robot.observation import navigation_lidar
 from deploy.robot.world_boundary import WorldBoundary
 from grutopia_extension.interactive_navigation.box_push_navigation import BoxDecision, BoxState
@@ -30,7 +34,7 @@ from grutopia_extension.interactive_navigation.online_navigation_decision import
 from grutopia_extension.interactive_navigation.side_push_navigation import SidePushPlanner
 from grutopia_extension.interactive_navigation.go2_voronoi_navigation import (
     ExplorationVoronoiRoutes, ForwardExplorationPathTracker, decision_recovery_required, body_motion_clear,
-    route_blocked, navigation_footprint_samples)
+    route_blocked, navigation_footprint_samples, body_rotation_clear, body_translation_recovery_clear)
 from grutopia_extension.interactive_navigation.go2_exploration_tracking import decision_buffer_recovery
 from grutopia_extension.interactive_navigation.smooth_go2_navigation import (
     SmoothExplorationTracker, VelocitySlewLimiter, smooth_recovery_action)
@@ -50,13 +54,21 @@ class PlanningRequired(RuntimeError):
 
 class DeploymentNavigationMap(OnlineNavigationMap):
     def __init__(self, *args, world_boundary=None, startup_clear_area=None, box_map_occupied_threshold=None,
-                 box_approach_margin=0., **kwargs):
+                 box_approach_margin=0., upper_short_end=False, field_floor_ids=(), **kwargs):
+        self.upper_short_end = upper_short_end
+        self.field_floor_ids = frozenset(field_floor_ids)
+        self.box_floor_areas = {}
+        self.box_floor_changed = False
         self.world_boundary = world_boundary
         self.startup_clear_area = startup_clear_area
         self.interior = None
         self.field_survey = None
         self.measured_inside = False
         super().__init__(*args, **kwargs)
+        self.approach_reference = None
+        self.surface_checker = None
+        self.top_returns = {}
+        self.recent_box_geometry = {}
         self.box_map_occupied_threshold = box_map_occupied_threshold
         self.box_approach_margin = box_approach_margin
         if box_map_occupied_threshold is not None and (
@@ -82,6 +94,60 @@ class DeploymentNavigationMap(OnlineNavigationMap):
         if self.interior is not None:
             mask &= self.interior
         return mask
+
+    def planning_box(self, measured):
+        # In the field, anchor the raster to the last mapped pose through
+        # approach, contact and review. Small real steps accumulate against it.
+        # Compare physical corners, including equivalent 180° fitted poses.
+        anchor = self.detected_boxes.get(measured.id) if self.upper_short_end else self.approach_reference
+        if anchor is None or measured.id != anchor.id or measured is anchor:
+            return measured
+        if (measured.orientation is None or anchor.orientation is None or
+                measured.local_dimensions is None or anchor.local_dimensions is None):
+            return measured
+        first, second = ObservedBoxMotion.corners(anchor), ObservedBoxMotion.corners(measured)
+        distances = np.linalg.norm(first[:, None] - second[None, :], axis=2)
+        shift = max(distances.min(axis=0).max(), distances.min(axis=1).max())
+        return anchor if shift <= self.planner.resolution/2 else measured
+
+    def field_box_sweep_free(self, observed_free):
+        """Where the field box may slide. The robot still uses the observed walking map."""
+        blocked = self._latest_static | self.static_occupied | self.local_dynamic | self.evidence.static_occupied
+        for mixed in getattr(self.planner, 'mixed_box_cells', {}).values():
+            blocked |= mixed
+        if self.interior is not None:
+            blocked |= ~self.interior
+        # Selection can combine the last global map with a newer local map.
+        # A lack of coverage in either is acceptable only for the box sweep.
+        return (observed_free | ~self.observed | ~self.global_observed) & ~blocked
+
+    def _visible_proposals(self, points, proposals):
+        visible = super()._visible_proposals(points, proposals)
+        if self.top_returns:
+            seen = {box.id for box in visible}
+            visible.extend(box for box in proposals if box.id in self.top_returns and box.id not in seen)
+        if self.surface_checker is None:
+            return visible
+        # This hook runs before the mapper builds its object mask. Each fresh
+        # scan replaces the previous ownership, including an empty detection.
+        self.planner.measured_box_cells = {}
+        self.planner.mixed_box_cells = {}
+        mapped = []
+        measured = dict(self.recent_box_geometry)
+        for box in visible:
+            mapped.append(self.planning_box(box))
+            measured[box.id] = box
+        for box in measured.values():
+            if box.local_dimensions is None or box.orientation is None or box.center_z is None:
+                continue
+            owned, mixed = self.surface_checker.surface_cells(points, box, confirmed_lid=box.id in self.top_returns)
+            owned &= ~self.evidence.static_occupied
+            if owned.any():
+                self.planner.measured_box_cells[box.id] = (self.planning_box(box).xy, owned)
+                self.local_hits[owned] = False
+            if mixed.any():
+                self.planner.mixed_box_cells[box.id] = mixed
+        return mapped
 
     def _global_static_mask(self):
         occupied = super()._global_static_mask()
@@ -139,6 +205,52 @@ class DeploymentNavigationMap(OnlineNavigationMap):
                                     x_limits=area.x, y_limits=area.y, cells=int(cells.sum())))
         if getattr(self, 'capture_contact_evidence', False):
             self.measured_hit, self.measured_free = hit.copy(), free.copy()
+        if self.field_floor_ids:
+            self._observe_box_floor(hit)
+
+    def _observe_box_floor(self, hit):
+        # A registered field box establishes floor under its mapped footprint
+        # and one neighboring grid ring. A missing detection cannot move it.
+        for box in self.current_boxes:
+            if box.id not in self.field_floor_ids or box.local_dimensions is None or box.orientation is None:
+                continue
+            previous = self.box_floor_areas.get(box.id)
+            if previous is not None:
+                self.observed[previous] = True
+            if box.id not in self.visible_box_ids and box.id not in self.recent_box_geometry:
+                continue
+            footprint = self.planner.box_mask(box, xy=box.xy)
+            if footprint is None:
+                continue
+            area = binary_dilation(footprint, structure=np.ones((3, 3), bool)) & ~self.evidence.static_occupied
+            if self.interior is not None:
+                area &= self.interior
+            if previous is None or not np.array_equal(area, previous):
+                self.box_floor_areas[box.id] = area
+                self.box_floor_changed = True
+            floor = area if previous is None else area | previous
+            # Replace historical clutter, including at the old edge. A fresh
+            # obstacle-height return that the fit cannot explain still counts.
+            obstacle = hit & floor
+            owned = self.planner.measured_box_cells.get(box.id)
+            if owned is not None:
+                obstacle &= ~owned[1]
+            clear = floor & ~obstacle
+            for evidence in (self.evidence, self.surface_checker.evidence):
+                evidence.observed[floor] = True
+                evidence.log_odds[clear] = np.minimum(0., evidence.log_odds[clear])
+            self.static_occupied[clear] = self.stable_obstacles[clear] = False
+            self.local_hits[clear] = False
+            self.hit_time[clear] = -math.inf
+            self.local_hits[obstacle] = True
+            self.hit_time[obstacle] = self.now
+
+    def update(self, now, observation, boxes, **kwargs):
+        self.box_floor_changed = False
+        updated = super().update(now, observation, boxes, **kwargs)
+        if self.box_floor_changed and self.last_global != self.now:
+            self.refresh_global(reason='confirmed_field_box_moved')
+        return updated
 
     def save(self, directory):
         super().save(directory)
@@ -184,6 +296,10 @@ class NavigationEngine:
         raw_profile = self.interaction.get('contact_profile')
         self.contact_profile = None if raw_profile is None else ContactProfile.from_dict(raw_profile)
         self.first_push = self.contact_profile is not None and self.contact_profile.mode == 'first_push'
+        self.upper_short_end = self.first_push and self.interaction.get('first_push_face') == 'upper_short_end'
+        if self.upper_short_end and self.box_memory is None:
+            self.box_memory = BoxMapMemory()
+        self.guidance_poses = {key: BoxGuidancePose() for key in self.registered_ids} if self.upper_short_end else {}
         self.trial_used = False
         self.trial_report = None
         self.pushable_ids = {row['id'] for row in self.interaction.get('boxes', ()) if row['push_allowed']}
@@ -217,6 +333,8 @@ class NavigationEngine:
             self.body_corners = np.array([(x, y) for x in (xx.min(), xx.max()) for y in (yy.min(), yy.max())])
         self.layers = DeploymentNavigationMap(
             self.planner, self.mapping_config, floor_height=0., world_boundary=self.world_boundary,
+            upper_short_end=self.upper_short_end,
+            field_floor_ids=self.pushable_ids if self.upper_short_end else (),
             startup_clear_area=WorldBoundary.startup_area(config),
             stationary_box_ids=self.registered_ids,
             box_map_occupied_threshold=config.get('box_map_occupied_threshold'),
@@ -228,6 +346,10 @@ class NavigationEngine:
         self.contact_collision = (ContactCollisionChecker(self.mapping_config, self.planner, self.contact_profile,
                                                           world_boundary=self.world_boundary)
                                   if self.contact_profile is not None else None)
+        if self.first_push:
+            self.layers.surface_checker = self.contact_collision
+        if self.upper_short_end:
+            self.planner.field_box_sweep_free = self.layers.field_box_sweep_free
         self.routes = ExplorationVoronoiRoutes(self.planner)
         self.visible_at = {}
         self.latest_visible_ids = frozenset()
@@ -256,9 +378,18 @@ class NavigationEngine:
     def decision(self):
         return self.layers.decision
 
-    def push_speed_sent(self, object_id):
+    def push_speed_sent(self, object_id, *, interaction_id=None, worker_at=None):
         """The writer has sent forward contact motion for this box in this map."""
         self.layers.stationary_box_ids.discard(object_id)
+        self.guidance_poses.pop(object_id, None)
+        if self.first_push and object_id in self.pushable_ids:
+            self.trial_used = True
+        lease = self.interaction_command or {}
+        if (self.phase == 'timed_push' and interaction_id == lease.get('id') and worker_at is not None
+                and self.skill.plan.box_id == object_id):
+            push = self.skill.timed_push
+            if push.sdk_started_at is None:
+                push.sdk_started_at = worker_at
 
     def _inside_bounds(self, point):
         if self.world_boundary is not None:
@@ -281,7 +412,7 @@ class NavigationEngine:
         self.current_proposals.clear()
         self.planner.interactable_ids = frozenset()
 
-    def _retire_object_tracks(self, retired_ids, reason):
+    def _retire_object_tracks(self, retired_ids, reason, *, after_push=False):
         layers = self.layers
         if not retired_ids:
             return
@@ -289,10 +420,11 @@ class NavigationEngine:
         removed = [box for key, box in layers.detected_boxes.items() if key in retired_ids]
         owned = layers._mask(removed)
         retained_sensor = layers._mask(retained)
-        for box in removed:
-            part = self.planner.box_mask(box, padding=.04)
-            if part is not None:
-                owned |= part
+        if not after_push:
+            for box in removed:
+                part = self.planner.box_mask(box, padding=.04)
+                if part is not None:
+                    owned |= part
         for box in retained:
             part = self.planner.box_mask(box, padding=.04)
             if part is not None:
@@ -302,6 +434,22 @@ class NavigationEngine:
         owned &= ~retained_sensor
         if layers.interior is not None:
             owned &= layers.interior
+        if after_push:
+            # Keep independent obstacles, including returns mixed with the target.
+            owned &= ~(layers.evidence.static_occupied | layers.local_hits | layers.stable_obstacles
+                       | layers.evidence.occupied_mask())
+            for key in retired_ids:
+                mixed = self.planner.mixed_box_cells.pop(key, None)
+                if mixed is not None:
+                    owned &= ~mixed
+                    if self.map_observed_at is not None:
+                        layers.local_hits[mixed] = True
+                        layers.hit_time[mixed] = self.map_observed_at
+                self.planner.measured_box_cells.pop(key, None)
+                layers.box_floor_areas.pop(key, None)
+                layers.recent_box_geometry.pop(key, None)
+                layers.top_returns.pop(key, None)
+                self.current_proposals.pop(key, None)
         if owned.any():
             layers.evidence.log_odds[owned] = 0.
             layers.observed[owned] = False
@@ -329,6 +477,7 @@ class NavigationEngine:
     def _reset_execution(self):
         self._restore_navigation_motion()
         self.execution.reset()
+        self.boundary_speed_limited = False
         self.interaction_command = None
         self.selector = OnlineGoalSelector()
         self._failed_push_probe = None
@@ -348,8 +497,14 @@ class NavigationEngine:
         self.narrow_attempt = None
         self.narrow_stop = MeasuredStopGate()
         self.box_approach = None
+        self.layers.approach_reference = None
+        self.box_turn_backoff = 0.
+        self.stage_sidestep = None
+        self.rejected_stages = []
+        self.stage_retry_reason = None
         self.box_turn = None
         self.box_turn_started = self.box_aligned_at = None
+        self.box_heading_outside_since = None
         self.phase = 'idle'
         self.endpoint = None
         self.goal_kind = 'task'
@@ -359,10 +514,7 @@ class NavigationEngine:
         self.last_replan = -math.inf
         self.goal_stop = MeasuredStopGate()
         self.sub_arrival = ObservedSubgoalArrival()
-        self.subtracker = None
-        self.subtarget = None
-        self.sub_started = None
-        self.sub_reached = False
+        self._reset_subnavigation()
         self.passage = None
         self.layers.global_path = self.layers.local_path = ()
         self.layers.decision = None
@@ -390,6 +542,8 @@ class NavigationEngine:
         self._clear_object_tracks()
         self._reset_execution()
         self.skill_reports.clear()
+        if not self.trial_used:
+            self.trial_report = None
         self.goal = tuple(map(float, point))
         self.now = float(now)
         self.status, self.phase = 'running', 'decide'
@@ -411,6 +565,8 @@ class NavigationEngine:
     def _finish(self, success, reason):
         if not success and self.first_push and self.skill is not None and self.trial_report is None:
             self.trial_report = dict(self.skill.report(), status='failed', reason=reason)
+            if reason == 'push_aside:contact_motion_blocked' and self.contact_collision is not None:
+                self.trial_report['contact_collision'] = self.contact_collision.diagnostic.copy()
             self.events.append(dict(event='first_push_result', time_s=self.now, report=self.trial_report))
             if not self.skill_reports or self.skill_reports[-1].get('object_id') != self.skill.plan.box_id:
                 self.skill_reports.append(self.trial_report)
@@ -421,7 +577,7 @@ class NavigationEngine:
         self.limiter.accept(np.zeros(3), self.now)
         return None
 
-    def observe(self, observation, now, boxes=()):
+    def observe(self, observation, now, boxes=(), recognition=None):
         """Update mapping and measured feedback without advancing a task."""
         self.now = float(now)
         self.observation = observation
@@ -452,6 +608,14 @@ class NavigationEngine:
         self.current_proposals = {box.id: box for box in boxes
                                   if self.world_boundary is None or self.world_boundary.contains_box(
                                       box.xy, box.dimensions, math.radians(box.yaw))}
+        if self.upper_short_end and self.trial_used and self.current_proposals:
+            # A detached perception sample may have been captured before the writer stopped.
+            for key, cutoff in self.box_memory.reset_times().items():
+                if key in self.current_proposals:
+                    stamps = recognition.snapshot(self.now) if hasattr(recognition, 'snapshot') else {}
+                    stamp = stamps.get(key, {}).get('latest_at')
+                    if stamp is None or stamp <= cutoff:
+                        self.current_proposals.pop(key)
         previous_scan_count = self.layers.scan_count
         previous_scan = self.layers.last_scan
         # ROS clouds contain measured returns, not PhysX no-hit range shells.
@@ -459,6 +623,10 @@ class NavigationEngine:
         # drop those real boundary returns instead of falsely clearing space.
         sensors = dict(observation.get('sensors', {}))
         lidar = sensors.get('lidar')
+        # The field lid is above the navigation map's height limit. Only its
+        # fitted returns from this exact scan supply additional visibility.
+        self.layers.top_returns = (recognition.top_returns(lidar.get('physics_step'), self.now)
+                                   if self.upper_short_end and lidar and hasattr(recognition, 'top_returns') else {})
         if lidar is not None:
             points = np.asarray(lidar.get('pointcloud', ()), float)
             if points.size:
@@ -469,11 +637,30 @@ class NavigationEngine:
                                     'measured_returns_only': True}
         self.observation = {**observation, 'sensors': sensors}
         if self.box_memory is not None:
+            self.layers.recent_box_geometry.clear()
             for key, location in self.box_memory.locations(self.now).items():
                 if key in self.registered_ids and (self.world_boundary is None or self.world_boundary.contains_box(
                         location.center, location.box.local_dimensions, location.yaw_rad)):
-                    self.layers.detected_boxes[key] = location.box
-        updated = self.layers.update(self.now, self.observation, tuple(self.current_proposals.values()), force=self.layers.local_updates == 0)
+                    self.layers.detected_boxes[key] = self.layers.planning_box(location.box)
+                    if key in self.guidance_poses:
+                        self.guidance_poses[key].observe(location.box, location.captured_at, window=location.from_window)
+                    # A recent multi-scan fit can explain raw map hits without
+                    # providing single-scan visibility or permission to push.
+                    if key not in self.current_proposals and self.now < location.display.get('expires_at', -math.inf):
+                        self.layers.recent_box_geometry[key] = location.box
+        if self.guidance_poses and recognition is not None and self.current_proposals:
+            sources = recognition.snapshot(self.now)
+            for key, box in self.current_proposals.items():
+                if key in self.guidance_poses:
+                    self.guidance_poses[key].observe(box, sources.get(key, {}).get('latest_at'))
+        # Contact decisions consume individually identified MID360 scans. A
+        # 99 ms interval on a 10 Hz map must not split the fit from its rays.
+        scan = lidar.get('physics_step') if lidar else None
+        contact_scan = (scan is not None and scan != previous_scan and (
+            self.phase in TIMED_PUSH_PHASES or self.phase == 'post_push_reobserve' or
+            (self._at_field_face() and self.skill.plan.box_id in self.current_proposals)))
+        updated = self.layers.update(self.now, self.observation, tuple(self.current_proposals.values()),
+                                     force=self.layers.local_updates == 0, force_local=contact_scan)
         if self.contact_collision is not None:
             self.contact_collision.update(self.observation, self.layers)
         if self.layers.scan_count != previous_scan_count:
@@ -501,21 +688,38 @@ class NavigationEngine:
         return (object_id in self.current_proposals and object_id in self.latest_visible_ids
                 and 0. <= age <= float(self.config.get('object_max_age_s', 1.)))
 
-    def _permission(self, object_id, recognition):
+    def _permission(self, object_id, recognition, push_direction=None):
         if not self.config.get('interaction_enabled', False) or not self.full_motion_feedback or not self._fresh_object(object_id) or recognition is None:
             return None
         from deploy.perception.registered_boxes import RegisteredBoxPerception, RegisteredBoxEvidence
         if self.contact_profile is None or not isinstance(recognition, (RegisteredBoxPerception, RegisteredBoxEvidence)):
             return None
-        permission = recognition.permission(object_id, self.now)
+        permission = recognition.permission(object_id, self.now, push_direction=push_direction,
+                                            face_tolerance=TRIAL_YAW_TOLERANCE)
         return permission if permission is not None and permission.source == self.interaction_source else None
+
+    def _at_field_face(self):
+        return (self.upper_short_end and self.phase in ('skill', 'first_push_wait_scan') and self.skill is not None
+                and self.skill.state in ('recheck_lid', 'settle_contact', 'engage', 'push'))
+
+    def _skill_permission(self, recognition):
+        plan = self.skill.plan
+        permission = self._permission(plan.box_id, recognition, plan.direction if self.first_push else None)
+        if permission is not None and self._at_field_face():
+            scan = recognition.snapshot(self.now)[plan.box_id]['scan_id']
+            live_scan = self.observation['sensors'].get('lidar', {}).get('physics_step')
+            if scan != live_scan or not self.contact_collision.target_measured(self.current_proposals[plan.box_id], scan):
+                # Take the existing wait-at-face path. A missing measurement
+                # cannot distinguish an obstacle from clear forward space.
+                return None
+        return permission
 
     def _output(self, velocity):
         command = np.array(velocity, float, copy=True)
         if command.shape != (3,) or not np.isfinite(command).all():
             raise ValueError('Navigation emitted an invalid velocity')
         limited = checked_velocity(command, self.velocity_limits)
-        if not np.array_equal(command, limited):
+        if self.phase != 'timed_push' and not np.array_equal(command, limited):
             # Normal tracking already limits BEFORE its collision check. If a
             # skill bypasses preview, independent yaw clipping changes its arc;
             # check that actual bounded arc instead of assuming it stays safe.
@@ -531,29 +735,57 @@ class NavigationEngine:
         if self.skill is not None and self.contact_profile is not None:
             command = self.contact_profile.limit(command)
             if self.first_push and self.skill.contact_started is not None:
-                command[:2] /= max(1., np.linalg.norm(command[:2])/self.contact_profile.push_max_mps)
+                command[:2] /= max(1., np.linalg.norm(command[:2])/self.skill.config.push_max_speed)
             # Includes nonzero braking produced AFTER the shared skill's stop
             # intent, and any final limit-induced change in its checked arc.
-            if np.any(command) and getattr(self.skill, 'contact_started', None) is not None:
+            if (np.any(command) and getattr(self.skill, 'contact_started', None) is not None
+                    and self.phase != 'timed_push'):
                 context = getattr(self, '_contact_context', None)
                 if context is None or not self._check_contact_motion(command, context):
-                    return self._finish(False, 'push_aside:contact_motion_blocked')
+                    if (context is None or self.contact_collision is None
+                            or self.contact_collision.diagnostic['reason'] != 'box_edge_needs_new_scan'
+                            or not self.wait_for_contact_scan(self.contact_collision.diagnostic)):
+                        return self._finish(False, 'push_aside:contact_motion_blocked')
+                    command = np.zeros(3)
+        return self._output_within_boundary(command)
+
+    def _output_within_boundary(self, command):
         if self.world_boundary is not None:
-            # Cover both the issued twist and feedback during reaction/braking,
-            # including turns in place and recovery commands that may allow unknown space.
-            for twist in (command, self.limiter.measured):
-                horizon = .60 + max(math.hypot(*twist[:2])/(2*self.limiter.linear_acceleration),
-                                    abs(twist[2])/(2*self.limiter.yaw_acceleration))
-                if not self.world_boundary.contains_motion(self.position[:2], self.heading, twist,
-                                                           horizon, self.body_corners):
-                    return self._finish(False, 'world_boundary_stop')
+            if not self._boundary_motion_fits(self.limiter.measured):
+                return self._finish(False, 'world_boundary_stop')
+            # Leave another control cycle to brake. A uniform reduction follows
+            # a prefix of the translation/turn arc already checked for contact.
+            reserve = 1 / self.config.get('tick_hz', 10.)
+            if self._boundary_motion_fits(command, reserve):
+                self.boundary_speed_limited = False
+            else:
+                lo, hi = 0., 1.
+                for _ in range(8):
+                    scale = (lo + hi) / 2
+                    if self._boundary_motion_fits(command * scale, reserve):
+                        lo = scale
+                    else:
+                        hi = scale
+                if not self.boundary_speed_limited:
+                    self.events.append(dict(event='world_boundary_speed_limited', time_s=self.now,
+                                            requested=command.tolist(), scale=lo))
+                self.boundary_speed_limited = True
+                command = command * lo
         self.limiter.accept(command, self.now)
         return command
+
+    def _boundary_motion_fits(self, twist, reserve=0.):
+        braking = max(math.hypot(*twist[:2])/(2*self.limiter.linear_acceleration),
+                      abs(twist[2])/(2*self.limiter.yaw_acceleration))
+        return self.world_boundary.contains_motion(self.position[:2], self.heading, twist,
+                                                   .60 + reserve + braking, self.body_corners)
 
     def _check_contact_motion(self, command, context):
         if self.contact_collision is None:
             return False
-        pushing = self.skill is not None and self.skill.state in ('engage', 'push', 'settle_push_progress', 'brake_after_push')
+        pushing = self.skill is not None and self.skill.state in ('recheck_lid', 'engage', 'push', 'settle_push_progress', 'brake_after_push')
+        if pushing and self.first_push and self.upper_short_end:
+            pushing = self.skill.box_within_stopping_reach(context, command)
         return self.contact_collision(command, context, pushing=pushing)
 
     def _interaction_lease(self, recognition):
@@ -562,8 +794,8 @@ class NavigationEngine:
         expiry = recognition.expires_at(self.skill.plan.box_id)
         self.interaction_command = self.execution.metadata(self.skill.state, self.now, expiry)
         if self.first_push and self.skill.contact_started is not None:
-            p = self.contact_profile
-            self.interaction_command['limits'].update(max_vx=p.push_max_mps, max_vy=p.push_max_mps)
+            speed = self.skill.config.push_max_speed
+            self.interaction_command['limits'].update(max_vx=speed, max_vy=speed)
             if self.skill.near_at is not None:
                 self.interaction_command['deadline'] = min(self.interaction_command['deadline'],
                                                           self.skill.near_at+self.skill.near_seconds)
@@ -576,14 +808,36 @@ class NavigationEngine:
                 elif hasattr(self.planner, name):
                     delattr(self.planner, name)
 
-    def interaction_stopped(self):
+    def wait_for_contact_scan(self, collision=None):
+        """Keep this aligned trial and its original budget through a geometry stop."""
+        if self.phase == 'first_push_wait_scan':
+            return True
+        if (not self.first_push or self.phase != 'skill' or not self.execution.active
+                or self.skill is None or self.skill.state not in ('engage', 'push')):
+            return False
+        self.phase = 'first_push_wait_scan'
+        self.layers.decision.update(skill_state='wait_at_box')
+        self.execution.completed()
+        event = dict(event='first_push_wait_scan', box_id=self.skill.plan.box_id, time_s=self.now)
+        if collision is not None:
+            event['contact_collision'] = dict(collision)
+        self.events.append(event)
+        return True
+
+    def interaction_stopped(self, stopped_at=None):
+        if self.phase == 'first_push_wait_scan':
+            self.skill.resume_after = self.now if stopped_at is None else stopped_at
+            self.execution.awaiting_stop = False  # rotate the writer segment, retain the same trial
+            self.limiter.accept(np.zeros(3), self.skill.resume_after)
         completed = self.execution.awaiting_stop
         self.execution.stopped()
         self.interaction_command = None
-        if completed and self.phase != 'first_push_wait_scan':
+        if completed:
             self._restore_after_contact()
+            if self.phase == 'post_push_reobserve':
+                self._release_timed_push(self.now if stopped_at is None else stopped_at)
 
-    def _restore_after_contact(self):
+    def _restore_after_contact(self, command=(0., 0., 0.)):
         self._restore_navigation_motion()
         self.velocity_limits = dict(max_vx=float(self.config['max_forward_speed']),
                                     max_vy=float(self.config['max_lateral_speed']),
@@ -591,7 +845,7 @@ class NavigationEngine:
         self.limiter.limits = self.velocity_limits
         self.limiter.linear_acceleration = float(self.config['linear_acceleration'])
         self.limiter.yaw_acceleration = float(self.config['yaw_acceleration'])
-        self.limiter.accept(np.zeros(3), self.now)
+        self.limiter.accept(command, self.now)
 
     def _brake(self):
         command, _ = checked_contact_turn_command(
@@ -599,13 +853,13 @@ class NavigationEngine:
             self.layers.current_boxes, self.limiter, self.now)
         return self._output(command)
 
-    def _use_contact_motion(self):
-        profile = self.contact_profile
+    def _use_contact_motion(self, profile):
         if self.first_push:
             SdkNavigationMotion(profile).bind(self.planner)
         self.velocity_limits = {
             'max_vx': min(self.velocity_limits['max_vx'], max(profile.max_forward_mps, profile.max_reverse_mps)),
-            'max_vy': min(self.velocity_limits['max_vy'], profile.max_lateral_mps),
+            'max_vy': (profile.max_lateral_mps if self.upper_short_end else
+                       min(self.velocity_limits['max_vy'], profile.max_lateral_mps)),
             'max_wz': min(self.velocity_limits['max_wz'], profile.max_yaw_rps)}
         self.limiter.limits = self.velocity_limits
         self.limiter.linear_acceleration = profile.linear_acceleration_mps2
@@ -752,6 +1006,7 @@ class NavigationEngine:
 
     def _reset_subnavigation(self):
         self.subtracker = self.subtarget = self.sub_started = None
+        self.sub_retry_at = -math.inf
         self.sub_reached = False
         self.sub_arrival.reset()
 
@@ -760,47 +1015,219 @@ class NavigationEngine:
         if self.subtarget is None or np.linalg.norm(target-self.subtarget) > .02:
             self._reset_subnavigation()
             self.subtarget, self.sub_started = target.copy(), self.now
+            self.sub_arrival = ObservedSubgoalArrival()
+            if self.upper_short_end and self.box_approach is not None:
+                plan = self.box_approach
+                tangent = np.array([-plan.direction[1], plan.direction[0]])
+                if self.rejected_stages or abs((target - plan.initial_xy) @ tangent) > .05:
+                    # Walking 16 cm short of a side stage leaves another
+                    # whole stride for the near-box sidestep to recover.
+                    self.sub_arrival.tolerance = SIDE_STAGE_ARRIVAL_M
         if self.now-self.sub_started > float(self.config.get('subnavigation_timeout_s', 80.)):
             return self._output(np.zeros(3)), False, 'subnavigation_timeout'
         arrival = self.sub_arrival.update(target, self.position, self.linear, self.angular, self.tilt, self.now,
                                          heading=self.heading, command=self.limiter.command)
+        reached = arrival['subgoal_reached']
         if arrival['replan']:
             self.subtracker = None
-        if arrival['subgoal_braking']:
-            if arrival['subgoal_reached']:
+            # The stop gate measured a stationary robot just outside the
+            # tight walking target. Check this pose before routing there again.
+            if (self.upper_short_end and self.box_approach is not None
+                    and self.sub_arrival.tolerance == SIDE_STAGE_ARRIVAL_M
+                    and arrival['subgoal_error_m'] <= NEARBY_TURN_RADIUS_M
+                    and not self._at_rejected_stage()
+                    and np.linalg.norm(self.limiter.command[:2]) < .03 and abs(self.limiter.command[2]) < .06
+                    and self.planner.nearby_side_stage_clear(self.position, self.heading, self.box_approach,
+                                                             self.layers.current_boxes, self.contact_profile)):
+                reached = True
+                self.events.append(dict(event='box_turn_from_nearby_stage', time_s=self.now,
+                                        box_id=self.box_approach.box_id, stage_error_m=arrival['subgoal_error_m'],
+                                        position_xy=self.position[:2].tolist(), target_xy=target.tolist()))
+        if arrival['subgoal_braking'] or reached:
+            if reached:
                 self.limiter.clear_guidance(self.position, self.now)
-            return self._brake(), arrival['subgoal_reached'], None
+            return self._brake(), reached, None
         if self.subtracker is None:
+            if self.box_approach is not None and self.now < self.sub_retry_at:
+                return self._brake(), False, None
             path = self._route(target)
             if not path:
+                self.sub_retry_at = self.now + self.layers.global_period
                 return self._brake(), False, None
             self.subtracker = self._tracker(path, short_goal=True)
         action, detail = self.subtracker.action(self.position[:2], self.heading, self.planner, self.layers.current_boxes)
         self.last_tracking = detail
+        if self.upper_short_end and self.phase == 'box_approach' and self.box_approach is not None:
+            delta = target - self.position[:2]
+            distance = float(np.linalg.norm(delta))
+            self.layers.decision['stage_tracking'] = dict(stage_error_m=distance,
+                desired=detail.get('desired_command'), applied=action['move_by_speed'],
+                measured_body_mps=self.linear[:2].tolist(), stalled=bool(detail.get('execution_stalled')))
+            direction = np.asarray(self.box_approach.direction)
+            local_target = detail.get('target')
+            if (local_target is not None and distance <= self.subtracker.final_goal_slow_radius
+                    and np.linalg.norm(target - local_target) < .01):
+                can_turn = not self._at_rejected_stage() and self.planner.nearby_side_stage_clear(
+                    self.position, self.heading, self.box_approach, self.layers.current_boxes, self.contact_profile)
+                stalled = detail.get('execution_stalled')
+                if can_turn or (stalled and abs(delta @ direction) < abs(delta @ [-direction[1], direction[0]])):
+                    self.stage_sidestep = SdkSidestep(target, self.sub_arrival.tolerance, self.now, self.contact_profile)
+                    self.phase = 'box_stage_brake'
+                    self.layers.decision.update(skill_state=self.phase)
+                    self.events.append(dict(event='box_stage_stalled' if stalled else 'box_stage_in_turn_range',
+                                            time_s=self.now, box_id=self.box_approach.box_id,
+                                            position_xy=self.position[:2].tolist(), target_xy=target.tolist(),
+                                            **self.layers.decision['stage_tracking']))
+                    return self._brake(), False, None
         if detail.get('needs_replan'):
             self.subtracker = None
+            self.sub_retry_at = self.now + self.layers.global_period
         return self._output(action['move_by_speed']), False, None
+
+    def _walk_fixed_stage(self, stage, heading):
+        if self.phase == 'box_stage_brake':
+            command = self._brake()
+            if command is not None and stage.stopped(command, self.position, self.linear, self.angular, self.tilt, self.now):
+                if self.stage_retry_reason:
+                    return self._relocate_upper_stage(self.stage_retry_reason, command)
+                self._use_contact_motion(face_turn_profile(self.contact_profile, self.config['max_yaw_speed']))
+                boxes = self.layers.current_boxes
+                end = self.heading + angle_error(heading, self.heading)
+                if not self._at_rejected_stage() and self.planner.nearby_side_stage_clear(
+                        self.position, self.heading, self.box_approach, boxes, self.contact_profile):
+                    self.stage_sidestep = None
+                    self.events.append(dict(event='box_turn_from_nearby_stage', time_s=self.now,
+                                            box_id=self.box_approach.box_id, position_xy=self.position[:2].tolist(),
+                                            target_xy=stage.target.tolist(),
+                                            stage_error_m=float(np.linalg.norm(stage.target-self.position[:2]))))
+                elif not body_rotation_clear(self.planner, boxes, self.position, self.heading, end):
+                    return self._relocate_upper_stage('turn_blocked', command)
+                elif not body_translation_recovery_clear(self.planner, boxes, self.position, end, stage.target):
+                    return self._relocate_upper_stage('sidestep_blocked', command)
+                stage.stop.reset()
+                self.box_turn_started, self.box_turn = self.now, None
+                self.phase = 'box_turn'
+                self.layers.global_path = self.layers.local_path = ()
+                self.layers.decision.update(skill_state=self.phase)
+            return command
+        if abs(angle_error(heading, self.heading)) > TRIAL_YAW_TOLERANCE:
+            self.phase = 'box_stage_brake'
+            stage.braking = False
+            stage.stop.reset()
+            self.layers.decision.update(skill_state=self.phase)
+            return self._brake()
+        command, arrived, detail = stage.move(self.position, self.heading, self.planner, self.layers.current_boxes,
+            self.limiter, self.now, self.linear, self.angular, self.tilt)
+        self.layers.decision.update(stage_tracking=detail)
+        if detail['stalled'] and not arrived:
+            return self._stop_to_change_stage('no_progress')
+        if arrived:
+            self.events.append(dict(event='box_stage_reached_after_sidestep', time_s=self.now, box_id=self.box_approach.box_id,
+                                    target_xy=stage.target.tolist(), position_xy=self.position[:2].tolist(), **detail))
+            self.stage_sidestep = self.box_turn = None
+            self._use_contact_motion(face_turn_profile(self.contact_profile, self.config['max_yaw_speed']))
+            self.box_turn_started = self.now
+            self.phase = 'box_turn'
+            self.layers.decision.update(skill_state=self.phase)
+        return self._output(command)
+
+    def _at_rejected_stage(self):
+        return any(np.linalg.norm(self.position[:2] - xy) <= SIDE_STAGE_ARRIVAL_M for xy in self.rejected_stages)
+
+    def _stop_to_change_stage(self, reason):
+        self.stage_retry_reason = reason
+        self.stage_sidestep = SdkSidestep(self.box_approach.approach_xy, SIDE_STAGE_ARRIVAL_M, self.now, self.contact_profile)
+        self.phase = 'box_stage_brake'
+        self.layers.decision.update(skill_state=self.phase, interaction_allowed=False)
+        return self._brake()
+
+    def _relocate_upper_stage(self, reason, command):
+        """After a measured stop, try another reachable station on the same face."""
+        self._planning_boundary('upper_short_end_reposition')
+        plan = self.box_approach
+        failed = np.asarray(plan.approach_xy) - self.box_turn_backoff*np.asarray(plan.direction)
+        self.rejected_stages.extend((failed, self.position[:2].copy()))
+        stage, path = self.planner.alternate_upper_stage(self.position[:2], self.layers.current_boxes,
+                                                         self.contact_profile, plan, self.rejected_stages)
+        self.events.append(dict(event='box_stage_reposition', time_s=self.now, box_id=plan.box_id, reason=reason,
+                                old_target=failed.tolist(), new_target=None if stage is None else stage.tolist()))
+        if stage is None:
+            return self._finish(False, 'push_aside:fixed_stage_'+reason)
+        self.box_approach = replace(plan, approach_xy=tuple(stage), approach_path=path)
+        self.box_turn_backoff = 0.
+        self.stage_retry_reason = None
+        self.stage_sidestep = self.box_turn = None
+        self._restore_after_contact(command)
+        self._reset_subnavigation()
+        self.phase = 'box_approach'
+        self.layers.global_path = path
+        self.layers.decision.update(approach_xy=stage.tolist(), skill_state=self.phase)
+        return command
 
     def _approach_box_face(self, recognition):
         plan = self.box_approach
         if not self.full_motion_feedback or plan.box_id not in self.layers.detected_boxes:
             return self._finish(False, 'push_aside:box_approach_inputs_unavailable')
+        anchor_box = self.layers.approach_reference
+        guide = self.guidance_poses.get(plan.box_id)
+        changed = (guide.moved_from(plan, self.now) if guide is not None and guide.box is not None
+                   else anchor_box is not None and self.layers.detected_boxes[plan.box_id] is not anchor_box)
+        if changed:
+            velocity = self._brake()
+            if velocity is None:
+                return None
+            self.events.append(dict(event='box_approach_geometry_changed', time_s=self.now, box_id=plan.box_id))
+            self.layers.approach_reference = self.box_approach = self.box_turn = None
+            self.stage_sidestep = None
+            self._restore_after_contact(velocity)
+            self._reset_subnavigation()
+            self.phase = 'decide'
+            self.next_decision = self.now + self.layers.global_period
+            return velocity
 
-        # Seeing the box on the way updates the map. Keep the selected face and
-        # let the normal tracker check the route to its original standing point.
+        direction = np.asarray(plan.direction)
+        heading = math.atan2(direction[1], direction[0])
+        tolerance = SHORT_END_YAW_TOLERANCE if self.upper_short_end else TRIAL_YAW_TOLERANCE
+        settled_tolerance = SHORT_END_SETTLED_YAW_TOLERANCE if self.upper_short_end else tolerance
+        anchor = np.asarray(plan.approach_xy)
+        stage = self.stage_sidestep
+        if stage is not None:
+            if self.now - stage.started >= self.config.get('subnavigation_timeout_s', 80.):
+                return self._finish(False, 'push_aside:fixed_stage_no_progress')
+            if self.tilt >= self.contact_profile.max_tilt_degrees:
+                return self._finish(False, 'push_aside:robot_unstable')
+            if self.phase in ('box_stage_brake', 'box_stage_translate'):
+                return self._walk_fixed_stage(stage, heading)
         if self.phase == 'box_approach':
-            velocity, arrived, failed = self._subnavigation(plan.approach_xy)
+            velocity, arrived, failed = self._subnavigation(anchor - self.box_turn_backoff*direction)
             if velocity is None:
                 return None
             if failed:
                 self.events.append(dict(event='box_approach_failed', time_s=self.now,
                                         box_id=plan.box_id, reason=failed))
-                self.box_approach = None
+                self.box_approach = self.layers.approach_reference = None
                 self.phase = 'decide'
                 self.next_decision = self.now + self.layers.global_period
                 return velocity
             if arrived:
-                self._use_contact_motion()
+                profile = face_turn_profile(self.contact_profile, self.config['max_yaw_speed'])
+                self._use_contact_motion(profile)
+                # Check the entire shortest turn at the actual stopped pose.
+                backoff = self.planner.turn_standoff(self.position, self.heading, plan, self.layers.current_boxes,
+                                                    self.box_turn_backoff, self.sub_arrival.tolerance, settled_tolerance)
+                if backoff is None:
+                    if self.upper_short_end:
+                        return self._relocate_upper_stage('turn_blocked', velocity)
+                    return self._finish(False, 'push_aside:box_face_turn_blocked')
+                if backoff != self.box_turn_backoff:
+                    self.box_turn_backoff = backoff
+                    stage = (anchor - backoff*direction).tolist()
+                    self.events.append(dict(event='box_face_turn_reposition', time_s=self.now,
+                                            box_id=plan.box_id, target_xy=stage))
+                    self.layers.decision.update(turn_clear=False, turn_stage_xy=stage)
+                    self._restore_after_contact(velocity)
+                    self._reset_subnavigation()
+                    return velocity
                 self.box_turn_started = self.now
                 self.phase = 'box_turn'
                 self._reset_subnavigation()
@@ -808,28 +1235,50 @@ class NavigationEngine:
                 self.layers.decision.update(skill_state=self.phase)
             return velocity
 
-        heading = math.atan2(plan.direction[1], plan.direction[0])
-        tolerance = PushAsideConfig.yaw_tolerance
-        if self.phase == 'box_confirm' and abs(angle_error(heading, self.heading)) > tolerance:
-            self.box_turn = None
-            self.phase = 'box_turn'
-            self.layers.decision.update(skill_state=self.phase)
+        if self.phase == 'box_confirm':
+            if abs(angle_error(heading, self.heading)) > settled_tolerance:
+                if self.box_heading_outside_since is None:
+                    self.box_heading_outside_since = self.now
+                if self.upper_short_end and self.now - self.box_heading_outside_since < self.contact_profile.settle_seconds:
+                    return self._brake()
+                self.box_turn = None
+                self.phase = 'box_turn'
+                self.layers.decision.update(skill_state=self.phase)
+            else:
+                self.box_heading_outside_since = None
         if self.phase == 'box_turn':
             if self.tilt >= self.contact_profile.max_tilt_degrees:
                 return self._finish(False, 'push_aside:robot_unstable')
             if self.now - self.box_turn_started >= PushAsideConfig.max_turn_seconds:
                 return self._finish(False, 'push_aside:box_face_turn_timeout')
             if self.box_turn is None:
-                self.box_turn = SdkHeadingTrim(heading, tolerance, profile=self.contact_profile)
+                self.box_turn = SdkHeadingTrim(heading, tolerance, acceptance_tolerance=settled_tolerance,
+                                               profile=self.planner.motion_backend.profile, compensate_rebound=self.upper_short_end)
             command, aligned, detail = self.box_turn.update(
                 self.position, self.heading, self.planner, self.layers.current_boxes,
                 self.limiter, self.now, self.linear, self.angular, self.tilt)
-            self.layers.decision.update(heading_error_rad=detail['heading_error_rad'],
-                                        turn_clear=detail['body_motion_safe'])
+            self.layers.decision.update(target_heading_rad=heading, heading_error_rad=detail['heading_error_rad'],
+                                        turn_clear=detail['body_motion_safe'], turn_mode=detail['mode'],
+                                        measured_rebound_rad=detail['measured_rebound_rad'],
+                                        turn_no_progress_s=detail['seconds_without_progress'],
+                                        requested_yaw_rps=float(command[2]), measured_yaw_rps=float(self.angular[2]))
             if self.box_turn.failed:
                 return self._finish(False, 'push_aside:'+self.box_turn.failed)
             if aligned:
+                if stage is not None:
+                    if not body_translation_recovery_clear(self.planner, self.layers.current_boxes, self.position,
+                                                           self.heading, stage.target):
+                        return self._finish(False, 'push_aside:fixed_stage_corridor_blocked')
+                    stage.progress_at = None
+                    self.phase = 'box_stage_translate'
+                    # The SDK writer and approach slew limiter both use the navigation
+                    # acceleration here. Check the stopping sweep with that same ramp.
+                    self._use_contact_motion(self.contact_profile)
+                    self.limiter.linear_acceleration = self.config['linear_acceleration']
+                    self.layers.decision.update(skill_state=self.phase)
+                    return self._output(command)
                 self.box_aligned_at = self.now
+                self.box_heading_outside_since = None
                 self.phase = 'box_confirm'
                 self.layers.decision.update(skill_state=self.phase)
                 self.events.append(dict(event='box_face_aligned', time_s=self.now, box_id=plan.box_id,
@@ -838,7 +1287,7 @@ class NavigationEngine:
 
         if self.now - self.box_aligned_at >= PushAsideConfig.max_alignment_seconds:
             return self._finish(False, 'push_aside:no_fresh_box_face_after_turn')
-        permission = self._permission(plan.box_id, recognition)
+        permission = self._permission(plan.box_id, recognition, plan.direction)
         if permission is not None:
             stamp = recognition.snapshot(self.now)[plan.box_id]['latest_at']
             if stamp is not None and stamp > self.box_aligned_at:
@@ -849,7 +1298,10 @@ class NavigationEngine:
 
     def _skill_step(self, recognition):
         object_id = self.skill.plan.box_id
-        permission = self._permission(object_id, recognition)
+        if self.upper_short_end:
+            self.limiter.linear_acceleration = (self.config['linear_acceleration']
+                if self.skill.state == 'align_lateral' else self.contact_profile.linear_acceleration_mps2)
+        permission = self._skill_permission(recognition)
         preparing = self.first_push and self.skill.contact_started is None
         if permission is None and not preparing:
             if self.first_push and self.execution.active:
@@ -857,15 +1309,7 @@ class NavigationEngine:
                 lease = self.interaction_command
                 if lease and min(lease['source_expires_at'], lease['deadline'])-self.now > .10:
                     return self._output(np.zeros(3))
-                # Outside the contact zone, stop the writer and wait at this
-                # pose. Retain the same trial, original travel and time budget.
-                last = getattr(self, '_contact_context', None)
-                if last is not None and self.skill.may_recheck_before_touch(replace(last, position=self.position,
-                        heading=self.heading, orientation=self.orientation)):
-                    self.phase = 'first_push_wait_scan'
-                    self.skill.contact_deadline = self.execution.deadline
-                    self.layers.decision.update(skill_state='wait_at_box')
-                    self.execution.completed()
+                if self.wait_for_contact_scan():
                     return self._output(np.zeros(3))
                 self.skill.stop_trial(self.now, self.position, 'waiting_for_new_face_scan')
                 return self._stop_first_push()
@@ -882,27 +1326,45 @@ class NavigationEngine:
             body_angular_velocity=self.angular, orientation=self.orientation, policy_command=None,
             contact_motion_check=self._check_contact_motion if self.contact_profile is not None else None,
             box_observed_at=source.get('latest_at'),
+            box_top_observed=source.get('observed_top', False),
             box_observation_id=permission.evidence_frames[-1] if permission and permission.evidence_frames else None,
             map_observed_at=self.map_observed_at, map_observation_id=self.map_observation_id)
         self._contact_context = context
+        if self.upper_short_end and preparing:
+            guide = self.guidance_poses.get(object_id)
+            self.skill.guidance_box = guide.recent(self.now) if guide is not None and permission else None
         command = self.skill.step(context)
         if self.first_push and self.skill.contact_started is not None and not self.execution.active:
             if permission is None or self.trial_used:
                 return self._finish(False, 'push_aside:first_push_requires_current_face')
             self.execution.start(object_id, self.now)
-            self.trial_used = True
+            if self.upper_short_end and command.state == 'engage' and command.status == 'running':
+                # Both settled-face paths hand off before the generic contact controller requests motion.
+                self.events.extend(command.events)
+                return self._start_timed_push(context, recognition.expires_at(object_id) - source['latest_at'])
         if command.status == 'checking':
             return self._stop_first_push()
         self._interaction_lease(recognition)
         self.events.extend(command.events)
+        if self.upper_short_end and self.skill.precontact_wait == 'box_edge_needs_new_scan':
+            self.wait_for_contact_scan(self.contact_collision.diagnostic)
+            return self._output(np.zeros(3))
         self.layers.decision = {**(self.layers.decision or {}), 'skill': 'push_aside',
                                 'skill_state': command.state,
                                 'interaction_allowed': not self.first_push or self.execution.active,
                                 'execution_state': command.state}
         if self.first_push:
             self.layers.decision['precontact_wait'] = self.skill.precontact_wait
+            if self.upper_short_end and self.skill.backend.centering_detail:
+                self.layers.decision['lid_centering'] = self.skill.backend.centering_detail
         self.sub_reached = False
         if command.status != 'running':
+            if (self.upper_short_end and preparing and not self.execution.active and not self.trial_used
+                    and command.reason in ('confirmed_landing_outside_face', 'sdk_alignment_stalled')):
+                self.box_approach = self.skill.plan
+                self.layers.approach_reference = target
+                self.skill = None
+                return self._stop_to_change_stage(command.reason)
             report = self.skill.report()
             report['object_pose_feedback'] = self.interaction_source
             self.skill_reports.append(report)
@@ -926,27 +1388,120 @@ class NavigationEngine:
                                       recovery_from_contact=self.skill.recovery_from_contact)
         return self._output(action['move_by_speed'])
 
+    def _start_timed_push(self, context, scan_max_age):
+        skill = self.skill
+        forward = np.array([math.cos(self.heading), math.sin(self.heading)])
+        gap, _, _ = skill._box_frame(context, travel_direction=forward)
+        if not math.isfinite(gap) or not 0. <= gap <= skill.config.max_engage_standoff:
+            return self._finish(False, 'push_aside:invalid_timed_push_gap')
+        profile = self.contact_profile
+        speed = min(self.interaction.get('timed_push_speed_mps') or skill.config.push_max_speed,
+                    self.config['max_forward_speed'])
+        push = TimedFacePush(context.box, self.position[:2].copy(), gap, skill.plan.push_distance,
+                             speed, self.now, scan_max_age, forward)
+        if push.duration > profile.max_contact_seconds:
+            return self._finish(False, 'push_aside:timed_push_duration_exceeds_limit')
+        if self.world_boundary is not None:
+            box = RegisteredFacePlanner.oriented_box(push.box)
+            end = np.asarray(box.xy) + forward * push.distance
+            if not all(self.world_boundary.contains_box(xy, box.dimensions, math.radians(box.yaw),
+                                                        margin=profile.release_margin_m) for xy in (box.xy, end)):
+                return self._finish(False, 'push_aside:box_outside_world_boundary')
+        skill.timed_push = push
+        budget = push.duration + profile.stall_seconds + profile.settle_seconds
+        self.execution.deadline = min(self.execution.deadline, self.now + budget)
+        self.phase = 'timed_push'
+        self.events.append(dict(event='timed_push_planned', time_s=self.now, box_id=context.box.id,
+                                **skill.report()['timed_push']))
+        return self._timed_push_step()
+
+    def _timed_push_step(self):
+        push = self.skill.timed_push
+        scan_at = self.observation.get('lidar_captured_at')
+        if scan_at is None or not 0. <= self.now - scan_at < push.scan_max_age:
+            return self._finish(False, 'push_aside:timed_push_scan_stale')
+        if self.tilt >= self.contact_profile.max_tilt_degrees:
+            return self._finish(False, 'push_aside:robot_unstable')
+        if self.now >= self.execution.deadline:
+            return self._finish(False, 'push_aside:timed_push_settle_timeout')
+        forward_speed = push.approach_speed
+        if self.phase == 'timed_push' and push.sdk_started_at is not None:
+            travel = float((self.position[:2] - push.origin) @ push.forward)
+            if push.face_reached_at is None:
+                if self.now - push.sdk_started_at >= push.approach_timeout and travel < push.gap:
+                    return self._finish(False, 'push_aside:timed_push_gap_not_reached')
+                if travel >= push.gap:
+                    # Keep the writer's original hard cutoff even on a late control tick.
+                    push.face_reached_at = min(self.now, push.sdk_started_at + push.approach_timeout)
+                    self.events.append(dict(event='timed_push_gap_reached', time_s=self.now,
+                                            forward_travel_m=travel, nose_gap_m=push.gap,
+                                            stroke_seconds=push.stroke_seconds))
+            remaining = push.gap + push.distance - travel
+            reached_distance = remaining <= 0.
+            if push.face_reached_at is not None:
+                # Limit the last control interval to the remaining measured stroke.
+                forward_speed = min(push.speed, max(0., remaining) * self.config['tick_hz'])
+            if push.face_reached_at is not None and (reached_distance or self.now >= push.face_reached_at + push.stroke_seconds):
+                self.phase = 'push_settle'
+                self.push_stop = MeasuredStopGate(self.contact_profile.settle_seconds)
+                self.events.append(dict(event='timed_push_elapsed', time_s=self.now,
+                                        duration_s=self.now - push.sdk_started_at, forward_travel_m=travel,
+                                        reason='forward_travel' if reached_distance else 'stroke_timer'))
+        self.layers.decision.update(skill_state=self.phase, execution_state=self.phase)
+        self.interaction_command = self.execution.metadata(self.phase, self.now, scan_at + push.scan_max_age)
+        if self.phase == 'timed_push':
+            self.interaction_command['forward_duration_s'] = push.duration
+            self.interaction_command['limits'].update(max_vx=push.speed)
+            # Only the registered, timed straight stroke has this separate forward limit.
+            return self._output_within_boundary(np.array([forward_speed, 0., 0.]))
+        if not np.any(self.limiter.command) and self.push_stop.update(
+                self.position, self.linear, self.angular, self.tilt, self.now):
+            self.skill.stop_trial(self.now, self.position, 'timed_push_settled')
+            self.phase = 'post_push_reobserve'
+            self.layers.decision = dict(kind='wait', reason='waiting_for_post_push_scan')
+            self.execution.completed()
+            self.events.append(dict(event='first_push_stop_requested', reason=self.skill.reason, time_s=self.now))
+        return self._output(np.zeros(3))
+
+    def _release_timed_push(self, stopped_at):
+        # Only reached on the matching SDK stop acknowledgement after a dispatched stroke.
+        skill = self.skill
+        push = skill.timed_push
+        key = push.box.id
+        self.box_memory.reset_after_push(key, push.box.xy, np.asarray(push.box.xy) + push.forward * push.distance,
+                                         stopped_at, skill.review_timeout_s)
+        self._retire_object_tracks({key}, 'post_push_box_unknown', after_push=True)
+        self.trial_report = dict(skill.report(), status='succeeded', reason='timed_push_released',
+                                 actual_push_distance_m=None, first_push={
+                                     'stopped_at': stopped_at, 'box_position': 'unknown', 'displacement_m': None})
+        self.skill_reports.append(self.trial_report)
+        self.events.append(dict(event='first_push_result', time_s=stopped_at, report=self.trial_report))
+        self.skill = self.tracker = self.layers.approach_reference = None
+        self.layers.global_path = self.layers.local_path = ()
+        self.next_decision = stopped_at
+        self._reset_subnavigation()
+
     def _advance_first_push(self, recognition):
         if self.phase == 'first_push_review':
             return self._review_first_push(recognition)
         if self.phase != 'first_push_wait_scan':
             return self._approach_box_face(recognition)
-        # Waiting for a new face after the writer has stopped before contact.
-        if self.now >= self.skill.contact_deadline:
+        if self.now >= self.execution.deadline:
             return self._finish(False, 'push_aside:first_push_approach_time_limit')
         key = self.skill.plan.box_id
-        if self._permission(key, recognition) is None:
+        if not self.contact_scan_ready(recognition):
             return self._output(np.zeros(3))
-        context = replace(self._contact_context, box=self.current_proposals[key], position=self.position,
-                          heading=self.heading, orientation=self.orientation)
-        if not self.skill.may_recheck_before_touch(context):
-            self.skill.stop_trial(self.now, self.position, 'box_rechecked_after_stop', context.box)
-            self.phase = 'first_push_review'
-            return self._output(np.zeros(3))
-        self.execution.start(key, self.now)
-        self.execution.deadline = min(self.execution.deadline, self.skill.contact_deadline)
         self.phase = 'skill'
+        self.events.append(dict(event='first_push_scan_resumed', box_id=key, time_s=self.now,
+                                scan_at=recognition.snapshot(self.now)[key]['latest_at']))
         return self._skill_step(recognition)
+
+    def contact_scan_ready(self, recognition):
+        key = self.skill.plan.box_id
+        if self.skill.resume_after is None or self._skill_permission(recognition) is None:
+            return False
+        stamp = recognition.snapshot(self.now)[key]['latest_at']
+        return stamp is not None and stamp > self.skill.resume_after
 
     def _stop_first_push(self):
         self.phase = 'first_push_review'
@@ -1090,6 +1645,11 @@ class NavigationEngine:
         if self.now < self.next_decision:
             return self._brake()
         self.layers.refresh_global(reason='decision')
+        if self.upper_short_end and self.trial_used and not self._push_finished():
+            return self._finish(False, 'push_aside:first_push_displacement_unconfirmed')
+        if self.upper_short_end and not self.trial_used and not self.trial_targets:
+            reason = 'waiting_for_registered_box' if self.full_motion_feedback else 'waiting_for_motion_feedback'
+            return self._apply_decision(BoxDecision('wait', reason), None, recognition)
         # A straight throat can put the robot inside both circular wall buffers.
         # Check for an oriented way through before trying to back out of it.
         if (not self.trial_targets and self.passage is None
@@ -1126,6 +1686,9 @@ class NavigationEngine:
         if recovery is not None:
             if self.recovery_started is None:
                 self.recovery_started = self.now
+                if self.upper_short_end and self._push_finished():
+                    self.events.append(dict(event='post_push_buffer_recovery', time_s=self.now,
+                                            position=self.position[:2].tolist(), target=recovery[1].get('target')))
             if self.now-self.recovery_started > float(self.config.get('recovery_timeout_s', 20.)):
                 return self._finish(False, 'decision_buffer_recovery_timeout')
             action, self.last_tracking = recovery
@@ -1164,18 +1727,41 @@ class NavigationEngine:
             self.layers.refresh_global(reason='registered_first_contact')
             free = self.planner.free
             with self.layers.global_planning():
+                push_free = self.planner.box_free & free
                 plan = self.planner.first_contact_plan(self.position[:2], current, self.trial_targets,
-                                                       self.planner.box_free & free, self.contact_profile)
+                                                       push_free, self.contact_profile,
+                                                       upper_end_goal=self.goal[:2] if self.upper_short_end else None,
+                                                       guidance_boxes={key: pose.recent(self.now)
+                                                                       for key, pose in self.guidance_poses.items()})
             if plan is not None:
-                decision = BoxDecision('push', 'registered_first_contact', push=plan, explanation={
+                box = self.layers.detected_boxes[plan.box_id]
+                sweep_clear = (None if self.upper_short_end else trial_push_speed(
+                    self.planner, box, plan.direction, current, push_free, self.contact_profile, plan.push_distance) is not None)
+                reason = 'upper_short_end_approach' if self.upper_short_end else 'registered_first_contact'
+                decision = BoxDecision('push', reason, push=plan, explanation={
                     'box_id': plan.box_id, 'push_distance_m': plan.push_distance,
+                    'push_sweep_clear_at_selection': sweep_clear,
                     'initial_xy': list(plan.initial_xy), 'destination_xy': list(plan.destination_xy),
                     'push_direction': list(plan.direction), 'approach_xy': list(plan.approach_xy)})
                 return self._apply_decision(decision, None, recognition)
+            if self.upper_short_end:
+                return self._apply_decision(BoxDecision('wait', 'no_reachable_upper_short_end'), None, recognition)
             if self.passage is None and self._try_narrow_passage():
                 return self._brake()
+        if self.upper_short_end and self._push_finished():
+            if self._tracker_route_start_blocked(current):
+                return self._apply_decision(BoxDecision('wait', 'waiting_for_post_push_exit'), None, recognition)
+            with self.layers.global_planning() as boxes:
+                path = self.planner.path(self.position[:2], self.goal[:2], boxes)
+            if path:
+                return self._apply_decision(BoxDecision('navigate', 'post_push_route_observed', path), self.goal[:2], recognition)
+            return self._apply_decision(BoxDecision('wait', 'waiting_for_post_push_route'), None, recognition)
         decision, endpoint = self.selector.decide(self.layers, self.position[:2], self.goal[:2])
         return self._apply_decision(decision, endpoint, recognition)
+
+    def _push_finished(self):
+        return bool(self.trial_used and self.trial_report and self.trial_report.get('reason') in (
+            'first_push_observed', 'timed_push_released'))
 
     def _start_push_skill(self, plan, permission, recognition):
         speed = min(float(self.config.get('push_max_speed', .30)), float(self.config.get('max_forward_speed', .5)))
@@ -1185,12 +1771,15 @@ class NavigationEngine:
             forward_speed=min(.25, float(self.config.get('max_forward_speed', .5))), reverse_speed=.35,
             max_skill_seconds=float(self.interaction.get('max_skill_seconds', 180.)))
         self.skill = create_push_skill(permission, plan, self.task_start, self.goal[:2],
-                                       self.contact_profile, config=skill_config)
-        self._use_contact_motion()
+                                       self.contact_profile, config=skill_config, upper_short_end=self.upper_short_end)
+        if self.upper_short_end:
+            self.skill.stop_displacement = plan.push_distance
+        self._use_contact_motion(self.contact_profile)
         if not self.first_push:
             self.execution.start(plan.box_id, self.now)
             self._interaction_lease(recognition)
         self.box_approach = self.box_turn = None
+        self.layers.approach_reference = None
         self.tracker = None
         self.phase = 'skill'
         self.layers.decision.update(skill_state=self.skill.state)
@@ -1203,7 +1792,7 @@ class NavigationEngine:
         event = {'event': 'decision', 'time_s': self.now, 'kind': decision.kind, 'reason': decision.reason}
         if decision.kind == 'push':
             event.update(box_id=decision.push.box_id, approach_xy=list(decision.push.approach_xy),
-                         push_direction=list(decision.push.direction))
+                         push_direction=list(decision.push.direction), push_distance_m=decision.push.push_distance)
         self.events.append(event)
         if decision.kind == 'failed':
             return self._finish(False, decision.reason)
@@ -1213,11 +1802,14 @@ class NavigationEngine:
             self.next_decision = self.now+self.layers.global_period
             return self._brake()
         if decision.kind == 'push':
-            permission = self._permission(decision.push.box_id, recognition)
-            if permission is None:
-                if (self.first_push and not self.trial_used and decision.push.box_id in self.pushable_ids
-                        and decision.push.box_id in self.layers.detected_boxes):
+            if self.first_push:
+                if decision.push.box_id in self.trial_targets:
                     self.box_approach = decision.push
+                    self.stage_sidestep = None
+                    self.rejected_stages.clear()
+                    self.stage_retry_reason = None
+                    self.layers.approach_reference = self.layers.detected_boxes[decision.push.box_id]
+                    self.box_turn_backoff = 0.
                     self.tracker = None
                     self.layers.global_path = decision.push.approach_path
                     self.layers.local_path = ()
@@ -1226,9 +1818,12 @@ class NavigationEngine:
                     self.layers.decision.update(skill_state='approach_known_box', interaction_allowed=False,
                                                 approach_xy=list(decision.push.approach_xy),
                                                 push_direction=list(decision.push.direction))
-                self.next_decision = self.now+self.layers.global_period
-                return self._brake()
-            return self._start_push_skill(decision.push, permission, recognition)
+            else:
+                permission = self._permission(decision.push.box_id, recognition)
+                if permission is not None:
+                    return self._start_push_skill(decision.push, permission, recognition)
+            self.next_decision = self.now + self.layers.global_period
+            return self._brake()
         self.endpoint = tuple(endpoint)
         self.goal_kind = 'frontier' if decision.kind == 'explore' else 'task'
         path = self._route(endpoint)
@@ -1247,7 +1842,7 @@ class NavigationEngine:
         return self._brake()
 
     def update(self, observation, now, boxes=(), recognition=None):
-        self.observe(observation, now, boxes)
+        self.observe(observation, now, boxes, recognition)
         self.planner.interactable_ids = frozenset(
             box.id for box in self.layers.current_boxes if self._permission(box.id, recognition) is not None)
         self.layers.interactable_ids = self.planner.interactable_ids
@@ -1283,6 +1878,16 @@ class NavigationEngine:
             return self._finish(False, 'robot_outside_map_bounds')
         if self.tilt >= 30. or self.position[2] < float(self.config.get('fall_height', .16)):
             return self._finish(False, 'robot_unstable')
+        if self.phase == 'post_push_reobserve':
+            if self.map_observed_at is None or self.map_observed_at <= self.trial_report['first_push']['stopped_at']:
+                return self._output(np.zeros(3))
+            self.layers.refresh_global(reason='post_push_scan')
+            self.phase = 'decide'
+            self.events.append(dict(event='post_push_navigation_resumed', time_s=self.now,
+                                    map_observed_at=self.map_observed_at, position=self.position[:2].tolist(),
+                                    goal=self.goal[:2]))
+        if self.phase in TIMED_PUSH_PHASES:
+            return self._timed_push_step()
         if self.box_approach is not None or self.phase in ('first_push_review', 'first_push_wait_scan'):
             return self._advance_first_push(recognition)
         if self.phase == 'skill' and not self.first_push and self._permission(self.skill.plan.box_id, recognition) is None:
@@ -1318,7 +1923,9 @@ class NavigationEngine:
             return self._cross_narrow()
         distance = float(np.linalg.norm(self.position[:2]-np.asarray(self.goal[:2])))
         tolerance = float(self.config.get('success_distance', .25))
-        if distance < tolerance:
+        if (distance < tolerance and (not self.upper_short_end or
+                (self._push_finished() and not self.recovery_pending_settle
+                 and not self._tracker_route_start_blocked(self.layers.current_boxes)))):
             if self.goal_stop.update(self.position, self.linear, self.angular, self.tilt, self.now):
                 return self._finish(True, 'goal_reached_and_stopped')
             return self._brake()

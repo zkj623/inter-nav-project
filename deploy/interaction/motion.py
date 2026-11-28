@@ -32,7 +32,8 @@ class SdkNavigationMotion:
     def retreat_horizon(self, speed, acceleration):
         return self.profile.translation_stop_seconds+speed/(2*acceleration)
 
-    def checked_contact_command(self,request, position, heading, planner, boxes, limiter, now, target_position=None):
+    def checked_contact_command(self,request, position, heading, planner, boxes, limiter, now, target_position=None,
+                                *, linear_acceleration=None):
         """Check both acceleration-limited requests and measured stopping motion.
 
         All boxes remain obstacles here: deliberate contact starts only after
@@ -43,7 +44,8 @@ class SdkNavigationMotion:
         command = limiter.preview(request, now)
         command=profile.limit(command)
         measured = limiter.measured
-        horizon = max(profile.motion_horizon(command), profile.motion_horizon(measured))
+        measured_horizon = profile.motion_horizon(measured)
+        horizon = max(profile.motion_horizon(command, linear_acceleration=linear_acceleration), measured_horizon)
         c, s = math.cos(heading), math.sin(heading)
         rotation = np.array([[c, -s], [s, c]])
         if target_position is not None:
@@ -71,7 +73,6 @@ class SdkNavigationMotion:
                 target, require_clear_end=False)
         moving = np.linalg.norm(measured[:2]) > .06 or abs(measured[2]) > .10
         if moving:
-            measured_horizon=profile.motion_horizon(measured)
             momentum_safe = body_motion_clear(planner, boxes, position, heading,
                 measured[0], measured[2], horizon=measured_horizon, lateral=measured[1])
             if not momentum_safe and abs(command[2]) < 1e-8 and abs(measured[2]) < .1:
@@ -98,6 +99,84 @@ class SdkNavigationMotion:
         return command
 
 
+def sidestep_speed(speed_limit, acceleration, distance):
+    """Request a walking stride, with the stopping sweep checked separately."""
+    return min(speed_limit, max(.75*speed_limit, math.sqrt(2*acceleration*distance)))
+
+
+class SdkSidestep:
+    """Track a stage or lid center and verify the final position after braking."""
+
+    def __init__(self, target, tolerance, now, profile):
+        self.target = np.array(target, dtype=float, copy=True)
+        self.tolerance = tolerance
+        self.started = now
+        self.stop = MeasuredStopGate(profile.settle_seconds)
+        self.stall_seconds = profile.stall_seconds
+        self.braking = False
+        self.stop_probe_rejected = False
+        self.progress_at = None
+        self.progress_error = math.inf
+
+    def stalled(self, now):
+        # At walking distance a lean never beats the previous best. Near
+        # arrival leave the full settling interval for a stride and rebound.
+        timeout = min(self.stall_seconds, 4.) if self.progress_error > 2*self.tolerance else self.stall_seconds
+        return self.progress_at is not None and now - self.progress_at >= timeout
+
+    def stopped(self, command, position, linear, angular, tilt, now):
+        if np.linalg.norm(command[:2]) >= .03 or abs(command[2]) >= .06:
+            self.stop.reset()
+            return False
+        return self.stop.update(position, linear, angular, tilt, now)
+
+    def move(self, position, heading, planner, boxes, limiter, now, linear, angular, tilt, *, target=None,
+             speed_limit=None):
+        profile = planner.motion_backend.profile
+        delta = (self.target if target is None else np.asarray(target)) - position[:2]
+        distance = float(np.linalg.norm(delta))
+        c, s = math.cos(heading), math.sin(heading)
+        body_direction = np.array([c*delta[0] + s*delta[1], -s*delta[0] + c*delta[1]]) / max(distance, 1e-9)
+        toward = max(0., float(linear[:2] @ body_direction))
+        coast = toward*profile.translation_stop_seconds + toward**2 / (2*limiter.linear_acceleration)
+        # Aim at the station while moving. Entering the settled acceptance
+        # band on a transient lean must not immediately end a stride.
+        if self.progress_at is None or self.progress_error - distance >= min(profile.stop_margin_m, self.tolerance)/2:
+            self.progress_at, self.progress_error = now, distance
+            self.stop_probe_rejected = False
+        idle_in_band = (distance <= self.tolerance and not self.stop_probe_rejected
+                        and now-self.progress_at >= self.stop.hold_seconds)
+        if distance <= max(min(profile.stop_margin_m, self.tolerance/2), coast) or idle_in_band:
+            self.braking = True
+        request = np.zeros(3)
+        if not self.braking:
+            limit = profile.lateral_mps if speed_limit is None else min(profile.lateral_mps, speed_limit)
+            speed = sidestep_speed(limit, limiter.linear_acceleration, distance)
+            request[:2] = body_direction*speed
+        # Check the actual acceleration-limited twist and measured momentum
+        # over the full stopping sweep, including space beyond the target.
+        args = position, heading, planner, boxes, limiter, now
+        check = planner.motion_backend.checked_contact_command
+        command, clear = check(request, *args, linear_acceleration=limiter.linear_acceleration)
+        limited_by_sweep = not clear
+        if not clear and not self.braking:
+            holding = max(0., float(limiter.command[:2] @ body_direction))
+            request[:2] = body_direction * min(speed, holding)
+            command, clear = check(request, *args, linear_acceleration=limiter.linear_acceleration)
+        if not clear:
+            command, _ = check(np.zeros(3), *args, linear_acceleration=limiter.linear_acceleration)
+        arrived = False
+        if self.braking and self.stopped(command, position, linear, angular, tilt, now):
+            arrived = distance <= self.tolerance
+            self.stop_probe_rejected = not arrived
+            self.braking = False
+            self.stop.reset()
+        return command, arrived, dict(stage_error_m=distance, measured_closing_mps=toward,
+                                      braking=self.braking, sweep_clear=clear, limited_by_sweep=limited_by_sweep,
+                                      applied_body_mps=command[:2].tolist(),
+                                      stalled=self.stalled(now))
+
+
 class SdkYawServo:
     """Finish a small heading correction with measured braking before reversal."""
 
@@ -108,7 +187,7 @@ class SdkYawServo:
         self.stable_since = None
         self.direction = 0.0
 
-    def update(self, error, measured_rate, now):
+    def update(self, error, measured_rate, now, *, rebound_rate=0.):
         if self.braking:
             if abs(measured_rate) < 0.06:
                 if self.stable_since is None:
@@ -123,7 +202,7 @@ class SdkYawServo:
         if self.direction == 0.0:
             self.direction = float(np.sign(error))
         toward = self.direction * measured_rate
-        stopping_angle = max(0.0, toward) * self.profile.yaw_stop_seconds + self.profile.yaw_stop_margin_rad
+        stopping_angle = max(0.0, toward-rebound_rate) * self.profile.yaw_stop_seconds + self.profile.yaw_stop_margin_rad
         if abs(error) < 0.7 * self.tolerance or error * self.direction < 0 or (toward > 0.06 and abs(error) < stopping_angle):
             self.braking = True
             self.stable_since = None
@@ -134,7 +213,8 @@ class SdkYawServo:
 
 class SdkHeadingTrim:
     """Measured heading correction; no learned-policy pulses or gait priming."""
-    def __init__(self, goal_heading, tolerance=.05, *, profile, max_translation=.25, acceptance_tolerance=None):
+    def __init__(self, goal_heading, tolerance=.05, *, profile, max_translation=.25, acceptance_tolerance=None,
+                 compensate_rebound=False):
         self.profile, self.goal_heading = profile, float(goal_heading)
         self.tolerance = float(tolerance)
         self.acceptance_tolerance = float(tolerance if acceptance_tolerance is None else acceptance_tolerance)
@@ -146,6 +226,9 @@ class SdkHeadingTrim:
         self.origin = self.best_error = self.last_progress = self.stop_heading = None
         self.braking, self.done, self.travel_budget_exhausted = True, False, False
         self.failed, self.last_detail = None, {}
+        self.compensate_rebound = compensate_rebound
+        self.brake_error, self.rebound = None, 0.
+        self.brake_rate = self.rebound_rate = 0.
 
     def update(self, position, heading, planner, boxes, limiter, now, body_velocity, angular_velocity, tilt, *, policy_command=None):
         position = np.asarray(position, float)
@@ -159,12 +242,13 @@ class SdkHeadingTrim:
             self.stop_heading = None
         if abs(error) < self.best_error-.015:
             self.best_error, self.last_progress = abs(error), now
-        if not self.braking and now-self.last_progress >= self.profile.stall_seconds:
+        if not self.done and (not self.braking or self.compensate_rebound) and now-self.last_progress >= self.profile.stall_seconds:
             self.failed = 'sdk_heading_stalled'
         detail = {'heading_error_rad': float(error), 'best_error_rad': float(self.best_error),
                   'translation_from_origin_m': travel, 'mode': 'yaw_trim',
                   'aiming_tolerance_rad': self.tolerance, 'settled_tolerance_rad': self.acceptance_tolerance,
-                  'travel_budget_exhausted': self.travel_budget_exhausted, 'contact_backend': 'sdk'}
+                  'travel_budget_exhausted': self.travel_budget_exhausted, 'contact_backend': 'sdk',
+                  'measured_rebound_rad': self.rebound, 'seconds_without_progress': now-self.last_progress}
 
         def checked(request):
             command, safe = checked_contact_turn_command(self.profile.limit(request), position, heading, planner, boxes, limiter, now)
@@ -174,14 +258,16 @@ class SdkHeadingTrim:
 
         if self.failed or self.done:
             return checked([0., 0., 0.]), self.done, detail
-        if abs(error) < self.tolerance and not self.braking:
+        if abs(error) + self.rebound < self.tolerance and not self.braking:
             self.braking = True
+            self.brake_error = error
+            self.brake_rate = max(0., float(np.sign(error)*angular_velocity[2]))
             self.stop.reset()
             self.stop_heading = None
         if self.braking:
             detail['mode'] = 'heading_trim_brake'
             command = checked([0., 0., 0.])
-            if np.linalg.norm(command[:2]) >= .03 or abs(command[2]) >= .06:
+            if not detail['body_motion_safe'] or np.linalg.norm(command[:2]) >= .03 or abs(command[2]) >= .06:
                 self.stop.reset()
                 self.stop_heading = None
             else:
@@ -202,15 +288,32 @@ class SdkHeadingTrim:
                     else:
                         self.braking = False
                         self.stop.reset()
-                        self.stop_heading, self.last_progress = None, now
-                        self.servo = SdkYawServo(self.tolerance, self.profile)
+                        self.stop_heading = None
+                        if self.compensate_rebound:
+                            if self.brake_error is not None and self.brake_error*error > 0.:
+                                recoil = abs(error)-abs(self.brake_error)
+                                if recoil > .015:
+                                    # This measured rate produced no net advance after braking.
+                                    # Account for it in the next coast estimate on this side.
+                                    self.rebound_rate = min(self.profile.max_yaw_rps, self.brake_rate)
+                                    self.rebound = min(self.tolerance/2, max(self.rebound, recoil))
+                            elif self.brake_error is not None:
+                                self.rebound = self.rebound_rate = 0.
+                        else:
+                            self.last_progress = now
+                        self.brake_error = None
+                        self.servo = SdkYawServo(self.tolerance-self.rebound, self.profile)
             self.last_detail = detail.copy()
             return command, self.done, detail
-        rate = self.servo.update(error, float(angular_velocity[2]), now)
+        rate = self.servo.update(error, float(angular_velocity[2]), now, rebound_rate=self.rebound_rate)
         if abs(rate) < 1e-9:
             self.braking = True
+            self.brake_error = error
+            self.brake_rate = max(0., float(np.sign(error)*angular_velocity[2]))
             self.stop.reset()
             self.stop_heading = None
             detail['mode'] = 'heading_trim_brake'
             return checked([0., 0., 0.]), False, detail
+        if self.compensate_rebound and now-self.last_progress >= self.profile.stall_seconds/2:
+            rate = math.copysign(self.profile.max_yaw_rps, rate)
         return checked([0., 0., rate]), False, detail

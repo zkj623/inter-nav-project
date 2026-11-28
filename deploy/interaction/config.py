@@ -10,7 +10,7 @@ from deploy.robot.world_boundary import WorldBoundary
 
 DEFAULTS = dict(source='registered_box_lidar', tracking_enabled=False, geometry_verified=False,
                 boxes=[], tracking={}, contact_profile=None, max_skill_seconds=180.,
-                registry_reference='', window_max_age_s=None, first_push=False)
+                registry_reference='', window_max_age_s=None, first_push=False, first_push_face=None, timed_push_speed_mps=None)
 
 
 def configure(config, payload, directory, *, registry_path=None):
@@ -25,6 +25,16 @@ def configure(config, payload, directory, *, registry_path=None):
     for name in ('tracking_enabled', 'geometry_verified', 'first_push'):
         if type(result[name]) is not bool:
             raise ValueError(f'interaction.{name} must be boolean')
+    # sync.sh preserves existing device presets, including the field file
+    # shipped before it had an explicit face. An explicit null still opts out.
+    if (result['first_push'] and 'first_push_face' not in payload and registry_path is not None
+            and Path(registry_path).name == 'box_30x80x30.yaml'):
+        result['first_push_face'] = 'upper_short_end'
+    if result['first_push_face'] is not None and (
+            not result['first_push'] or result['first_push_face'] != 'upper_short_end'):
+        raise ValueError('first_push_face requires first_push mode and the value upper_short_end')
+    if result['first_push_face'] != 'upper_short_end':
+        result['timed_push_speed_mps'] = None
     window_age = result['window_max_age_s']
     if window_age is not None and (type(window_age) not in (int, float) or not .02 <= window_age <= .75):
         raise ValueError('interaction.window_max_age_s must be between .02 and .75 seconds')
@@ -50,7 +60,7 @@ def configure(config, payload, directory, *, registry_path=None):
         validated = validate_tracking_config(tracking_config(result))
         # Preserve only tracker knobs here; registration remains explicit.
         result['tracking'] = {k: v for k, v in validated.items()
-                              if k not in ('boxes', 'geometry_verified', 'registry_reference')}
+                              if k not in ('boxes', 'geometry_verified', 'registry_reference', 'use_box_top')}
         xlim, ylim = nav['mapping']['x_limits'], nav['mapping']['y_limits']
         for row in validated['boxes']:
             x0, x1, y0, y1 = row['search_region']
@@ -80,6 +90,10 @@ def configure(config, payload, directory, *, registry_path=None):
         planner_limits = dict(max_vx=nav['max_forward_speed'], max_vy=nav['max_lateral_speed'],
                               max_wz=nav['max_yaw_speed'], acceleration=nav['linear_acceleration'],
                               angular_acceleration=nav['yaw_acceleration'])
+        if profile.mode == 'first_push':
+            # The field sidestep has its own profile. Ordinary path tracking
+            # retains the navigation cap, and the SDK writer bounds both.
+            planner_limits['max_vy'] = control['max_vy']
         if any(value > min(control[key], planner_limits[key]) for key, value in bounds.items()):
             raise ValueError('Contact profile limits exceed navigation or SDK limits')
         if profile.max_tilt_degrees > control['max_tilt_degrees']:
@@ -89,6 +103,18 @@ def configure(config, payload, directory, *, registry_path=None):
         result['contact_profile'] = profile.to_dict()
         control['contact_limits'] = bounds
         control['contact_max_duration_s'] = float(duration)
+        if result['first_push_face'] == 'upper_short_end':
+            speed = result['timed_push_speed_mps']
+            if speed is None:
+                # sync.sh preserves the existing Orin copy of the shipped field preset.
+                field_preset = registry_path is not None and Path(registry_path).name == 'box_30x80x30.yaml'
+                speed = min(.50, planner_limits['max_vx'], control['max_vx']) if field_preset else profile.push_max_mps
+            if type(speed) not in (float, int) or not 0. < speed <= min(.50, planner_limits['max_vx'], control['max_vx']):
+                raise ValueError('timed_push_speed_mps exceeds the fixed-face or navigation speed limits')
+            result['timed_push_speed_mps'] = speed
+            ids = [row['id'] for row in result['boxes'] if row['push_allowed']]
+            control['field_push_launch_speeds'] = dict.fromkeys(ids, min(speed, profile.push_max_mps))
+            control['timed_push_speeds'] = dict.fromkeys(ids, speed)
     elif requested:
         raise ValueError('Interaction requires a measured SDK contact_profile in interaction.yaml')
     return result
@@ -96,6 +122,7 @@ def configure(config, payload, directory, *, registry_path=None):
 
 def tracking_config(settings):
     return {**settings['tracking'], 'boxes': settings['boxes'],
+            'use_box_top': settings.get('first_push_face') == 'upper_short_end',
             'geometry_verified': settings['geometry_verified'],
             'registry_reference': settings['registry_reference']}
 

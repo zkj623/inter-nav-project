@@ -3,7 +3,23 @@ import time
 
 from .config import check_task_inputs
 from .navigation import PlanningRequired
+from .tasks import BOX_SCAN_WAITS
+from deploy.interaction.execution import TIMED_PUSH_PHASES
 from deploy.robot.safety import check_observation
+
+
+def wait_message(decision):
+    reason = (decision or {}).get('reason', 'no_executable_route')
+    detail = {
+        'waiting_for_registered_box': '正在等点云确认登记箱位',
+        'waiting_for_motion_feedback': '正在等机身速度反馈',
+        'no_reachable_upper_short_end': '当前地图没有可达的上方短端面站位',
+        'waiting_for_post_push_scan': '推后已请求停车，等待停稳后的点云',
+        'waiting_for_post_push_exit': '正在用新点云寻找安全脱离膨胀区的方向',
+        'waiting_for_post_push_route': '推箱动作已结束，正在等新扫描确认通往原目标的路径',
+    }.get(reason, reason)
+    retry = '收到新观测后自动重试' if reason in BOX_SCAN_WAITS else '地图更新后按 r 重新规划'
+    return f'导航等待：{detail}。{retry}。'
 
 
 class NavigationController:
@@ -23,6 +39,7 @@ class NavigationController:
         self.planning_hold = None
         self.hold_sequence = 0
         self.last_expires_at = None
+        self.last_contact_source_deadline = None
         self.last_control_lidar_at = None
         self.last_decision_cost = 0.
         self.pending_operation = None
@@ -40,6 +57,7 @@ class NavigationController:
                               'prepared_at': None}
         self.pending_operation = operation
         self.last_expires_at = None
+        self.last_contact_source_deadline = None
         self.motion.stop(token)
         self.session.event('planning_hold_requested', hold_id=token, reason=reason)
         print(f'正在停稳后规划：{reason}', flush=True)
@@ -47,7 +65,19 @@ class NavigationController:
     def _clear_hold(self):
         self.planning_hold = self.pending_operation = None
         self.last_expires_at = None
+        self.last_contact_source_deadline = None
         self.last_control_lidar_at = None
+
+    def _contact_observation_stop(self, reason):
+        if (reason != 'interaction_observation_expired' or self.tasks.state != 'active'
+                or self.pending_operation is not None or not self.tasks.engine.wait_for_contact_scan()):
+            return False
+        # The independent writer has already applied its watchdog stop. Wait
+        # for that stop's actual acknowledgement without sending a second stop.
+        if self.planning_hold is None or self.planning_hold['token'] != reason:
+            self._clear_hold()
+            self.planning_hold = dict(token=reason, reason='first_push_wait_scan', stopped_at=None, prepared_at=None)
+        return True
 
     @property
     def motion_state(self):
@@ -59,14 +89,21 @@ class NavigationController:
                 self.session.event('command_accepted' if event['accepted'] else 'command_rejected',
                                    **{key: value for key, value in event.items() if key != 'kind'})
                 if not event['accepted']:
-                    self.pause('motion_command_rejected:'+event.get('detail', 'unknown'))
+                    reason = event.get('detail', 'unknown')
+                    if not self._contact_observation_stop(reason):
+                        self.pause('motion_command_rejected:'+reason)
                 continue
             self.session.event('motion_state', **event)
             if event.get('event') == 'push_speed_sent':
-                self.tasks.engine.push_speed_sent(event.get('object_id'))
+                self.tasks.engine.push_speed_sent(event.get('object_id'), interaction_id=event.get('interaction_id'),
+                                                  worker_at=event.get('move_at', event.get('worker_at')))
                 print(f"已向 Go2 发送顶箱速度，前进 {event['velocity'][0]*100:.1f} cm/s。", flush=True)
+            elif event.get('event') == 'timed_push_speed_reached':
+                print(f"已向 Go2 发送目标推箱速度 {event['velocity'][0]*100:.1f} cm/s。", flush=True)
             state = event['state']
             self.motion_detail = event.get('detail', '')
+            if state in ('stopping', 'stopped'):
+                self._contact_observation_stop(self.motion_detail)
             planned = self.planning_hold is not None and self.motion_detail == self.planning_hold['token']
             if state in ('stopping', 'stopped', 'rejected', 'stop_error'):
                 print(f"运动状态={state} 原因={self.motion_detail or '未提供'}", flush=True)
@@ -78,9 +115,9 @@ class NavigationController:
                 self.stop_confirmed = True
                 if planned:
                     self.planning_hold['stopped_at'] = event.get('worker_at', time.monotonic())
-                    self.tasks.engine.interaction_stopped()
+                    self.tasks.engine.interaction_stopped(self.planning_hold['stopped_at'])
             if state in ('stopping', 'fault', 'stop_error', 'rejected') and not planned:
-                requested_stop = self.motion_detail in ('p', 'prepare', 'stop', 'o', 'm', 'task_completed', 'close', 'manual')
+                requested_stop = self.motion_detail in ('p', 'prepare', 'stop', 'o', 'm', 'task_completed', 'task_failed', 'close', 'manual')
                 if self.tasks.mode == 'navigate' and (not requested_stop or state in ('fault', 'stop_error', 'rejected')):
                     self.task_error = self.motion_detail or state
                 self._clear_hold()
@@ -99,6 +136,12 @@ class NavigationController:
             if self.motion and self.motion.state not in ('stopped', 'manual', 'disabled'):
                 self.motion.stop(reason)
             self.session.event('task_paused', reason=reason)
+
+    def _record_result(self):
+        result = self.tasks.result
+        self.task_error = None if result['success'] else result['reason']
+        self.session.event('task_result', result=result)
+        print('导航已到达目标并停稳。' if result['success'] else f"导航失败：{result['reason']}", flush=True)
 
     def operate(self, key, value, snapshot, now, *, deferred=False):
         """Only explicit goal intent, or its confirmed planning hold, can arm."""
@@ -151,7 +194,7 @@ class NavigationController:
             print('正在准备导航路径，暂不启用运动…', flush=True)
             self.wait_reason = None
             prepared_at = time.monotonic()
-            prepared = self.tasks.prepare_for_motion(snapshot, now)
+            prepared = self.tasks.prepare_for_motion(snapshot, now, retain_box_wait=True)
             preparation_duration = time.monotonic()-prepared_at
             self.session.event('navigation_prepared', ready=prepared,
                                duration_s=preparation_duration,
@@ -159,13 +202,15 @@ class NavigationController:
                                phase=self.tasks.engine.phase, sent_to_robot=False)
             if not prepared:
                 if self.tasks.result is not None:
-                    self.session.event('task_result', result=self.tasks.result)
-                    print(f'导航准备结束：{self.tasks.result}', flush=True)
+                    self._record_result()
                 else:
                     self.wait_reason = (self.tasks.engine.decision or {}).get('reason', 'no_executable_route')
-                    self.task_error = f'导航等待：{self.wait_reason}；保持停止，地图更新后按 r 重新规划。'
+                    self.task_error = wait_message(self.tasks.engine.decision)
                     self.session.event('navigation_wait', reason=self.wait_reason, sent_to_robot=False)
                     print(self.task_error, flush=True)
+                    if self.tasks.state == 'active':
+                        self._hold(self.wait_reason)
+                        self.planning_hold['route_check_scan'] = snapshot.lidar_at
                 return
             print(f'导航准备完成，耗时 {preparation_duration*1000:.0f} ms；正在启用运动。', flush=True)
             self.motion_detail = ''
@@ -202,16 +247,25 @@ class NavigationController:
             self._clear_hold()
             return
         if hold['prepared_at'] is None:
+            if (self.tasks.engine.decision or {}).get('reason') in BOX_SCAN_WAITS and (
+                    snapshot.lidar_at <= hold.get('route_check_scan', -float('inf')) or now < self.tasks.engine.next_decision):
+                return
             started = time.monotonic()
-            ready = self.tasks.prepare_for_motion(snapshot, now)
+            ready = self.tasks.prepare_for_motion(snapshot, now, retain_box_wait=True)
             self.decision_duration_s = time.monotonic()-started
             self.last_decision_cost = 0.
             if not ready:
+                if self.tasks.state == 'active':
+                    if 'route_check_scan' not in hold:
+                        print(wait_message(self.tasks.engine.decision), flush=True)
+                    hold['route_check_scan'] = snapshot.lidar_at
+                    return
                 self.session.event('planning_hold_finished', hold_id=hold['token'], ready=False,
                                    result=self.tasks.result, decision=self.tasks.engine.decision)
                 if self.tasks.result is not None:
-                    self.session.event('task_result', result=self.tasks.result)
-                self.task_error = None if self.tasks.result is not None else '导航等待：当前地图没有可执行路线；更新后按 r 重新规划。'
+                    self._record_result()
+                else:
+                    self.task_error = wait_message(self.tasks.engine.decision)
                 self._clear_hold()
                 return
             self._finish_stopped_interaction()
@@ -242,13 +296,18 @@ class NavigationController:
         # This update may discover another planning need; no velocity is sent.
         self.tasks.activate_prepared(now)
         started = time.monotonic()
-        ready = self.tasks.prepare_for_motion(snapshot, now)
+        ready = self.tasks.prepare_for_motion(snapshot, now, retain_box_wait=True)
         finished = time.monotonic()
         self.decision_duration_s = finished-started
         if not ready:
+            if self.tasks.state == 'active':
+                hold['prepared_at'] = None
+                hold['route_check_scan'] = snapshot.lidar_at
+                return True
             if self.tasks.result is not None:
-                self.session.event('task_result', result=self.tasks.result)
-            self.task_error = None if self.tasks.result is not None else '导航等待：新观测下无可执行路线；按 r 重新规划。'
+                self._record_result()
+            else:
+                self.task_error = wait_message(self.tasks.engine.decision)
             self._clear_hold()
             return True
         self._finish_stopped_interaction()
@@ -283,6 +342,26 @@ class NavigationController:
             self.session.event('perception_result', **delivery)
             self.last_perception_delivery = delivery
 
+    def _resume_contact_scan(self, snapshot, now):
+        hold = self.planning_hold
+        if now >= self.tasks.engine.execution.deadline:
+            self.pause('first_push_approach_time_limit')
+            return False
+        if (hold['stopped_at'] is None or self.motion.state != 'stopped'
+                or min(snapshot.lidar_at, snapshot.pose_at) <= hold['stopped_at']
+                or not self.tasks.contact_scan_ready(snapshot, now)):
+            return False
+        if snapshot.observation['position'][2] < self.navigation['safe_base_height']:
+            self.pause('contact_scan_resume_low_height')
+            return False
+        armed = self.motion.arm()
+        self.motion_events(self.motion.events())
+        if not armed or self.motion.state != 'active' or self.planning_hold is not hold:
+            self.pause('contact_scan_resume_rejected')
+            return False
+        self._clear_hold()
+        return True
+
     def step(self, snapshot, now):
         """Validate this observation, update the original algorithm, queue at most one command."""
         self.decision_duration_s = None
@@ -303,19 +382,29 @@ class NavigationController:
                 # target alive by retimestamping its old pose or stepping the skill.
                 self.tasks.observe_only(snapshot, now)
                 self._record_perception()
-                if not self._resume_hold(snapshot, now):
-                    self._continue_hold(snapshot, now)
-                return self.task_error
+                if self.planning_hold['reason'] != 'first_push_wait_scan':
+                    if not self._resume_hold(snapshot, now):
+                        self._continue_hold(snapshot, now)
+                    return self.task_error
+                if not self._resume_contact_scan(snapshot, now):
+                    return self.task_error
+                now = time.monotonic()
             if self.tasks.state == 'active' and self.motion and self.last_expires_at is not None:
                 remaining = self.last_expires_at-time.monotonic()
                 if remaining <= 0:
+                    if self.last_contact_source_deadline == self.last_expires_at:
+                        # Only the writer can distinguish an expired scan from
+                        # a concurrent takeover, stop fault or elapsed budget.
+                        return self.task_error
                     self.pause('control_deadline_missed')
                     return self.task_error
-                if self.tasks.engine.execution.active:
+                if self.tasks.engine.execution.active and self.tasks.engine.phase not in TIMED_PUSH_PHASES:
                     # Retain the existing contact-skill admission contract.
                     # This change targets ordinary coordinate navigation.
                     budget = max(.005, self.last_decision_cost*1.5)+1/self.control['poll_hz']+.005
                     if remaining < budget:
+                        if self.last_contact_source_deadline == self.last_expires_at:
+                            return self.task_error
                         self._hold('control_budget')
                         return self.task_error
             if (self.tasks.state == 'active' and self.motion and snapshot.lidar_at == self.last_control_lidar_at
@@ -328,6 +417,8 @@ class NavigationController:
             velocity = self.tasks.update(snapshot, now)
             if self.motion:
                 self.motion_events(self.motion.events())
+                if self.planning_hold is not None:
+                    return self.task_error
             engine = getattr(self.tasks, 'engine', None)
             if engine is not None:
                 while engine.events:
@@ -336,12 +427,18 @@ class NavigationController:
                     if 'kind' in event:
                         event['decision_kind'] = event.pop('kind')
                     self.session.event(kind, **event)
+                    if kind == 'post_push_navigation_resumed':
+                        print('推箱已停稳，导航正在用新点云检查通往原目标的路线。', flush=True)
+                    if kind == 'post_push_buffer_recovery':
+                        print('Go2 在障碍膨胀区内，正在调整站位。', flush=True)
                     if kind == 'decision':
                         if event.get('decision_kind') == 'push':
-                            print(f"导航选中推箱，箱号 {event['box_id']}。", flush=True)
+                            detail = (f"从地图上方推短端面，计划向下推 {event['push_distance_m']*100:.0f} cm。"
+                                      if event.get('reason') == 'upper_short_end_approach' else '')
+                            print(f"导航选中推箱，箱号 {event['box_id']}。{detail}", flush=True)
                         reason = event.get('reason') if event.get('decision_kind') == 'wait' else None
                         if reason and reason != self.wait_reason:
-                            print(f'导航等待：{reason}；当前观测地图没有满足净空的路径或可达探索点。', flush=True)
+                            print(wait_message(event), flush=True)
                         self.wait_reason = reason
             decision_duration = time.monotonic() - decision_started
             self.decision_duration_s = decision_duration
@@ -350,7 +447,7 @@ class NavigationController:
             if engine is not None and engine.execution.awaiting_stop and self.motion and self.tasks.state == 'active':
                 # A completed contact skill cannot silently drop its writer
                 # envelope. Obtain physical stop feedback before ordinary nav.
-                self._hold('interaction_completed')
+                self._hold('first_push_wait_scan' if engine.phase == 'first_push_wait_scan' else 'interaction_completed')
                 return self.task_error
             if velocity is not None and self.motion and self.tasks.state == 'active':
                 expires = min(now+self.control['command_ttl_s'],
@@ -361,6 +458,11 @@ class NavigationController:
                     expires = min(expires, interaction['source_expires_at'], interaction['deadline'])
                 dispatch_at = time.monotonic()
                 if expires <= dispatch_at:
+                    if (interaction and expires == interaction['source_expires_at'] < interaction['deadline']
+                            and engine.wait_for_contact_scan()):
+                        if self.last_contact_source_deadline is None or dispatch_at < self.last_contact_source_deadline:
+                            self._hold('first_push_wait_scan')
+                        return self.task_error
                     print(f'导航命令已过期：计算 {decision_duration*1000:.0f} ms，'
                           f'定位年龄 {(dispatch_at-snapshot.pose_at)*1000:.0f} ms，'
                           f'点云年龄 {(dispatch_at-snapshot.lidar_at)*1000:.0f} ms；暂停导航。', flush=True)
@@ -375,6 +477,8 @@ class NavigationController:
                     self.pause('decision_expired')
                     return self.task_error
                 if self.last_expires_at is not None and dispatch_at >= self.last_expires_at:
+                    if self.last_contact_source_deadline == self.last_expires_at:
+                        return self.task_error
                     self.session.event('command_discarded', reason='previous_command_expired',
                                        previous_expires_at=self.last_expires_at, discarded_at=dispatch_at,
                                        decision_duration_s=decision_duration, delivery='not_queued')
@@ -383,6 +487,9 @@ class NavigationController:
                 command_id = (self.motion.submit(velocity, now, expires, interaction=interaction)
                               if interaction is not None else self.motion.submit(velocity, now, expires))
                 self.last_expires_at = expires
+                self.last_contact_source_deadline = (interaction['source_expires_at']
+                    if interaction and engine.first_push and interaction['phase'] in ('engage', 'push')
+                    and interaction['source_expires_at'] < interaction['deadline'] else None)
                 self.last_control_lidar_at = snapshot.lidar_at
                 submitted_at = time.monotonic()
                 self.session.event('command_requested', generated_at=now, expires_at=expires,
@@ -394,10 +501,10 @@ class NavigationController:
                                    command_id=command_id, delivery='queued_not_execution_ack')
                 if interaction is not None:
                     self.session.event('interaction_command', command_id=command_id, **interaction)
-            if previous_state == 'active' and self.tasks.state == 'completed':
+            if previous_state == 'active' and self.tasks.state in ('completed', 'failed'):
                 if self.motion:
-                    self.motion.stop('task_completed')
-                self.session.event('task_result', result=self.tasks.result)
+                    self.motion.stop('task_' + self.tasks.state)
+                self._record_result()
             return self.task_error
         except PlanningRequired as exc:
             self._hold(str(exc))

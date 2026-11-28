@@ -61,6 +61,10 @@ class ContactGuard:
         source_expiry = packet.get('source_expires_at')
         deadline = packet.get('deadline')
         limits = packet.get('limits')
+        duration_s = packet.get('forward_duration_s')
+        if phase == 'timed_push' and (not _positive(duration_s) or duration_s > duration
+                or not isinstance(object_id, str) or object_id not in self.control.get('field_push_launch_speeds', {})):
+            raise ValueError('invalid_timed_push')
         if (not isinstance(identity, str) or not identity.strip() or len(identity) > 256
                 or (object_id is not None and not isinstance(object_id, str))
                 or not isinstance(phase, str) or not phase.strip() or len(phase) > 128
@@ -72,6 +76,9 @@ class ContactGuard:
             raise ValueError('interaction_duration_elapsed')
         if source_expiry <= now:
             raise ValueError('interaction_observation_expired')
+        if phase == 'timed_push':
+            speed = self.control.get('timed_push_speeds', {}).get(object_id, profile['max_vx'])
+            profile = {**profile, 'max_vx': speed}
         if self.active is None:
             if identity in self._used_ids:
                 raise ValueError('interaction_id_reused')
@@ -80,16 +87,30 @@ class ContactGuard:
                                deadline=min(deadline, now+duration), limits={
                                    key: min(self.control[key], profile[key], limits[key])
                                    for key in LIMIT_KEYS})
+            if phase == 'timed_push':
+                self.active['forward_duration_s'] = duration_s
         else:
             if identity != self.active['id']:
                 raise ValueError('interaction_id_changed_without_stop')
             if object_id != self.active['object_id']:
                 raise ValueError('interaction_object_changed_without_stop')
+            timed = self.active.get('forward_duration_s')
+            if phase == 'timed_push':
+                if timed is None and self.active['phase'] in ('engage', 'push'):
+                    self.active['forward_duration_s'] = duration_s
+                elif self.active['phase'] != phase or duration_s > timed:
+                    raise ValueError('timed_push_changed_without_stop')
+                else:
+                    # Odometry may shorten the initial gap allowance once the face is reached.
+                    self.active['forward_duration_s'] = duration_s
+            if timed is not None and phase != self.active['phase'] and (self.active['phase'], phase) != (
+                    'timed_push', 'push_settle'):
+                raise ValueError('invalid_timed_push_transition')
             self.active['deadline'] = min(self.active['deadline'], deadline)
             self.active['source_expires_at'] = source_expiry
             self.active['phase'] = phase
             for key in LIMIT_KEYS:
-                self.active['limits'][key] = min(self.active['limits'][key], limits[key])
+                self.active['limits'][key] = min(self.active['limits'][key], profile[key], limits[key])
 
     def effective_config(self):
         if self.active is None:

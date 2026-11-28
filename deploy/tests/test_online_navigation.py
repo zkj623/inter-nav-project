@@ -170,13 +170,21 @@ def test_adjusted_field_bounds_and_unaligned_edges():
             engine.set_goal(xy, 0.)
 
 
-@pytest.mark.parametrize('requested,measured', [((0., 0., .9), (0., 0., 0.)),
-                                                ((0., -.10, 0.), (0., .28, 0.))])
-def test_field_guard_checks_turning_corners_and_measured_stopping_motion(requested, measured):
+def test_field_guard_limits_a_requested_turn_before_a_corner_reaches_the_boundary():
     engine = NavigationEngine(load()['navigation'])
     engine.set_goal((2., 0.), 0.)
-    engine.observe(observation(position=(1., .53, .3), velocity=measured, points=[[2., 0., .2]]), .1)
-    assert engine._output(requested) is None
+    engine.observe(observation(position=(1., .53, .3), points=[[2., 0., .2]]), .1)
+    command = engine._output((0., 0., .9))
+    assert engine.status == 'running' and 0 < command[2] < .9
+    assert engine._boundary_motion_fits(command, 1 / engine.config['tick_hz'])
+    assert any(e['event'] == 'world_boundary_speed_limited' for e in engine.events)
+
+
+def test_field_guard_stops_if_measured_motion_toward_boundary_cannot_brake_inside():
+    engine = NavigationEngine(load()['navigation'])
+    engine.set_goal((2., 0.), 0.)
+    engine.observe(observation(position=(1., .53, .3), velocity=(0., .28, 0.), points=[[2., 0., .2]]), .1)
+    assert engine._output((0., -.10, 0.)) is None
     np.testing.assert_array_equal(engine.limiter.command, np.zeros(3))
     assert engine.result['reason'] == 'world_boundary_stop'
 

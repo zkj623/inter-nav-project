@@ -1,10 +1,11 @@
 """Contact envelopes are independently enforced without ROS or an SDK connection."""
+from tempfile import TemporaryFile
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
-from deploy.app.config import load
+from deploy.app.config import ROOT, load
 from deploy.robot.motion import _worker
 from deploy.robot.safety import CommandGuard
 from deploy.tests.test_deploy import FakeSport
@@ -165,14 +166,21 @@ def test_contact_clamps_existing_navigation_output_and_all_later_phase_outputs()
         assert np.all(np.abs(output-before) <= np.array([.2, .2, .4])*.05+1e-12)
 
 
-def run_worker(monkeypatch, packets, *, unsafe=None):
+def run_worker(monkeypatch, packets, *, unsafe=None, worker_control=None):
     """Scheduled pipe and clock exercise the actual writer loop deterministically."""
     import deploy.robot.motion as module
-    clock = [10.]
+    clock = [packets[0][0]]
     monkeypatch.setattr(module, 'time', SimpleNamespace(monotonic=lambda: clock[0],
                                                        sleep=lambda dt: clock.__setitem__(0, clock[0]+dt)))
     moves = []
     class Sport(FakeSport):
+        state = SimpleNamespace(gait_type=1, foot_force=[22, 0, 0, 21],
+                                foot_position_body=[0., 0., -.29, 0., 0., -.21, 0., 0., -.22, 0., 0., -.29])
+
+        @property
+        def state_at(self):
+            return clock[0]
+
         @property
         def takeover(self):
             return unsafe == 'takeover' and clock[0] >= 10.08
@@ -190,7 +198,7 @@ def run_worker(monkeypatch, packets, *, unsafe=None):
 
     class Pipe:
         def __init__(self):
-            self.packets = list(packets)+[(11.5, dict(op='close'))]
+            self.packets = list(packets)+[(packets[-1][0]+1.5, dict(op='close'))]
             self.reports = []
 
         def poll(self):
@@ -207,7 +215,11 @@ def run_worker(monkeypatch, packets, *, unsafe=None):
             pass
 
     pipe = Pipe()
-    _worker(pipe, {}, dict(control(), stop_settle_s=.02), Sport)
+    # A simulated Sport endpoint has its own writer. Keep its real flock on
+    # a private file even if a live run is open on the same host.
+    with monkeypatch.context() as offline:
+        offline.setattr(module, 'open', lambda path, mode: TemporaryFile(), raising=False)
+        _worker(pipe, {}, dict(worker_control or control(), stop_settle_s=.02), Sport)
     return pipe.reports, moves
 
 
@@ -226,6 +238,88 @@ def test_worker_reports_first_forward_push_speed_after_sdk_move(monkeypatch):
     assert sent[0]['object_id'] == 'box-1'
     assert sent[0]['velocity'][0] > 0
     assert any(t == sent[0]['worker_at'] and np.array_equal(v, sent[0]['velocity']) for t, v in moves)
+
+
+@pytest.mark.parametrize('phase,requested', [('engage', .20), ('push', .16), ('engage', .12)])
+def test_field_push_launch_sends_selected_forward_speed_on_first_sdk_tick(monkeypatch, phase, requested):
+    cfg = load(interaction_path=ROOT/'configs/box_30x80x30.yaml')['runtime']['control']
+    def packet(t, velocity):
+        return dict(velocity_packet(t, phase=phase, object_id='box-1', limits=cfg['contact_limits']),
+                    velocity=velocity)
+
+    reports, moves = run_worker(monkeypatch, [(10., dict(op='arm')),
+        (10., packet(10., [0., 0., 0.])), (10.04, packet(10.04, [requested, .08, .2]))],
+        worker_control=cfg)
+    sent, = [event for event in reports if event.get('event') == 'push_speed_sent']
+    t, velocity = next((t, v) for t, v in moves if v[0] > 0.)
+    assert t == pytest.approx(10.04) and t == sent['worker_at']
+    np.testing.assert_array_equal(velocity, sent['velocity'])
+    assert velocity[0] == pytest.approx(requested)
+    assert 0. < velocity[1] < .08 and 0. < velocity[2] < .2
+
+
+@pytest.mark.parametrize('box,phase,requested,previous,expected', [
+    ('other-box', 'engage', .15, 0., .004), ('box-1', 'align', .15, 0., .004),
+    ('box-1', 'push', -.15, 0., -.004), ('box-1', 'engage', .15, .05, .054),
+    ('box-1', 'push', .15, 0., .12),
+])
+def test_field_push_launch_is_scoped_to_first_forward_tick_from_rest(box, phase, requested, previous, expected):
+    cfg = dict(control(), field_push_launch_speeds={'box-1': .12})
+    guard = CommandGuard(cfg)
+    guard.arm(10.)
+    guard.output[0] = previous
+    assert submit(guard, packet=envelope(phase=phase, object_id=box), velocity=(requested, 0., 0.))
+    assert guard.tick(10.02)[0] == pytest.approx(expected)
+
+
+def test_field_push_launch_cannot_repeat_after_braking_in_same_segment():
+    guard = CommandGuard(dict(control(), field_push_launch_speeds={'box-1': .12}))
+    guard.arm(10.)
+    packet = envelope(object_id='box-1')
+    assert submit(guard, packet=packet, velocity=(.015, 0., 0.))
+    assert guard.tick(10.02)[0] == pytest.approx(.015)
+    assert submit(guard, 10.04, packet, velocity=(0., 0., 0.))
+    assert guard.tick(10.12)[0] == 0.
+    assert submit(guard, 10.13, packet, velocity=(.12, 0., 0.))
+    assert guard.tick(10.14)[0] == pytest.approx(.004)
+
+
+def test_timed_push_worker_cuts_forward_output_even_if_planner_keeps_sending(monkeypatch):
+    cfg = load(interaction_path=ROOT/'configs/box_30x80x30.yaml')['runtime']['control']
+    def packet(t, duration=.11):
+        return dict(velocity_packet(t, phase='timed_push', object_id='box-1', limits=cfg['contact_limits'],
+                                    forward_duration_s=duration), velocity=[.2, 0., 0.])
+
+    reports, moves = run_worker(monkeypatch, [(10., dict(op='arm')), (10.04, packet(10.04)),
+        (10.14, packet(10.14)), (10.22, packet(10.22)), (10.28, packet(10.28, .3))], worker_control=cfg)
+    sent, = [r for r in reports if r.get('event') == 'push_speed_sent']
+    assert sent['move_at'] == pytest.approx(10.04)
+    assert all(v[0] == pytest.approx(.2) for t, v in moves if 10.04-1e-9 <= t < 10.15)
+    assert any(t >= 10.16-1e-9 for t, _ in moves)
+    assert all(not v.any() for t, v in moves if t >= 10.15)
+    assert any(r['detail'] == 'timed_push_changed_without_stop' for r in reports if r['state'] == 'stopping')
+
+
+def test_field_writer_ramps_to_stroke_speed_and_can_only_shorten_its_timer(monkeypatch):
+    cfg = load(interaction_path=ROOT/'configs/box_30x80x30.yaml')['runtime']['control']
+    packets = [(10., dict(op='arm'))]
+    for i in range(13):
+        t = 10.04 + i*.10
+        duration = 3. if i < 5 else (.95 if i < 12 else 3.)
+        packet = velocity_packet(t, phase='timed_push', object_id='box-1',
+                                 limits={**cfg['contact_limits'], 'max_vx': .8}, deadline=15., forward_duration_s=duration)
+        packets.append((t, dict(packet, velocity=[.8, 0., 0.])))
+    reports, moves = run_worker(monkeypatch, packets, worker_control=cfg)
+    sent, = [r for r in reports if r.get('event') == 'push_speed_sent']
+    assert sent['velocity'] == pytest.approx([.20, 0., 0.])
+    at_speed, = [r for r in reports if r.get('event') == 'timed_push_speed_reached']
+    assert at_speed['velocity'] == pytest.approx([.50, 0., 0.])
+    assert any(t == at_speed['move_at'] and v[0] == pytest.approx(.50) for t, v in moves)
+    active = [v[0] for t, v in moves if 10.04-1e-9 <= t < 10.99]
+    assert max(active) == pytest.approx(.50)
+    assert max(np.diff(active)) <= cfg['contact_limits']['acceleration'] / cfg['poll_hz'] + 1e-8
+    assert all(not v.any() for t, v in moves if t >= 10.99)
+    assert any(r.get('detail') == 'timed_push_changed_without_stop' for r in reports)
 
 
 @pytest.mark.parametrize('unsafe,reason', [(None, 'interaction_observation_expired'),
@@ -287,3 +381,24 @@ def test_worker_safe_stop_then_new_arm_allows_normal_navigation(monkeypatch):
     assert any(e['state'] == 'stopped' and e['detail'] == 'planning_hold:1:interaction_completed'
                for e in reports)
     assert max(v[0] for at, v in moves if at >= 10.3) > .15
+
+
+def test_zero_engage_packet_does_not_count_residual_navigation_motion(monkeypatch):
+    packets = [(10., dict(op='arm')),
+               (10., dict(op='velocity', velocity=[.12, 0., 0.], generated_at=10.,
+                          expires_at=10.30, command_id=1)),
+               (10.14, dict(velocity_packet(10.14), velocity=[0., 0., 0.])),
+               (10.22, dict(op='stop', reason='stop'))]
+    reports, moves = run_worker(monkeypatch, packets)
+    assert any(10.14 <= t < 10.22 and v[0] > 0 for t, v in moves)
+    assert not any(e.get('event') == 'push_speed_sent' for e in reports)
+
+
+def test_scan_hold_arriving_after_expiry_keeps_the_actual_worker_stop(monkeypatch):
+    token = 'planning_hold:1:first_push_wait_scan'
+    packets = [(10., dict(op='arm')),
+               (10., lambda now: velocity_packet(now, phase='engage', source_expires_at=10.07)),
+               (10.09, dict(op='stop', reason=token))]
+    reports, _ = run_worker(monkeypatch, packets)
+    assert any(e.get('state') == 'stopped' and e.get('detail') == 'interaction_observation_expired' for e in reports)
+    assert not any(e.get('state') == 'rejected' or e.get('detail') == token for e in reports)

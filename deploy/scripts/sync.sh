@@ -32,6 +32,10 @@ rsync "${options[@]}" --ignore-missing-args --from0 --files-from="$manifest" "$r
 # Seed missing configuration files only. Existing calibration/acceptance stays
 # device-owned; a code update must never overwrite it with repository defaults.
 rsync "${options[@]}" --ignore-existing --ignore-missing-args --from0 --files-from="$config_manifest" "$repo_dir/" "$remote_host:$remote_path/"
+different=$(rsync -rcn --existing --out-format='%n' --ignore-missing-args --from0 --files-from="$config_manifest" "$repo_dir/" "$remote_host:$remote_path/")
+if [[ -n "$different" ]]; then
+    printf '以下配置在设备上已有不同内容，已保留设备版本：\n%s\n' "$different"
+fi
 
 python3 - "$repo_dir" "$source_info" <<'META'
 import json

@@ -50,12 +50,13 @@ def load(directory=None, *, interaction_path=None):
                 raise ValueError(f'Missing {group}.{key}; migrate from deploy/configs')
             if type(result[group][key]) not in (int, float) or float(result[group][key]) <= 0:
                 raise ValueError(f'{group}.{key} must be positive')
-    for key, value in result['runtime']['control'].items():
-        if key in ('contact_limits', 'contact_max_duration_s'):
-            continue  # Rebuilt from the validated interaction profile below.
+    control = result['runtime']['control']
+    # Only the validated interaction preset can authorize contact or a field push start.
+    for key in ('contact_limits', 'contact_max_duration_s', 'field_push_launch_speeds', 'timed_push_speeds'):
+        control.pop(key, None)
+    for key, value in control.items():
         if not isinstance(value, (int, float)) or value <= 0:
             raise ValueError(f'control.{key} must be positive')
-    control = result['runtime']['control']
     if not 0 < control['max_tilt_degrees'] < 90 or control['stop_settle_s'] >= control['stop_timeout_s']:
         raise ValueError('Invalid tilt limit or stopping time configuration')
     if type(result['navigation']['interaction_enabled']) is not bool:
@@ -92,8 +93,6 @@ def load(directory=None, *, interaction_path=None):
     from deploy.interaction.config import configure
     path = Path(interaction_path) if interaction_path is not None else directory/'interaction.yaml'
     payload = yaml.safe_load(path.read_text()) if interaction_path is not None or path.exists() else None
-    control.pop('contact_limits', None)
-    control.pop('contact_max_duration_s', None)
     result['interaction'] = configure(result, payload, path.parent, registry_path=path)
     return result
 

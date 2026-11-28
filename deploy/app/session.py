@@ -324,9 +324,15 @@ class Session:
     def _box_at(self, now):
         # Caller holds the session lock so the latest row and the last known pose agree.
         poses = {key: loc.display for key, loc in self.box_memory.locations(now).items()}
-        if self.box_window is None and not poses:
+        resets = self.box_memory.reset_times()
+        if self.box_window is None and not poses and not resets:
             return None
-        return dict(self.box_window or {'frame': 'experiment', 'detections': []}, as_of=now, last_seen=poses)
+        result = dict(self.box_window or {'frame': 'experiment', 'detections': []}, as_of=now, last_seen=poses)
+        if resets:
+            result['detections'] = [row for row in result.get('detections', ())
+                                    if row.get('object_id') not in resets or
+                                    result.get('window_start_at', -float('inf')) > resets[row['object_id']]]
+        return result
 
     def box_snapshot(self):
         with self.lock:

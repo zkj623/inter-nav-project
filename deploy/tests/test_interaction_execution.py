@@ -319,3 +319,66 @@ def test_async_refresh_still_stops_before_a_known_slow_control_cycle(run, monkey
     run.controller.step(current, run.clock[0])
     assert len(fixture.packets) == 1
     assert run.controller.planning_hold['reason'] == 'control_budget'
+
+
+@pytest.mark.parametrize('already_sent', [False, True])
+def test_field_scan_expiry_keeps_the_aligned_trial_until_a_post_stop_fit(run, monkeypatch, already_sent):
+    fixture = install_interaction(run, monkeypatch, phase='engage')
+    engine, controller = fixture.engine, run.controller
+    engine.first_push = True
+    engine.pushable_ids = {'B1'}
+    engine.phase = 'skill'
+    engine.layers.decision = {'kind': 'push'}
+    skill = engine.skill = SimpleNamespace(plan=SimpleNamespace(box_id='B1', direction=(0., -1.)),
+                                          state='engage', resume_after=None)
+    engine.trial_used = False
+    start = run.clock[0]
+    current = run.sample(.01)
+    controller.step(current, run.clock[0])
+    identity, deadline = engine.execution.identity, engine.execution.deadline
+    controller.motion_events([dict(kind='command_ack', accepted=True, state='active')])
+    assert not engine.trial_used
+    sent = dict(event='push_speed_sent', state='active', object_id='B1', velocity=[.02, 0., 0.])
+    if already_sent:
+        controller.motion_events([sent])
+    run.sample(.25)
+    run.feedback('stopping', 'interaction_observation_expired')
+    assert engine.phase == 'first_push_wait_scan' and run.tasks.state == 'active'
+    controller.step(run.sample(), run.clock[0])
+    assert run.motion.arm_count == 1
+    run.sample(.31)
+    run.feedback('stopped', 'interaction_observation_expired')
+    stopped = run.clock[0]
+    assert engine.execution.identity == identity and engine.execution.segment == 1
+    assert skill.resume_after == stopped
+    # A fresh odometry/map packet can still carry an older or wrong box fit.
+    face = [True, start]
+    evidence = SimpleNamespace(snapshot=lambda now: {'B1': {'latest_at': face[1]}})
+    monkeypatch.setattr(engine, '_permission', lambda *args: face[0] or None)
+    monkeypatch.setattr(run.tasks, '_perceive', lambda snapshot, now: ([], evidence))
+    monkeypatch.setattr(run.tasks, 'observe_only', lambda snapshot, now: setattr(engine, 'now', now))
+    original_step = run.tasks.update
+    def resume(snapshot, now):
+        engine.now = now
+        if engine.phase == 'first_push_wait_scan':
+            return engine._advance_first_push(evidence)
+        return original_step(snapshot, now)
+    monkeypatch.setattr(run.tasks, 'update', resume)
+    monkeypatch.setattr(engine, '_skill_step', lambda recognition: original_step(current, run.clock[0]))
+    for valid, stamp in ((True, start), (False, stopped+.01)):
+        face[:] = [valid, stamp]
+        current = run.sample(.1)
+        controller.step(current, run.clock[0])
+        assert run.motion.arm_count == 1 and len(fixture.packets) == 1
+    face[:] = [True, stopped+.2]
+    current = run.sample(.1)
+    controller.step(current, run.clock[0])
+    assert run.motion.arm_count == 2 and run.tasks.state == 'active'
+    assert engine.skill is skill and engine.phase == 'skill'
+    assert engine.execution.identity == identity and engine.execution.deadline == deadline
+    assert len(fixture.packets) == 2 and fixture.packets[-1]['velocity'][0] > 0
+    assert engine.trial_used is already_sent
+    controller.motion_events([sent, sent])
+    assert engine.trial_used
+    engine.cancel()
+    assert engine.trial_used

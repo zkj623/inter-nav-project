@@ -5,6 +5,7 @@ import base64
 
 import cv2
 import numpy as np
+from deploy.robot.localization import rotation
 
 
 def _payload(value):
@@ -110,6 +111,13 @@ class SceneCapture:
                       cloud_role='display_history_only')
         # Display voxels belong exclusively to the rendering process. Capturing
         # a map never extracts or changes a navigation-side point cloud.
+        if getattr(engine, 'upper_short_end', False):
+            # Draw the same box pose that owns cells in this particular map frame.
+            corners = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])
+            result['box_outlines'] = {
+                b.id: (b.xy + (corners * (np.asarray(b.local_dimensions[:2])/2))
+                       @ rotation(b.orientation)[:2, :2].T).tolist()
+                for b in layers.current_boxes if b.local_dimensions is not None and b.orientation is not None}
         boundary = getattr(layers, 'world_boundary', None)
         if boundary is not None:
             result['world_boundary'] = {'x_limits': boundary.x, 'y_limits': boundary.y}
@@ -146,4 +154,5 @@ def map_payload(scene):
             'interaction_observation_age_s': scene.get('interaction_observation_age_s'),
             'contact_collision': scene.get('contact_collision'),
             'observed_cells': int(scene['observed'].sum()),
-            'tracked_objects': len(scene['objects']), 'cloud_role': 'display_history_only'}
+            'tracked_objects': len(scene['objects']), 'box_outlines': scene.get('box_outlines', {}),
+            'cloud_role': 'display_history_only'}

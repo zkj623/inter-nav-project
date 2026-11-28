@@ -501,6 +501,27 @@ def test_preparation_failure_never_arms(control, monkeypatch):
     monkeypatch.setattr(controller.tasks.engine, '_decide', failed)
     controller.operate('navigate', '1,0', snapshot, snapshot.captured_at)
     assert controller.motion.state == 'manual' and not controller.motion.commands
-    assert controller.tasks.state == 'completed'
+    assert controller.tasks.state == 'failed'
+    assert controller.task_error == 'no_safe_route'
     assert events.items[-1]['event'] == 'task_result'
     assert events.items[-1]['result']['reason'] == 'no_safe_route'
+
+
+@pytest.mark.parametrize('reason', ['task_timeout', 'world_boundary_stop'])
+def test_failed_navigation_stops_once_and_keeps_its_reason(control, monkeypatch, reason):
+    controller, sample, events = control
+    controller.operate('navigate', '1,0', sample, sample.captured_at)
+    engine = controller.tasks.engine
+    if reason == 'task_timeout':
+        controller.tasks.config['task_timeout_s'] = .01
+    else:
+        monkeypatch.setattr(engine, 'update', lambda *args, **kwargs: engine._finish(False, reason))
+    now = sample.captured_at + .12
+    fresh = replace(sample, captured_at=now, pose_at=now, lidar_at=now)
+    controller.step(fresh, now)
+    controller.motion_events([{'state': 'stopping', 'detail': 'task_failed'}])
+    controller.step(fresh, now)
+    assert controller.tasks.state == engine.phase == 'failed'
+    assert controller.task_error == reason
+    assert controller.motion.stops == ['task_failed']
+    assert [e['result']['reason'] for e in events.items if e['event'] == 'task_result'] == [reason]
