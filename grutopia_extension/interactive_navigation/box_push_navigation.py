@@ -145,6 +145,23 @@ class BoxPushPlanner:
         return [(1.,0.),(-1.,0.),(0.,1.),(0.,-1.),
                 (diagonal,diagonal),(diagonal,-diagonal),(-diagonal,diagonal),(-diagonal,-diagonal)]
 
+    def remaining_push_cost(self, goal, boxes, box, destination, direction, extent, immovable, *,
+                            stopped_xy=None, allow_sequential=False):
+        """Predict the goal route on a map with just the selected box moved."""
+        start = stopped_xy
+        if start is None:
+            # The simulation releases the box and checks its reference route.
+            start = destination - direction*(extent + self.contact_offset + .18)
+            optimistic = self.path(start, goal, immovable)
+            if not optimistic or self.route_intersects(start, optimistic, box, destination):
+                return math.inf
+        moved = replace(box, xy=tuple(destination))
+        after = [moved if other.id == box.id else other for other in boxes]
+        route = self.path(start, goal, after)
+        if not route and allow_sequential:
+            return 15.  # Simulation may clear another movable box next.
+        return self.length(start, route)
+
     def push_candidates(self,start,goal,boxes,box,optimistic,immovable=()):
         other=np.zeros_like(self.free)
         for candidate in boxes:
@@ -172,15 +189,9 @@ class BoxPushPlanner:
                     rc=self.cell(robot_xy)
                     if not self.valid_cell(rc) or robot_blocked[rc]:valid=False;break
                 if not valid:continue
-                moved=replace(box,xy=tuple(destination))
-                after=[moved if x.id==box.id else x for x in boxes]
-                end_robot=destination-direction*(extent+self.contact_offset+.18)
-                route=self.path(end_robot,goal,after)
-                remaining_optimistic=self.path(end_robot,goal,immovable)
-                if not remaining_optimistic or self.route_intersects(end_robot,remaining_optimistic,box,destination):continue
-                score=self.length(start,approach_path)+distance*2.5
-                if route:score+=self.length(end_robot,route)
-                else:score+=15  # permit sequential clearing, with a finite penalty
+                remaining=self.remaining_push_cost(goal,boxes,box,destination,direction,extent,immovable,allow_sequential=True)
+                if not math.isfinite(remaining):continue
+                score=self.length(start,approach_path)+distance*2.5+remaining
                 yield PushPlan(box.id,box.xy,tuple(destination),tuple(direction),tuple(approach),
                     approach_path,float(distance),float(score))
                 break  # nearest safe parking position for this push direction

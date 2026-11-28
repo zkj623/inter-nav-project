@@ -14,6 +14,7 @@ class FieldSurvey:
         self.navigation_shape = navigation_shape
         self.grid = None
         self.padding = 0
+        self.measured_obstacles = np.zeros(navigation_shape, dtype=bool)
 
     def _ensure_range(self, max_range):
         # The scanner operates inside the fence. One sensor range beyond each
@@ -45,7 +46,9 @@ class FieldSurvey:
         grid.log_odds[free] -= grid.config.free_update
         np.clip(grid.log_odds, -4., 4., out=grid.log_odds)
         r, (h, w) = self.padding, self.navigation_shape
-        return hit[r:r+h, r:r+w], free[r:r+h, r:r+w], stats
+        region = np.s_[r:r+h, r:r+w]
+        self.measured_obstacles[:] = hit[region] | (grid.log_odds[region] >= grid.config.occupied_threshold)
+        return hit[region], free[region], stats
 
     def snapshot(self, navigation):
         """Trim unused margins. Real exterior evidence surrounds the bounded navigation layers."""

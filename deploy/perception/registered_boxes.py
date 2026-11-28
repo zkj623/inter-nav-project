@@ -56,7 +56,7 @@ def validate_tracking_config(config):
     """Return an independent normalized config; reject coercive bool/NaN input."""
     if not isinstance(config, dict):
         raise ValueError('interaction tracking must be a mapping')
-    unknown = set(config) - set(DEFAULT_TRACKING) - {'boxes', 'geometry_verified', 'registry_reference', 'use_box_top'}
+    unknown = set(config) - set(DEFAULT_TRACKING) - {'boxes', 'geometry_verified', 'registry_reference', 'use_box_top', 'any_face_top'}
     if unknown:
         raise ValueError('Unknown tracking settings: ' + ', '.join(sorted(unknown)))
     result = {**DEFAULT_TRACKING, **config}
@@ -100,6 +100,8 @@ def validate_tracking_config(config):
     verified = result.setdefault('geometry_verified', False)
     if type(result.setdefault('use_box_top', False)) is not bool:
         raise ValueError('use_box_top must be boolean')
+    if type(result.setdefault('any_face_top', False)) is not bool:
+        raise ValueError('any_face_top must be boolean')
     if not isinstance(verified, bool):
         raise ValueError('geometry_verified must be an explicit boolean')
     reference = result.setdefault('registry_reference', '')
@@ -571,7 +573,7 @@ class RegisteredBoxPerception:
                 face_names = tuple(('+' if sensor_local[i] > 0 else '-')+('x', 'y')[i] for i in observed_axes)
                 spans = fit.face_spans[::-1] if rotation_change % 2 else fit.face_spans
                 if fit.top_end is not None:
-                    axis = int(np.argmax(fit.dimensions[:2]))
+                    axis = ('xy'.index(fit.top_end[-1]) + rotation_change) % 2
                     fit = replace(fit, yaw_rad=pose_yaw, top_end=('+' if sensor_local[axis] > 0 else '-')+'xy'[axis])
                 else:
                     fit = replace(fit, yaw_rad=pose_yaw, visible_faces=face_names, face_spans=spans,

@@ -271,6 +271,28 @@ class SmoothExplorationTracker(ExplorationPathTracker):
                 staging_command,stage_state=result;state.update(stage_state)
                 if self.limiter.staging.failed:
                     self.limiter.staging=None;state['blocked_ticks']=100
+        if state.get('measured_pose_pivot'):
+            # The continuous check authorizes only rotation at the measured
+            # base pose. Include residual motion and the slewed yaw command.
+            command = self.limiter.preview(staging_command, now)
+            command[:2] = 0.
+            measured = self.limiter.measured
+            speed = float(np.linalg.norm(measured[:2]))
+            rates = [0., measured[2], command[2]]
+            if self.limiter.body_state is not None:
+                _, linear, angular, _, _ = self.limiter.body_state
+                speed = max(speed, float(np.linalg.norm(linear[:2])))
+                rates.append(angular[2])
+            horizon = .60 + max(map(abs, rates)) / (2*self.limiter.yaw_acceleration)
+            drift = speed * horizon
+            clear = not state.get('needs_replan') and all(
+                planner.measured_pivot_clear(planner, boxes, position, heading, heading + rate*horizon, drift)
+                for rate in (min(rates), max(rates)))
+            if not clear:
+                command[:] = 0.
+            self.limiter.accept(command, now)
+            return {'move_by_speed': command.tolist()}, {**state, 'body_motion_safe': bool(clear),
+                'controller': 'measured_pose_pivot', 'applied_command': command.tolist()}
         if staging_command is not None:desired=staging_command
         native_goal=(self.final_task_goal is not None and self.limiter.policy_command is not None
             and np.linalg.norm(np.asarray(self._planned_path[-1])-self.final_task_goal)<1e-6

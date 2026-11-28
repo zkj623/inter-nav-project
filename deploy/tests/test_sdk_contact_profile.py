@@ -583,3 +583,129 @@ def test_first_push_needs_recent_face_after_measured_settling(blocked_layer, tig
     assert skill.config.push_max_speed == (p.push_start_mps if tight_reserve else p.push_max_mps)
     if blocked_layer:
         assert saw_block
+
+
+@pytest.mark.parametrize('direction', [(1., 0.), (-1., 0.), (0., 1.), (0., -1.)])
+def test_auto_face_selects_each_side_and_reserves_the_field_stroke(direction):
+    from deploy.interaction.first_push import RegisteredFacePlanner, SHORT_END_PUSH_DISTANCE_M
+    planner = RegisteredFacePlanner(np.ones((80, 80), bool), [[-4, 4], [-4, 4]], resolution=.1)
+    direction = np.array(direction)
+    dims = (.30, .80, .30)
+    box = BoxState('B1', (0., 0.), dims, local_dimensions=dims, orientation=(1., 0., 0., 0.), center_z=.15)
+    start = -1.8 * direction
+    goal = start + 3*np.array([-direction[1], direction[0]])
+    def select(free):
+        return planner.first_contact_plan(start, [box], {'B1'}, free, profile(), auto_push_speed=.50, goal=goal)
+    free = planner.free.copy()
+    chosen = select(free)
+    np.testing.assert_allclose(chosen.direction, direction)
+    assert chosen.push_distance == pytest.approx(SHORT_END_PUSH_DISTANCE_M)
+    # Place a block beyond the old 10 cm stroke, inside the timed stroke.
+    cell = planner.cell(direction * (abs(direction) @ np.array(dims[:2])/2 + .45))
+    free[cell] = False
+    alternate = select(free)
+    assert alternate is None or not np.allclose(alternate.direction, direction)
+    assert select(np.zeros_like(free)) is None
+
+
+def test_auto_face_exclusions_follow_the_box_through_refits():
+    from deploy.interaction.first_push import RegisteredFacePlanner
+    planner = RegisteredFacePlanner(np.ones((80, 80), bool), [[-4, 4], [-4, 4]], resolution=.1)
+    dims = (.30, .80, .30)
+    box = BoxState('B1', (0., 0.), dims, local_dimensions=dims, orientation=(1., 0., 0., 0.), center_z=.15)
+    rejected = {'B1': []}
+
+    def select(tracked, direction):
+        start = -1.8 * np.array(direction)
+        goal = start + 3*np.array([-direction[1], direction[0]])
+        return planner.first_contact_plan(start, [tracked], {tracked.id}, planner.free, profile(),
+                                          auto_push_speed=.50, goal=goal, rejected_faces=rejected)
+
+    for angle, direction in zip((0., 182., -3., 181.), ((1, 0), (-1, 0), (0, 1), (0, -1))):
+        half = np.radians(angle)/2
+        fit = replace(box, orientation=(np.cos(half), 0., 0., np.sin(half)))
+        chosen = select(fit, direction)
+        assert chosen is not None
+        assert all(np.dot(chosen.direction, old) < .5 for old in rejected['B1'])
+        rejected['B1'].append(chosen.direction)
+    assert select(box, (1, 0)) is None
+    assert select(replace(box, id='B2'), (1, 0)) is not None
+
+
+@pytest.mark.parametrize('box_y, expected_y', [(.33, 1.), (-.33, -1.), (0., None)])
+def test_auto_face_must_clear_the_goal_corridor_in_one_field_stroke(box_y, expected_y):
+    from deploy.interaction.first_push import RegisteredFacePlanner, SHORT_END_PUSH_DISTANCE_M
+    planner = RegisteredFacePlanner(np.ones((160, 160), bool), [[-4, 4], [-4, 4]],
+                                    resolution=.05, robot_radius=.30)
+    dims = (.30, .80, .30)
+    box = BoxState('B1', (0., box_y), dims, local_dimensions=dims, orientation=(1., 0., 0., 0.))
+    start, goal = (-2., .025), (2., .025)
+    plan = planner.first_contact_plan(start, [box], {box.id}, planner.free, profile(),
+                                      goal=goal, auto_push_speed=.50)
+    if expected_y is None:
+        # With the long side across the corridor, neither side clears it in 53.3 cm.
+        assert plan is None
+    else:
+        np.testing.assert_allclose(plan.direction, (0., expected_y))
+        assert plan.push_distance == pytest.approx(SHORT_END_PUSH_DISTANCE_M)
+        assert plan.remaining_route_m > 0
+        assert plan.score == pytest.approx(planner.length(start, plan.approach_path)
+                                           + 2.5*plan.push_distance + plan.remaining_route_m)
+
+
+def test_rejected_face_can_be_replaced_only_by_another_face_that_clears_the_same_goal():
+    from deploy.interaction.first_push import RegisteredFacePlanner
+    planner = RegisteredFacePlanner(np.ones((160, 160), bool), [[-4, 4], [-4, 4]], resolution=.05)
+    dims = (.80, .30, .30)
+    box = BoxState('B1', (0., 0.), dims, local_dimensions=dims, orientation=(1., 0., 0., 0.))
+    rejected = {box.id: []}
+    def select():
+        return planner.first_contact_plan((-2., .025), [box], {box.id}, planner.free, profile(), goal=(2., .025),
+                                          auto_push_speed=.50, rejected_faces=rejected)
+    first = select()
+    assert abs(first.direction[1]) == 1.
+    rejected[box.id].append(first.direction)
+    second = select()
+    np.testing.assert_allclose(second.direction, -np.array(first.direction))
+    rejected[box.id].append(second.direction)
+    assert select() is None
+
+
+def test_changing_only_the_goal_changes_the_push_face():
+    from deploy.interaction.first_push import RegisteredFacePlanner
+    planner = RegisteredFacePlanner(np.ones((120, 120), bool), [[-3, 3], [-3, 3]],
+                                    resolution=.05, robot_radius=.30)
+    dims = (.30, .80, .30)
+    box = BoxState('B1', (0., .33), dims, local_dimensions=dims, orientation=(1., 0., 0., 0.))
+    for goal, expected in [((2., .025), (0., 1.)), ((-2., 2.3), (1., 0.))]:
+        plan = planner.first_contact_plan((-2., .025), [box], {box.id}, planner.free, profile(),
+                                          goal=goal, auto_push_speed=.50)
+        np.testing.assert_allclose(plan.direction, expected)
+
+
+def test_auto_face_can_detour_around_parked_box_but_still_needs_route_to_goal():
+    from deploy.interaction.first_push import RegisteredFacePlanner, SHORT_END_PUSH_DISTANCE_M
+
+    planner = RegisteredFacePlanner(np.ones((120, 120), bool), [[-3, 3], [-3, 3]], resolution=.05,
+                                    passages={'B1': {'center': (0., 0.), 'axis': (1., 0.)}})
+    dims = (.30, .80, .30)
+    box = BoxState('B1', (0., -.33), dims, local_dimensions=dims, orientation=(1., 0., 0., 0.))
+    start, goal = (-2., .025), (.025, -2.5)
+    direction = np.array([0., -1.])
+    destination = box.xy + direction*SHORT_END_PUSH_DISTANCE_M
+    extent = dims[1]/2
+    released = destination - direction*(extent + planner.contact_offset + .18)
+    reference = planner.path(released, goal, [])
+    assert reference and planner.route_intersects(released, reference, box, destination)
+
+    def select(boxes):
+        return planner.first_contact_plan(start, boxes, {box.id}, planner.free, profile(),
+                                          goal=goal, auto_push_speed=.50)
+
+    plan = select([box])
+    np.testing.assert_allclose(plan.direction, direction)
+    stopped = destination - direction*(extent + profile().nose_offset_m)
+    parked = replace(box, xy=tuple(destination))
+    route = planner.path(stopped, goal, [parked])
+    assert route and plan.remaining_route_m == pytest.approx(planner.length(stopped, route))
+    assert select([box, BoxState('B2', goal, dims)]) is None

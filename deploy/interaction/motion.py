@@ -1,5 +1,6 @@
 """Measured SDK motion primitives used by shared route and skill algorithms."""
 import math
+import logging
 import numpy as np
 from grutopia_extension.interactive_navigation.body_geometry import BodyFootprint
 from grutopia_extension.interactive_navigation.go2_voronoi_navigation import body_motion_clear, body_translation_recovery_clear
@@ -243,6 +244,13 @@ class SdkHeadingTrim:
         if abs(error) < self.best_error-.015:
             self.best_error, self.last_progress = abs(error), now
         if not self.done and (not self.braking or self.compensate_rebound) and now-self.last_progress >= self.profile.stall_seconds:
+            if self.failed is None and self.last_detail:
+                previous = self.last_detail
+                logging.getLogger(__name__).warning(
+                    '转身停滞 %.1f s，剩余误差 %.1f°。上一周期 %s，转身检查通过=%s，'
+                    '请求/检查后输出/实测角速度 %.2f/%.2f/%.2f rad/s。',
+                    now-self.last_progress, math.degrees(error), previous['mode'], previous['body_motion_safe'],
+                    previous['requested_yaw_rps'], previous['applied_command'][2], previous['measured_yaw_rps'])
             self.failed = 'sdk_heading_stalled'
         detail = {'heading_error_rad': float(error), 'best_error_rad': float(self.best_error),
                   'translation_from_origin_m': travel, 'mode': 'yaw_trim',
@@ -252,7 +260,8 @@ class SdkHeadingTrim:
 
         def checked(request):
             command, safe = checked_contact_turn_command(self.profile.limit(request), position, heading, planner, boxes, limiter, now)
-            detail.update(body_motion_safe=bool(safe), applied_command=command.tolist())
+            detail.update(body_motion_safe=bool(safe), applied_command=command.tolist(),
+                          requested_yaw_rps=float(request[2]), measured_yaw_rps=float(angular_velocity[2]))
             self.last_detail = detail.copy()
             return command
 

@@ -153,7 +153,46 @@ def test_exterior_scan_without_any_interior_ray_cannot_start_motion():
     engine.set_goal((4., 0.), 0.)
     obs = observation(points=[[-2., 0., .26]])
     obs['sensors']['lidar']['position'][2] = .55
-    assert engine.update(obs, .1) is None
+    np.testing.assert_array_equal(engine.update(obs, .1), np.zeros(3))
+    assert engine.decision['reason'] == 'waiting_for_field_scan'
+    assert engine.status == 'running' and engine.result is None and engine.goal == (4., 0.)
+
+
+def test_post_push_goal_settles_across_sparse_field_scans():
+    from deploy.app.config import ROOT
+
+    cfg = load(interaction_path=ROOT/'configs/box_30x80x30_auto_face.yaml')
+    engine = NavigationEngine(cfg['navigation'], cfg['interaction'])
+    engine.set_goal((4., 0.), 0.)
+    engine.phase = 'navigate'
+    engine.trial_used = True
+    engine.trial_report = {'reason': 'timed_push_released'}
+    layers = engine.layers
+    layers.observed[:] |= layers.interior
+    layers.refresh_global(reason='surveyed_room')
+    layers._bind_local()
+    for i in range(9):
+        # Stop about 24 cm from the goal, as in the last field run. At
+        # t=.4 the body moves again, even though the scan is still empty.
+        usable = i in (0, 6, 8)
+        points = [[4.6, -.6, .18]] if usable else np.empty((0, 3))
+        obs = observation(i, position=(3.77, -.055, .36), velocity=(.12 if i == 3 else 0., 0., 0.), points=points)
+        obs['sensors']['lidar']['position'] = np.array([3.8, -.055, .45])
+        command = engine.update(obs, (i+1)*.11, ())
+        if i < 8:
+            assert engine.status == 'running' and engine.goal == (4., 0.)
+            if not usable:
+                np.testing.assert_array_equal(command, np.zeros(3))
+                assert engine.decision['reason'] == 'waiting_for_field_scan'
+    assert engine.result['reason'] == 'goal_reached_and_stopped'
+    assert not engine.interaction_command
+
+
+def test_empty_field_scan_during_active_push_still_stops_the_trial():
+    engine = NavigationEngine(load()['navigation'])
+    engine.set_goal((4., 0.), 0.)
+    engine.execution.start('B1', 0.)
+    assert engine.update(observation(points=np.empty((0, 3))), .1) is None
     assert engine.result['reason'] == 'no_lidar_returns_in_world_boundary'
 
 
@@ -183,13 +222,19 @@ def test_field_guard_limits_a_requested_turn_before_a_corner_reaches_the_boundar
     assert any(e['event'] == 'world_boundary_speed_limited' for e in engine.events)
 
 
-def test_field_guard_stops_if_measured_motion_toward_boundary_cannot_brake_inside():
+def test_field_guard_brakes_then_resumes_if_only_predicted_motion_crosses_boundary():
     engine = NavigationEngine(load()['navigation'])
     engine.set_goal((2., 0.), 0.)
     near_fence = engine.world_boundary.y[1] - .37
     engine.observe(observation(position=(1., near_fence, .3), velocity=(0., .28, 0.), points=[[2., 0., .2]]), .1)
-    assert engine._output((0., -.10, 0.)) is None
+    np.testing.assert_array_equal(engine._output((0., -.10, 0.)), np.zeros(3))
     np.testing.assert_array_equal(engine.limiter.command, np.zeros(3))
+    assert engine.status == 'running' and engine.result is None
+    engine.observe(observation(1, position=(1., near_fence, .3), points=[[2., 0., .2]]), 1.)
+    assert engine._output((0., -.10, 0.))[1] < 0.
+    engine.observe(observation(2, position=(1., engine.world_boundary.y[1]-.10, .3),
+                               points=[[2., 0., .2]]), 2.)
+    assert engine._output((0., 0., 0.)) is None
     assert engine.result['reason'] == 'world_boundary_stop'
 
 

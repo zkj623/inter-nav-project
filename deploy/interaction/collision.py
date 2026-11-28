@@ -190,7 +190,7 @@ class ContactCollisionChecker:
             # measured stopping envelope; target-only cells are allowed at t=0.
             if pushing and requested > 1e-8:
                 direction = world_velocity/requested
-                if self.world_boundary is not None:
+                if self.world_boundary is not None and not getattr(self.planner, 'box_may_cross_boundary', False):
                     # A fixed-orientation box translated along a straight line
                     # stays within a rectangle if its start and end fit.
                     yaw = math.atan2(rot[1, 0], rot[0, 0])
@@ -208,14 +208,14 @@ class ContactCollisionChecker:
                     blocked = occupied & ~free
                     blocked |= self.evidence.static_occupied | ~field_space(self.planner.free & self.planner.box_free)
                 blocked |= non_target_cells
-                # At the trailing short edge one grid cell can contain both
+                # At the trailing box edge one grid cell can contain both
                 # the lid's footprint and a low return of uncertain ownership.
                 # A second scan can resolve it. Other boxes and fixed walls
                 # always take priority, as do blocks elsewhere in the sweep.
                 edge = np.zeros_like(blocked)
                 if field_space is not None and target.id in self.top_returns:
                     local_direction = direction @ rot
-                    axis = int(np.argmax(dims[:2]))
+                    axis = int(np.argmax(abs(local_direction)))
                     if abs(local_direction[axis]) > .9:
                         behind = -np.sign(local_direction[axis]) * core_local[..., axis]
                         edge = (current & (abs(behind - dims[axis]/2) <= self.planner.resolution/math.sqrt(2))

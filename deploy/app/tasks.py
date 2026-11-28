@@ -6,8 +6,8 @@ import numpy as np
 from .navigation import NavigationEngine
 
 
-BOX_SCAN_WAITS = {'waiting_for_registered_box', 'waiting_for_motion_feedback',
-                  'no_reachable_upper_short_end', 'waiting_for_post_push_scan', 'waiting_for_post_push_exit', 'waiting_for_post_push_route'}
+BOX_SCAN_WAITS = {'waiting_for_field_scan', 'waiting_for_registered_box', 'waiting_for_motion_feedback', 'reselect_push_face', 'all_push_faces_rejected',
+                  'no_reachable_upper_short_end', 'no_reachable_push_face', 'waiting_for_post_push_scan', 'waiting_for_post_push_exit', 'waiting_for_post_push_route'}
 
 
 class Tasks:
@@ -51,7 +51,7 @@ class Tasks:
         if self.perception is not None:
             self.perception.reset()
         self._perception_sample = None
-        self.engine.set_goal(self.engine.goal, now)
+        self.engine.set_goal(self.engine.goal, now, resume=True)
         self.last_time, self.state = now, 'active'
         self._prepared = False
 

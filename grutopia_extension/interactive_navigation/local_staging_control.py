@@ -172,7 +172,15 @@ class LocalStagingControl:
         self.origin=np.asarray(position[:2],float).copy();self.started=now
         self.goal_heading=heading+wrap(goal_heading-heading)
         self.selector=LocalTurnManeuver(self.goal_heading)
-        self.target=self.selector._select_stage(planner,boxes,self.origin,heading,require_stepping_arc=True,require_stable_placement=True)
+        check = getattr(planner, 'measured_pivot_clear', None)
+        self.direct_pivot = (check is not None
+            and not turn_placement_clear(planner, boxes, self.origin, heading, self.goal_heading, .025)
+            and check(planner, boxes, self.origin, heading, self.goal_heading))
+        if self.direct_pivot:
+            self.selector.stage_margin = .025
+            self.target = self.origin.copy()
+        else:
+            self.target=self.selector._select_stage(planner,boxes,self.origin,heading,require_stepping_arc=True,require_stable_placement=True)
         self.escape_plan=None
         if self.target is None:
             self.escape_plan=prepare_turn_plan(planner,boxes,self.origin,heading,self.goal_heading)
@@ -222,7 +230,7 @@ class LocalStagingControl:
         position=np.asarray(position[:2],float)
         if not self.profile_initialized:
             self.profile_initialized=True
-            if limiter.policy_command is not None and abs(wrap(self.goal_heading-heading))>.60:
+            if not self.direct_pivot and limiter.policy_command is not None and abs(wrap(self.goal_heading-heading))>.60:
                 self.selector.reserve_margin=.08
                 reserved=self._select_target(planner,boxes,position,heading)
                 if reserved is not None:self.target=reserved
@@ -230,6 +238,8 @@ class LocalStagingControl:
         state={'local_staging':True,'target':position.tolist(),'target_heading_rad':self.goal_heading,
                'staging_phase':self.phase,'recovering_buffer':True,'needs_replan':False,
                'turn_drift_reserve_m':self.selector.reserve_margin,'turn_clearance_margin_m':self.selector.stage_margin}
+        if self.direct_pivot:
+            state['measured_pose_pivot'] = True
         if self.escape_plan is not None:
             state.update(preparatory_turn=True,final_heading_rad=self.escape_plan['goal_heading'],
                          prepared_translation_target=self.escape_plan['target'].tolist())
@@ -244,10 +254,18 @@ class LocalStagingControl:
         # Keep it for admission and target validation: silently dropping a
         # .05m selection to .025m can brake after a5mm grid-cell crossing,
         # before the gait has translated into the selected turning region.
-        can_turn=body_rotation_clear(planner,boxes,position,heading,turn_end,margin=self.selector.stage_margin)
-        placement_margin=self.selector.stage_margin+self.selector.reserve_margin
-        placement_ready=can_turn and turn_placement_clear(planner,boxes,position,heading,turn_end,placement_margin)
-        arc_ready=can_turn and stepping_arc_clear(planner,boxes,position,heading,math.copysign(1.,turn_end-heading))
+        if self.direct_pivot:
+            can_turn = planner.measured_pivot_clear(planner, boxes, position, heading, turn_end)
+            if not can_turn:
+                self.failed = True
+                return np.zeros(3), {**state, 'needs_replan': True, 'staging_phase': 'staging_failed',
+                                     'staging_failure_reason': 'measured_pivot_blocked'}
+            placement_ready = arc_ready = True
+        else:
+            can_turn=body_rotation_clear(planner,boxes,position,heading,turn_end,margin=self.selector.stage_margin)
+            placement_margin=self.selector.stage_margin+self.selector.reserve_margin
+            placement_ready=can_turn and turn_placement_clear(planner,boxes,position,heading,turn_end,placement_margin)
+            arc_ready=can_turn and stepping_arc_clear(planner,boxes,position,heading,math.copysign(1.,turn_end-heading))
         # Enter from the interior, then keep permission while the actual
         # complete turn remains clear. Applying the interior threshold again
         # during braking only moves the chatter to a different boundary.
@@ -338,6 +356,8 @@ class LocalStagingControl:
             state['turn_rate_profile']='unitree45_continuous' if native else 'legacy_measured_cruise'
             # Keep the effective stepping gait until predictive braking.
             # Returning to pure yaw after only 0.18 rad repeatedly stalls it.
+            if self.direct_pivot:
+                return request, {**state, 'staging_phase': self.phase}
             request,detail=self.turn_response.update(request,position,heading,planner,boxes,limiter,now,maintain_arc=True)
             if native:
                 request=self.turn_position_hold.apply(request,position,heading,limiter.measured)

@@ -29,6 +29,7 @@ def test_online_layers_and_push_state_are_detached_from_display():
     skill = SimpleNamespace(state='settle_contact', status='running', reason='',
                             plan=SimpleNamespace(box_id=box.id))
     engine = SimpleNamespace(layers=layers, planner=planner, goal=(1.5, 0.), upper_short_end=True,
+                              contact_profile=SimpleNamespace(nose_offset_m=.34),
                               path=[(.4, 0., .3)], phase='skill', decision=decision, skill=skill)
     tasks = SimpleNamespace(map_ready=True, engine=engine, last_mapping_at=3.,
                              state='active', mode='navigate', result=None, last_timings={})
@@ -48,7 +49,19 @@ def test_online_layers_and_push_state_are_detached_from_display():
     engine.path[0] = (9., 9., .3)
     assert scene['observed'].any() and scene['tracked'].any()
     assert scene['path'][0] == [.4, 0., .3]
-    assert render_map(scene).shape == (720, 1280, 3)
+    assert scene['display_nose_offset_m'] == .34
+    from deploy.visualization.simulation_view import map_renderer
+    for offset in (.34, .50):
+        sample = scene.copy()
+        if offset == .50:
+            del sample['display_nose_offset_m']  # Old recordings used the navigation footprint.
+        renderer, runtime, obs = map_renderer(sample)
+        raster = renderer._render_map(0, scene['phase'], obs, runtime)
+        assert raster.shape == (720, 1280, 3)
+        for x in (.34, .50):
+            col, row = renderer._world_to_pixel((x, .18), runtime.map)
+            blue, _, red = raster[row, col].astype(int)
+            assert (blue-red > 80) == (x == offset)
     scene['voxel_count'] = 3
     payload = map_payload(scene)
     np.testing.assert_allclose(payload['box_outlines'][box.id], [[1., .45], [1., .75], [.6, .75], [.6, .45]])

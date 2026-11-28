@@ -10,9 +10,14 @@ from deploy.robot.safety import check_observation
 
 def wait_message(decision):
     reason = (decision or {}).get('reason', 'no_executable_route')
+    if reason == 'all_push_faces_rejected':
+        return '当前已知箱面的推前复核均未通过，导航等待。重新下达导航任务可重试这些面。'
     detail = {
+        'waiting_for_field_scan': '正在等场内有效雷达回波',
         'waiting_for_registered_box': '正在等点云确认登记箱位',
         'waiting_for_motion_feedback': '正在等机身速度反馈',
+        'reselect_push_face': '推前复核未通过，正在从剩余箱面重新选择',
+        'no_reachable_push_face': '当前地图上没有找到既能安全推完行程、又能让出去目标路线的可达箱面',
         'no_reachable_upper_short_end': '当前地图没有可达的上方短端面站位',
         'waiting_for_post_push_scan': '推后已请求停车，等待停稳后的点云',
         'waiting_for_post_push_exit': '正在用新点云寻找安全脱离膨胀区的方向',
@@ -431,10 +436,17 @@ class NavigationController:
                         print('推箱已停稳，导航正在用新点云检查通往原目标的路线。', flush=True)
                     if kind == 'post_push_buffer_recovery':
                         print('Go2 在障碍膨胀区内，正在调整站位。', flush=True)
+                    if kind == 'push_face_rejected':
+                        dx, dy = event['push_direction']
+                        print(f"箱号 {event['box_id']} 推前复核未通过（{event['reason']}），"
+                              f"排除推向 ({dx:.2f}, {dy:.2f}) 的箱面，重新选面。", flush=True)
                     if kind == 'decision':
                         if event.get('decision_kind') == 'push':
                             detail = (f"从地图上方推短端面，计划向下推 {event['push_distance_m']*100:.0f} cm。"
                                       if event.get('reason') == 'upper_short_end_approach' else '')
+                            if event.get('reason') == 'automatic_face_approach':
+                                dx, dy = event['push_direction']
+                                detail = f"自动选面，推向 ({dx:.2f}, {dy:.2f})，机身计划推进 {event['push_distance_m']*100:.1f} cm。"
                             print(f"导航选中推箱，箱号 {event['box_id']}。{detail}", flush=True)
                         reason = event.get('reason') if event.get('decision_kind') == 'wait' else None
                         if reason and reason != self.wait_reason:

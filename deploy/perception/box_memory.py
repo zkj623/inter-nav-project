@@ -89,7 +89,7 @@ class BoxGuidancePose:
         if length > self.position_tolerance:
             if np.all(delta[-3:] @ (shift/length) > self.position_tolerance):
                 return True
-        aligned = np.abs(self.axes @ plan.direction) >= math.cos(self.angle_tolerance)
+        aligned = np.abs(self.axes @ getattr(plan, 'long_axis', plan.direction)) >= math.cos(self.angle_tolerance)
         agreeing = np.abs(self.axes @ self.axes[self.index]) >= math.cos(self.angle_tolerance)
         return not aligned[self.index] and np.all(~aligned[-3:] & agreeing[-3:])
 

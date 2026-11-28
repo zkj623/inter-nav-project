@@ -43,15 +43,16 @@ class WorldBoundary:
             axes.append(tuple(limits))
         return cls(*axes)
 
-    def grid_config(self, mapping):
+    def grid_config(self, mapping, *, exterior_margin_m=0.):
         # Keep a closed one-cell wall and a guard cell in the planning grid.
         r = mapping.grid_resolution
+        padding = 2 + math.ceil(exterior_margin_m / r)
         def padded(limits):
             lo, hi = limits
-            cells = math.ceil(round((hi-lo)/r, 12)) + 4
+            cells = math.ceil(round((hi-lo)/r, 12)) + 2*padding
             # Exact grid lines such as x=1 must land in the same cell as
             # x=1.001 despite subtraction and integer truncation by the planner.
-            start = lo - (2 + 1e-12)*r
+            start = lo - (padding + 1e-12)*r
             end = start + cells*r
             # OccupancyGridMap uses ceil. Avoid an extra column from roundoff.
             if (end-start)/r > cells:

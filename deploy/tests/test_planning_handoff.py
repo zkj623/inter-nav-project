@@ -309,3 +309,35 @@ def test_replacing_active_goal_waits_for_stop_before_new_plan(run, monkeypatch):
     run.controller.step(current, run.clock[0])
     assert len(starts) == 1 and run.tasks.engine.goal[:2] == (.8, 0.)
     assert run.motion.arm_count == 2 and not run.motion.commands
+
+
+def test_missing_field_scan_keeps_goal_disarmed_then_resumes_on_fresh_scans(run):
+    run.controller.operate('o', None, run.sample(), run.clock[0])
+    run.feedback('stopped', 'o')
+
+    def empty_scan():
+        snapshot = run.sample(.1)
+        sensors = snapshot.observation['sensors'].copy()
+        lidar = sensors['lidar']
+        sensors['lidar'] = dict(lidar, pointcloud=lidar['pointcloud'][:0])
+        return replace(snapshot, observation=dict(snapshot.observation, sensors=sensors))
+
+    run.controller.operate('navigate', '1,0', empty_scan(), run.clock[0])
+    hold = run.controller.planning_hold
+    assert hold['reason'] == 'waiting_for_field_scan'
+    run.feedback('stopped', hold['token'])
+    run.controller.step(empty_scan(), run.clock[0])
+    assert hold['prepared_at'] is None and run.motion.arm_count == 1
+    for _ in range(2):
+        run.controller.step(run.sample(.1), run.clock[0])
+    engine = run.tasks.engine
+    assert run.controller.planning_hold is None and run.motion.arm_count == 2
+    assert run.tasks.state == 'active' and engine.goal[:2] == (1., 0.)
+
+    # Once armed, a sparse scan requests zero without discarding the route.
+    run.controller.step(empty_scan(), run.clock[0])
+    assert not any(run.motion.commands[-1][0])
+    assert engine.decision['reason'] == 'waiting_for_field_scan'
+    run.controller.step(run.sample(.1), run.clock[0])
+    assert not engine.waiting_for_field_scan and run.tasks.state == 'active'
+    assert engine.goal[:2] == (1., 0.) and run.motion.arm_count == 2

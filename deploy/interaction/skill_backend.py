@@ -20,32 +20,33 @@ def wrap(value):
     return (value+math.pi)%(2*math.pi)-math.pi
 
 
-def create_push_skill(permission, plan, start, goal, profile, *, config=None, upper_short_end=False):
+def create_push_skill(permission, plan, start, goal, profile, *, config=None, upper_short_end=False, timed_face_push=False):
     settings = replace(config or PushAsideConfig(), **profile.skill_overrides())
     from .first_push import (FirstPushSkill, TRIAL_YAW_TOLERANCE, SHORT_END_YAW_TOLERANCE,
                              SHORT_END_SETTLED_YAW_TOLERANCE, SHORT_END_MAX_STANDOFF_M, SHORT_END_LANDING_OFFSET_M)
     skill = PushAsideSkill
+    timed_face_push = (timed_face_push or upper_short_end) and profile.mode == 'first_push'
     if profile.mode == 'first_push':
         skill = FirstPushSkill
         settings = replace(settings, yaw_tolerance=TRIAL_YAW_TOLERANCE, heading_drift_tolerance=math.radians(18.),
                            preparation_face_offset_max=.20, pushing_face_offset_max=.20, push_lateral_deadband=.10)
-        if upper_short_end:
+        if timed_face_push:
             settings = replace(settings, alignment_yaw_tolerance=SHORT_END_YAW_TOLERANCE,
                                yaw_tolerance=SHORT_END_SETTLED_YAW_TOLERANCE, alignment_tolerance=.03,
                                max_engage_standoff=SHORT_END_MAX_STANDOFF_M,
                                preparation_face_offset_max=SHORT_END_LANDING_OFFSET_M, pushing_face_offset_max=.095,
                                contact_face_margin=.02, push_lateral_deadband=.03,
                                brake_before_push_target=False)
-    backend = SdkPushBackend(profile, upper_short_end=upper_short_end and profile.mode == 'first_push')
+    backend = SdkPushBackend(profile, timed_face_push=timed_face_push)
     return skill(permission, plan, start, goal, settings, backend=backend)
 
 
 class SdkPushBackend(PushAsideBackend):
     policy_translation_steps = False
 
-    def __init__(self, profile, *, upper_short_end=False):
+    def __init__(self, profile, *, upper_short_end=False, timed_face_push=False):
         self.profile = profile
-        self.upper_short_end = upper_short_end
+        self.timed_face_push = timed_face_push or upper_short_end
         self.centering = None
         self.centering_detail = {}
         self.nose_offset_m = profile.nose_offset_m
@@ -70,10 +71,10 @@ class SdkPushBackend(PushAsideBackend):
     def heading_trim(self, skill):
         return SdkHeadingTrim(skill.push_heading, min(skill.config.alignment_yaw_tolerance, skill.config.yaw_tolerance),
                               acceptance_tolerance=skill.config.yaw_tolerance, profile=self.profile,
-                              compensate_rebound=self.upper_short_end)
+                              compensate_rebound=self.timed_face_push)
 
     def new_turn(self, skill, ctx):
-        if self.upper_short_end:
+        if self.timed_face_push:
             return self.heading_trim(skill)
         return SdkHeadingTrim(skill.push_heading, skill.config.yaw_tolerance, profile=self.profile)
 
@@ -105,7 +106,7 @@ class SdkPushBackend(PushAsideBackend):
             if not math.isfinite(gap):
                 return False
             margin = skill.config.contact_face_margin
-            straight = self.upper_short_end
+            straight = self.timed_face_push
             if straight:
                 if abs(skill.landing_offset(ctx, forward, gap)) > maximum + 1e-9:
                     return False
@@ -158,7 +159,7 @@ class SdkPushBackend(PushAsideBackend):
             return result
         if skill.state == 'align_lateral' and self.centering_detail.get('stalled'):
             return skill._fail(ctx, 'lid_centering_no_progress')
-        if (self.upper_short_end and skill.state == 'align_lateral' and self.centering_detail.get('limited_by_sweep')
+        if (self.timed_face_push and skill.state == 'align_lateral' and self.centering_detail.get('limited_by_sweep')
                 and not self.centering_detail['braking']
                 and self.centering_detail['measured_closing_mps'] < self.profile.min_translation_mps
                 and np.linalg.norm(result.velocity[:2]) < self.profile.min_translation_mps):
@@ -249,7 +250,7 @@ class SdkPushBackend(PushAsideBackend):
     def translate(self, skill, ctx, target, axis, speed, tolerance):
         delta = np.asarray(target) - np.asarray(ctx.position[:2])
         error = float(np.dot(delta, axis))
-        if self.upper_short_end and skill.state == 'align_lateral':
+        if self.timed_face_push and skill.state == 'align_lateral':
             # Keep the checked translation continuous through small yaw fluctuations.
             # The skill checks large drift in motion and verifies yaw again at rest.
             center = ctx.position[:2] + axis*error
@@ -327,7 +328,7 @@ class SdkPushBackend(PushAsideBackend):
         boxes=[box for box in ctx.boxes if not (contact and box.id==ctx.box.id)]
         measured=np.asarray(ctx.limiter.measured,float)
         if measured.shape!=(3,) or not np.isfinite(measured).all():return False
-        command_acceleration = (ctx.limiter.linear_acceleration if self.upper_short_end and not contact
+        command_acceleration = (ctx.limiter.linear_acceleration if self.timed_face_push and not contact
                                 and skill.state == 'align_lateral' else None)
         for velocity, acceleration in ((command, command_acceleration), (measured, None)):
             horizon=self.profile.motion_horizon(velocity, linear_acceleration=acceleration)
@@ -338,7 +339,7 @@ class SdkPushBackend(PushAsideBackend):
                 target=np.asarray(ctx.position[:2])+np.array([[c,-s],[s,c]])@velocity[:2]*horizon
                 safe=body_translation_recovery_clear(ctx.planner,boxes,ctx.position,ctx.heading,target,require_clear_end=False)
             if not safe:return False
-        if contact and (not self.upper_short_end or skill.box_within_stopping_reach(ctx, command)):
+        if contact and (not self.timed_face_push or skill.box_within_stopping_reach(ctx, command)):
             # Reserve the box's complete swept extent, including measured
             # stopping travel. Recompute on every scan/command, not just plan.
             c,s=math.cos(ctx.heading),math.sin(ctx.heading)

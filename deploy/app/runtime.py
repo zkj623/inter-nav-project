@@ -277,6 +277,8 @@ def run_live(args, config):
             if push_enabled and tasks.engine.first_push:
                 if config['interaction'].get('first_push_face') == 'upper_short_end':
                     print('首次推箱已启用。从地图上方接近短端面，向下推，停稳复测后检查原目标通路。', flush=True)
+                elif tasks.engine.auto_face:
+                    print('首次推箱已启用。自动选择箱面；走完机头间隙后，机身计划推进 53.3 厘米。', flush=True)
                 else:
                     print('首次推箱已启用。点导航时优先接近已登记箱体，目标推移 10 厘米，停稳后复测。', flush=True)
             else:

@@ -43,32 +43,62 @@ def test_non_target_return_is_not_hidden_by_whole_box_aabb():
     assert checker.diagnostic['reason'] == 'non_target_body_sweep_blocked'
 
 
+def test_all_rejected_faces_wait_and_persist_only_for_current_task():
+    from deploy.app.config import ROOT, load
+    from deploy.app.tasks import Tasks
+    from deploy.tests.test_online_navigation import observation
+
+    cfg = load(interaction_path=ROOT/'configs/box_30x80x30_auto_face.yaml')
+    tasks = Tasks(cfg['navigation'], interaction=cfg['interaction'])
+    goal = (4., 0., .31)
+    tasks.start('navigate', goal, 1.)
+    engine = tasks.engine
+    box_id, = engine.pushable_ids
+    directions = [(1., 0.), (0., 1.), (-1., 0.), (0., -1.)]
+    engine.rejected_push_faces[box_id] = directions.copy()
+    tasks.pause()
+    tasks.resume(2.)
+    assert engine.rejected_push_faces[box_id] == directions
+    engine.observe(observation(), 2.)
+    engine.trial_targets = {box_id}
+    for now in (2., 4.):
+        engine.now = now
+        np.testing.assert_array_equal(engine._decide(None), np.zeros(3))
+        assert engine.decision['reason'] == 'all_push_faces_rejected'
+        assert engine.status == 'running' and not engine.execution.active and not engine.trial_used
+    tasks.start('navigate', goal, 5.)
+    assert not engine.rejected_push_faces
+
+
+@pytest.mark.parametrize('face_mode', ['upper_short_end', 'auto'])
 @pytest.mark.parametrize('stop', ['timer', 'travel', 'gap_timeout'])
-def test_aligned_field_push_times_the_stroke_from_odometric_face_arrival(stop):
+def test_aligned_field_push_times_the_stroke_from_odometric_face_arrival(stop, face_mode):
     from deploy.app.config import ROOT, load
     from deploy.interaction.first_push import SHORT_END_PUSH_DISTANCE_M
     from deploy.interaction.skill_backend import create_push_skill
     from deploy.tests.test_sdk_contact_profile import permission
 
-    cfg = load(interaction_path=ROOT/'configs/box_30x80x30.yaml')
+    preset = 'box_30x80x30_auto_face.yaml' if face_mode == 'auto' else 'box_30x80x30.yaml'
+    cfg = load(interaction_path=ROOT/'configs'/preset)
     engine = NavigationEngine(cfg['navigation'], cfg['interaction'])
     # Launch pose, face range, and time of the braking-grid veto in run 534084f4.
     box = BoxState('box-1', (1.295, -.825), (.30, .80, .30), local_dimensions=(.30, .80, .30),
                    orientation=(1., 0., 0., 0.), center_z=.15)
     plan = SimpleNamespace(box_id=box.id, direction=(0., -1.), push_distance=SHORT_END_PUSH_DISTANCE_M)
     engine.skill = create_push_skill(permission(object_id=box.id), plan, (0., 0.), (4., 0.),
-                                     engine.contact_profile, upper_short_end=True)
+                                     engine.contact_profile, upper_short_end=face_mode == 'upper_short_end',
+                                     timed_face_push=True)
     engine.skill.contact_started = engine.now = 10.
     engine.position = np.array([1.295, .278, .32])
     engine.heading = -np.pi/2
     engine.linear = engine.angular = np.zeros(3)
     engine.tilt = 0.
     engine.layers.decision = {}
-    ctx = SimpleNamespace(box=box, position=engine.position, heading=engine.heading,
+    ctx = SimpleNamespace(box=box, boxes=[box], position=engine.position, heading=engine.heading,
                           orientation=(np.sqrt(.5), 0., 0., -np.sqrt(.5)))
-    engine.execution.start(box.id, engine.now)
     engine.observation = {'lidar_captured_at': engine.now}
     engine.planner.free[:] = engine.planner.box_free[:] = False
+    engine.layers.local_dynamic[:] = True
     engine.contact_collision.evidence.static_occupied[:] = True
     engine.contact_collision.points = np.array([[1.30, -.24, .17]])
     np.testing.assert_allclose(engine._start_timed_push(ctx, .38), [.35, 0., 0.])
@@ -343,6 +373,62 @@ def test_box_cannot_be_pushed_over_field_wall_even_with_measured_free_cells():
     assert checker.diagnostic['reason'] == 'box_sweep_outside_world_boundary'
 
 
+def test_auto_face_can_park_over_virtual_line_but_checks_real_exterior_returns():
+    from deploy.app.config import ROOT, load
+    from deploy.interaction.first_push import SHORT_END_PUSH_DISTANCE_M, trial_sweep_clear
+    cfg = load(interaction_path=ROOT/'configs/box_30x80x30_auto_face.yaml')
+    engine = NavigationEngine(cfg['navigation'], cfg['interaction'])
+    planner, layers = engine.planner, engine.layers
+    fence = engine.world_boundary.y[0]
+    dims = (.30, .80, .30)
+    box = BoxState('box-1', (1.5, fence+.46), dims, local_dimensions=dims, orientation=(1., 0., 0., 0.))
+    direction = np.array([0., -1.])
+    destination = np.asarray(box.xy) + direction*SHORT_END_PUSH_DISTANCE_M
+    assert not engine.world_boundary.contains(destination)
+    exterior = planner.cell((1.5, fence-.5))
+    assert not planner.free[exterior]
+
+    def clear():
+        return trial_sweep_clear(planner, box, direction, [box], planner.free, engine.contact_profile,
+                                 SHORT_END_PUSH_DISTANCE_M, speed=.50)
+
+    assert clear()
+    layers.scan_masks(np.array([1.5, fence+.8, .18]), np.array([[1.5, fence-.5, .18]]),
+                      max_range=5., min_range=.05)
+    assert layers.field_survey.measured_obstacles[exterior]
+    assert not clear()
+
+
+@pytest.mark.parametrize('depth, center_clearance, robot_fits', [(.80, .46, True), (.30, .19, False)])
+def test_auto_push_preflight_applies_field_line_to_robot_at_end_of_stroke(depth, center_clearance, robot_fits):
+    from deploy.app.config import ROOT, load
+    from deploy.interaction.first_push import SHORT_END_PUSH_DISTANCE_M
+    from deploy.interaction.skill_backend import create_push_skill
+    from deploy.tests.test_sdk_contact_profile import permission
+
+    cfg = load(interaction_path=ROOT/'configs/box_30x80x30_auto_face.yaml')
+    engine = NavigationEngine(cfg['navigation'], cfg['interaction'])
+    dims = (1.1-depth, depth, .30)
+    box = BoxState('box-1', (1.5, engine.world_boundary.y[0]+center_clearance), dims,
+                   local_dimensions=dims, orientation=(1., 0., 0., 0.), center_z=.15)
+    plan = SimpleNamespace(box_id=box.id, direction=(0., -1.), push_distance=SHORT_END_PUSH_DISTANCE_M)
+    engine.skill = create_push_skill(permission(object_id=box.id), plan, (0., 0.), (4., 0.),
+                                     engine.contact_profile, timed_face_push=True)
+    engine.skill.contact_started = engine.now = 10.
+    engine.heading, engine.tilt = -np.pi/2, 0.
+    engine.position = np.array([1.5, box.xy[1]+depth/2+engine.contact_profile.nose_offset_m+.30, .32])
+    engine.layers.decision = {}
+    engine.observation = {'lidar_captured_at': engine.now}
+    ctx = SimpleNamespace(box=box, boxes=[box], position=engine.position, heading=engine.heading,
+                          orientation=(np.sqrt(.5), 0., 0., -np.sqrt(.5)))
+    velocity = engine._start_timed_push(ctx, .38)
+    if robot_fits:
+        assert engine.phase == 'timed_push' and velocity[0] > 0.
+    else:
+        np.testing.assert_array_equal(velocity, np.zeros(3))
+        assert not engine.execution.active and engine.events[-1]['reason'] == 'robot_push_outside_world_boundary'
+
+
 def test_retreat_uses_translation_stopping_response(monkeypatch):
     from deploy.interaction import collision
     _, checker, ctx = fixture()
@@ -429,3 +515,63 @@ def test_field_box_can_slide_into_unknown_but_stops_for_obstacles(obstacle):
     assert not engine._check_contact_motion(command, ctx)
     assert checker.diagnostic['reason'] == 'box_sweep_obstacle'
     assert tuple(checker.diagnostic['cell_rc']) == planner.cell(checker.diagnostic['cell_xy_m'])
+
+
+def test_auto_face_treats_unknown_as_a_possible_continuation_only():
+    from deploy.app.config import ROOT, load
+
+    cfg = load(interaction_path=ROOT/'configs/box_30x80x30_auto_face.yaml')
+    engine = NavigationEngine(cfg['navigation'], cfg['interaction'])
+    layers, planner = engine.layers, engine.planner
+    dims = (.30, .80, .30)
+    box = BoxState('B1', (1.3, -.65), dims, local_dimensions=dims, orientation=(1., 0., 0., 0.))
+    start, goal = (0., 0.), (4., 0.)
+    stripe = planner.cell((2.2, 0.))[1]
+    layers.observed[:] |= layers.interior
+    layers.observed[:, stripe:] = False
+    layers.global_observed[:] = layers.observed
+    layers._bind_local()
+    local = planner.free.copy()
+    with layers.global_planning():
+        def select():
+            return planner.first_contact_plan(start, [box], {box.id}, planner.box_free & local, engine.contact_profile,
+                                              goal=goal, auto_push_speed=.5, prediction=layers.predicted_route_planner())
+
+        known = planner.planning_observed.copy()
+        assert not planner.path(start, goal, [])
+        plan = select()
+        assert plan is not None and plan.direction[1] < -.99
+        assert all(known[planner.cell(xy)] for xy in plan.approach_path)
+        np.testing.assert_array_equal(planner.planning_observed, known)
+        assert not planner.path(start, goal, [])
+        # A measured wall filling the field still disconnects the goal.
+        layers.static_occupied[:, stripe] = True
+        assert select() is None
+
+
+def test_auto_face_explores_observed_floor_after_push_until_goal_route_opens():
+    from deploy.app.config import ROOT, load
+    from deploy.tests.test_online_navigation import observation
+
+    cfg = load(interaction_path=ROOT/'configs/box_30x80x30_auto_face.yaml')
+    engine = NavigationEngine(cfg['navigation'], cfg['interaction'])
+    goal = (4., 0., .32)
+    engine.set_goal(goal, 1.)
+    engine.observe(observation(points=[[.3, 0., .04]]), 1.)
+    engine.trial_used = True
+    engine.trial_report = {'reason': 'timed_push_released'}
+    layers, planner = engine.layers, engine.planner
+    interior = layers.interior.copy()
+    interior[:, planner.cell((2.2, 0.))[1]:] = False
+    layers.observed[:] |= interior
+    layers.refresh_global(reason='partial_survey')
+    layers._bind_local()
+    engine._decide(None)
+    assert engine.decision['kind'] == 'explore' and engine.goal_kind == 'frontier'
+    assert layers.observed[planner.cell(engine.endpoint)] and engine.goal == goal
+
+    layers.observed[:] |= layers.interior
+    layers.refresh_global(reason='survey_extended')
+    layers._bind_local()
+    engine._decide(None)
+    assert engine.decision['reason'] == 'post_push_route_observed' and engine.endpoint == goal[:2]

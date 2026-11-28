@@ -45,13 +45,11 @@ def _rotation(yaw):
 
 
 def refit_box_top(points, dimensions, origin, config, previous, recent=()):
-    """Track the registered rectangle from its lid and the near short top edge."""
+    """Track the registered rectangle from its lid and the near top edge."""
     dims = np.asarray(dimensions)
     height, half = dims[2], dims[:2]/2
-    long = int(np.argmax(half))
-    across = 1-long
     tol = config['residual_threshold_m']
-    if origin[2] <= height+tol or half[long]-half[across] <= tol:
+    if origin[2] <= height+tol or np.ptp(half) <= tol:
         return None
     anchor = np.asarray(previous.center[:2])
     axes = _rotation(previous.yaw_rad)
@@ -60,9 +58,13 @@ def refit_box_top(points, dimensions, origin, config, previous, recent=()):
         points = np.concatenate((points, *recent))
     local = (points[:, :2]-anchor) @ axes
     sensor = (origin[:2]-anchor) @ axes
-    if abs(sensor[long]) <= half[long]+tol:
+    # In auto mode the outward distance chooses the near rim. Its returns
+    # must still span that rim and the current scan must see the lid interior.
+    normal_axis = int(np.argmax(abs(sensor) - half) if config.get('any_face_top') else np.argmax(half))
+    across = 1-normal_axis
+    if abs(sensor[normal_axis]) <= half[normal_axis]+tol:
         return None
-    sign = np.sign(sensor[long])
+    sign = np.sign(sensor[normal_axis])
     z = points[:, 2]
     near = (abs(local) <= half+config['isolation_margin_m']+.05).all(axis=1)
     band = near & (abs(z-height) <= min(config['height_tolerance_m'], 1.75*tol))
@@ -84,7 +86,7 @@ def refit_box_top(points, dimensions, origin, config, previous, recent=()):
     if np.count_nonzero(inside & (z > height+config['height_tolerance_m'])) >= minimum:
         return None
     span = np.ptp(uv, axis=0)
-    if span[across] < .60*dims[across] or span[long] < .35*dims[long]:
+    if span[across] < .60*dims[across] or span[normal_axis] < .35*dims[normal_axis]:
         return None
     # Reject lines, tilted surfaces and the upper rims of vertical walls.
     inner = (abs(uv) < half-tol).all(axis=1)
@@ -95,15 +97,15 @@ def refit_box_top(points, dimensions, origin, config, previous, recent=()):
         return None
     # Measure the near rim on both halves of the lid. The registered depth
     # supplies the far edge when the grazing beam misses it.
-    along = sign*uv[:, long]
+    along = sign*uv[:, normal_axis]
     leading = np.quantile(along, .98)
-    if abs(leading-half[long]) > config['extent_tolerance_m']:
+    if abs(leading-half[normal_axis]) > config['extent_tolerance_m']:
         return None
     rim = along >= leading-tol
     current = ids < current_count
     if current.sum() < 4 or not (rim & current).any() or not (inner & current).any():
         return None
-    if np.ptp(uv[current, across]) < .40*dims[across] or np.ptp(uv[current, long]) < .25*dims[long]:
+    if np.ptp(uv[current, across]) < .40*dims[across] or np.ptp(uv[current, normal_axis]) < .25*dims[normal_axis]:
         return None
     rim_points = uv[rim]
     low, high = rim_points[:, across].min(), rim_points[:, across].max()
@@ -113,11 +115,11 @@ def refit_box_top(points, dimensions, origin, config, previous, recent=()):
     for group in (rim_points[:, across] <= low+.15*(high-low),
                   rim_points[:, across] >= high-.15*(high-low)):
         part = rim_points[group]
-        ends.append(part[np.argmax(sign*part[:, long])])
+        ends.append(part[np.argmax(sign*part[:, normal_axis])])
     edge = ends[1]-ends[0]
     if edge[across] < .36*dims[across]:
         return None
-    angle = math.atan2(edge[long], edge[across]) * (1 if across == 0 else -1)
+    angle = math.atan2(edge[normal_axis], edge[across]) * (1 if across == 0 else -1)
     if abs(angle) > math.radians(2*config['association_yaw_margin_deg']):
         return None
     yaw = previous.yaw_rad + .25*angle
@@ -127,11 +129,11 @@ def refit_box_top(points, dimensions, origin, config, previous, recent=()):
     offset = bounds.mean(axis=0)
     # Old points stabilize the edge angle and width. Measure progress along
     # the push axis from the current scan, including when the box is moving.
-    offset[long] = sign*(np.quantile(sign*projected[rim & current, long], .9)-half[long])
+    offset[normal_axis] = sign*(np.quantile(sign*projected[rim & current, normal_axis], .9)-half[normal_axis])
     if np.linalg.norm(offset) > config['extent_tolerance_m']:
         return None
     center = anchor + refined @ offset
-    end = ('+' if sign > 0 else '-')+'xy'[long]
+    end = ('+' if sign > 0 else '-')+'xy'[normal_axis]
     return BoxFit((*center, height/2), yaw, tuple(dims), float(np.std(z[ids])), ('top',),
                   tuple(span), int(current.sum()), config['geometry_margin_m'], tuple(map(int, ids[current])),
                   geometry_source='current_lidar_registered_top', top_end=end)

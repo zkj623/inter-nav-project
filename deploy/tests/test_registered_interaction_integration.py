@@ -630,21 +630,26 @@ def test_first_push_dispatch_review_and_same_goal_replan():
         provider.close()
 
 
-@pytest.mark.parametrize('from_memory,initial_error_deg,upper_end',
-                         [(False, None, False), (True, None, False), (True, 12., False),
-                          (True, None, True), (True, 4.8, True), (True, 6.7, True)],
+@pytest.mark.parametrize('from_memory,initial_error_deg,face_mode',
+                         [(False, None, None), (True, None, None), (True, 12., None),
+                          (True, None, 'upper_short_end'), (True, 4.8, 'upper_short_end'),
+                          (True, 6.7, 'upper_short_end'), (True, 4.8, 'auto'), (True, 4.8, 'auto_retry')],
                          ids=['visible_face', 'remembered_face', 'imperfect_contact_pose', 'upper_short_end',
-                              'lid_only', 'lid_only_settled_at_6_7_deg'])
-def test_first_push_in_open_room_from_navigation_to_measured_result(from_memory, initial_error_deg, upper_end, monkeypatch):
+                              'lid_only', 'lid_only_settled_at_6_7_deg', 'auto_long_face', 'auto_wait_after_only_clear_side_vetoed'])
+def test_first_push_in_open_room_from_navigation_to_measured_result(from_memory, initial_error_deg, face_mode, monkeypatch):
     from deploy.app.config import ROOT, load
     from deploy.interaction.config import tracking_config
     from deploy.interaction.first_push import TRIAL_DISTANCE_M, TRIAL_YAW_TOLERANCE
     from deploy.perception.box_memory import BoxMapMemory
     from deploy.tests.test_contact_guard import run_worker
     from deploy.tests.test_motion_protocol import ReplyPipe, protocol_client
-    config = load(interaction_path=ROOT/'configs/box_30x80x30.yaml')
+    upper_end = face_mode == 'upper_short_end'
+    timed = face_mode is not None
+    retry = face_mode == 'auto_retry'
+    preset = 'box_30x80x30_auto_face.yaml' if face_mode == 'auto' or retry else 'box_30x80x30.yaml'
+    config = load(interaction_path=ROOT/'configs'/preset)
     field = config['interaction']
-    if not upper_end:
+    if not timed:
         field = dict(field, first_push_face=None)
         config['runtime']['control'].pop('field_push_launch_speeds')
         config['runtime']['control'].pop('timed_push_speeds')
@@ -652,6 +657,17 @@ def test_first_push_in_open_room_from_navigation_to_measured_result(from_memory,
     mount = config['robot']['lidar_origin_offset_base_m']
     memory = BoxMapMemory()
     engine = NavigationEngine(nav, field, box_memory=memory)
+    if retry:
+        # Reject the robot's full straight stroke at the field boundary.
+        boundary = type(engine.world_boundary)
+        contains_motion = boundary.contains_motion
+
+        def boundary_check(self, xy, yaw, velocity, horizon, corners):
+            if tuple(velocity) == (1., 0., 0.) and horizon >= .53:
+                return False
+            return contains_motion(self, xy, yaw, velocity, horizon, corners)
+
+        monkeypatch.setattr(boundary, 'contains_motion', boundary_check)
     provider = RegisteredBoxPerception(tracking_config(field), synchronous=True, box_memory=memory,
                                        world_boundary=engine.world_boundary)
     # Prior scans surveyed the empty floor. Live synthetic returns below describe
@@ -667,15 +683,15 @@ def test_first_push_in_open_room_from_navigation_to_measured_result(from_memory,
     center = np.array([1.1, -.55])
     depth, width = (.80, .30) if upper_end else (.30, .80)
     # The fixture describes contact in forward/left coordinates. In the
-    # upper-end case fixture-forward maps to world -Y, toward the short end.
-    frame = np.array([[0., 1.], [-1., 0.]]) if upper_end else np.eye(2)
-    offset = np.array([2., .24]) if upper_end else np.zeros(2)
+    # timed cases forward maps to world -Y, across the route to the goal.
+    frame = np.array([[0., 1.], [-1., 0.]]) if timed else np.eye(2)
+    offset = np.array([2., .24]) if timed else np.zeros(2)
     initial = center.copy()
     # The field failure started at the standing point, still 67° off the face.
     pose = np.array([center[0]-depth/2-.72 if from_memory else .05, -.59, .311])
     yaw = np.deg2rad(-67.) if from_memory else 0.
     near_aligned = initial_error_deg is not None
-    lid_only = upper_end and near_aligned
+    lid_only = timed and near_aligned
     if near_aligned:
         pose[1] = center[1] + (.12 if lid_only else .05)
         yaw = np.deg2rad(initial_error_deg)
@@ -741,7 +757,7 @@ def test_first_push_in_open_room_from_navigation_to_measured_result(from_memory,
             scan_pose[:2] = offset + frame @ scan_pose[:2]
             origin[:2] = offset + frame @ origin[:2]
             points[:, :2] = offset + points[:, :2] @ frame.T
-            world_yaw = yaw - (np.pi/2 if upper_end else 0.)
+            world_yaw = yaw - (np.pi/2 if timed else 0.)
             obs = dict(position=scan_pose, orientation=np.array([np.cos(world_yaw/2), 0., 0., np.sin(world_yaw/2)]),
                        velocity=velocity.copy(), body_linear_velocity=np.array([*velocity[:2], 0.]),
                        body_angular_velocity=np.array([0., 0., velocity[2]]), lidar_captured_at=now,
@@ -760,9 +776,9 @@ def test_first_push_in_open_room_from_navigation_to_measured_result(from_memory,
                 engine.observe(obs, now, boxes)
                 continue
             if i == 3:
-                engine.set_goal((4., 0., .31) if upper_end else (2.4, -.75, .31), now)
+                engine.set_goal((4., 0., .31) if timed else (2.4, -.75, .31), now)
             previous_phase = engine.phase
-            if upper_end and previous_phase == 'timed_push' and not engine.trial_used:
+            if timed and previous_phase == 'timed_push' and not engine.trial_used:
                 # Deliver the previous tick's successful SDK move. Playback of the
                 # actual worker below independently checks this same command.
                 lease = engine.interaction_command
@@ -771,7 +787,19 @@ def test_first_push_in_open_room_from_navigation_to_measured_result(from_memory,
             if initial_error_deg == 6.7 and previous_phase in ('timed_push', 'push_settle'):
                 boxes, recognition = [], None
             velocity = engine.update(obs, now, boxes, recognition)
-            if upper_end and return_target is None and engine.phase == 'timed_push':
+            if retry and engine.rejected_push_faces:
+                assert engine.status == 'running' and engine.result is None
+                assert not engine.execution.active and not engine.trial_used and engine.interaction_command is None
+                if previous_phase == 'skill':
+                    np.testing.assert_array_equal(velocity, np.zeros(3))
+                    assert engine.phase == 'decide' and engine.skill is None
+                    assert engine.events[-1]['reason'] == 'robot_push_outside_world_boundary'
+                if engine.decision.get('reason') == 'no_reachable_push_face':
+                    # This room's other three pushes cannot open the route to (4, 0).
+                    assert engine.box_approach is None and engine.goal[:2] == (4., 0.)
+                    np.testing.assert_array_equal(velocity, np.zeros(3))
+                    return
+            if timed and return_target is None and engine.phase == 'timed_push':
                 return_target = engine.position[:2].copy()
             if lid_only and engage_frame is None and engine.execution.active:
                 engage_frame = (i, now, boxes, recognition.freeze())
@@ -832,10 +860,11 @@ def test_first_push_in_open_room_from_navigation_to_measured_result(from_memory,
             # Ideal non-slip forward contact only moves the box once the nose reaches it.
             if engine.execution.active and abs(pose[1]-center[1]) < width/2:
                 center[0] = max(center[0], pose[0] + .34*np.cos(yaw) + depth/2)
+        assert not retry, (engine.result, engine.phase, engine.decision, engine.rejected_push_faces)
         assert engine.trial_report, (engine.result, engine.phase, engine.decision, pose, center)
-        expected = .40 * 4 / 3 if upper_end else TRIAL_DISTANCE_M
+        expected = .40 * 4 / 3 if timed else TRIAL_DISTANCE_M
         assert pinned.push_distance == pytest.approx(expected)
-        if upper_end:
+        if timed:
             assert engine.phase == 'post_push_reobserve' and engine.trial_used
             assert engine.trial_report['reason'] == 'timed_push_released'
             assert engine.trial_report['first_push']['displacement_m'] is None
@@ -862,7 +891,7 @@ def test_first_push_in_open_room_from_navigation_to_measured_result(from_memory,
         assert stop_at is not None
         sequence = [(packets[0][0], dict(op='arm')), *packets,
                     (stop_at, dict(op='stop', reason='interaction_completed'))]
-        if upper_end:
+        if timed:
             nav_start = now + .12
             sequence.append((nav_start, dict(op='arm')))
             lidar = obs['sensors']['lidar']
@@ -889,7 +918,7 @@ def test_first_push_in_open_room_from_navigation_to_measured_result(from_memory,
             assert engine.decision['reason'] == 'post_push_route_observed'
             assert engine.phase == 'navigate' and np.linalg.norm(command[:2]) > .01
         reports, moves = run_worker(monkeypatch, sequence, worker_control=config['runtime']['control'])
-        if upper_end:
+        if timed:
             assert any(t >= nav_start and np.linalg.norm(v[:2]) > .005 for t, v in moves)
             sent_start = engine.trial_report['timed_push']['sdk_started_at']
             assert all(v[0] >= 0. for t, v in moves if sent_start <= t < stop_at)
@@ -906,13 +935,13 @@ def test_first_push_in_open_room_from_navigation_to_measured_result(from_memory,
         assert 0 < sent['velocity'][0] <= field['contact_profile']['push_max_mps']
         assert any(t == sent['worker_at'] and np.array_equal(v, sent['velocity']) for t, v in moves)
         peak_forward = max(v[0] for t, v in moves if sent['worker_at'] <= t < stop_at)
-        if upper_end:
+        if timed:
             assert peak_forward == pytest.approx(field['timed_push_speed_mps'])
         else:
             assert .10 <= peak_forward <= field['contact_profile']['push_max_mps']+1e-8
         if from_memory:
             assert waiting_scans == 3
-            if not upper_end:
+            if not timed:
                 assert saw_face_on_way
             if lid_only:
                 assert centered_from_lid and not turned
@@ -932,7 +961,11 @@ def test_first_push_in_open_room_from_navigation_to_measured_result(from_memory,
                 assert turned and .50 <= max(turn_rates) <= field['contact_profile']['max_yaw_rps']
             assert sum(event.get('event') == 'decision' and event.get('kind') == 'push'
                        for event in engine.events) == 1
-        if upper_end:
+        if face_mode == 'auto':
+            np.testing.assert_allclose(pinned.direction, [0., -1.], atol=.03)
+            assert abs(np.dot(pinned.direction, pinned.long_axis)) < .03
+            assert any(event.get('reason') == 'automatic_face_approach' for event in engine.events)
+        elif upper_end:
             np.testing.assert_allclose(pinned.direction, [0., -1.], atol=.03)
             assert pinned.approach_xy[1] > pinned.initial_xy[1]
             assert pinned.destination_xy[1] < pinned.initial_xy[1]

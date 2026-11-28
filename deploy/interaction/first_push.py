@@ -34,6 +34,19 @@ SHORT_END_CENTER_BAND_M = .05
 SHORT_END_LANDING_OFFSET_M = .08
 
 
+@dataclass(frozen=True)
+class RegisteredFacePlan(PushPlan):
+    # Box orientation at selection, independent of which side the robot chose.
+    long_axis: tuple
+    remaining_route_m: float | None = None
+
+
+def face_dimensions(box, direction):
+    axes = rotation(box.orientation)[:2, :2]
+    axis = int(np.argmax(abs(direction @ axes)))
+    return box.local_dimensions[axis], box.local_dimensions[1-axis]
+
+
 @dataclass
 class TimedFacePush:
     box: BoxState
@@ -179,7 +192,7 @@ class RegisteredFacePlanner(SidePushPlanner):
         end = heading + (target_yaw - heading + math.pi) % (2 * math.pi) - math.pi
         return (body_rotation_clear(check, boxes, xy, heading, end)
                 and self._centering_path_clear(check, boxes, xy, end, tangent, lateral,
-                                               min(box.local_dimensions[:2]), profile))
+                                               face_dimensions(box, direction)[1], profile))
 
     def turn_standoff(self, position, heading, plan, boxes, backoff, arrival_tolerance, yaw_tolerance=TRIAL_YAW_TOLERANCE):
         """Return the current or a farther standing offset on the same face normal."""
@@ -195,53 +208,97 @@ class RegisteredFacePlanner(SidePushPlanner):
                 return offset
         return None
 
-    def first_contact_plan(self, start, boxes, eligible, free, profile, *, upper_end_goal=None, guidance_boxes=None):
-        """Select a reachable face, optionally reserving the map's upper short end."""
+    def first_contact_plan(self, start, boxes, eligible, free, profile, *, upper_end_goal=None,
+                           auto_push_speed=None, goal=None, guidance_boxes=None, rejected_faces=None, prediction=None):
+        """Choose an executable approach and, in auto mode, a side that clears the goal route."""
+        timed = upper_end_goal is not None or auto_push_speed is not None
+        distance = SHORT_END_PUSH_DISTANCE_M if timed else TRIAL_DISTANCE_M
+        if auto_push_speed is not None:
+            if goal is None:
+                raise ValueError('Automatic face selection requires a navigation goal')
+            immovable = [other for other in boxes if other.id not in eligible]
+            self.configure_route(start, goal, boxes, immovable=immovable)
+            if prediction is not None and any(box.id in eligible and box.id not in self.active_passages for box in boxes):
+                prediction.configure_route(start, goal, boxes, immovable=immovable)
+                self.active_passages = {**prediction.active_passages, **self.active_passages}
+            observed = self
+            if prediction is not None:
+                observed = copy(prediction)
+                observed.free = prediction.free & self.planning_observed
+            route_planners = (observed,) if prediction is None else (observed, prediction)
         best = None
         for tracked in boxes:
             if tracked.id not in eligible:
                 continue
-            if upper_end_goal is not None and (tracked.orientation is None or tracked.local_dimensions is None):
+            if timed and (tracked.orientation is None or tracked.local_dimensions is None):
                 continue
             # Use the stable pose to select a face and a standing point. Route
             # and body-sweep checks still receive the current obstacle boxes.
             guide = (guidance_boxes or {}).get(tracked.id)
             box = self.oriented_box(guide if guide is not None else tracked)
             center = np.asarray(box.xy)
-            for i, direction in enumerate(self.push_directions(box)):
+            directions = self.push_directions(box)
+            # Refits can change yaw slightly or flip the rectangle's axes by 180 degrees.
+            # Match rejected world normals to this fit before comparing route lengths.
+            excluded = {int(np.argmax(np.dot(directions, normal)))
+                        for normal in (rejected_faces or {}).get(box.id, ())}
+            long_axis = directions[2 * int(np.argmax(box.dimensions[:2]))]
+            for i, direction in enumerate(directions):
+                if i in excluded:
+                    continue
                 axis = i // 2
+                destination = center + direction*distance
+                extent = box.dimensions[axis] / 2
+                remaining_cost = None
                 if upper_end_goal is not None:
                     # An end face is normal to the long horizontal dimension.
                     if box.dimensions[axis] <= box.dimensions[1-axis] or -direction[1] <= abs(direction[0]):
                         continue
+                elif auto_push_speed is not None:
+                    if not super().side_parking_allowed(box, destination, direction):
+                        continue
+                    if not trial_sweep_clear(self, box, direction, boxes, free, profile, distance, speed=auto_push_speed):
+                        continue
+                    # Replan around the parked box from the Go2's predicted stop at the face.
+                    stopped_xy = destination - direction*(extent + profile.nose_offset_m)
+                    for route_planner in route_planners:
+                        remaining_cost = route_planner.remaining_push_cost(
+                            goal, boxes, box, destination, direction, extent, immovable, stopped_xy=stopped_xy)
+                        if math.isfinite(remaining_cost):
+                            break
+                    if not math.isfinite(remaining_cost):
+                        continue
                 elif trial_push_speed(self, box, direction, boxes, free, profile) is None:
                     continue
-                extent = box.dimensions[axis] / 2
                 approach = center - direction*(extent + profile.nose_offset_m + PushAsideConfig.front_gap)
                 path = self.path(start, approach, boxes)
-                if upper_end_goal is not None:
+                if timed:
                     approach, path = self._upper_turn_stage(start, boxes, free, profile, approach, direction, path,
-                                                            min(tracked.local_dimensions[:2]))
+                                                            tracked.local_dimensions[1-axis],
+                                                            require_turn=auto_push_speed is not None)
                 if not path:
                     continue
                 score = self.length(start, path)
+                if remaining_cost is not None:
+                    score += distance*2.5 + remaining_cost
                 if best is None or score < best.score:
-                    distance = SHORT_END_PUSH_DISTANCE_M if upper_end_goal is not None else TRIAL_DISTANCE_M
-                    best = PushPlan(box.id, box.xy, tuple(center + direction*distance),
-                                    tuple(direction), tuple(approach), path, distance, score)
+                    best = RegisteredFacePlan(box.id, box.xy, tuple(destination),
+                                              tuple(direction), tuple(approach), path, distance, score,
+                                              tuple(long_axis), remaining_cost)
         return best
 
     def alternate_upper_stage(self, start, boxes, profile, plan, excluded):
         target = next((box for box in boxes if box.id == plan.box_id), None)
-        if target is None or target.local_dimensions is None:
+        if target is None or target.local_dimensions is None or target.orientation is None:
             return None, ()
         direction = np.asarray(plan.direction)
-        distance = max(target.local_dimensions[:2])/2 + profile.nose_offset_m + PushAsideConfig.front_gap
+        depth, width = face_dimensions(target, direction)
+        distance = depth/2 + profile.nose_offset_m + PushAsideConfig.front_gap
         anchor = np.asarray(plan.initial_xy) - distance*direction
         return self._upper_turn_stage(start, boxes, self.free, profile, anchor, direction,
-                                      self.path(start, anchor, boxes), min(target.local_dimensions[:2]), excluded=excluded)
+                                      self.path(start, anchor, boxes), width, excluded=excluded)
 
-    def _upper_turn_stage(self, start, boxes, free, profile, anchor, direction, center_path, face_width, *, excluded=()):
+    def _upper_turn_stage(self, start, boxes, free, profile, anchor, direction, center_path, face_width, *, excluded=(), require_turn=False):
         # Use the same footprint as the turn controller. If the center is too
         # tight to turn, the existing skill can center laterally after turning.
         check = copy(self)
@@ -280,7 +337,7 @@ class RegisteredFacePlanner(SidePushPlanner):
                 return stage, path
         # A scan from nearer the box can reveal the turn. Recheck the full
         # rotation at the actual stopped pose before issuing any yaw command.
-        return (None, ()) if excluded else (anchor, center_path)
+        return (None, ()) if excluded or require_turn else (anchor, center_path)
 
     def side_parking_allowed(self, box, destination, direction):
         if box.id not in self.active_passages:
@@ -329,7 +386,7 @@ class FirstPushSkill(PushAsideSkill):
             ctx = replace(ctx, box=self.guidance_box)
         forward = np.array([math.cos(ctx.heading), math.sin(ctx.heading)])
         gap, lateral, yaw_error = self._box_frame(ctx, travel_direction=forward)
-        limit = self.config.heading_drift_tolerance if self.backend.upper_short_end else self.config.yaw_tolerance
+        limit = self.config.heading_drift_tolerance if self.backend.timed_face_push else self.config.yaw_tolerance
         if abs(yaw_error) > limit or not math.isfinite(gap):
             return super()._lateral_alignment_error(ctx)
         # With an accepted residual yaw, center the nose and its projected
@@ -337,7 +394,7 @@ class FirstPushSkill(PushAsideSkill):
         return lateral - .5 * max(0., gap) * float(forward @ self.tangent)
 
     def _contact_ready(self, ctx):
-        if not self.backend.upper_short_end:
+        if not self.backend.timed_face_push:
             return super()._contact_ready(ctx)
         if ctx.box_observation_id is None:
             return False
@@ -380,11 +437,11 @@ class FirstPushSkill(PushAsideSkill):
 
     def _fail(self, ctx, reason):
         checker = getattr(getattr(ctx, 'layers', None), 'surface_checker', None)
-        if (self.backend.upper_short_end and self.state in ('engage', 'push') and reason == 'contact_motion_blocked'
+        if (self.backend.timed_face_push and self.state in ('engage', 'push') and reason == 'contact_motion_blocked'
                 and checker is not None and checker.diagnostic['reason'] == 'box_edge_needs_new_scan'):
             self.precontact_wait = 'box_edge_needs_new_scan'
             return self._output()
-        if (self.backend.upper_short_end and self.contact_started is None
+        if (self.backend.timed_face_push and self.contact_started is None
                 and self.state in ('align_lateral', 'settle_contact')
                 and reason in ('lid_centering_no_progress', 'sdk_alignment_stalled', 'sdk_body_or_box_sweep_blocked')):
             self._transition('recheck_lid', ctx, reason)
@@ -430,7 +487,7 @@ class FirstPushSkill(PushAsideSkill):
         if abs(yaw) > self.config.yaw_tolerance or not .20 <= gap <= self.config.max_engage_standoff:
             return 'stopped_pose_outside_standoff_or_heading'
         if not self._contact_face_clear(ctx):
-            if abs(self.landing_offset(ctx, forward, gap)) > min(ctx.box.local_dimensions[:2])/2:
+            if abs(self.landing_offset(ctx, forward, gap)) > face_dimensions(ctx.box, self.direction)[1]/2:
                 return 'stopped_head_wide_of_face'
             return 'stopped_head_misses_short_face'
         self.engage_box_position = np.array(ctx.box.xy)
@@ -447,7 +504,7 @@ class FirstPushSkill(PushAsideSkill):
         return self._output()
 
     def box_within_stopping_reach(self, ctx, command):
-        if not self.backend.upper_short_end or self.state not in ('recheck_lid', 'engage'):
+        if not self.backend.timed_face_push or self.state not in ('recheck_lid', 'engage'):
             return True
         p = self.backend.profile
         speed = max(np.linalg.norm(command[:2]), np.linalg.norm(ctx.body_velocity[:2]),
@@ -489,7 +546,7 @@ class FirstPushSkill(PushAsideSkill):
                 self.precontact_wait = 'waiting_for_settled_box'
             elif ctx.map_observed_at is None or ctx.map_observed_at <= self.state_since:
                 self.precontact_wait = 'waiting_for_push_map'
-            elif not self.backend.upper_short_end:
+            elif not self.backend.timed_face_push:
                 speed = trial_push_speed(ctx.planner, ctx.box, self.direction, ctx.boxes,
                                          ctx.planner.free & ctx.planner.box_free, self.backend.profile, self.stop_displacement)
                 if speed is None:

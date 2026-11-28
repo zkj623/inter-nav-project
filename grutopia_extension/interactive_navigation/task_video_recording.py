@@ -123,9 +123,11 @@ class TaskVideoRecorder(InteractionVideoRecorder):
             cv2.putText(frame,f'{box.id}:{category}',(a[0],b[1]-4),cv2.FONT_HERSHEY_SIMPLEX,.34,(25,65,110),1,cv2.LINE_AA)
         center=pixel(layers.robot_xy)
         yaw=layers.robot_yaw
-        ahead=layers.robot_xy+.45*np.array([math.cos(yaw),math.sin(yaw)])
+        front=getattr(layers,'display_nose_offset_m',None)
+        front=.50 if front is None else front
+        ahead=layers.robot_xy+min(.45,front)*np.array([math.cos(yaw),math.sin(yaw)])
         halfwidth=getattr(p,'navigation_half_width',.22)
-        body=np.array([[-.32,-halfwidth],[.50,-halfwidth],[.50,halfwidth],[-.32,halfwidth]])
+        body=np.array([[-.32,-halfwidth],[front,-halfwidth],[front,halfwidth],[-.32,halfwidth]])
         rot=np.array([[math.cos(yaw),-math.sin(yaw)],[math.sin(yaw),math.cos(yaw)]])
         body_world=body@rot.T+layers.robot_xy
         cv2.polylines(frame,[np.array([pixel(xy) for xy in body_world],np.int32)],True,(210,70,25),1,cv2.LINE_AA)

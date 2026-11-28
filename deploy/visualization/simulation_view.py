@@ -48,7 +48,7 @@ def map_renderer(scene):
         local_dynamic=scene.get('local_dynamic', scene['occupied'] & ~scene.get('static', blank)),
         tracked_occupied=scene.get('tracked', blank), global_tracked=scene.get('global_tracked', blank),
         vacated_time=np.where(scene.get('recently_vacated', blank), now, -np.inf),
-        now=now, robot_xy=position[:2], robot_yaw=yaw,
+        now=now, robot_xy=position[:2], robot_yaw=yaw, display_nose_offset_m=scene.get('display_nose_offset_m'),
         local_radius=scene.get('local_radius', 3.),
         local_period=scene.get('local_period', .1), global_period=scene.get('global_period', 1.),
         local_revision=scene.get('revision', 0), global_revision=scene.get('global_revision', 0),

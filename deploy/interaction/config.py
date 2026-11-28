@@ -31,9 +31,9 @@ def configure(config, payload, directory, *, registry_path=None):
             and Path(registry_path).name == 'box_30x80x30.yaml'):
         result['first_push_face'] = 'upper_short_end'
     if result['first_push_face'] is not None and (
-            not result['first_push'] or result['first_push_face'] != 'upper_short_end'):
-        raise ValueError('first_push_face requires first_push mode and the value upper_short_end')
-    if result['first_push_face'] != 'upper_short_end':
+            not result['first_push'] or result['first_push_face'] not in ('upper_short_end', 'auto')):
+        raise ValueError('first_push_face requires first_push mode and either auto or upper_short_end')
+    if result['first_push_face'] is None:
         result['timed_push_speed_mps'] = None
     window_age = result['window_max_age_s']
     if window_age is not None and (type(window_age) not in (int, float) or not .02 <= window_age <= .75):
@@ -60,7 +60,7 @@ def configure(config, payload, directory, *, registry_path=None):
         validated = validate_tracking_config(tracking_config(result))
         # Preserve only tracker knobs here; registration remains explicit.
         result['tracking'] = {k: v for k, v in validated.items()
-                              if k not in ('boxes', 'geometry_verified', 'registry_reference', 'use_box_top')}
+                              if k not in ('boxes', 'geometry_verified', 'registry_reference', 'use_box_top', 'any_face_top')}
         xlim, ylim = nav['mapping']['x_limits'], nav['mapping']['y_limits']
         for row in validated['boxes']:
             x0, x1, y0, y1 = row['search_region']
@@ -103,7 +103,7 @@ def configure(config, payload, directory, *, registry_path=None):
         result['contact_profile'] = profile.to_dict()
         control['contact_limits'] = bounds
         control['contact_max_duration_s'] = float(duration)
-        if result['first_push_face'] == 'upper_short_end':
+        if result['first_push_face'] is not None:
             speed = result['timed_push_speed_mps']
             if speed is None:
                 # sync.sh preserves the existing Orin copy of the shipped field preset.
@@ -122,7 +122,8 @@ def configure(config, payload, directory, *, registry_path=None):
 
 def tracking_config(settings):
     return {**settings['tracking'], 'boxes': settings['boxes'],
-            'use_box_top': settings.get('first_push_face') == 'upper_short_end',
+            'use_box_top': settings.get('first_push_face') in ('auto', 'upper_short_end'),
+            'any_face_top': settings.get('first_push_face') == 'auto',
             'geometry_verified': settings['geometry_verified'],
             'registry_reference': settings['registry_reference']}
 

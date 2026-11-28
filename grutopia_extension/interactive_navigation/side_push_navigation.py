@@ -46,8 +46,8 @@ class SidePushPlanner(BoxPushPlanner):
         valid=cv2.erode(free.astype(np.uint8),kernel,anchor=(-x0,-y0),borderType=cv2.BORDER_CONSTANT,borderValue=0)
         return ~valid.astype(bool)
 
-    def configure_route(self,start,goal,boxes):
-        path=self.path(start,goal,[])
+    def configure_route(self,start,goal,boxes,immovable=()):
+        path=self.path(start,goal,immovable)
         self.active_passages={}
         for box in boxes:
             if box.id in self.passages:

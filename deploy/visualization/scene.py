@@ -72,6 +72,9 @@ class SceneCapture:
             return result
         engine = tasks.engine
         layers = engine.layers
+        profile = getattr(engine, 'contact_profile', None)
+        if profile is not None:
+            result['display_nose_offset_m'] = profile.nose_offset_m
         decision = _payload(engine.decision)
         detail = decision.get('explanation', decision) if isinstance(decision, dict) else {}
         frontier = (detail or {}).get('frontier_goal')
@@ -111,7 +114,7 @@ class SceneCapture:
                       cloud_role='display_history_only')
         # Display voxels belong exclusively to the rendering process. Capturing
         # a map never extracts or changes a navigation-side point cloud.
-        if getattr(engine, 'upper_short_end', False):
+        if getattr(engine, 'timed_face_push', getattr(engine, 'upper_short_end', False)):
             # Draw the same box pose that owns cells in this particular map frame.
             corners = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])
             result['box_outlines'] = {
