@@ -106,6 +106,8 @@ def test_startup_clear_area_is_fixed_once_and_an_actual_obstacle_wins():
 def test_field_survey_sees_through_virtual_wall_but_exploration_stays_inside(tmp_path):
     from grutopia_extension.interactive_navigation.exploration_frontiers import local_unknown
     nav = load()['navigation']
+    # The synthetic rays and frontier cells below straddle this survey fence.
+    nav['mapping']['y_limits'] = [-2.6, .9]
     engine = NavigationEngine(nav)
     layers, cell = engine.layers, engine.planner.cell
     def packet(step, points, max_range=5.):
@@ -173,7 +175,8 @@ def test_adjusted_field_bounds_and_unaligned_edges():
 def test_field_guard_limits_a_requested_turn_before_a_corner_reaches_the_boundary():
     engine = NavigationEngine(load()['navigation'])
     engine.set_goal((2., 0.), 0.)
-    engine.observe(observation(position=(1., .53, .3), points=[[2., 0., .2]]), .1)
+    near_fence = engine.world_boundary.y[1] - .37
+    engine.observe(observation(position=(1., near_fence, .3), points=[[2., 0., .2]]), .1)
     command = engine._output((0., 0., .9))
     assert engine.status == 'running' and 0 < command[2] < .9
     assert engine._boundary_motion_fits(command, 1 / engine.config['tick_hz'])
@@ -183,7 +186,8 @@ def test_field_guard_limits_a_requested_turn_before_a_corner_reaches_the_boundar
 def test_field_guard_stops_if_measured_motion_toward_boundary_cannot_brake_inside():
     engine = NavigationEngine(load()['navigation'])
     engine.set_goal((2., 0.), 0.)
-    engine.observe(observation(position=(1., .53, .3), velocity=(0., .28, 0.), points=[[2., 0., .2]]), .1)
+    near_fence = engine.world_boundary.y[1] - .37
+    engine.observe(observation(position=(1., near_fence, .3), velocity=(0., .28, 0.), points=[[2., 0., .2]]), .1)
     assert engine._output((0., -.10, 0.)) is None
     np.testing.assert_array_equal(engine.limiter.command, np.zeros(3))
     assert engine.result['reason'] == 'world_boundary_stop'
